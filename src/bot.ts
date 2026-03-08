@@ -6,13 +6,14 @@ import { handleToday, handleWeek } from "./commands/listEvents.js";
 import { handleVoice } from "./commands/voiceEvent.js";
 import { handleSend } from "./commands/sendMessage.js";
 import { recordChat } from "./userChats.js";
+import { messageLogger } from "./db/messageLogger.js";
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
 
   bot.use(async (ctx, next) => {
     await recordChat(ctx);
-    return next();
+    return messageLogger(ctx, next);
   });
 
   bot.start(handleStart);

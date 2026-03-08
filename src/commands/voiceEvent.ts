@@ -7,6 +7,7 @@ import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { isAdmin } from "../admin.js";
 import { getChatIdByRecipient } from "../userChats.js";
+import { updateMessageTranscript } from "../db/client.js";
 
 const VOICE_DIR = "./data/voice";
 
@@ -60,6 +61,13 @@ export async function handleVoice(ctx: Context) {
     }
 
     const intent = await extractVoiceIntent(transcript);
+
+    void updateMessageTranscript(
+      ctx.chat!.id,
+      ctx.message.message_id,
+      transcript,
+      intent.type
+    ).catch((err) => console.error("updateMessageTranscript:", err));
 
     if (intent.type === "send_message") {
       if (!isAdmin(ctx)) {

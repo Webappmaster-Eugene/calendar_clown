@@ -45,6 +45,7 @@ npm start           # или npm run dev для разработки
 | `SEND_MESSAGE_API_KEY` | (Опционально.) Секрет для HTTP API: отправка сообщений пользователям по username (для OpenClaw). См. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md#api-отправки-сообщений-пользователям-по-username-для-openclaw). |
 | `SEND_MESSAGE_API_PORT` | Порт API отправки (по умолчанию 18790). |
 | `SEND_MESSAGE_API_HOST` | Хост API (по умолчанию 127.0.0.1). |
+| `DATABASE_URL` | (Опционально.) Подключение к PostgreSQL для хранения сообщений и транскриптов. Если не задано, бот работает без записи в БД. Альтернатива: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`. |
 
 Секреты не храните в репозитории. Для локального запуска удобно завести `.env.local`: скопируйте [.env.local.example](.env.local.example) в `.env.local`, заполните переменные (в том числе SSH_* для скриптов деплоя). Файл `.env.local` в gitignore, при запуске бота и `npm run authorize` он подхватывается после `.env`.
 
@@ -57,6 +58,19 @@ npm start           # или npm run dev для разработки
 - `/week` — встречи на эту неделю
 - `/list` — то же, что `/today`
 - **Голосовое сообщение** — отправить голосовое: бот конвертирует OGG в WAV, распознаёт речь и через OpenRouter определяет намерение. Можно создать встречу (например: «Встреча завтра в 15:00») или отправить сообщение кому-то (например: «Отправь Анжелике Надточеевой что я ее люблю»; только для доверенных пользователей, получатель — по имени или username из тех, кто уже писал боту). Нужны `OPENROUTER_API_KEY` и **ffmpeg** на сервере (`apt install ffmpeg` / `yum install ffmpeg`).
+
+## Хранение сообщений в PostgreSQL (опционально)
+
+Входящие сообщения (текст и голосовые) и транскрипты голосовых можно сохранять в Postgres. Поднимите БД и примените миграции:
+
+```bash
+docker compose up -d
+# Задайте в .env: DATABASE_URL=postgresql://bot:bot@localhost:5432/bot (или POSTGRES_*)
+npm run migrate
+npm start
+```
+
+Миграции лежат в `migrations/`. Команда `npm run migrate` выполняет их по порядку. Без `DATABASE_URL` бот работает как раньше, без записи в БД.
 
 ## Деплой на VDS (systemd)
 

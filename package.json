@@ -8,7 +8,8 @@
     "build": "tsup src/index.ts --format esm",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "authorize": "tsx scripts/authorize.ts"
+    "authorize": "tsx scripts/authorize.ts",
+    "migrate": "tsx scripts/migrate.ts"
   },
   "engines": {
     "node": ">=18"
@@ -16,12 +17,14 @@
   "dependencies": {
     "chrono-node": "^2.7.4",
     "dotenv": "^16.4.5",
+    "pg": "^8.13.0",
     "google-auth-library": "^9.14.1",
     "googleapis": "^144.0.0",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
+    "@types/pg": "^8.11.6",
     "tsup": "^8.3.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"
