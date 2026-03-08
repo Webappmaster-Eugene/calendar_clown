@@ -10,3 +10,5 @@ token.json
 .DS_Store
 deploy_key
 deploy_key.pub
+# VPN config (contains private keys)
+GB.conf
