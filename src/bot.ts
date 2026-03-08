@@ -2,6 +2,7 @@ import { Telegraf } from "telegraf";
 import { handleStart, handleHelp } from "./commands/start.js";
 import { handleNew } from "./commands/createEvent.js";
 import { handleToday, handleWeek } from "./commands/listEvents.js";
+import { handleVoice } from "./commands/voiceEvent.js";
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
@@ -12,6 +13,7 @@ export function createBot(token: string): Telegraf {
   bot.command("today", handleToday);
   bot.command("week", handleWeek);
   bot.command("list", handleToday);
+  bot.on("voice", handleVoice);
 
   return bot;
 }

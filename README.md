@@ -1,6 +1,8 @@
 # Telegram-бот для Google Calendar
 
-Бот для управления встречами в Google Calendar через Telegram. Создание событий по фразе (например «Встреча завтра в 15:00») и просмотр расписания на день/неделю.
+Бот для управления встречами в Google Calendar через Telegram.
+
+**Инструкция по использованию и описание работы под капотом:** [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md) Создание событий по фразе (например «Встреча завтра в 15:00») или по голосовому сообщению (транскрипция Groq Whisper + извлечение события через OpenRouter, модель DeepSeek), просмотр расписания на день/неделю.
 
 ## Требования
 
@@ -39,6 +41,8 @@ npm start           # или npm run dev для разработки
 | `GOOGLE_CLIENT_ID` | OAuth2 Client ID из Google Cloud |
 | `GOOGLE_CLIENT_SECRET` | OAuth2 Client Secret |
 | `GOOGLE_TOKEN_PATH` | Путь к файлу с токеном (по умолчанию `./data/token.json`) |
+| `GROQ_API_KEY` | Ключ Groq для транскрипции голоса (Whisper); нужен для голосовых сообщений |
+| `OPENROUTER_API_KEY` | Ключ OpenRouter для извлечения события из текста (модель DeepSeek); один контекст — только календарь |
 
 Секреты не храните в репозитории. На сервере используйте `.env` или переменные окружения процесса.
 
@@ -50,6 +54,7 @@ npm start           # или npm run dev для разработки
 - `/today` — встречи на сегодня
 - `/week` — встречи на эту неделю
 - `/list` — то же, что `/today`
+- **Голосовое сообщение** — отправить голосовое: бот распознаёт речь (Groq Whisper), извлекает событие через OpenRouter (DeepSeek) по минимальному контексту «только календарь» и создаёт встречу. Нужны `GROQ_API_KEY` и `OPENROUTER_API_KEY`.
 
 ## Деплой на VDS (systemd)
 
@@ -96,6 +101,31 @@ npm start           # или npm run dev для разработки
    ```
 
 Логи: `journalctl -u telegram-calendar-bot -f`.
+
+## CI/CD (GitHub Actions)
+
+Сборка выполняется на GitHub, деплой на VDS по push в `main` или вручную (workflow_dispatch). Переменные окружения задаются в GitHub Secrets — вручную на сервере указывать не нужно.
+
+### Однократная настройка на VDS
+
+1. Создайте ключ для деплоя (на своей машине): `ssh-keygen -t ed25519 -C "github-deploy" -f deploy_key -N ""`
+2. Публичный ключ добавьте на VDS: `ssh-copy-id -i deploy_key.pub root@45.10.41.177` (или скопируйте содержимое `deploy_key.pub` в `~/.ssh/authorized_keys` на сервере).
+3. Приватный ключ целиком скопируйте в буфер — он понадобится для секрета `SSH_PRIVATE_KEY`.
+
+### Секреты репозитория (Settings → Secrets and variables → Actions)
+
+| Секрет | Описание |
+|--------|----------|
+| `SSH_HOST` | IP или хост VDS (например `45.10.41.177`) |
+| `SSH_USER` | Пользователь SSH (например `root`) |
+| `SSH_PRIVATE_KEY` | Полное содержимое файла `deploy_key` (приватный ключ) |
+| `TELEGRAM_BOT_TOKEN` | Токен бота из @BotFather |
+| `GOOGLE_CLIENT_ID` | OAuth2 Client ID из Google Cloud |
+| `GOOGLE_CLIENT_SECRET` | OAuth2 Client Secret |
+| `GROQ_API_KEY` | Ключ Groq (голос) |
+| `OPENROUTER_API_KEY` | Ключ OpenRouter |
+
+При каждом деплое workflow создаёт на сервере `.env` из этих секретов, копирует собранный код, запускает `npm install --omit=dev` и перезапускает `telegram-calendar-bot`. Файл `data/token.json` (Google) на сервере не перезаписывается — один раз выполните `npm run authorize` на VDS и больше не трогайте.
 
 ## Деплой на VDS (PM2)
 
