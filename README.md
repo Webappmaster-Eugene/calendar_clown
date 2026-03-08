@@ -45,7 +45,7 @@ npm start           # или npm run dev для разработки
 | `GOOGLE_TOKEN_PATH` | Путь к файлу с токеном (по умолчанию `./data/token.json`) |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter: транскрипция голоса и извлечение события (DeepSeek); один ключ для голосовых сообщений |
 | `OPENCLAW_GATEWAY_URL` | (Опционально.) URL шлюза OpenClaw (по умолчанию в коде `http://127.0.0.1:18789`). Нужен вместе с токеном для команды `/openclaw`. |
-| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway. Если задан, регистрируются команды `/openclaw` и `/stop` для чата с агентом OpenClaw. |
+| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway. Если задан, регистрируются команды `/openclaw` и `/stop` для чата с агентом OpenClaw. Токен берётся из конфигурации или env того же OpenClaw Gateway; см. раздел «Откуда взять OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL» в [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md). |
 | `SEND_MESSAGE_API_KEY` | (Опционально.) Секрет для HTTP API: отправка сообщений пользователям по username (для OpenClaw). См. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md#api-отправки-сообщений-пользователям-по-username-для-openclaw). |
 | `SEND_MESSAGE_API_PORT` | Порт API отправки (по умолчанию 18790). |
 | `SEND_MESSAGE_API_HOST` | Хост API (по умолчанию 127.0.0.1). |
@@ -135,8 +135,10 @@ npm start
 | `GOOGLE_CLIENT_SECRET` | OAuth2 Client Secret |
 | `OAUTH_REDIRECT_URI` | HTTPS-URL callback для привязки календаря (например `https://yourdomain.com/oauth/callback`) |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter (голос и календарь) |
+| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway для команды `/openclaw`. Если задан, при деплое попадёт в `.env` на сервере. См. раздел «Откуда взять OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL» в [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md). |
+| `OPENCLAW_GATEWAY_URL` | (Опционально.) URL шлюза OpenClaw (например `http://127.0.0.1:18789`). Нужен только если шлюз не на localhost:18789. |
 
-При каждом деплое workflow обновляет на сервере `.env`: подставляет в него значения из секретов (TELEGRAM_BOT_TOKEN, GOOGLE_*, OPENROUTER_API_KEY, OAUTH_REDIRECT_URI), при этом **опциональные переменные** (ADMIN_USER_IDS, SEND_MESSAGE_API_* и др.), заданные вручную в `.env` на VDS, сохраняются. Затем копируется собранный код, создаются каталоги `data/tokens` и `data/voice`, выполняется `npm install --omit=dev` и перезапуск `telegram-calendar-bot`. Каждый пользователь привязывает календарь через бота: `/start` → кнопка «Войти через Google» → автоматическая привязка (нужен секрет `OAUTH_REDIRECT_URI` и HTTPS до сервера). Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
+При каждом деплое workflow обновляет на сервере `.env`: подставляет в него значения из секретов (TELEGRAM_BOT_TOKEN, GOOGLE_*, OPENROUTER_API_KEY, OAUTH_REDIRECT_URI, при наличии — OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL), при этом **остальные переменные** (ADMIN_USER_IDS, SEND_MESSAGE_API_* и др.), заданные вручную в `.env` на VDS, сохраняются. Затем копируется собранный код, создаются каталоги `data/tokens` и `data/voice`, выполняется `npm install --omit=dev` и перезапуск `telegram-calendar-bot`. Каждый пользователь привязывает календарь через бота: `/start` → кнопка «Войти через Google» → автоматическая привязка (нужен секрет `OAUTH_REDIRECT_URI` и HTTPS до сервера). Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
 
 **Проверка готовности VDS** (после SSH на сервер): `cd /opt/telegram-calendar-bot && bash scripts/check-vds.sh` — проверяет Node, ffmpeg, каталоги, .env и сервис.
 

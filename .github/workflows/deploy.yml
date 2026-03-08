@@ -35,12 +35,20 @@ jobs:
           if [ -n "$OAUTH_REDIRECT_URI" ]; then
             printf 'OAUTH_REDIRECT_URI=%s\n' "$OAUTH_REDIRECT_URI" >> .env.deploy
           fi
+          if [ -n "$OPENCLAW_GATEWAY_TOKEN" ]; then
+            printf 'OPENCLAW_GATEWAY_TOKEN=%s\n' "$OPENCLAW_GATEWAY_TOKEN" >> .env.deploy
+            if [ -n "$OPENCLAW_GATEWAY_URL" ]; then
+              printf 'OPENCLAW_GATEWAY_URL=%s\n' "$OPENCLAW_GATEWAY_URL" >> .env.deploy
+            fi
+          fi
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OAUTH_REDIRECT_URI: ${{ secrets.OAUTH_REDIRECT_URI }}
+          OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
+          OPENCLAW_GATEWAY_URL: ${{ secrets.OPENCLAW_GATEWAY_URL }}
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -67,4 +75,4 @@ jobs:
         run: |
           scp -o StrictHostKeyChecking=no .env.deploy ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_PATH }}/.env.deploy
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
-            "cd ${{ env.DEPLOY_PATH }} && ( [ -f .env ] && grep -v -E '^(TELEGRAM_BOT_TOKEN|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|OPENROUTER_API_KEY|OAUTH_REDIRECT_URI)=' .env ; cat .env.deploy ) > .env.merged && mv .env.merged .env && rm -f .env.deploy && npm install --omit=dev && mkdir -p data/tokens data/voice && systemctl restart telegram-calendar-bot && systemctl is-active telegram-calendar-bot"
+            "cd ${{ env.DEPLOY_PATH }} && ( [ -f .env ] && grep -v -E '^(TELEGRAM_BOT_TOKEN|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|OPENROUTER_API_KEY|OAUTH_REDIRECT_URI|OPENCLAW_GATEWAY_TOKEN|OPENCLAW_GATEWAY_URL)=' .env ; cat .env.deploy ) > .env.merged && mv .env.merged .env && rm -f .env.deploy && npm install --omit=dev && mkdir -p data/tokens data/voice && systemctl restart telegram-calendar-bot && systemctl is-active telegram-calendar-bot"

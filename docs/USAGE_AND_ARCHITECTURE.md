@@ -45,6 +45,22 @@
 
 Запросы уходят на OpenClaw Gateway (endpoint `/v1/chat/completions`). История хранится только в памяти; при перезапуске бота сессии теряются.
 
+#### Откуда взять OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL
+
+Нужен **работающий OpenClaw Gateway** (отдельное приложение, [docs.openclaw.ai](https://docs.openclaw.ai)). Токен и URL задаются при настройке самого OpenClaw.
+
+- **OPENCLAW_GATEWAY_URL** — адрес шлюза. По умолчанию шлюз слушает порт **18789**. Если бот и OpenClaw на одной машине: `http://127.0.0.1:18789`. Если OpenClaw на другом хосте — подставьте его хост и порт (например `http://openclaw-host:18789`). Порт можно менять в конфиге OpenClaw (`gateway.port`) или переменной `OPENCLAW_GATEWAY_PORT`.
+- **OPENCLAW_GATEWAY_TOKEN** — тот же секрет, который настроен **в OpenClaw** для доступа к шлюзу. Варианты:
+  1. При первой настройке OpenClaw мастер (`openclaw onboard`) может **сгенерировать** токен — его потом видно в `~/.openclaw/openclaw.json` в `gateway.auth.token` (при `gateway.auth.mode: "token"`).
+  2. Либо задать токен вручную в конфиге OpenClaw: `gateway.auth.token: "ваш-секретный-токен"`.
+  3. Либо задать его через переменную окружения на машине, где **запускается** OpenClaw: `OPENCLAW_GATEWAY_TOKEN=ваш-токен` — тогда этот же токен нужно указать в `.env` бота как `OPENCLAW_GATEWAY_TOKEN`.
+
+В конфиге OpenClaw нужно **включить** HTTP Chat Completions (по умолчанию выключены): в `~/.openclaw/openclaw.json` добавить `gateway.http.endpoints.chatCompletions.enabled: true`.
+
+Итого: установите и запустите OpenClaw Gateway, возьмите из его конфигурации или env URL и токен и пропишите их в `.env` или `.env.local` этого бота.
+
+Если OpenClaw установлен **на том же VDS**, что и бот — используйте URL `http://127.0.0.1:18789` и токен из конфига OpenClaw (`gateway.auth.token` в `~/.openclaw/openclaw.json`) или из файла, куда он был сохранён при установке (например `/root/.openclaw-gateway-token-for-github.txt`). Эти же значения добавьте в GitHub Secrets (`OPENCLAW_GATEWAY_URL`, `OPENCLAW_GATEWAY_TOKEN`), чтобы при деплое они попали в `.env` бота на сервере.
+
 ---
 
 ## Как это устроено под капотом
