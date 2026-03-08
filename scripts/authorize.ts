@@ -1,4 +1,6 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config();
+dotenv.config({ path: ".env.local", override: true });
 import { createInterface } from "readline";
 import { getAuthUrl, saveTokenFromCode } from "../src/calendar/auth.js";
 

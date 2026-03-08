@@ -1,4 +1,8 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+
+dotenv.config();
+dotenv.config({ path: ".env.local", override: true });
+
 import { createBot } from "./bot.js";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;

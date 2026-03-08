@@ -29,14 +29,13 @@ jobs:
 
       - name: Create .env for server
         run: |
-          printf 'TELEGRAM_BOT_TOKEN=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nGROQ_API_KEY=%s\nOPENROUTER_API_KEY=%s\n' \
-            "$TELEGRAM_BOT_TOKEN" "$GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_SECRET" "$GROQ_API_KEY" "$OPENROUTER_API_KEY" \
+          printf 'TELEGRAM_BOT_TOKEN=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nOPENROUTER_API_KEY=%s\n' \
+            "$TELEGRAM_BOT_TOKEN" "$GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_SECRET" "$OPENROUTER_API_KEY" \
             > .env.deploy
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
       - name: Setup SSH
