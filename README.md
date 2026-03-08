@@ -113,7 +113,7 @@ npm start
 
 Логи: `journalctl -u telegram-calendar-bot -f`.
 
-## CI/CD (GitHub Actions)
+## CI/CD GitHub Actions
 
 Сборка выполняется на GitHub, деплой на VDS по push в `main` или вручную (workflow_dispatch). Переменные окружения задаются в GitHub Secrets — вручную на сервере указывать не нужно.
 
