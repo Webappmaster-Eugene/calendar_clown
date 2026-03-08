@@ -43,6 +43,23 @@ services:
     profiles:
       - oauth
 
+  # OpenClaw Gateway: chat completions for /openclaw in the bot. Token from env OPENCLAW_GATEWAY_TOKEN.
+  openclaw-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.openclaw-gateway
+    ports:
+      - "18789:18789"
+    volumes:
+      - ./config/openclaw-gateway.json:/home/node/.openclaw/openclaw.json:ro
+    env_file:
+      - .env
+    environment:
+      - OPENCLAW_GATEWAY_TOKEN
+    restart: unless-stopped
+    profiles:
+      - openclaw
+
 volumes:
   pgdata:
   certbot_etc:

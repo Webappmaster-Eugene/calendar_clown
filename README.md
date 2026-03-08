@@ -119,9 +119,12 @@ npm start
 
 ### Однократная настройка на VDS
 
-1. Создайте ключ для деплоя (на своей машине): `ssh-keygen -t ed25519 -C "github-deploy" -f deploy_key -N ""`
-2. Публичный ключ добавьте на VDS: `ssh-copy-id -i deploy_key.pub root@45.10.41.177` (или скопируйте содержимое `deploy_key.pub` в `~/.ssh/authorized_keys` на сервере).
-3. Приватный ключ целиком скопируйте в буфер — он понадобится для секрета `SSH_PRIVATE_KEY`.
+Настройка сервера полностью в репозитории: при деплое копируются `docker-compose.yml` и каталог `config/`, формируется один `.env` из секретов, при необходимости выдаётся SSL для OAuth (скрипт `scripts/ensure-oauth-ssl.sh`) и поднимается nginx; при заданном `OPENCLAW_GATEWAY_TOKEN` поднимается OpenClaw Gateway из того же compose. Ручная настройка nginx и OpenClaw на хосте не требуется.
+
+1. На VDS должны быть установлены **Docker** и **Docker Compose** (plugin) — для OAuth (nginx + certbot) и OpenClaw. Установка: см. [документацию Docker](https://docs.docker.com/engine/install/) и [Compose V2](https://docs.docker.com/compose/install/).
+2. Создайте ключ для деплоя (на своей машине): `ssh-keygen -t ed25519 -C "github-deploy" -f deploy_key -N ""`
+3. Публичный ключ добавьте на VDS: `ssh-copy-id -i deploy_key.pub root@45.10.41.177` (или скопируйте содержимое `deploy_key.pub` в `~/.ssh/authorized_keys` на сервере).
+4. Приватный ключ целиком скопируйте в буфер — он понадобится для секрета `SSH_PRIVATE_KEY`.
 
 ### Секреты репозитория (Settings → Secrets and variables → Actions)
 
@@ -134,11 +137,12 @@ npm start
 | `GOOGLE_CLIENT_ID` | OAuth2 Client ID из Google Cloud |
 | `GOOGLE_CLIENT_SECRET` | OAuth2 Client Secret |
 | `OAUTH_REDIRECT_URI` | HTTPS-URL callback для привязки календаря (например `https://yourdomain.com/oauth/callback`) |
+| `CERTBOT_EMAIL` | (При OAuth redirect.) Email для Let's Encrypt; используется при первом запуске certbot (скрипт `ensure-oauth-ssl.sh`). Убедитесь, что DNS для домена из `OAUTH_REDIRECT_URI` указывает на IP VDS. |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter (голос и календарь) |
-| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway для команды `/openclaw`. Если задан, при деплое попадёт в `.env` на сервере. См. раздел «Откуда взять OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL» в [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md). |
+| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway для команды `/openclaw`. Если задан, при деплое попадёт в `.env` и будет запущен контейнер OpenClaw Gateway из docker-compose (профиль `openclaw`). См. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md). |
 | `OPENCLAW_GATEWAY_URL` | (Опционально.) URL шлюза OpenClaw (например `http://127.0.0.1:18789`). Нужен только если шлюз не на localhost:18789. |
 
-При каждом деплое workflow обновляет на сервере `.env`: подставляет в него значения из секретов (TELEGRAM_BOT_TOKEN, GOOGLE_*, OPENROUTER_API_KEY, OAUTH_REDIRECT_URI, при наличии — OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL), при этом **остальные переменные** (ADMIN_USER_IDS, SEND_MESSAGE_API_* и др.), заданные вручную в `.env` на VDS, сохраняются. Затем копируется собранный код, создаются каталоги `data/tokens` и `data/voice`, выполняется `npm install --omit=dev` и перезапуск `telegram-calendar-bot`. Каждый пользователь привязывает календарь через бота: `/start` → кнопка «Войти через Google» → автоматическая привязка (нужен секрет `OAUTH_REDIRECT_URI` и HTTPS до сервера). Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
+При каждом деплое workflow копирует на сервер собранный код, `docker-compose.yml`, каталоги `config/` и `docker/`, обновляет `.env` из секретов (TELEGRAM_BOT_TOKEN, GOOGLE_*, OPENROUTER_API_KEY, OAUTH_REDIRECT_URI, при наличии — CERTBOT_EMAIL, OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL; остальные переменные из `.env` на VDS сохраняются), выполняет `npm install --omit=dev`, перезапуск бота, затем `scripts/ensure-oauth-ssl.sh` (при необходимости выдаёт сертификат и поднимает nginx для OAuth) и при заданном `OPENCLAW_GATEWAY_TOKEN` — `docker compose --profile openclaw up -d --build`. Каждый пользователь привязывает календарь через бота: `/start` → «Войти через Google» (нужен секрет `OAUTH_REDIRECT_URI` и HTTPS до сервера). Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
 
 **Проверка готовности VDS** (после SSH на сервер): `cd /opt/telegram-calendar-bot && bash scripts/check-vds.sh` — проверяет Node, ffmpeg, каталоги, .env и сервис.
 

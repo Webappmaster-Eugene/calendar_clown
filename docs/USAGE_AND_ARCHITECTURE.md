@@ -1,5 +1,7 @@
 # Инструкция по использованию и как это устроено
 
+**Деплой:** OAuth (nginx + certbot) и OpenClaw Gateway настраиваются через один [docker-compose.yml](../docker-compose.yml) и CI/CD: при деплое копируются compose и `config/`, выполняется `ensure-oauth-ssl.sh` и при заданном `OPENCLAW_GATEWAY_TOKEN` поднимается OpenClaw. Секреты (в т.ч. `CERTBOT_EMAIL`, `OPENCLAW_GATEWAY_TOKEN`) — в [README.md](../README.md), раздел «Секреты репозитория».
+
 ## Как пользоваться ботом
 
 ### Запуск диалога

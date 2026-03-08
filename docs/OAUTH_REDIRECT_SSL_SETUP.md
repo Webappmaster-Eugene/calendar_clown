@@ -2,6 +2,8 @@
 
 Чтобы интеграция с календарём работала через redirect (без устаревшего OOB), нужен **публичный HTTPS-адрес**, на который Google будет перенаправлять пользователя после входа. Ниже — последовательность действий.
 
+**При деплое через CI/CD:** OAuth (nginx + certbot) и OpenClaw настраиваются из одного [docker-compose.yml](../docker-compose.yml) в репозитории. Workflow копирует `docker-compose.yml` и `config/`, формирует `.env` из секретов (в т.ч. `CERTBOT_EMAIL`), после деплоя бота запускает `scripts/ensure-oauth-ssl.sh` и при наличии `OPENCLAW_GATEWAY_TOKEN` поднимает OpenClaw. Список секретов и шаги — в [README.md](../README.md) (раздел «CI/CD GitHub Actions»). Ручная настройка nginx/OpenClaw на хосте не требуется.
+
 ## Предварительные условия
 
 - Бот уже задеплоен на VDS (например `/opt/telegram-calendar-bot`, systemd-сервис `telegram-calendar-bot`).
@@ -13,7 +15,7 @@
 
 ## Вариант: Docker Compose (oauth.podbor-minuta.ru)
 
-Если используете [docker-compose.yml](../docker-compose.yml), nginx и certbot подняты как сервисы с профилем `oauth`. Домен: **oauth.podbor-minuta.ru** (A-запись на IP сервера уже настроена).
+Если используете [docker-compose.yml](../docker-compose.yml), nginx и certbot подняты как сервисы с профилем `oauth`. Домен: **oauth.podbor-minuta.ru** (A-запись на IP сервера уже настроена). При деплое через GitHub Actions скрипт `ensure-oauth-ssl.sh` при необходимости выдаёт сертификат и поднимает nginx; задайте секрет `CERTBOT_EMAIL` в репозитории (см. README).
 
 1. **Переменные в `.env`:**
    ```env
