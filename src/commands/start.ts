@@ -12,6 +12,8 @@ const HELP_TEXT = `
 /week — встречи на эту неделю
 /help — эта справка
 /send _@user текст_ — отправить сообщение пользователю от имени бота (только доверенные)
+/openclaw _[текст]_ — чат с OpenClaw (если настроен); без текста — режим диалога
+/stop — выйти из режима чата OpenClaw
 `;
 
 export async function handleStart(ctx: Context) {

@@ -39,6 +39,9 @@ else
       echo "  ОШИБКА: в .env нет $key"; ERR=1
     fi
   done
+  if grep -q "^GOOGLE_CLIENT_ID=" .env 2>/dev/null && ! grep -q "^OAUTH_REDIRECT_URI=" .env 2>/dev/null; then
+    echo "  ПРЕДУПРЕЖДЕНИЕ: для привязки календаря нужен OAUTH_REDIRECT_URI (HTTPS). См. docs/OAUTH_REDIRECT_SSL_SETUP.md"
+  fi
   [ $ERR -eq 0 ] && echo "  Все нужные переменные заданы в .env"
 fi
 
@@ -58,7 +61,7 @@ fi
 
 echo ""
 if [ $ERR -eq 0 ]; then
-  echo "Готово к работе. Каждый пользователь: /start → привязать календарь по ссылке → /auth <код>."
+  echo "Готово к работе. Пользователи: /start → кнопка «Войти через Google» → календарь привязывается автоматически (нужен OAUTH_REDIRECT_URI и HTTPS)."
 else
   echo "Исправьте ошибки выше."
   exit 1

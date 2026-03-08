@@ -44,6 +44,8 @@ npm start           # или npm run dev для разработки
 | `OAUTH_REDIRECT_URI` | **Обязательно для привязки календаря.** HTTPS-URL, на который Google перенаправляет после входа (например `https://yourdomain.com/oauth/callback`). Этот же URL нужно добавить в Google Console → Credentials → OAuth 2.0 Client → Authorized redirect URIs. После входа по кнопке в боте календарь привязывается автоматически. |
 | `GOOGLE_TOKEN_PATH` | Путь к файлу с токеном (по умолчанию `./data/token.json`) |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter: транскрипция голоса и извлечение события (DeepSeek); один ключ для голосовых сообщений |
+| `OPENCLAW_GATEWAY_URL` | (Опционально.) URL шлюза OpenClaw (по умолчанию в коде `http://127.0.0.1:18789`). Нужен вместе с токеном для команды `/openclaw`. |
+| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway. Если задан, регистрируются команды `/openclaw` и `/stop` для чата с агентом OpenClaw. |
 | `SEND_MESSAGE_API_KEY` | (Опционально.) Секрет для HTTP API: отправка сообщений пользователям по username (для OpenClaw). См. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md#api-отправки-сообщений-пользователям-по-username-для-openclaw). |
 | `SEND_MESSAGE_API_PORT` | Порт API отправки (по умолчанию 18790). |
 | `SEND_MESSAGE_API_HOST` | Хост API (по умолчанию 127.0.0.1). |
@@ -60,6 +62,8 @@ npm start           # или npm run dev для разработки
 - `/week` — встречи на эту неделю
 - `/list` — то же, что `/today`
 - **Голосовое сообщение** — отправить голосовое: бот конвертирует OGG в WAV, распознаёт речь и через OpenRouter определяет намерение. Можно создать встречу (например: «Встреча завтра в 15:00») или отправить сообщение кому-то (например: «Отправь Анжелике Надточеевой что я ее люблю»; только для доверенных пользователей, получатель — по имени или username из тех, кто уже писал боту). Нужны `OPENROUTER_API_KEY` и **ffmpeg** на сервере (`apt install ffmpeg` / `yum install ffmpeg`).
+- `/openclaw [текст]` — (если задан `OPENCLAW_GATEWAY_TOKEN`) одно сообщение в OpenClaw или вход в режим диалога; ответы приходят от агента OpenClaw.
+- `/stop` — выйти из режима чата OpenClaw.
 
 ## Хранение сообщений в PostgreSQL (опционально)
 
@@ -91,24 +95,10 @@ npm start
    ```
    Календари пользователи привязывают сами через бота: `/start` → кнопка «Войти через Google» → после входа календарь привязывается автоматически (нужен настроенный `OAUTH_REDIRECT_URI` и HTTPS до сервера). Запасной вариант: `/auth <код>` если страница callback показала код. Локально для теста можно: `npm run authorize -- <TELEGRAM_USER_ID>` и скопировать `data/tokens/<id>.json` на сервер.
 
-4. Создайте unit systemd `/etc/systemd/system/telegram-calendar-bot.service`:
+4. Установите unit systemd (файл есть в репозитории):
 
-   ```ini
-   [Unit]
-   Description=Telegram Google Calendar Bot
-   After=network.target
-
-   [Service]
-   Type=simple
-   User=root
-   WorkingDirectory=/opt/telegram-calendar-bot
-   EnvironmentFile=/opt/telegram-calendar-bot/.env
-   ExecStart=/usr/bin/node dist/index.js
-   Restart=on-failure
-   RestartSec=10
-
-   [Install]
-   WantedBy=multi-user.target
+   ```bash
+   sudo cp /opt/telegram-calendar-bot/scripts/telegram-calendar-bot.service /etc/systemd/system/
    ```
 
 5. Запуск и автозапуск:
@@ -118,6 +108,8 @@ npm start
    sudo systemctl start telegram-calendar-bot
    sudo systemctl status telegram-calendar-bot
    ```
+
+6. **Redirect и SSL для привязки календаря:** чтобы пользователи могли привязать календарь по кнопке «Войти через Google», нужен публичный HTTPS-адрес и nginx. Подробная настройка: [docs/OAUTH_REDIRECT_SSL_SETUP.md](docs/OAUTH_REDIRECT_SSL_SETUP.md). Для **Docker Compose** (домен oauth.podbor-minuta.ru) в том же документе есть раздел «Вариант: Docker Compose»; конфиг: [config/nginx-oauth.podbor-minuta.ru.conf](config/nginx-oauth.podbor-minuta.ru.conf).
 
 Логи: `journalctl -u telegram-calendar-bot -f`.
 
@@ -144,7 +136,7 @@ npm start
 | `OAUTH_REDIRECT_URI` | HTTPS-URL callback для привязки календаря (например `https://yourdomain.com/oauth/callback`) |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter (голос и календарь) |
 
-При каждом деплое workflow создаёт на сервере `.env` из этих секретов, копирует собранный код, создаёт каталоги `data/tokens` и `data/voice`, запускает `npm install --omit=dev` и перезапускает `telegram-calendar-bot`. Каждый пользователь привязывает календарь через бота: `/start` → кнопка «Войти через Google» → автоматическая привязка (нужен секрет `OAUTH_REDIRECT_URI` и HTTPS до сервера). Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
+При каждом деплое workflow обновляет на сервере `.env`: подставляет в него значения из секретов (TELEGRAM_BOT_TOKEN, GOOGLE_*, OPENROUTER_API_KEY, OAUTH_REDIRECT_URI), при этом **опциональные переменные** (ADMIN_USER_IDS, SEND_MESSAGE_API_* и др.), заданные вручную в `.env` на VDS, сохраняются. Затем копируется собранный код, создаются каталоги `data/tokens` и `data/voice`, выполняется `npm install --omit=dev` и перезапуск `telegram-calendar-bot`. Каждый пользователь привязывает календарь через бота: `/start` → кнопка «Войти через Google» → автоматическая привязка (нужен секрет `OAUTH_REDIRECT_URI` и HTTPS до сервера). Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
 
 **Проверка готовности VDS** (после SSH на сервер): `cd /opt/telegram-calendar-bot && bash scripts/check-vds.sh` — проверяет Node, ffmpeg, каталоги, .env и сервис.
 

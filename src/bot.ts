@@ -5,6 +5,11 @@ import { handleNew } from "./commands/createEvent.js";
 import { handleToday, handleWeek } from "./commands/listEvents.js";
 import { handleVoice } from "./commands/voiceEvent.js";
 import { handleSend } from "./commands/sendMessage.js";
+import {
+  handleOpenClaw,
+  handleOpenClawStop,
+  handleOpenClawText,
+} from "./commands/openclawChat.js";
 import { recordChat } from "./userChats.js";
 import { messageLogger } from "./db/messageLogger.js";
 
@@ -25,6 +30,12 @@ export function createBot(token: string): Telegraf {
   bot.command("list", handleToday);
   bot.command("send", handleSend);
   bot.on("voice", handleVoice);
+
+  if (process.env.OPENCLAW_GATEWAY_TOKEN?.trim()) {
+    bot.command("openclaw", handleOpenClaw);
+    bot.command("stop", handleOpenClawStop);
+    bot.on("text", handleOpenClawText);
+  }
 
   return bot;
 }
