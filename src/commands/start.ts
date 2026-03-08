@@ -1,4 +1,5 @@
 import type { Context } from "telegraf";
+import { Markup } from "telegraf";
 import { getAuthUrl, hasToken } from "../calendar/auth.js";
 
 const HELP_TEXT = `
@@ -29,10 +30,13 @@ export async function handleStart(ctx: Context) {
   const url = getAuthUrl(String(userId));
   await ctx.replyWithMarkdown(
     `Привет! Чтобы пользоваться календарём, привяжите свой Google Calendar.\n\n` +
-      `1. Откройте ссылку и войдите в Google:\n${url}\n\n` +
+      `1. Нажмите кнопку ниже и войдите в Google.\n\n` +
       `2. Скопируйте код из браузера и отправьте его боту командой:\n` +
       `\`/auth ВСТАВЬТЕ_КОД_СЮДА\``,
-    { disable_web_page_preview: true }
+    {
+      disable_web_page_preview: true,
+      ...Markup.inlineKeyboard([[Markup.button.url("Войти через Google", url)]]),
+    }
   );
 }
 

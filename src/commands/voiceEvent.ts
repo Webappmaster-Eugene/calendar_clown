@@ -2,6 +2,7 @@ import type { Context } from "telegraf";
 import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
 import { createEvent, NoCalendarLinkedError } from "../calendar/client.js";
+import { extractCalendarEvent } from "../calendar/extractViaOpenRouter.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { isAdmin } from "../admin.js";
@@ -91,11 +92,40 @@ export async function handleVoice(ctx: Context) {
     }
 
     if (intent.type === "unknown") {
+      const fallback = await extractCalendarEvent(transcript);
+      if (fallback) {
+        const event = await createEvent(
+          fallback.title,
+          fallback.start,
+          fallback.end,
+          userId
+        );
+        const start = new Date(event.start);
+        const end = new Date(event.end);
+        const timeZone = "Europe/Moscow";
+        const timeStr = start.toLocaleString("ru-RU", {
+          dateStyle: "short",
+          timeStyle: "short",
+          timeZone,
+        });
+        const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
+        const text =
+          `✅ Создано: *${event.summary}*\n${timeStr} – ${endStr}` +
+          (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          text,
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         statusMsg.message_id,
         undefined,
-        'Не удалось понять. Можно: «Встреча завтра в 15:00» или «Отправь [имя] что [текст]» (только для доверенных).'
+        "Не удалось разобрать запись. Опишите встречу подробнее: с кем, о чём и когда (день и время). Например: «Запись к Роману на ремонт во вторник в 10 утра» или «Встреча завтра в 15:00»."
       );
       return;
     }
