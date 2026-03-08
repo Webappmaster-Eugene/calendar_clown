@@ -17,9 +17,10 @@
 3. Включите **Google Calendar API**: «APIs & Services» → «Library» → найдите «Google Calendar API» → Enable.
 4. Создайте учётные данные:
    - «APIs & Services» → «Credentials» → «Create Credentials» → «OAuth client ID».
-   - Тип приложения: **Desktop app** (или Web application, если нужен redirect).
+   - Тип приложения: **Web application**.
+   - В **Authorized redirect URIs** добавьте URL callback (например `https://yourdomain.com/oauth/callback`). Он должен совпадать с переменной `OAUTH_REDIRECT_URI` в `.env`.
    - Скачайте JSON и возьмите из него `client_id` и `client_secret`.
-5. Эти значения задайте в `.env` (см. ниже).
+5. Эти значения и `OAUTH_REDIRECT_URI` задайте в `.env` (см. ниже). Без HTTPS redirect привязка календаря не работает (Google отключил устаревший OOB flow).
 
 ## Установка и запуск локально
 
@@ -40,6 +41,7 @@ npm start           # или npm run dev для разработки
 | `TELEGRAM_BOT_TOKEN` | Токен бота из @BotFather |
 | `GOOGLE_CLIENT_ID` | OAuth2 Client ID из Google Cloud |
 | `GOOGLE_CLIENT_SECRET` | OAuth2 Client Secret |
+| `OAUTH_REDIRECT_URI` | **Обязательно для привязки календаря.** HTTPS-URL, на который Google перенаправляет после входа (например `https://yourdomain.com/oauth/callback`). Этот же URL нужно добавить в Google Console → Credentials → OAuth 2.0 Client → Authorized redirect URIs. После входа по кнопке в боте календарь привязывается автоматически. |
 | `GOOGLE_TOKEN_PATH` | Путь к файлу с токеном (по умолчанию `./data/token.json`) |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter: транскрипция голоса и извлечение события (DeepSeek); один ключ для голосовых сообщений |
 | `SEND_MESSAGE_API_KEY` | (Опционально.) Секрет для HTTP API: отправка сообщений пользователям по username (для OpenClaw). См. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md#api-отправки-сообщений-пользователям-по-username-для-openclaw). |
@@ -87,7 +89,7 @@ npm start
    # Заполните .env: TELEGRAM_BOT_TOKEN, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OPENROUTER_API_KEY
    mkdir -p data/tokens data/voice
    ```
-   Календари пользователи привязывают сами через бота (`/start` → ссылка → `/auth <код>`). Локально для теста можно: `npm run authorize -- <TELEGRAM_USER_ID>` и скопировать `data/tokens/<id>.json` на сервер.
+   Календари пользователи привязывают сами через бота: `/start` → кнопка «Войти через Google» → после входа календарь привязывается автоматически (нужен настроенный `OAUTH_REDIRECT_URI` и HTTPS до сервера). Запасной вариант: `/auth <код>` если страница callback показала код. Локально для теста можно: `npm run authorize -- <TELEGRAM_USER_ID>` и скопировать `data/tokens/<id>.json` на сервер.
 
 4. Создайте unit systemd `/etc/systemd/system/telegram-calendar-bot.service`:
 
@@ -139,9 +141,10 @@ npm start
 | `TELEGRAM_BOT_TOKEN` | Токен бота из @BotFather |
 | `GOOGLE_CLIENT_ID` | OAuth2 Client ID из Google Cloud |
 | `GOOGLE_CLIENT_SECRET` | OAuth2 Client Secret |
+| `OAUTH_REDIRECT_URI` | HTTPS-URL callback для привязки календаря (например `https://yourdomain.com/oauth/callback`) |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter (голос и календарь) |
 
-При каждом деплое workflow создаёт на сервере `.env` из этих секретов, копирует собранный код, создаёт каталоги `data/tokens` и `data/voice`, запускает `npm install --omit=dev` и перезапускает `telegram-calendar-bot`. Каждый пользователь привязывает свой календарь через бота: `/start` → ссылка на Google → `/auth <код>`. Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
+При каждом деплое workflow создаёт на сервере `.env` из этих секретов, копирует собранный код, создаёт каталоги `data/tokens` и `data/voice`, запускает `npm install --omit=dev` и перезапускает `telegram-calendar-bot`. Каждый пользователь привязывает календарь через бота: `/start` → кнопка «Войти через Google» → автоматическая привязка (нужен секрет `OAUTH_REDIRECT_URI` и HTTPS до сервера). Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
 
 **Проверка готовности VDS** (после SSH на сервер): `cd /opt/telegram-calendar-bot && bash scripts/check-vds.sh` — проверяет Node, ffmpeg, каталоги, .env и сервис.
 

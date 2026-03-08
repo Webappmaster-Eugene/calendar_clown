@@ -14,10 +14,10 @@ if (!token) {
 
 const bot = createBot(token);
 
-const apiKey = process.env.SEND_MESSAGE_API_KEY?.trim();
-if (apiKey) {
-  startSendMessageApi(bot, apiKey);
-}
+startSendMessageApi(bot, {
+  apiKey: process.env.SEND_MESSAGE_API_KEY?.trim(),
+  oauthRedirectUri: process.env.OAUTH_REDIRECT_URI?.trim(),
+});
 
 bot.launch().then(() => {
   console.log("Bot started (long polling)");

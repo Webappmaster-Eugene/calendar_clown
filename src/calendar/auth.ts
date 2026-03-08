@@ -20,8 +20,16 @@ function getTokenPath(userId: string): string {
   return `${TOKENS_DIR}/${userId}.json`;
 }
 
+function getRedirectUri(): string {
+  const uri = process.env.OAUTH_REDIRECT_URI?.trim();
+  if (!uri) {
+    throw new Error("OAUTH_REDIRECT_URI must be set for calendar linking (Google has blocked the legacy OOB flow)");
+  }
+  return uri;
+}
+
 /**
- * Returns auth URL for the user to open. Optionally pass userId for state (not used in OOB flow).
+ * Returns auth URL for the user to open. state = Telegram user id (for callback).
  */
 export function getAuthUrl(userId?: string): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -32,7 +40,7 @@ export function getAuthUrl(userId?: string): string {
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    getRedirectUri()
   );
   const options: { access_type: string; scope: string[]; prompt: string; state?: string } = {
     access_type: "offline",
@@ -44,7 +52,7 @@ export function getAuthUrl(userId?: string): string {
 }
 
 /**
- * Save OAuth tokens for a user (after they paste the code from Google).
+ * Save OAuth tokens for a user (from redirect callback or manual /auth code).
  */
 export async function saveTokenFromCode(code: string, userId: string): Promise<void> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -55,9 +63,9 @@ export async function saveTokenFromCode(code: string, userId: string): Promise<v
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    getRedirectUri()
   );
-  const { tokens } = await oauth2Client.getToken(code.trim());
+  const { tokens } = await oauth2Client.getToken({ code: code.trim(), redirect_uri: getRedirectUri() });
   const tokenPath = getTokenPath(userId);
   await mkdir(dirname(tokenPath), { recursive: true });
   await writeFile(tokenPath, JSON.stringify(tokens), "utf8");
@@ -88,7 +96,7 @@ export async function getAuthClient(userId: string): Promise<OAuth2Client> {
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    getRedirectUri()
   );
   const tokenPath = getTokenPath(userId);
   let tokens: unknown;

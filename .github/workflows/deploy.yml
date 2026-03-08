@@ -32,11 +32,15 @@ jobs:
           printf 'TELEGRAM_BOT_TOKEN=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nOPENROUTER_API_KEY=%s\n' \
             "$TELEGRAM_BOT_TOKEN" "$GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_SECRET" "$OPENROUTER_API_KEY" \
             > .env.deploy
+          if [ -n "$OAUTH_REDIRECT_URI" ]; then
+            printf 'OAUTH_REDIRECT_URI=%s\n' "$OAUTH_REDIRECT_URI" >> .env.deploy
+          fi
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OAUTH_REDIRECT_URI: ${{ secrets.OAUTH_REDIRECT_URI }}
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
