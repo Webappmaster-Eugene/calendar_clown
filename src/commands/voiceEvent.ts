@@ -1,6 +1,7 @@
 import type { Context } from "telegraf";
 import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
+import { hasToken } from "../calendar/auth.js";
 import { createEvent, NoCalendarLinkedError } from "../calendar/client.js";
 import { extractCalendarEvent } from "../calendar/extractViaOpenRouter.js";
 import { transcribeVoice } from "../voice/transcribe.js";
@@ -8,11 +9,20 @@ import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { isAdmin } from "../admin.js";
 import { getChatIdByRecipient } from "../userChats.js";
 import { updateMessageTranscript } from "../db/client.js";
+import { getMode, setMode } from "../chatMode.js";
+import { sendChat } from "../openclaw/chat.js";
+import * as sessions from "../openclaw/sessions.js";
+import { getOpenClawSystemPrompt } from "./openclawChat.js";
 
 const VOICE_DIR = "./data/voice";
 
 function getUserId(ctx: Context): string | null {
   const id = ctx.from?.id ?? ctx.chat?.id;
+  return id != null ? String(id) : null;
+}
+
+function getChatId(ctx: Context): string | null {
+  const id = ctx.chat?.id;
   return id != null ? String(id) : null;
 }
 
@@ -57,6 +67,66 @@ export async function handleVoice(ctx: Context) {
         undefined,
         "Не удалось распознать речь."
       );
+      return;
+    }
+
+    const chatId = getChatId(ctx);
+    const hasOpenClaw = Boolean(process.env.OPENCLAW_GATEWAY_TOKEN?.trim());
+    if (hasOpenClaw && chatId && getMode(chatId) === "openclaw") {
+      const linked = await hasToken(userId);
+      if (!linked) {
+        setMode(chatId, "calendar");
+        sessions.clear(chatId);
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          "Режим OpenClaw доступен только после привязки календаря. Отправьте /start и войдите через Google."
+        );
+        return;
+      }
+      sessions.appendUser(chatId, transcript);
+      const history = sessions.getOrCreate(chatId);
+      const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+        { role: "system", content: getOpenClawSystemPrompt() },
+        ...history,
+      ];
+      await ctx.telegram.sendChatAction(ctx.chat!.id, "typing");
+      try {
+        const reply = await sendChat(messages);
+        sessions.appendAssistant(chatId, reply);
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          reply || "—"
+        );
+      } catch (err) {
+        sessions.clear(chatId);
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("OPENCLAW_GATEWAY_TOKEN")) {
+          await ctx.telegram.editMessageText(
+            ctx.chat!.id,
+            statusMsg.message_id,
+            undefined,
+            "OpenClaw не настроен."
+          );
+        } else if (message.includes("abort") || message.includes("timeout")) {
+          await ctx.telegram.editMessageText(
+            ctx.chat!.id,
+            statusMsg.message_id,
+            undefined,
+            "Таймаут запроса к OpenClaw. Режим чата сброшен."
+          );
+        } else {
+          await ctx.telegram.editMessageText(
+            ctx.chat!.id,
+            statusMsg.message_id,
+            undefined,
+            "OpenClaw недоступен: " + message.slice(0, 200) + ". Режим чата сброшен."
+          );
+        }
+      }
       return;
     }
 

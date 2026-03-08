@@ -6,13 +6,61 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "deepseek/deepseek-chat-v3.1";
 const TIMEZONE_MSK = "Europe/Moscow";
 
-function nextWeekday(now: Date, targetDay: number): Date {
-  const d = new Date(now);
-  const current = d.getDay();
-  let days = targetDay - current;
-  if (days <= 0) days += 7;
-  d.setDate(d.getDate() + days);
-  return d;
+const WEEKDAY_TO_NUM: Record<string, number> = {
+  Sunday: 0,
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Saturday: 6,
+};
+
+/** Tomorrow's date (YYYY-MM-DD) in Moscow. */
+function tomorrowDateStrInMSK(dateStr: string): string {
+  const midnightMsk = new Date(dateStr + "T00:00:00+03:00");
+  const tomorrowMsk = new Date(midnightMsk.getTime() + 24 * 60 * 60 * 1000);
+  return tomorrowMsk.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
+}
+
+/** Next Tuesday's date (YYYY-MM-DD) in Moscow. Uses weekday in MSK, not server time. */
+function nextTuesdayDateStrInMSK(dateStr: string): string {
+  return nextWeekdayDateStrInMSK(dateStr, 2); // 2 = Tuesday
+}
+
+/** Next occurrence of weekday (0=Sun..6=Sat) in MSK. Returns YYYY-MM-DD. */
+function nextWeekdayDateStrInMSK(dateStr: string, targetWeekdayNum: number): string {
+  const midnightMsk = new Date(dateStr + "T00:00:00+03:00");
+  const currentWeekdayNum = getWeekdayInMSK(midnightMsk);
+  let daysUntil = (targetWeekdayNum - currentWeekdayNum + 7) % 7;
+  if (daysUntil === 0) daysUntil = 7;
+  const nextMsk = new Date(midnightMsk.getTime() + daysUntil * 24 * 60 * 60 * 1000);
+  return nextMsk.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
+}
+
+/** Day of week (0=Sun..6=Sat) for the given date in Moscow. */
+function getWeekdayInMSK(date: Date): number {
+  const name = date.toLocaleDateString("en-GB", { weekday: "long", timeZone: TIMEZONE_MSK });
+  return WEEKDAY_TO_NUM[name] ?? 0;
+}
+
+/** Russian weekday names to getDay() number (0=Sun..6=Sat). First match in transcript wins. */
+const RU_WEEKDAY_MENTIONS: [RegExp, number][] = [
+  [/понедельник/i, 1],
+  [/вторник/i, 2],
+  [/сред[ау]/i, 3],
+  [/четверг/i, 4],
+  [/пятниц/i, 5],
+  [/суббот/i, 6],
+  [/воскресень/i, 0],
+];
+
+function getMentionedWeekdayRu(transcript: string): number | null {
+  const t = transcript.trim();
+  for (const [re, num] of RU_WEEKDAY_MENTIONS) {
+    if (re.test(t)) return num;
+  }
+  return null;
 }
 
 function buildSystemPrompt(): string {
@@ -20,11 +68,8 @@ function buildSystemPrompt(): string {
   const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
   const weekday = now.toLocaleDateString("en-GB", { weekday: "long", timeZone: TIMEZONE_MSK });
   const year = now.getFullYear();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
-  const nextTue = nextWeekday(now, 2);
-  const tueStr = nextTue.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
+  const tomorrowStr = tomorrowDateStrInMSK(dateStr);
+  const tueStr = nextTuesdayDateStrInMSK(dateStr);
 
   return `Determine the user's intent from their message. Reply with ONLY a valid JSON object, no other text.
 
@@ -37,6 +82,7 @@ Options:
    title: short descriptive title for the calendar event, preserving who and what (e.g. "Ремонт автомобиля у Романа", "Запись к Роману: ремонт авто"). Do not reduce to a single word.
    Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. ${year}-03-09T10:00:00+03:00).
    Today is ${dateStr} (${weekday}). Use year ${year}. No date → today. No time → 10:00. Default duration 1 hour.
+   Weekday-to-date (all in ${TIMEZONE_MSK}): вторник (Tuesday) = ${tueStr}, завтра (tomorrow) = ${tomorrowStr}.
    Examples:
    - "Запиши меня к Роману на ремонт автомобиля во вторник в 10 утра" → {"type":"calendar","title":"Ремонт автомобиля у Романа","start":"${tueStr}T10:00:00+03:00","end":"${tueStr}T11:00:00+03:00"}
    - "Встреча завтра, ремонт Романа автомобиль в 10 утра" → {"type":"calendar","title":"Ремонт автомобиля у Романа","start":"${tomorrowStr}T10:00:00+03:00","end":"${tomorrowStr}T11:00:00+03:00"}
@@ -120,10 +166,30 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
       const start = new Date(startStr);
       const end = new Date(endStr);
       if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-        return { type: "calendar", title, start, end };
+        const intent: VoiceIntent = { type: "calendar", title, start, end };
+        return correctCalendarIntentWeekday(transcript, intent);
       }
     }
   }
 
   return { type: "unknown" };
+}
+
+/** If transcript mentions a weekday and LLM returned a different day in MSK, fix start/end to that weekday. */
+function correctCalendarIntentWeekday(transcript: string, intent: VoiceIntent): VoiceIntent {
+  if (intent.type !== "calendar") return intent;
+  const mentioned = getMentionedWeekdayRu(transcript);
+  if (mentioned === null) return intent;
+  const startWeekday = getWeekdayInMSK(intent.start);
+  if (startWeekday === mentioned) return intent;
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
+  const correctDateStr = nextWeekdayDateStrInMSK(dateStr, mentioned);
+  const timeOpt = { timeZone: TIMEZONE_MSK as const, hour12: false, hour: "2-digit" as const, minute: "2-digit" as const };
+  const timePart = intent.start.toLocaleTimeString("en-CA", timeOpt);
+  const durationMs = intent.end.getTime() - intent.start.getTime();
+  const newStart = new Date(correctDateStr + "T" + timePart + ":00+03:00");
+  const newEnd = new Date(newStart.getTime() + durationMs);
+  return { type: "calendar", title: intent.title, start: newStart, end: newEnd };
 }

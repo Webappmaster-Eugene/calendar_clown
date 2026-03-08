@@ -11,5 +11,22 @@
         "chatCompletions": { "enabled": true }
       }
     }
+  },
+  "agents": {
+    "defaults": {
+      "model": { "primary": "anthropic/claude-sonnet-4-5" }
+    }
+  },
+  "auth": {
+    "profiles": {
+      "anthropic:subscription": {
+        "provider": "anthropic",
+        "mode": "oauth",
+        "email": "jamesnumart@gmail.com"
+      }
+    },
+    "order": {
+      "anthropic": ["anthropic:subscription"]
+    }
   }
 }

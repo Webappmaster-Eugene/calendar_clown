@@ -44,6 +44,7 @@ services:
       - oauth
 
   # OpenClaw Gateway: chat completions for /openclaw in the bot. Token from env OPENCLAW_GATEWAY_TOKEN.
+  # Model: anthropic/claude-sonnet-4-5 (Claude subscription OAuth). Credentials persist in openclaw_credentials volume.
   openclaw-gateway:
     build:
       context: .
@@ -52,6 +53,7 @@ services:
       - "18789:18789"
     volumes:
       - ./config/openclaw-gateway.json:/home/node/.openclaw/openclaw.json:ro
+      - openclaw_credentials:/home/node/.openclaw/credentials
     env_file:
       - .env
     environment:
@@ -63,3 +65,4 @@ services:
 volumes:
   pgdata:
   certbot_etc:
+  openclaw_credentials:

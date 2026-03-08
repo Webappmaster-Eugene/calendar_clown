@@ -1,9 +1,15 @@
 import type { Context } from "telegraf";
+import { setMode } from "../chatMode.js";
+import { hasToken } from "../calendar/auth.js";
 import { sendChat } from "../openclaw/chat.js";
 import * as sessions from "../openclaw/sessions.js";
 
-const SYSTEM_PROMPT =
-  "You are a helpful assistant. Reply in the same language as the user.";
+const DEFAULT_OPENCLAW_SYSTEM_PROMPT = `You are a helpful assistant with access to tools. You can help with: web search, composing summaries, sending email (if you have the tool), and answering questions. Reply in the same language as the user. The user may send tasks by voice; you will receive the transcribed text.`;
+
+export function getOpenClawSystemPrompt(): string {
+  const custom = process.env.OPENCLAW_SYSTEM_PROMPT?.trim();
+  return custom || DEFAULT_OPENCLAW_SYSTEM_PROMPT;
+}
 
 function getChatId(ctx: Context): string | null {
   const id = ctx.chat?.id;
@@ -14,16 +20,33 @@ export async function handleOpenClaw(ctx: Context) {
   const chatId = getChatId(ctx);
   if (!chatId) return;
 
+  const userId = ctx.from?.id ?? ctx.chat?.id;
+  if (userId != null) {
+    const linked = await hasToken(String(userId));
+    if (!linked) {
+      await ctx.reply(
+        "Режим OpenClaw доступен только после привязки календаря. Отправьте /start и войдите через Google."
+      );
+      return;
+    }
+  }
+
   const rawText = "text" in ctx.message ? ctx.message.text : "";
   const textAfterCommand = rawText.replace(/^\/openclaw\s*/i, "").trim();
 
   if (textAfterCommand) {
+    setMode(chatId, "openclaw");
+    sessions.getOrCreate(chatId);
+    sessions.appendUser(chatId, textAfterCommand);
     await ctx.sendChatAction("typing");
     try {
-      const reply = await sendChat([
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: textAfterCommand },
-      ]);
+      const history = sessions.getOrCreate(chatId);
+      const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+        { role: "system", content: getOpenClawSystemPrompt() },
+        ...history,
+      ];
+      const reply = await sendChat(messages);
+      sessions.appendAssistant(chatId, reply);
       await ctx.reply(reply || "—");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -38,6 +61,7 @@ export async function handleOpenClaw(ctx: Context) {
     return;
   }
 
+  setMode(chatId, "openclaw");
   sessions.getOrCreate(chatId);
   await ctx.reply(
     "Режим OpenClaw. Пишите сообщения — они уйдут агенту. /stop — выйти."
@@ -47,6 +71,7 @@ export async function handleOpenClaw(ctx: Context) {
 export async function handleOpenClawStop(ctx: Context) {
   const chatId = getChatId(ctx);
   if (!chatId) return;
+  setMode(chatId, "calendar");
   sessions.clear(chatId);
   await ctx.reply("Вышел из чата с OpenClaw.");
 }
@@ -56,6 +81,19 @@ export async function handleOpenClawText(ctx: Context) {
   if (!chatId) return;
   if (!sessions.isActive(chatId)) return;
 
+  const userId = ctx.from?.id ?? ctx.chat?.id;
+  if (userId != null) {
+    const linked = await hasToken(String(userId));
+    if (!linked) {
+      setMode(chatId, "calendar");
+      sessions.clear(chatId);
+      await ctx.reply(
+        "Режим OpenClaw доступен только после привязки календаря. Отправьте /start и войдите через Google."
+      );
+      return;
+    }
+  }
+
   const text = "text" in ctx.message ? ctx.message.text : "";
   if (!text.trim()) return;
 
@@ -63,7 +101,7 @@ export async function handleOpenClawText(ctx: Context) {
   const history = sessions.getOrCreate(chatId);
 
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: getOpenClawSystemPrompt() },
     ...history,
   ];
 

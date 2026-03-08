@@ -45,11 +45,14 @@ npm start           # или npm run dev для разработки
 | `GOOGLE_TOKEN_PATH` | Путь к файлу с токеном (по умолчанию `./data/token.json`) |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter: транскрипция голоса и извлечение события (DeepSeek); один ключ для голосовых сообщений |
 | `OPENCLAW_GATEWAY_URL` | (Опционально.) URL шлюза OpenClaw (по умолчанию в коде `http://127.0.0.1:18789`). Нужен вместе с токеном для команды `/openclaw`. |
-| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway. Если задан, регистрируются команды `/openclaw` и `/stop` для чата с агентом OpenClaw. Токен берётся из конфигурации или env того же OpenClaw Gateway; см. раздел «Откуда взять OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL» в [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md). |
+| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway. Если задан, регистрируются команды `/openclaw`, `/stop`, `/menu` и два режима (Календарь / OpenClaw) с меню выбора. Токен берётся из конфигурации или env того же OpenClaw Gateway; см. раздел «Откуда взять OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL» в [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md). |
+| `OPENCLAW_SYSTEM_PROMPT` | (Опционально.) Системный промпт для агента OpenClaw (поиск, сводки, почта и т.д.). Если не задан, используется встроенный промпт с описанием основных возможностей. |
 | `SEND_MESSAGE_API_KEY` | (Опционально.) Секрет для HTTP API: отправка сообщений пользователям по username (для OpenClaw). См. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md#api-отправки-сообщений-пользователям-по-username-для-openclaw). |
 | `SEND_MESSAGE_API_PORT` | Порт API отправки (по умолчанию 18790). |
 | `SEND_MESSAGE_API_HOST` | Хост API (по умолчанию 127.0.0.1). |
 | `DATABASE_URL` | (Опционально.) Подключение к PostgreSQL для хранения сообщений и транскриптов. Если не задано, бот работает без записи в БД. Альтернатива: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`. |
+
+OpenClaw в этом репозитории настроен на модель **anthropic/claude-sonnet-4-5** и подписку Claude (OAuth). В [config/openclaw-gateway.json](config/openclaw-gateway.json) укажите свой email в `auth.profiles["anthropic:subscription"].email` и один раз пройдите OAuth (см. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md) — раздел «Подписка Claude»).
 
 Секреты не храните в репозитории. Для локального запуска удобно завести `.env.local`: скопируйте [.env.local.example](.env.local.example) в `.env.local`, заполните переменные (в том числе SSH_* для скриптов деплоя). Файл `.env.local` в gitignore, при запуске бота и `npm run authorize` он подхватывается после `.env`.
 
@@ -61,9 +64,11 @@ npm start           # или npm run dev для разработки
 - `/today` — встречи на сегодня
 - `/week` — встречи на эту неделю
 - `/list` — то же, что `/today`
-- **Голосовое сообщение** — отправить голосовое: бот конвертирует OGG в WAV, распознаёт речь и через OpenRouter определяет намерение. Можно создать встречу (например: «Встреча завтра в 15:00») или отправить сообщение кому-то (например: «Отправь Анжелике Надточеевой что я ее люблю»; только для доверенных пользователей, получатель — по имени или username из тех, кто уже писал боту). Нужны `OPENROUTER_API_KEY` и **ffmpeg** на сервере (`apt install ffmpeg` / `yum install ffmpeg`).
-- `/openclaw [текст]` — (если задан `OPENCLAW_GATEWAY_TOKEN`) одно сообщение в OpenClaw или вход в режим диалога; ответы приходят от агента OpenClaw.
-- `/stop` — выйти из режима чата OpenClaw.
+- **Голосовое сообщение** — в режиме **Календарь** бот распознаёт речь и создаёт встречу или отправляет сообщение (см. выше). В режиме **OpenClaw** голос транскрибируется и задача уходит агенту OpenClaw. Режим выбирается в меню (кнопки «Календарь» / «OpenClaw») или командой `/openclaw`. Нужны `OPENROUTER_API_KEY` и **ffmpeg** на сервере.
+- **Меню режимов** — (если задан `OPENCLAW_GATEWAY_TOKEN`) после `/start` и по команде `/menu` показываются кнопки **Календарь** и **OpenClaw**. В режиме Календарь голос и `/new` работают с встречами; в режиме OpenClaw текст и голос уходят агенту OpenClaw.
+- `/openclaw [текст]` — (если задан `OPENCLAW_GATEWAY_TOKEN`) переключиться в режим OpenClaw; с текстом — отправить одно сообщение агенту и показать ответ.
+- `/stop` — выйти из режима OpenClaw (вернуться к режиму Календарь).
+- `/menu` — показать меню выбора режима (Календарь / OpenClaw).
 
 ## Хранение сообщений в PostgreSQL (опционально)
 
@@ -145,6 +150,8 @@ npm start
 При каждом деплое workflow копирует на сервер собранный код, `docker-compose.yml`, каталоги `config/` и `docker/`, обновляет `.env` из секретов (TELEGRAM_BOT_TOKEN, GOOGLE_*, OPENROUTER_API_KEY, OAUTH_REDIRECT_URI, при наличии — CERTBOT_EMAIL, OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL; остальные переменные из `.env` на VDS сохраняются), выполняет `npm install --omit=dev`, перезапуск бота, затем `scripts/ensure-oauth-ssl.sh` (при необходимости выдаёт сертификат и поднимает nginx для OAuth) и при заданном `OPENCLAW_GATEWAY_TOKEN` — `docker compose --profile openclaw up -d --build`. Каждый пользователь привязывает календарь через бота: `/start` → «Войти через Google» (нужен секрет `OAUTH_REDIRECT_URI` и HTTPS до сервера). Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
 
 **Проверка готовности VDS** (после SSH на сервер): `cd /opt/telegram-calendar-bot && bash scripts/check-vds.sh` — проверяет Node, ffmpeg, каталоги, .env и сервис.
+
+**Пайплайн Claude Code через VDS (прокси + VPN):** настройка Squid на localhost и доступа с локальной машины через SSH-туннель — [docs/VDS_CLAUDE_PROXY_SETUP.md](docs/VDS_CLAUDE_PROXY_SETUP.md).
 
 ## Деплой на VDS (PM2)
 
