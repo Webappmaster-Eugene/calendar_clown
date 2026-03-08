@@ -1,0 +1,29 @@
+{
+  "name": "telegram-google-calendar-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for Google Calendar meetings",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "authorize": "tsx scripts/authorize.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "chrono-node": "^2.7.4",
+    "dotenv": "^16.4.5",
+    "google-auth-library": "^9.14.1",
+    "googleapis": "^144.0.0",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}
