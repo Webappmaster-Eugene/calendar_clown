@@ -10,7 +10,7 @@ const MODEL = "deepseek/deepseek-chat-v3.1";
 const CALENDAR_EXTRACT_CONTEXT = `Task: from the user message extract exactly one calendar event.
 Output: only a valid JSON object, no other text.
 Format: {"title":"event title","start":"ISO8601","end":"ISO8601"}
-Timezone: Europe/Moscow. No date → today. No time → 10:00. Default duration: 1 hour.
+Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. 2025-03-09T10:00:00+03:00). No date → today. No time → 10:00. Default duration: 1 hour.
 Example: {"title":"Meeting","start":"2025-03-09T15:00:00+03:00","end":"2025-03-09T16:00:00+03:00"}`;
 
 export interface ExtractedEvent {

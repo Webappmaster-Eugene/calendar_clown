@@ -1,6 +1,8 @@
 import { google } from "googleapis";
 import { getAuthClient } from "./auth.js";
 
+export { NoCalendarLinkedError } from "./auth.js";
+
 const CALENDAR_ID = "primary";
 
 export interface CalendarEvent {
@@ -11,13 +13,27 @@ export interface CalendarEvent {
   htmlLink?: string;
 }
 
+/** Thrown when event start is in the past. */
+export class PastDateError extends Error {
+  constructor() {
+    super("Нельзя создать встречу в прошлом. Укажите дату и время в будущем.");
+    this.name = "PastDateError";
+  }
+}
+
 export async function createEvent(
   summary: string,
   start: Date,
   end: Date,
+  userId: string,
   description?: string
 ): Promise<CalendarEvent> {
-  const auth = await getAuthClient();
+  const now = new Date();
+  const bufferMs = 60 * 1000; // 1 minute
+  if (start.getTime() < now.getTime() - bufferMs) {
+    throw new PastDateError();
+  }
+  const auth = await getAuthClient(userId);
   const calendar = google.calendar({ version: "v3", auth });
   const res = await calendar.events.insert({
     calendarId: CALENDAR_ID,
@@ -43,9 +59,10 @@ export async function createEvent(
 
 export async function listEvents(
   timeMin: Date,
-  timeMax: Date
+  timeMax: Date,
+  userId: string
 ): Promise<CalendarEvent[]> {
-  const auth = await getAuthClient();
+  const auth = await getAuthClient(userId);
   const calendar = google.calendar({ version: "v3", auth });
   const res = await calendar.events.list({
     calendarId: CALENDAR_ID,

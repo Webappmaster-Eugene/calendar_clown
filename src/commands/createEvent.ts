@@ -1,8 +1,18 @@
 import type { Context } from "telegraf";
 import { parseEventText } from "../calendar/parse.js";
-import { createEvent } from "../calendar/client.js";
+import { createEvent, NoCalendarLinkedError } from "../calendar/client.js";
+
+function getUserId(ctx: Context): string | null {
+  const id = ctx.from?.id ?? ctx.chat?.id;
+  return id != null ? String(id) : null;
+}
 
 export async function handleNew(ctx: Context) {
+  const userId = getUserId(ctx);
+  if (!userId) {
+    await ctx.reply("Не удалось определить пользователя.");
+    return;
+  }
   const text = "text" in ctx.message && typeof ctx.message.text === "string"
     ? ctx.message.text.replace(/^\/new\s*/i, "").trim()
     : "";
@@ -23,20 +33,27 @@ export async function handleNew(ctx: Context) {
     const event = await createEvent(
       parsed.title,
       parsed.start,
-      parsed.end
+      parsed.end,
+      userId
     );
     const start = new Date(event.start);
     const end = new Date(event.end);
+    const timeZone = "Europe/Moscow";
     const timeStr = start.toLocaleString("ru-RU", {
       dateStyle: "short",
       timeStyle: "short",
+      timeZone,
     });
-    const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
     await ctx.replyWithMarkdown(
       `✅ Создано: *${event.summary}*\n${timeStr} – ${endStr}` +
         (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "")
     );
   } catch (err) {
+    if (err instanceof NoCalendarLinkedError) {
+      await ctx.reply(err.message);
+      return;
+    }
     const msg = err instanceof Error ? err.message : "Ошибка календаря";
     await ctx.reply(`Ошибка: ${msg}`);
   }

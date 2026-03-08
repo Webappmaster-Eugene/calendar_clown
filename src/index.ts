@@ -4,6 +4,7 @@ dotenv.config();
 dotenv.config({ path: ".env.local", override: true });
 
 import { createBot } from "./bot.js";
+import { startSendMessageApi } from "./sendMessageApi.js";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -12,6 +13,11 @@ if (!token) {
 }
 
 const bot = createBot(token);
+
+const apiKey = process.env.SEND_MESSAGE_API_KEY?.trim();
+if (apiKey) {
+  startSendMessageApi(bot, apiKey);
+}
 
 bot.launch().then(() => {
   console.log("Bot started (long polling)");

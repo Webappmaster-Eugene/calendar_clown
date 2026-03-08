@@ -6,12 +6,24 @@ import type { OAuth2Client } from "google-auth-library";
 
 const SCOPES = ["https://www.googleapis.com/auth/calendar"];
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const TOKENS_DIR = "./data/tokens";
 
-function getTokenPath(): string {
-  return process.env.GOOGLE_TOKEN_PATH ?? "./data/token.json";
+/** Thrown when the user has not linked a calendar yet. */
+export class NoCalendarLinkedError extends Error {
+  constructor() {
+    super("Сначала привяжите календарь. Отправьте /start");
+    this.name = "NoCalendarLinkedError";
+  }
 }
 
-export function getAuthUrl(): string {
+function getTokenPath(userId: string): string {
+  return `${TOKENS_DIR}/${userId}.json`;
+}
+
+/**
+ * Returns auth URL for the user to open. Optionally pass userId for state (not used in OOB flow).
+ */
+export function getAuthUrl(userId?: string): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -22,14 +34,19 @@ export function getAuthUrl(): string {
     clientSecret,
     "urn:ietf:wg:oauth:2.0:oob"
   );
-  return oauth2Client.generateAuthUrl({
+  const options: { access_type: string; scope: string[]; prompt: string; state?: string } = {
     access_type: "offline",
     scope: SCOPES,
     prompt: "consent",
-  });
+  };
+  if (userId) options.state = userId;
+  return oauth2Client.generateAuthUrl(options);
 }
 
-export async function saveTokenFromCode(code: string): Promise<void> {
+/**
+ * Save OAuth tokens for a user (after they paste the code from Google).
+ */
+export async function saveTokenFromCode(code: string, userId: string): Promise<void> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -41,12 +58,28 @@ export async function saveTokenFromCode(code: string): Promise<void> {
     "urn:ietf:wg:oauth:2.0:oob"
   );
   const { tokens } = await oauth2Client.getToken(code.trim());
-  const tokenPath = getTokenPath();
+  const tokenPath = getTokenPath(userId);
   await mkdir(dirname(tokenPath), { recursive: true });
   await writeFile(tokenPath, JSON.stringify(tokens), "utf8");
 }
 
-export async function getAuthClient(): Promise<OAuth2Client> {
+/**
+ * Check if the user has a stored token (without throwing).
+ */
+export async function hasToken(userId: string): Promise<boolean> {
+  const tokenPath = getTokenPath(userId);
+  try {
+    await readFile(tokenPath, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get OAuth2 client for the given user. Throws NoCalendarLinkedError if no token.
+ */
+export async function getAuthClient(userId: string): Promise<OAuth2Client> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -57,15 +90,13 @@ export async function getAuthClient(): Promise<OAuth2Client> {
     clientSecret,
     "urn:ietf:wg:oauth:2.0:oob"
   );
-  const tokenPath = getTokenPath();
+  const tokenPath = getTokenPath(userId);
   let tokens: unknown;
   try {
     const data = await readFile(tokenPath, "utf8");
     tokens = JSON.parse(data);
   } catch {
-    throw new Error(
-      `No token found at ${tokenPath}. Run "npm run authorize" first.`
-    );
+    throw new NoCalendarLinkedError();
   }
   oauth2Client.setCredentials(tokens as Parameters<OAuth2Client["setCredentials"]>[0]);
   oauth2Client.on("tokens", async (newTokens) => {
