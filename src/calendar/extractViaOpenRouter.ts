@@ -5,13 +5,21 @@
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "deepseek/deepseek-chat-v3.1";
+const TIMEZONE_MSK = "Europe/Moscow";
 
-/** Minimal system prompt: this bot has exactly one job — extract one calendar event into JSON. */
-const CALENDAR_EXTRACT_CONTEXT = `Task: from the user message extract exactly one calendar event.
+/** Build system prompt with current date so the model uses the correct year (no past dates). */
+function buildSystemPrompt(): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK }); // YYYY-MM-DD
+  const weekday = now.toLocaleDateString("en-GB", { weekday: "long", timeZone: TIMEZONE_MSK });
+  const year = now.getFullYear();
+  return `Task: from the user message extract exactly one calendar event.
 Output: only a valid JSON object, no other text.
 Format: {"title":"event title","start":"ISO8601","end":"ISO8601"}
-Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. 2025-03-09T10:00:00+03:00). No date → today. No time → 10:00. Default duration: 1 hour.
-Example: {"title":"Meeting","start":"2025-03-09T15:00:00+03:00","end":"2025-03-09T16:00:00+03:00"}`;
+Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. ${year}-03-09T10:00:00+03:00).
+IMPORTANT: Today is ${dateStr} (${weekday}), ${TIMEZONE_MSK}. Always use the current year (${year}) when the user does not specify a year. "Tomorrow", "next Monday", "today" must refer to dates in ${year} or later. No date → today. No time → 10:00. Default duration: 1 hour.
+Example: {"title":"Meeting","start":"${year}-03-09T15:00:00+03:00","end":"${year}-03-09T16:00:00+03:00"}`;
+}
 
 export interface ExtractedEvent {
   title: string;
@@ -37,7 +45,7 @@ export async function extractCalendarEvent(
     body: JSON.stringify({
       model: MODEL,
       messages: [
-        { role: "system", content: CALENDAR_EXTRACT_CONTEXT },
+        { role: "system", content: buildSystemPrompt() },
         { role: "user", content: transcript },
       ],
     }),

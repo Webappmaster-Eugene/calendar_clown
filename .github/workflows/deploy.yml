@@ -63,4 +63,4 @@ jobs:
         run: |
           scp -o StrictHostKeyChecking=no .env.deploy ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_PATH }}/.env
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
-            "cd ${{ env.DEPLOY_PATH }} && npm install --omit=dev && systemctl restart telegram-calendar-bot && systemctl is-active telegram-calendar-bot"
+            "cd ${{ env.DEPLOY_PATH }} && npm install --omit=dev && mkdir -p data/tokens data/voice && systemctl restart telegram-calendar-bot && systemctl is-active telegram-calendar-bot"

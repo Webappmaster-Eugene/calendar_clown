@@ -3,7 +3,9 @@ import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
 import { createEvent, NoCalendarLinkedError } from "../calendar/client.js";
 import { transcribeVoice } from "../voice/transcribe.js";
-import { extractCalendarEvent } from "../calendar/extractViaOpenRouter.js";
+import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
+import { isAdmin } from "../admin.js";
+import { getChatIdByRecipient } from "../userChats.js";
 
 const VOICE_DIR = "./data/voice";
 
@@ -56,21 +58,52 @@ export async function handleVoice(ctx: Context) {
       return;
     }
 
-    const extracted = await extractCalendarEvent(transcript);
-    if (!extracted) {
+    const intent = await extractVoiceIntent(transcript);
+
+    if (intent.type === "send_message") {
+      if (!isAdmin(ctx)) {
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          "Отправка сообщений по голосу доступна только доверенным пользователям."
+        );
+        return;
+      }
+      const chatId = await getChatIdByRecipient(intent.recipient);
+      if (chatId == null) {
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          "Пользователь не найден или ещё не писал боту. Отправка возможна только тем, кто уже начал диалог с ботом."
+        );
+        return;
+      }
+      await ctx.telegram.sendMessage(chatId, intent.text);
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         statusMsg.message_id,
         undefined,
-        'Не удалось понять событие из фразы. Попробуйте: «Встреча завтра в 15:00».'
+        `Сообщение отправлено (${intent.recipient}).`
+      );
+      return;
+    }
+
+    if (intent.type === "unknown") {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMsg.message_id,
+        undefined,
+        'Не удалось понять. Можно: «Встреча завтра в 15:00» или «Отправь [имя] что [текст]» (только для доверенных).'
       );
       return;
     }
 
     const event = await createEvent(
-      extracted.title,
-      extracted.start,
-      extracted.end,
+      intent.title,
+      intent.start,
+      intent.end,
       userId
     );
     const start = new Date(event.start);

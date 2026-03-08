@@ -56,7 +56,7 @@ npm start           # или npm run dev для разработки
 - `/today` — встречи на сегодня
 - `/week` — встречи на эту неделю
 - `/list` — то же, что `/today`
-- **Голосовое сообщение** — отправить голосовое: бот конвертирует OGG в WAV, распознаёт речь и извлекает событие через OpenRouter. Нужны `OPENROUTER_API_KEY` и **ffmpeg** на сервере (`apt install ffmpeg` / `yum install ffmpeg`).
+- **Голосовое сообщение** — отправить голосовое: бот конвертирует OGG в WAV, распознаёт речь и через OpenRouter определяет намерение. Можно создать встречу (например: «Встреча завтра в 15:00») или отправить сообщение кому-то (например: «Отправь Анжелике Надточеевой что я ее люблю»; только для доверенных пользователей, получатель — по имени или username из тех, кто уже писал боту). Нужны `OPENROUTER_API_KEY` и **ffmpeg** на сервере (`apt install ffmpeg` / `yum install ffmpeg`).
 
 ## Деплой на VDS (systemd)
 
@@ -70,9 +70,10 @@ npm start           # или npm run dev для разработки
    npm install
    npm run build
    cp .env.example .env
-   # Заполните .env: TELEGRAM_BOT_TOKEN, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-   npm run authorize   # один раз ввести код из браузера (можно выполнить локально и скопировать data/token.json на сервер)
+   # Заполните .env: TELEGRAM_BOT_TOKEN, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OPENROUTER_API_KEY
+   mkdir -p data/tokens data/voice
    ```
+   Календари пользователи привязывают сами через бота (`/start` → ссылка → `/auth <код>`). Локально для теста можно: `npm run authorize -- <TELEGRAM_USER_ID>` и скопировать `data/tokens/<id>.json` на сервер.
 
 4. Создайте unit systemd `/etc/systemd/system/telegram-calendar-bot.service`:
 
@@ -126,7 +127,9 @@ npm start           # или npm run dev для разработки
 | `GOOGLE_CLIENT_SECRET` | OAuth2 Client Secret |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter (голос и календарь) |
 
-При каждом деплое workflow создаёт на сервере `.env` из этих секретов, копирует собранный код, запускает `npm install --omit=dev` и перезапускает `telegram-calendar-bot`. Файл `data/token.json` (Google) на сервере не перезаписывается — один раз выполните `npm run authorize` на VDS и больше не трогайте.
+При каждом деплое workflow создаёт на сервере `.env` из этих секретов, копирует собранный код, создаёт каталоги `data/tokens` и `data/voice`, запускает `npm install --omit=dev` и перезапускает `telegram-calendar-bot`. Каждый пользователь привязывает свой календарь через бота: `/start` → ссылка на Google → `/auth <код>`. Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
+
+**Проверка готовности VDS** (после SSH на сервер): `cd /opt/telegram-calendar-bot && bash scripts/check-vds.sh` — проверяет Node, ffmpeg, каталоги, .env и сервис.
 
 ## Деплой на VDS (PM2)
 

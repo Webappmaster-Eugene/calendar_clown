@@ -7,6 +7,7 @@ const DEFAULT_PATH = "./data/user_chats.json";
 interface UserChatsStore {
   byUsername: Record<string, number>;
   byUserId: Record<string, number>;
+  byDisplayName: Record<string, number>;
 }
 
 function getStorePath(): string {
@@ -21,10 +22,11 @@ async function loadStore(): Promise<UserChatsStore> {
     return {
       byUsername: parsed.byUsername ?? {},
       byUserId: parsed.byUserId ?? {},
+      byDisplayName: parsed.byDisplayName ?? {},
     };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      return { byUsername: {}, byUserId: {} };
+      return { byUsername: {}, byUserId: {}, byDisplayName: {} };
     }
     throw err;
   }
@@ -44,6 +46,16 @@ async function saveStore(store: UserChatsStore): Promise<void> {
  */
 function normalizeUsername(username: string): string {
   return username.replace(/^@/, "").trim().toLowerCase() || "";
+}
+
+/**
+ * Normalize display name (first + last) for lookup: lowercase, collapse spaces.
+ */
+function normalizeDisplayName(name: string): string {
+  return name
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase() || "";
 }
 
 /**
@@ -69,6 +81,23 @@ export async function getChatIdByUserId(userId: string): Promise<number | null> 
 }
 
 /**
+ * Get chat_id by recipient: try as username first, then as display name (first + last).
+ * Recipient can be e.g. "johndoe" or "Анжелика Надточеева".
+ */
+export async function getChatIdByRecipient(recipient: string): Promise<number | null> {
+  const store = await loadStore();
+  const asUsername = normalizeUsername(recipient);
+  if (asUsername && store.byUsername[asUsername] != null) {
+    return store.byUsername[asUsername];
+  }
+  const asName = normalizeDisplayName(recipient);
+  if (asName && store.byDisplayName[asName] != null) {
+    return store.byDisplayName[asName];
+  }
+  return null;
+}
+
+/**
  * Record private chat: from and chat must be present, chat.type === 'private'.
  * Idempotent: overwrites existing entries for the same user.
  */
@@ -85,6 +114,12 @@ export async function recordChat(ctx: Context): Promise<void> {
   store.byUserId[userId] = chatId;
   if (username) {
     store.byUsername[username] = chatId;
+  }
+  const firstName = from.first_name ?? "";
+  const lastName = from.last_name ?? "";
+  const displayName = normalizeDisplayName(`${firstName} ${lastName}`.trim());
+  if (displayName) {
+    store.byDisplayName[displayName] = chatId;
   }
   await saveStore(store);
 }
