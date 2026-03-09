@@ -151,7 +151,7 @@ npm start
 
 **Проверка готовности VDS** (после SSH на сервер): `cd /opt/telegram-calendar-bot && bash scripts/check-vds.sh` — проверяет Node, ffmpeg, каталоги, .env и сервис. **Проверка OpenClaw:** `bash scripts/check-openclaw-vds.sh` — контейнер, порт 18789, при необходимости открытие порта в UFW (`--open-port`). Подробнее: [docs/CHECK_OPENCLAW_VDS.md](docs/CHECK_OPENCLAW_VDS.md).
 
-**Пайплайн Claude Code через VDS (прокси + VPN):** настройка Squid на localhost и доступа с локальной машины через SSH-туннель — [docs/VDS_CLAUDE_PROXY_SETUP.md](docs/VDS_CLAUDE_PROXY_SETUP.md). Автоматизация: `./scripts/claude-vds-local.sh` (поднять туннель и запустить Claude Code), туннель при логине — см. раздел «Автоматизация» в том же документе.
+**Claude Code локально через VDS (прокси + VPN):** пошаговая инструкция — [docs/CLAUDE_CODE_VIA_VDS.md](docs/CLAUDE_CODE_VIA_VDS.md). Полная настройка Squid и VPN — [docs/VDS_CLAUDE_PROXY_SETUP.md](docs/VDS_CLAUDE_PROXY_SETUP.md). Быстрый запуск: `./scripts/claude-vds-local.sh`.
 
 ## Деплой на VDS (PM2)
 

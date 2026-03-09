@@ -12,3 +12,9 @@ deploy_key
 deploy_key.pub
 # VPN config (contains private keys)
 GB.conf
+
+# Claude Code local settings (personal overrides)
+.claude/settings.local.json
+
+# IDE
+.idea/
