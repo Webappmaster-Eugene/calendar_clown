@@ -2,6 +2,14 @@ services:
   bot:
     build: .
     restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - OAUTH_REDIRECT_URI=${OAUTH_REDIRECT_URI}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PORT=${PORT:-18790}
+      - HOST=${HOST:-0.0.0.0}
     volumes:
       - tokens:/app/data/tokens
       - voice:/app/data/voice

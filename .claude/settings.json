@@ -1,10 +1,10 @@
 {
   "permissions": {
+    "defaultMode": "acceptEdits",
     "allow": [
-      "Bash(npm run build)",
-      "Bash(npm run dev)",
-      "Bash(npm test*)",
-      "Bash(npx tsc --noEmit*)",
+      "Bash(npm run *)",
+      "Bash(npx *)",
+      "Bash(node *)",
       "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",
@@ -13,12 +13,24 @@
       "Bash(git branch*)",
       "Bash(git checkout*)",
       "Bash(git stash*)",
+      "Bash(git push*)",
+      "Bash(git pull*)",
+      "Bash(git fetch*)",
+      "Bash(git merge*)",
+      "Bash(git rebase*)",
+      "Bash(git remote*)",
+      "Bash(git show*)",
       "Bash(gh pr *)",
       "Bash(gh issue *)",
-      "Bash(wc:*)",
-      "Bash(ls:*)",
-      "Bash(cat package.json)",
-      "Bash(cat tsconfig.json)"
+      "Bash(wc *)",
+      "Bash(ls *)",
+      "Bash(ls)",
+      "Bash(cat *)",
+      "Bash(docker *)",
+      "Bash(curl *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)"
     ],
     "deny": [
       "Bash(rm -rf /)",
