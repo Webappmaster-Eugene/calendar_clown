@@ -20,7 +20,7 @@
 - **AI:** OpenRouter API (транскрипция голоса, извлечение событий через DeepSeek)
 - **Парсинг дат:** chrono-node (русский язык)
 - **Сборка:** tsup (ESM), tsx (dev/scripts)
-- **Деплой:** GitHub Actions → VDS (systemd, host nginx + certbot)
+- **Деплой:** Docker (Dockerfile) → Dokploy (Traefik для SSL/проксирования)
 
 ## Команды
 
@@ -74,11 +74,12 @@ src/
 
 - **Per-user OAuth tokens:** токены Google хранятся в `data/tokens/<telegram_user_id>.json`
 - **Graceful shutdown:** SIGINT/SIGTERM → bot.stop()
+- **Docker volumes:** `data/tokens` и `data/voice` — persistent storage
 
 ## Важные ограничения
 
-- Не коммить файлы: `.env`, `.env.local`, `data/`, `deploy_key*`, `GB.conf`
-- OAuth redirect требует HTTPS (Google отключил OOB flow)
+- Не коммить файлы: `.env`, `.env.local`, `data/`, `deploy_key*`
+- OAuth redirect требует HTTPS (обеспечивается Dokploy/Traefik)
 
 ## Документация
 

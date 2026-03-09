@@ -1,0 +1,14 @@
+node_modules
+dist
+data
+.env
+.env.*
+.git
+.github
+.claude
+.idea
+.DS_Store
+docs
+deploy_key*
+GB.conf
+*.log

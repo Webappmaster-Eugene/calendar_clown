@@ -1,0 +1,15 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - tokens:/app/data/tokens
+      - voice:/app/data/voice
+    ports:
+      - "${PORT:-18790}:${PORT:-18790}"
+
+volumes:
+  tokens:
+  voice:

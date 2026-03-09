@@ -36,8 +36,8 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
     return null;
   }
 
-  const port = Number(process.env.SEND_MESSAGE_API_PORT) || DEFAULT_PORT;
-  const host = process.env.SEND_MESSAGE_API_HOST ?? "127.0.0.1";
+  const port = Number(process.env.PORT) || DEFAULT_PORT;
+  const host = process.env.HOST ?? "0.0.0.0";
   const oauthCallbackPath = new URL(oauthRedirectUri).pathname;
 
   const server = http.createServer(async (req, res) => {
