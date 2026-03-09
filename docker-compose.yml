@@ -13,9 +13,19 @@ services:
     volumes:
       - tokens:/app/data/tokens
       - voice:/app/data/voice
-    ports:
-      - "18790:18790"
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.calendar-bot.rule=Host(`oauth.podbor-minuta.ru`)"
+      - "traefik.http.routers.calendar-bot.entrypoints=websecure"
+      - "traefik.http.routers.calendar-bot.tls.certresolver=letsencrypt"
+      - "traefik.http.services.calendar-bot.loadbalancer.server.port=18790"
 
 volumes:
   tokens:
   voice:
+
+networks:
+  dokploy-network:
+    external: true
