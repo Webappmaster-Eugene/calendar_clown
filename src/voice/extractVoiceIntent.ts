@@ -1,5 +1,5 @@
 /**
- * Single OpenRouter call: detect intent (calendar vs send_message) and extract fields.
+ * Single OpenRouter call: detect voice intent (calendar/cancel_event/unknown) and extract fields.
  */
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -96,19 +96,13 @@ Options:
    date: the target date in YYYY-MM-DD format (${TIMEZONE_MSK}), or null if no date mentioned. Use the same date rules: "завтра" = ${tomorrowStr}, "вторник" = ${tueStr}, "сегодня" = ${dateStr}, etc.
    Trigger words: отмени, удали, убери, отменить, удалить, убрать, cancel, delete, remove — applied to встреча, событие, запись, приём.
 
-3) Sending a message to someone (e.g. "отправь Анжелике Надточеевой что я ее люблю", "напиши Ивану что завтра встреча"):
-   {"type":"send_message","recipient":"recipient name or username","text":"exact message text to send"}
-   recipient: full name (e.g. "Анжелика Надточеева") or Telegram username without @. Use nominative for name.
-   text: the exact text the user wants to send to that person.
-
-4) Anything else or unclear:
+3) Anything else or unclear:
    {"type":"unknown"}`;
 }
 
 export type VoiceIntent =
   | { type: "calendar"; title: string; start: Date; end: Date; recurrence?: string[] }
   | { type: "cancel_event"; query: string; date: Date | null }
-  | { type: "send_message"; recipient: string; text: string }
   | { type: "unknown" };
 
 function tryParseJson(raw: string): Record<string, unknown> | null {
@@ -170,14 +164,6 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
       }
     }
     return { type: "cancel_event", query, date };
-  }
-
-  if (json.type === "send_message") {
-    const recipient = typeof json.recipient === "string" ? json.recipient.trim() : "";
-    const text = typeof json.text === "string" ? json.text : "";
-    if (recipient && text !== undefined) {
-      return { type: "send_message", recipient, text };
-    }
   }
 
   if (json.type === "calendar") {

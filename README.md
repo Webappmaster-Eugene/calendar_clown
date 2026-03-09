@@ -6,7 +6,7 @@
 
 ## Требования
 
-- Node.js 18+
+- Node.js 20+
 - Аккаунт Google (календарь)
 - Токен Telegram-бота ([@BotFather](https://t.me/BotFather))
 
@@ -41,51 +41,26 @@ npm start           # или npm run dev для разработки
 | `TELEGRAM_BOT_TOKEN` | Токен бота из @BotFather |
 | `GOOGLE_CLIENT_ID` | OAuth2 Client ID из Google Cloud |
 | `GOOGLE_CLIENT_SECRET` | OAuth2 Client Secret |
-| `OAUTH_REDIRECT_URI` | **Обязательно для привязки календаря.** HTTPS-URL, на который Google перенаправляет после входа (например `https://yourdomain.com/oauth/callback`). Этот же URL нужно добавить в Google Console → Credentials → OAuth 2.0 Client → Authorized redirect URIs. После входа по кнопке в боте календарь привязывается автоматически. |
+| `OAUTH_REDIRECT_URI` | **Обязательно для привязки календаря.** HTTPS-URL, на который Google перенаправляет после входа (например `https://oauth.podbor-minuta.ru/oauth/callback`). Этот же URL нужно добавить в Google Console → Credentials → OAuth 2.0 Client → Authorized redirect URIs. |
 | `GOOGLE_TOKEN_PATH` | Путь к файлу с токеном (по умолчанию `./data/token.json`) |
-| `OPENROUTER_API_KEY` | Ключ OpenRouter: транскрипция голоса и извлечение события (DeepSeek); один ключ для голосовых сообщений |
-| `OPENCLAW_GATEWAY_URL` | (Опционально.) URL шлюза OpenClaw (по умолчанию в коде `http://127.0.0.1:18789`). Нужен вместе с токеном для команды `/openclaw`. |
-| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway. Если задан, регистрируются команды `/openclaw`, `/stop`, `/menu` и три режима (Календарь / OpenClaw / Отправить сообщение) с меню выбора. Токен берётся из конфигурации или env того же OpenClaw Gateway; см. раздел «Откуда взять OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL» в [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md). |
-| `OPENCLAW_SYSTEM_PROMPT` | (Опционально.) Системный промпт для агента OpenClaw (поиск, сводки, почта и т.д.). Если не задан, используется встроенный промпт с описанием основных возможностей. |
-| `SEND_MESSAGE_API_KEY` | (Опционально.) Секрет для HTTP API: отправка сообщений пользователям по username (для OpenClaw). См. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md#api-отправки-сообщений-пользователям-по-username-для-openclaw). |
-| `SEND_MESSAGE_API_PORT` | Порт API отправки (по умолчанию 18790). |
-| `SEND_MESSAGE_API_HOST` | Хост API (по умолчанию 127.0.0.1). |
-| `DATABASE_URL` | (Опционально.) Подключение к PostgreSQL для хранения сообщений и транскриптов. Если не задано, бот работает без записи в БД. Альтернатива: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`. |
+| `OPENROUTER_API_KEY` | Ключ OpenRouter: транскрипция голоса и извлечение события (DeepSeek) |
+| `CERTBOT_EMAIL` | Email для Let's Encrypt (используется при первом выпуске сертификата) |
 
-OpenClaw в этом репозитории настроен на модель **anthropic/claude-sonnet-4-5** и подписку Claude (OAuth). В [config/openclaw-gateway.json](config/openclaw-gateway.json) укажите свой email в `auth.profiles["anthropic:subscription"].email` и один раз пройдите OAuth (см. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md) — раздел «Подписка Claude»).
-
-Секреты не храните в репозитории. Для локального запуска удобно завести `.env.local`: скопируйте [.env.local.example](.env.local.example) в `.env.local`, заполните переменные (в том числе SSH_* для скриптов деплоя). Файл `.env.local` в gitignore, при запуске бота и `npm run authorize` он подхватывается после `.env`.
+Секреты не храните в репозитории. Для локального запуска можно завести `.env.local` (в gitignore).
 
 ## Команды бота
 
-- `/start` — приветствие и краткая инструкция
+- `/start` — приветствие и инструкция, кнопка «Войти через Google»
 - `/help` — справка по командам
 - `/new <текст>` — создать встречу (например: `/new Встреча завтра в 15:00`)
 - `/today` — встречи на сегодня
 - `/week` — встречи на эту неделю
 - `/list` — то же, что `/today`
-- **Голосовое сообщение** — в режиме **Календарь** бот распознаёт речь и создаёт встречу, отменяет встречу или отправляет сообщение (см. выше). Для отмены скажите: «Отмени встречу с Романом завтра» или «Удали встречу в 15:00». Если найдена одна встреча — она удаляется сразу; если несколько — бот покажет список и попросит уточнить. В режиме **OpenClaw** голос транскрибируется и задача уходит агенту OpenClaw. В режиме **Отправить сообщение** (только для доверенных) голосовая фраза вида «Отправь Ивану что завтра встреча» отправляет сообщение пользователю. Режим выбирается в меню (кнопки «Календарь» / «OpenClaw» / «Отправить сообщение») или командой `/openclaw`. Нужны `OPENROUTER_API_KEY` и **ffmpeg** на сервере.
-- **Меню режимов** — (если задан `OPENCLAW_GATEWAY_TOKEN`) после `/start` и по команде `/menu` показываются кнопки **Календарь**, **OpenClaw** и **Отправить сообщение**. В режиме Календарь голос и `/new` работают с встречами; в режиме OpenClaw текст и голос уходят агенту OpenClaw; в режиме Отправить сообщение (только для `ADMIN_USER_IDS`) текст «@username Текст» или голос отправляют сообщение другому пользователю бота.
-- `/openclaw [текст]` — (если задан `OPENCLAW_GATEWAY_TOKEN`) переключиться в режим OpenClaw; с текстом — отправить одно сообщение агенту и показать ответ.
-- `/stop` — выйти из режима OpenClaw (вернуться к режиму Календарь).
-- `/menu` — показать меню выбора режима (Календарь / OpenClaw / Отправить сообщение).
-
-## Хранение сообщений в PostgreSQL (опционально)
-
-Входящие сообщения (текст и голосовые) и транскрипты голосовых можно сохранять в Postgres. Поднимите БД и примените миграции:
-
-```bash
-docker compose up -d
-# Задайте в .env: DATABASE_URL=postgresql://bot:bot@localhost:5432/bot (или POSTGRES_*)
-npm run migrate
-npm start
-```
-
-Миграции лежат в `migrations/`. Команда `npm run migrate` выполняет их по порядку. Без `DATABASE_URL` бот работает как раньше, без записи в БД.
+- **Голосовое сообщение** — бот распознаёт речь и создаёт/отменяет встречу. Для отмены скажите: «Отмени встречу с Романом завтра». Нужен `OPENROUTER_API_KEY` и **ffmpeg** на сервере.
 
 ## Деплой на VDS (systemd)
 
-1. Установите Node.js 18+ на сервер (например через [nvm](https://github.com/nvm-sh/nvm) или пакетный менеджер).
+1. Установите Node.js 20+ на сервер.
 
 2. Склонируйте или скопируйте проект на сервер, например в `/opt/telegram-calendar-bot`.
 
@@ -95,75 +70,48 @@ npm start
    npm install
    npm run build
    cp .env.example .env
-   # Заполните .env: TELEGRAM_BOT_TOKEN, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OPENROUTER_API_KEY
+   # Заполните .env
    mkdir -p data/tokens data/voice
    ```
-   Календари пользователи привязывают сами через бота: `/start` → кнопка «Войти через Google» → после входа календарь привязывается автоматически (нужен настроенный `OAUTH_REDIRECT_URI` и HTTPS до сервера). Запасной вариант: `/auth <код>` если страница callback показала код. Локально для теста можно: `npm run authorize -- <TELEGRAM_USER_ID>` и скопировать `data/tokens/<id>.json` на сервер.
 
 4. Установите unit systemd (файл есть в репозитории):
-
    ```bash
    sudo cp /opt/telegram-calendar-bot/scripts/telegram-calendar-bot.service /etc/systemd/system/
-   ```
-
-5. Запуск и автозапуск:
-   ```bash
    sudo systemctl daemon-reload
    sudo systemctl enable telegram-calendar-bot
    sudo systemctl start telegram-calendar-bot
-   sudo systemctl status telegram-calendar-bot
    ```
 
-6. **Redirect и SSL для привязки календаря:** чтобы пользователи могли привязать календарь по кнопке «Войти через Google», нужен публичный HTTPS-адрес и nginx. Подробная настройка: [docs/OAUTH_REDIRECT_SSL_SETUP.md](docs/OAUTH_REDIRECT_SSL_SETUP.md). Для **Docker Compose** (домен oauth.podbor-minuta.ru) в том же документе есть раздел «Вариант: Docker Compose»; конфиг: [config/nginx-oauth.podbor-minuta.ru.conf](config/nginx-oauth.podbor-minuta.ru.conf).
+5. **SSL для OAuth:** см. [docs/OAUTH_REDIRECT_SSL_SETUP.md](docs/OAUTH_REDIRECT_SSL_SETUP.md).
 
 Логи: `journalctl -u telegram-calendar-bot -f`.
 
 ## CI/CD GitHub Actions
 
-Сборка выполняется на GitHub, деплой на VDS по push в `main` или вручную (workflow_dispatch). Переменные окружения задаются в GitHub Secrets — вручную на сервере указывать не нужно.
-
-### Однократная настройка на VDS
-
-Настройка сервера полностью в репозитории: при деплое копируются `docker-compose.yml` и каталог `config/`, формируется один `.env` из секретов, при необходимости выдаётся SSL для OAuth (скрипт `scripts/ensure-oauth-ssl.sh`) и поднимается nginx; при заданном `OPENCLAW_GATEWAY_TOKEN` поднимается OpenClaw Gateway из того же compose. Ручная настройка nginx и OpenClaw на хосте не требуется.
-
-1. На VDS должны быть установлены **Docker** и **Docker Compose** (plugin) — для OAuth (nginx + certbot) и OpenClaw. Установка: см. [документацию Docker](https://docs.docker.com/engine/install/) и [Compose V2](https://docs.docker.com/compose/install/).
-2. Создайте ключ для деплоя (на своей машине): `ssh-keygen -t ed25519 -C "github-deploy" -f deploy_key -N ""`
-3. Публичный ключ добавьте на VDS: `ssh-copy-id -i deploy_key.pub root@45.10.41.177` (или скопируйте содержимое `deploy_key.pub` в `~/.ssh/authorized_keys` на сервере).
-4. Приватный ключ целиком скопируйте в буфер — он понадобится для секрета `SSH_PRIVATE_KEY`.
+Сборка выполняется на GitHub, деплой на VDS по push в `main` или вручную (workflow_dispatch).
 
 ### Секреты репозитория (Settings → Secrets and variables → Actions)
 
 | Секрет | Описание |
 |--------|----------|
-| `SSH_HOST` | IP или хост VDS (например `45.10.41.177`) |
+| `SSH_HOST` | IP или хост VDS |
 | `SSH_USER` | Пользователь SSH (например `root`) |
-| `SSH_PRIVATE_KEY` | Полное содержимое файла `deploy_key` (приватный ключ) |
+| `SSH_PRIVATE_KEY` | Приватный ключ для деплоя |
 | `TELEGRAM_BOT_TOKEN` | Токен бота из @BotFather |
 | `GOOGLE_CLIENT_ID` | OAuth2 Client ID из Google Cloud |
 | `GOOGLE_CLIENT_SECRET` | OAuth2 Client Secret |
-| `OAUTH_REDIRECT_URI` | HTTPS-URL callback для привязки календаря (например `https://yourdomain.com/oauth/callback`) |
-| `CERTBOT_EMAIL` | (При OAuth redirect.) Email для Let's Encrypt; используется при первом запуске certbot (скрипт `ensure-oauth-ssl.sh`). Убедитесь, что DNS для домена из `OAUTH_REDIRECT_URI` указывает на IP VDS. |
+| `OAUTH_REDIRECT_URI` | HTTPS-URL callback для привязки календаря |
+| `CERTBOT_EMAIL` | Email для Let's Encrypt |
 | `OPENROUTER_API_KEY` | Ключ OpenRouter (голос и календарь) |
-| `OPENCLAW_GATEWAY_TOKEN` | (Опционально.) Токен OpenClaw Gateway для команды `/openclaw`. Если задан, при деплое попадёт в `.env` и будет запущен контейнер OpenClaw Gateway из docker-compose (профиль `openclaw`). См. [docs/USAGE_AND_ARCHITECTURE.md](docs/USAGE_AND_ARCHITECTURE.md). |
-| `OPENCLAW_GATEWAY_URL` | (Опционально.) URL шлюза OpenClaw (например `http://127.0.0.1:18789`). Нужен только если шлюз не на localhost:18789. |
 
-При каждом деплое workflow копирует на сервер собранный код, `docker-compose.yml`, каталоги `config/` и `docker/`, обновляет `.env` из секретов (TELEGRAM_BOT_TOKEN, GOOGLE_*, OPENROUTER_API_KEY, OAUTH_REDIRECT_URI, при наличии — CERTBOT_EMAIL, OPENCLAW_GATEWAY_TOKEN и OPENCLAW_GATEWAY_URL; остальные переменные из `.env` на VDS сохраняются), выполняет `npm install --omit=dev`, перезапуск бота, затем `scripts/ensure-oauth-ssl.sh` (при необходимости выдаёт сертификат и поднимает nginx для OAuth) и при заданном `OPENCLAW_GATEWAY_TOKEN` — `docker compose --profile openclaw up -d --build`. Каждый пользователь привязывает календарь через бота: `/start` → «Войти через Google» (нужен секрет `OAUTH_REDIRECT_URI` и HTTPS до сервера). Токены хранятся в `data/tokens/<user_id>.json` и при деплое не трогаются.
+При деплое workflow:
+1. Запускает `scripts/bootstrap-vds.sh` (устанавливает Node.js, ffmpeg, nginx, certbot, systemd сервис — идемпотентно).
+2. Копирует `dist/`, `package.json`, `scripts/`, `config/` на VDS.
+3. Обновляет `.env` из секретов (сохраняя ручные переменные).
+4. Устанавливает зависимости и перезапускает бот.
+5. Запускает `scripts/ensure-oauth-ssl.sh` (выпуск сертификата и настройка nginx).
 
-**Проверка готовности VDS** (после SSH на сервер): `cd /opt/telegram-calendar-bot && bash scripts/check-vds.sh` — проверяет Node, ffmpeg, каталоги, .env и сервис. **Проверка OpenClaw:** `bash scripts/check-openclaw-vds.sh` — контейнер, порт 18789, при необходимости открытие порта в UFW (`--open-port`). Подробнее: [docs/CHECK_OPENCLAW_VDS.md](docs/CHECK_OPENCLAW_VDS.md).
-
-**Claude Code локально через VDS (прокси + VPN):** пошаговая инструкция — [docs/CLAUDE_CODE_VIA_VDS.md](docs/CLAUDE_CODE_VIA_VDS.md). Полная настройка Squid и VPN — [docs/VDS_CLAUDE_PROXY_SETUP.md](docs/VDS_CLAUDE_PROXY_SETUP.md). Быстрый запуск: `./scripts/claude-vds-local.sh`.
-
-## Деплой на VDS (PM2)
-
-```bash
-npm install -g pm2
-cd /opt/telegram-calendar-bot
-npm run build
-# Настройте .env и выполните authorize
-pm2 start dist/index.js --name telegram-calendar-bot
-pm2 save
-pm2 startup   # автозапуск при перезагрузке
-```
+**Проверка готовности VDS:** `cd /opt/telegram-calendar-bot && bash scripts/check-vds.sh`
 
 ## Лицензия
 

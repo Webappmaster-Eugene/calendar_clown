@@ -4,7 +4,7 @@ dotenv.config();
 dotenv.config({ path: ".env.local", override: true });
 
 import { createBot } from "./bot.js";
-import { startSendMessageApi } from "./sendMessageApi.js";
+import { startOAuthServer } from "./oauthServer.js";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -14,28 +14,18 @@ if (!token) {
 
 const bot = createBot(token);
 
-startSendMessageApi(bot, {
-  apiKey: process.env.SEND_MESSAGE_API_KEY?.trim(),
+startOAuthServer({
   oauthRedirectUri: process.env.OAUTH_REDIRECT_URI?.trim(),
 });
 
-const defaultCommands = [
+const commands = [
   { command: "help", description: "Справка по командам" },
   { command: "new", description: "Создать встречу из фразы" },
   { command: "today", description: "Встречи на сегодня" },
   { command: "week", description: "Встречи на неделю" },
-  { command: "send", description: "Отправить сообщение пользователю (доверенные)" },
-];
-const openclawCommands = [
-  { command: "menu", description: "Меню: Календарь / OpenClaw / Отправить сообщение" },
-  { command: "openclaw", description: "Режим OpenClaw — задачи агенту" },
-  { command: "stop", description: "Выйти из чата OpenClaw" },
 ];
 
 bot.launch().then(async () => {
-  const commands = process.env.OPENCLAW_GATEWAY_TOKEN?.trim()
-    ? [...defaultCommands, ...openclawCommands]
-    : defaultCommands;
   await bot.telegram.setMyCommands(commands);
   console.log("Bot started (long polling)");
 });

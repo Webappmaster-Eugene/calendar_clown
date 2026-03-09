@@ -38,12 +38,6 @@ jobs:
               printf 'CERTBOT_EMAIL=%s\n' "$CERTBOT_EMAIL" >> .env.deploy
             fi
           fi
-          if [ -n "$OPENCLAW_GATEWAY_TOKEN" ]; then
-            printf 'OPENCLAW_GATEWAY_TOKEN=%s\n' "$OPENCLAW_GATEWAY_TOKEN" >> .env.deploy
-            if [ -n "$OPENCLAW_GATEWAY_URL" ]; then
-              printf 'OPENCLAW_GATEWAY_URL=%s\n' "$OPENCLAW_GATEWAY_URL" >> .env.deploy
-            fi
-          fi
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
@@ -51,8 +45,6 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OAUTH_REDIRECT_URI: ${{ secrets.OAUTH_REDIRECT_URI }}
           CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
-          OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
-          OPENCLAW_GATEWAY_URL: ${{ secrets.OPENCLAW_GATEWAY_URL }}
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -65,6 +57,11 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -T 10 -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || echo "Warning: ssh-keyscan failed (non-critical, StrictHostKeyChecking=no is used downstream)"
 
+      - name: Bootstrap VDS
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "bash -s" < scripts/bootstrap-vds.sh
+
       - name: Deploy files
         run: |
           rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
@@ -73,24 +70,16 @@ jobs:
             package-lock.json \
             .env.example \
             scripts \
-            src \
-            docker-compose.yml \
             config \
-            docker \
             ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_PATH }}/
 
-      - name: Upload .env and restart
+      - name: Upload .env, install deps, and restart
         run: |
           scp -o StrictHostKeyChecking=no .env.deploy ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_PATH }}/.env.deploy
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
-            "cd ${{ env.DEPLOY_PATH }} && ( [ -f .env ] && grep -v -E '^(TELEGRAM_BOT_TOKEN|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|OPENROUTER_API_KEY|OAUTH_REDIRECT_URI|CERTBOT_EMAIL|OPENCLAW_GATEWAY_TOKEN|OPENCLAW_GATEWAY_URL)=' .env ; cat .env.deploy ) > .env.merged && mv .env.merged .env && rm -f .env.deploy && npm install --omit=dev && mkdir -p data/tokens data/voice && systemctl restart telegram-calendar-bot && systemctl is-active telegram-calendar-bot"
+            "cd ${{ env.DEPLOY_PATH }} && ( [ -f .env ] && grep -v -E '^(TELEGRAM_BOT_TOKEN|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|OPENROUTER_API_KEY|OAUTH_REDIRECT_URI|CERTBOT_EMAIL)=' .env ; cat .env.deploy ) > .env.merged && mv .env.merged .env && rm -f .env.deploy && npm install --omit=dev && mkdir -p data/tokens data/voice && systemctl restart telegram-calendar-bot && systemctl is-active telegram-calendar-bot"
 
       - name: Ensure OAuth SSL and start nginx
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
             "cd ${{ env.DEPLOY_PATH }} && DEPLOY_PATH=${{ env.DEPLOY_PATH }} bash scripts/ensure-oauth-ssl.sh"
-
-      - name: Start OpenClaw gateway if configured
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
-            "cd ${{ env.DEPLOY_PATH }} && grep -q '^OPENCLAW_GATEWAY_TOKEN=' .env 2>/dev/null && docker compose --profile openclaw up -d --build || true"
