@@ -1,12 +1,14 @@
 import type { Context } from "telegraf";
 import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
-import { createEvent, deleteEvent, searchEvents, NoCalendarLinkedError } from "../calendar/client.js";
+import { createEvent, deleteEvent, searchEvents, listEvents, NoCalendarLinkedError } from "../calendar/client.js";
 import { extractCalendarEvent } from "../calendar/extractViaOpenRouter.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
+import { trackUser, getAllUserIds } from "../users.js";
 
 const VOICE_DIR = "./data/voice";
+const TIMEZONE = "Europe/Moscow";
 
 function getUserId(ctx: Context): string | null {
   const id = ctx.from?.id ?? ctx.chat?.id;
@@ -16,6 +18,8 @@ function getUserId(ctx: Context): string | null {
 export async function handleVoice(ctx: Context) {
   const userId = getUserId(ctx);
   if (!userId) return;
+
+  await trackUser(userId);
 
   const voice = "voice" in ctx.message ? ctx.message.voice : null;
   if (!voice?.file_id) return;
@@ -119,6 +123,106 @@ export async function handleVoice(ctx: Context) {
         statusMsg.message_id,
         undefined,
         `Найдено несколько встреч. Уточните, какую отменить:\n\n${listText}\n\nНазовите точнее: дату, время или название.`
+      );
+      return;
+    }
+
+    if (intent.type === "list_today") {
+      const now = new Date();
+      const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE });
+      const timeMin = new Date(todayStr + "T00:00:00+03:00");
+      const timeMax = new Date(timeMin.getTime() + 24 * 60 * 60 * 1000);
+      const events = await listEvents(timeMin, timeMax, userId);
+      if (events.length === 0) {
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, statusMsg.message_id, undefined,
+          "На сегодня встреч нет."
+        );
+        return;
+      }
+      const lines = events.map((e) => {
+        const s = new Date(e.start);
+        const en = new Date(e.end);
+        const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE };
+        return `• ${e.summary} (${s.toLocaleTimeString("ru-RU", timeOpt)} – ${en.toLocaleTimeString("ru-RU", timeOpt)})`;
+      });
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, statusMsg.message_id, undefined,
+        "📅 *Сегодня:*\n" + lines.join("\n"),
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    if (intent.type === "list_week") {
+      const now = new Date();
+      const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE });
+      const timeMin = new Date(todayStr + "T00:00:00+03:00");
+      const timeMax = new Date(timeMin.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const events = await listEvents(timeMin, timeMax, userId);
+      if (events.length === 0) {
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, statusMsg.message_id, undefined,
+          "На эту неделю встреч нет."
+        );
+        return;
+      }
+      const lines: string[] = [];
+      let currentDay = "";
+      for (const e of events) {
+        const d = new Date(e.start);
+        const dayKey = d.toLocaleDateString("ru-RU", {
+          weekday: "short", day: "numeric", month: "short", timeZone: TIMEZONE,
+        });
+        if (dayKey !== currentDay) {
+          currentDay = dayKey;
+          lines.push(`\n*${dayKey}*`);
+        }
+        const en = new Date(e.end);
+        const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE };
+        lines.push(`• ${e.summary} (${d.toLocaleTimeString("ru-RU", timeOpt)} – ${en.toLocaleTimeString("ru-RU", timeOpt)})`);
+      }
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, statusMsg.message_id, undefined,
+        "📅 *Неделя:*" + lines.join("\n"),
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    if (intent.type === "broadcast") {
+      const adminId = process.env.ADMIN_TELEGRAM_ID;
+      if (!adminId || userId !== adminId) {
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, statusMsg.message_id, undefined,
+          "Рассылка доступна только администратору."
+        );
+        return;
+      }
+      const allUsers = await getAllUserIds();
+      const recipients = allUsers.filter((id) => id !== adminId);
+      if (recipients.length === 0) {
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, statusMsg.message_id, undefined,
+          "Нет пользователей для рассылки."
+        );
+        return;
+      }
+      let sent = 0;
+      let failed = 0;
+      for (const recipientId of recipients) {
+        try {
+          await ctx.telegram.sendMessage(recipientId, intent.message);
+          sent++;
+        } catch {
+          failed++;
+        }
+      }
+      const result = `Рассылка завершена: отправлено ${sent}` +
+        (failed > 0 ? `, не удалось ${failed}` : "") +
+        ` из ${recipients.length}.`;
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, statusMsg.message_id, undefined, result
       );
       return;
     }

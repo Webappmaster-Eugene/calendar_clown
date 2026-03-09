@@ -20,6 +20,7 @@ startOAuthServer({
 
 const commands = [
   { command: "help", description: "Справка по командам" },
+  { command: "status", description: "Статус привязки календаря" },
   { command: "new", description: "Создать встречу из фразы" },
   { command: "today", description: "Встречи на сегодня" },
   { command: "week", description: "Встречи на неделю" },
