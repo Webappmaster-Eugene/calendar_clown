@@ -20,6 +20,17 @@ function getTokenPath(userId: string): string {
   return `${TOKENS_DIR}/${userId}.json`;
 }
 
+const OAUTH_TOKEN_TIMEOUT_MS = 20_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(message)), ms)
+    ),
+  ]);
+}
+
 function getRedirectUri(): string {
   const uri = process.env.OAUTH_REDIRECT_URI?.trim();
   if (!uri) {
@@ -65,7 +76,12 @@ export async function saveTokenFromCode(code: string, userId: string): Promise<v
     clientSecret,
     getRedirectUri()
   );
-  const { tokens } = await oauth2Client.getToken({ code: code.trim(), redirect_uri: getRedirectUri() });
+  const tokenResponse = await withTimeout(
+    oauth2Client.getToken({ code: code.trim(), redirect_uri: getRedirectUri() }),
+    OAUTH_TOKEN_TIMEOUT_MS,
+    "Превышено время ожидания ответа от Google"
+  );
+  const { tokens } = tokenResponse;
   const tokenPath = getTokenPath(userId);
   await mkdir(dirname(tokenPath), { recursive: true });
   await writeFile(tokenPath, JSON.stringify(tokens), "utf8");

@@ -83,14 +83,17 @@ export function startSendMessageApi(bot: Telegraf, options: SendMessageApiOption
       const code = searchParams.get("code");
       const state = searchParams.get("state");
       if (!code || !state) {
+        console.log("OAuth callback: missing code or state");
         sendHtml(res, 400, `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p>Не хватает параметров (code или state). Вернитесь в Telegram и нажмите «Войти через Google» снова.</p></body></html>`);
         return;
       }
       try {
         await saveTokenFromCode(code, state);
+        console.log("OAuth callback: success for state=%s", state);
         sendHtml(res, 200, OAUTH_SUCCESS_HTML);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        console.log("OAuth callback: error for state=%s - %s", state, message);
         sendHtml(res, 500, `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p>Ошибка привязки: ${escapeHtml(message)}</p><p>Вернитесь в Telegram и попробуйте снова или отправьте /auth и код из браузера.</p></body></html>`);
       }
       return;

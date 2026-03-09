@@ -1,9 +1,9 @@
 /**
- * Current chat mode: calendar (meetings) or openclaw (agent tasks).
+ * Current chat mode: calendar (meetings), openclaw (agent tasks), or send_message (send to other users).
  * Stored in-memory per chatId; default is "calendar".
  */
 
-export type ChatMode = "calendar" | "openclaw";
+export type ChatMode = "calendar" | "openclaw" | "send_message";
 
 const modes = new Map<string, ChatMode>();
 

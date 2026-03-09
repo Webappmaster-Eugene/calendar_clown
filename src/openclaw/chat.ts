@@ -19,6 +19,7 @@ export async function sendChat(
     throw new Error("OPENCLAW_GATEWAY_TOKEN is not set");
   }
 
+  const agentId = process.env.OPENCLAW_AGENT_ID?.trim() || "main";
   const url = `${baseUrl}/v1/chat/completions`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -30,7 +31,7 @@ export async function sendChat(
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
-        "x-openclaw-agent-id": "main",
+        "x-openclaw-agent-id": agentId,
       },
       body: JSON.stringify({
         model: "openclaw",

@@ -12,7 +12,7 @@ import { updateMessageTranscript } from "../db/client.js";
 import { getMode, setMode } from "../chatMode.js";
 import { sendChat } from "../openclaw/chat.js";
 import * as sessions from "../openclaw/sessions.js";
-import { getOpenClawSystemPrompt } from "./openclawChat.js";
+import { getOpenClawSystemPrompt, formatOpenClawError } from "./openclawChat.js";
 
 const VOICE_DIR = "./data/voice";
 
@@ -103,30 +103,53 @@ export async function handleVoice(ctx: Context) {
         );
       } catch (err) {
         sessions.clear(chatId);
-        const message = err instanceof Error ? err.message : String(err);
-        if (message.includes("OPENCLAW_GATEWAY_TOKEN")) {
-          await ctx.telegram.editMessageText(
-            ctx.chat!.id,
-            statusMsg.message_id,
-            undefined,
-            "OpenClaw не настроен."
-          );
-        } else if (message.includes("abort") || message.includes("timeout")) {
-          await ctx.telegram.editMessageText(
-            ctx.chat!.id,
-            statusMsg.message_id,
-            undefined,
-            "Таймаут запроса к OpenClaw. Режим чата сброшен."
-          );
-        } else {
-          await ctx.telegram.editMessageText(
-            ctx.chat!.id,
-            statusMsg.message_id,
-            undefined,
-            "OpenClaw недоступен: " + message.slice(0, 200) + ". Режим чата сброшен."
-          );
-        }
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          formatOpenClawError(err) + " Режим чата сброшен."
+        );
       }
+      return;
+    }
+
+    if (chatId && getMode(chatId) === "send_message") {
+      if (!isAdmin(ctx)) {
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          "Режим отправки сообщений доступен только доверенным пользователям."
+        );
+        return;
+      }
+      const intent = await extractVoiceIntent(transcript);
+      if (intent.type === "send_message") {
+        const recipientChatId = await getChatIdByRecipient(intent.recipient);
+        if (recipientChatId == null) {
+          await ctx.telegram.editMessageText(
+            ctx.chat!.id,
+            statusMsg.message_id,
+            undefined,
+            "Пользователь не найден или ещё не писал боту. Отправка возможна только тем, кто уже начал диалог с ботом."
+          );
+          return;
+        }
+        await ctx.telegram.sendMessage(recipientChatId, intent.text);
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          `Сообщение отправлено (${intent.recipient}).`
+        );
+        return;
+      }
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMsg.message_id,
+        undefined,
+        "В этом режиме только отправка сообщений. Скажите кому и что отправить (например: «Отправь Ивану что завтра встреча»)."
+      );
       return;
     }
 
@@ -176,7 +199,9 @@ export async function handleVoice(ctx: Context) {
           fallback.title,
           fallback.start,
           fallback.end,
-          userId
+          userId,
+          undefined,
+          fallback.recurrence
         );
         const start = new Date(event.start);
         const end = new Date(event.end);
@@ -187,8 +212,9 @@ export async function handleVoice(ctx: Context) {
           timeZone,
         });
         const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
+        const recurringHint = fallback.recurrence?.length ? " (еженедельно)" : "";
         const text =
-          `✅ Создано: *${event.summary}*\n${timeStr} – ${endStr}` +
+          `✅ Создано: *${event.summary}*${recurringHint}\n${timeStr} – ${endStr}` +
           (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
         await ctx.telegram.editMessageText(
           ctx.chat!.id,
@@ -212,7 +238,9 @@ export async function handleVoice(ctx: Context) {
       intent.title,
       intent.start,
       intent.end,
-      userId
+      userId,
+      undefined,
+      intent.recurrence
     );
     const start = new Date(event.start);
     const end = new Date(event.end);
@@ -223,8 +251,9 @@ export async function handleVoice(ctx: Context) {
       timeZone,
     });
     const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
+    const recurringHint = intent.recurrence?.length ? " (еженедельно)" : "";
     const text =
-      `✅ Создано: *${event.summary}*\n${timeStr} – ${endStr}` +
+      `✅ Создано: *${event.summary}*${recurringHint}\n${timeStr} – ${endStr}` +
       (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
 
     await ctx.telegram.editMessageText(

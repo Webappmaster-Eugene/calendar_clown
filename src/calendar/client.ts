@@ -26,7 +26,8 @@ export async function createEvent(
   start: Date,
   end: Date,
   userId: string,
-  description?: string
+  description?: string,
+  recurrence?: string[]
 ): Promise<CalendarEvent> {
   const now = new Date();
   const bufferMs = 60 * 1000; // 1 minute
@@ -35,14 +36,24 @@ export async function createEvent(
   }
   const auth = await getAuthClient(userId);
   const calendar = google.calendar({ version: "v3", auth });
+  const requestBody: {
+    summary: string;
+    description?: string;
+    start: { dateTime: string; timeZone: string };
+    end: { dateTime: string; timeZone: string };
+    recurrence?: string[];
+  } = {
+    summary,
+    description: description ?? undefined,
+    start: { dateTime: start.toISOString(), timeZone: "Europe/Moscow" },
+    end: { dateTime: end.toISOString(), timeZone: "Europe/Moscow" },
+  };
+  if (recurrence?.length) {
+    requestBody.recurrence = recurrence;
+  }
   const res = await calendar.events.insert({
     calendarId: CALENDAR_ID,
-    requestBody: {
-      summary,
-      description: description ?? undefined,
-      start: { dateTime: start.toISOString(), timeZone: "Europe/Moscow" },
-      end: { dateTime: end.toISOString(), timeZone: "Europe/Moscow" },
-    },
+    requestBody,
   });
   const e = res.data;
   if (!e.id || !e.summary || !e.start?.dateTime || !e.end?.dateTime) {

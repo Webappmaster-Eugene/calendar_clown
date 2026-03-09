@@ -6,6 +6,26 @@ import * as sessions from "../openclaw/sessions.js";
 
 const DEFAULT_OPENCLAW_SYSTEM_PROMPT = `You are a helpful assistant with access to tools. You can help with: web search, composing summaries, sending email (if you have the tool), and answering questions. Reply in the same language as the user. The user may send tasks by voice; you will receive the transcribed text.`;
 
+/**
+ * Map sendChat() error to a short user-facing message.
+ */
+export function formatOpenClawError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("OPENCLAW_GATEWAY_TOKEN") || message.includes("not set")) {
+    return "OpenClaw не настроен (задайте OPENCLAW_GATEWAY_TOKEN и URL).";
+  }
+  if (/OpenClaw request failed: 401/.test(message) || /OpenClaw request failed: 403/.test(message)) {
+    return "Ошибка авторизации OpenClaw (проверьте OAuth в OpenClaw).";
+  }
+  if (message.includes("abort") || message.includes("timeout") || message.includes("AbortError")) {
+    return "Таймаут запроса к OpenClaw.";
+  }
+  if (message.includes("ECONNREFUSED") || message.includes("ENOTFOUND") || message.includes("fetch failed")) {
+    return "Сервер OpenClaw недоступен (проверьте URL и что шлюз запущен).";
+  }
+  return "OpenClaw недоступен: " + message.slice(0, 180);
+}
+
 export function getOpenClawSystemPrompt(): string {
   const custom = process.env.OPENCLAW_SYSTEM_PROMPT?.trim();
   return custom || DEFAULT_OPENCLAW_SYSTEM_PROMPT;
@@ -49,14 +69,7 @@ export async function handleOpenClaw(ctx: Context) {
       sessions.appendAssistant(chatId, reply);
       await ctx.reply(reply || "—");
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("OPENCLAW_GATEWAY_TOKEN")) {
-        await ctx.reply("OpenClaw не настроен.");
-      } else if (message.includes("abort") || message.includes("timeout")) {
-        await ctx.reply("Таймаут запроса к OpenClaw.");
-      } else {
-        await ctx.reply("OpenClaw недоступен: " + message.slice(0, 200));
-      }
+      await ctx.reply(formatOpenClawError(err));
     }
     return;
   }
@@ -112,13 +125,6 @@ export async function handleOpenClawText(ctx: Context) {
     await ctx.reply(reply || "—");
   } catch (err) {
     sessions.clear(chatId);
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("abort") || message.includes("timeout")) {
-      await ctx.reply("Таймаут запроса к OpenClaw. Режим чата сброшен.");
-    } else {
-      await ctx.reply(
-        "OpenClaw недоступен: " + message.slice(0, 200) + ". Режим чата сброшен."
-      );
-    }
+    await ctx.reply(formatOpenClawError(err) + " Режим чата сброшен.");
   }
 }

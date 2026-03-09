@@ -15,16 +15,19 @@ function buildSystemPrompt(): string {
   const year = now.getFullYear();
   return `Task: from the user message extract exactly one calendar event.
 Output: only a valid JSON object, no other text.
-Format: {"title":"event title","start":"ISO8601","end":"ISO8601"}
+Format: {"title":"event title","start":"ISO8601","end":"ISO8601"} or with optional "recurrence":["RRULE:..."] for repeating events.
+Recurring: if the user says "каждую пятницу", "каждую неделю", "еженедельно", "по понедельникам" etc., add "recurrence":["RRULE:FREQ=WEEKLY;BYDAY=XX"] where XX is MO,TU,WE,TH,FR,SA,SU. Set start/end to the first occurrence.
 Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. ${year}-03-09T10:00:00+03:00).
 IMPORTANT: Today is ${dateStr} (${weekday}), ${TIMEZONE_MSK}. Always use the current year (${year}) when the user does not specify a year. "Tomorrow", "next Monday", "today" must refer to dates in ${year} or later. No date → today. No time → 10:00. Default duration: 1 hour.
-Example: {"title":"Meeting","start":"${year}-03-09T15:00:00+03:00","end":"${year}-03-09T16:00:00+03:00"}`;
+Example: {"title":"Meeting","start":"${year}-03-09T15:00:00+03:00","end":"${year}-03-09T16:00:00+03:00"}
+Example recurring: {"title":"Массаж","start":"...","end":"...","recurrence":["RRULE:FREQ=WEEKLY;BYDAY=FR"]}`;
 }
 
 export interface ExtractedEvent {
   title: string;
   start: Date;
   end: Date;
+  recurrence?: string[];
 }
 
 export async function extractCalendarEvent(
@@ -76,12 +79,17 @@ export async function extractCalendarEvent(
   const end = new Date(json.end);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
 
-  return { title: json.title, start, end };
+  let recurrence: string[] | undefined;
+  if (Array.isArray(json.recurrence) && json.recurrence.every((r): r is string => typeof r === "string") && json.recurrence.length > 0) {
+    recurrence = json.recurrence;
+  }
+
+  return { title: json.title, start, end, recurrence };
 }
 
 function tryParseJson(
   raw: string
-): { title?: string; start?: string; end?: string } | null {
+): { title?: string; start?: string; end?: string; recurrence?: unknown } | null {
   const stripped = raw
     .replace(/^```json\s*/i, "")
     .replace(/\s*```$/i, "")
@@ -91,6 +99,7 @@ function tryParseJson(
       title?: string;
       start?: string;
       end?: string;
+      recurrence?: unknown;
     };
   } catch {
     return null;

@@ -4,7 +4,7 @@ import { handleAuth } from "./commands/auth.js";
 import { handleNew } from "./commands/createEvent.js";
 import { handleToday, handleWeek } from "./commands/listEvents.js";
 import { handleVoice } from "./commands/voiceEvent.js";
-import { handleSend } from "./commands/sendMessage.js";
+import { handleSend, handleSendMessageMode } from "./commands/sendMessage.js";
 import {
   handleOpenClaw,
   handleOpenClawStop,
@@ -39,11 +39,14 @@ export function createBot(token: string): Telegraf {
     bot.on("text", async (ctx) => {
       if (await handleMenuSwitch(ctx)) return;
       const chatId = ctx.chat?.id != null ? String(ctx.chat.id) : null;
+      if (chatId && getMode(chatId) === "send_message") {
+        return handleSendMessageMode(ctx);
+      }
       if (chatId && getMode(chatId) === "openclaw") {
         return handleOpenClawText(ctx);
       }
       await ctx.reply(
-        "Используйте /new для встречи или выберите OpenClaw в меню."
+        "Используйте /new для встречи или выберите режим в меню (OpenClaw / Отправить сообщение)."
       );
     });
   }

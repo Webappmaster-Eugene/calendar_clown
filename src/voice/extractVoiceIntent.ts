@@ -78,15 +78,17 @@ Options:
 1) Creating a calendar meeting/event. Use type "calendar" for ANY phrase where the user asks to schedule, record, or create something AND mentions a date or time (explicit or from context). This includes:
    - Short: "встреча завтра в 15:00", "создай событие в понедельник в 10"
    - Rich context: "запиши меня к Роману на ремонт автомобиля во вторник в 10 утра", "встреча завтра, ремонт Романа автомобиль в 10 утра", "приём у врача в понедельник в 9"
-   {"type":"calendar","title":"event title","start":"ISO8601","end":"ISO8601"}
+   {"type":"calendar","title":"event title","start":"ISO8601","end":"ISO8601"} or with optional "recurrence":["RRULE:..."] for repeating events.
    title: short descriptive title for the calendar event, preserving who and what (e.g. "Ремонт автомобиля у Романа", "Запись к Роману: ремонт авто"). Do not reduce to a single word.
    Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. ${year}-03-09T10:00:00+03:00).
    Today is ${dateStr} (${weekday}). Use year ${year}. No date → today. No time → 10:00. Default duration 1 hour.
    Weekday-to-date (all in ${TIMEZONE_MSK}): вторник (Tuesday) = ${tueStr}, завтра (tomorrow) = ${tomorrowStr}.
+   Recurring events: if the user says "каждую пятницу", "каждую неделю", "еженедельно", "по понедельникам" etc., add "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=XX"] where XX is MO,TU,WE,TH,FR,SA,SU (one or comma-separated). Set start/end to the first occurrence (e.g. next Friday 17:30).
    Examples:
    - "Запиши меня к Роману на ремонт автомобиля во вторник в 10 утра" → {"type":"calendar","title":"Ремонт автомобиля у Романа","start":"${tueStr}T10:00:00+03:00","end":"${tueStr}T11:00:00+03:00"}
    - "Встреча завтра, ремонт Романа автомобиль в 10 утра" → {"type":"calendar","title":"Ремонт автомобиля у Романа","start":"${tomorrowStr}T10:00:00+03:00","end":"${tomorrowStr}T11:00:00+03:00"}
    - "Встреча завтра в 15:00" → {"type":"calendar","title":"Встреча","start":"${tomorrowStr}T15:00:00+03:00","end":"${tomorrowStr}T16:00:00+03:00"}
+   - "запиши что каждую пятницу в 17:30 мы ходим на массаж" → {"type":"calendar","title":"Массаж всей семьёй","start":"<next Friday>T17:30:00+03:00","end":"<next Friday>T18:30:00+03:00","recurrence":["RRULE:FREQ=WEEKLY;BYDAY=FR"]}
 
 2) Sending a message to someone (e.g. "отправь Анжелике Надточеевой что я ее люблю", "напиши Ивану что завтра встреча"):
    {"type":"send_message","recipient":"recipient name or username","text":"exact message text to send"}
@@ -98,7 +100,7 @@ Options:
 }
 
 export type VoiceIntent =
-  | { type: "calendar"; title: string; start: Date; end: Date }
+  | { type: "calendar"; title: string; start: Date; end: Date; recurrence?: string[] }
   | { type: "send_message"; recipient: string; text: string }
   | { type: "unknown" };
 
@@ -166,7 +168,11 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
       const start = new Date(startStr);
       const end = new Date(endStr);
       if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-        const intent: VoiceIntent = { type: "calendar", title, start, end };
+        let recurrence: string[] | undefined;
+        if (Array.isArray(json.recurrence) && json.recurrence.every((r): r is string => typeof r === "string") && json.recurrence.length > 0) {
+          recurrence = json.recurrence;
+        }
+        const intent: VoiceIntent = { type: "calendar", title, start, end, recurrence };
         return correctCalendarIntentWeekday(transcript, intent);
       }
     }
@@ -191,5 +197,5 @@ function correctCalendarIntentWeekday(transcript: string, intent: VoiceIntent): 
   const durationMs = intent.end.getTime() - intent.start.getTime();
   const newStart = new Date(correctDateStr + "T" + timePart + ":00+03:00");
   const newEnd = new Date(newStart.getTime() + durationMs);
-  return { type: "calendar", title: intent.title, start: newStart, end: newEnd };
+  return { type: "calendar", title: intent.title, start: newStart, end: newEnd, recurrence: intent.recurrence };
 }
