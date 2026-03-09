@@ -60,9 +60,10 @@ jobs:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Add VDS host key
+        continue-on-error: true
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -T 10 -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || echo "Warning: ssh-keyscan failed (non-critical, StrictHostKeyChecking=no is used downstream)"
 
       - name: Deploy files
         run: |

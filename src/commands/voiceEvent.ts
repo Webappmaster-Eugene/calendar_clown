@@ -2,7 +2,7 @@ import type { Context } from "telegraf";
 import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
 import { hasToken } from "../calendar/auth.js";
-import { createEvent, NoCalendarLinkedError } from "../calendar/client.js";
+import { createEvent, deleteEvent, searchEvents, NoCalendarLinkedError } from "../calendar/client.js";
 import { extractCalendarEvent } from "../calendar/extractViaOpenRouter.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
@@ -188,6 +188,70 @@ export async function handleVoice(ctx: Context) {
         statusMsg.message_id,
         undefined,
         `Сообщение отправлено (${intent.recipient}).`
+      );
+      return;
+    }
+
+    if (intent.type === "cancel_event") {
+      const timeZone = "Europe/Moscow";
+      let timeMin: Date;
+      let timeMax: Date;
+      if (intent.date) {
+        timeMin = intent.date;
+        timeMax = new Date(timeMin.getTime() + 24 * 60 * 60 * 1000);
+      } else {
+        const nowMsk = new Date();
+        const todayStr = nowMsk.toLocaleDateString("en-CA", { timeZone });
+        timeMin = new Date(todayStr + "T00:00:00+03:00");
+        timeMax = new Date(timeMin.getTime() + 7 * 24 * 60 * 60 * 1000);
+      }
+
+      const events = await searchEvents(intent.query, timeMin, timeMax, userId);
+
+      if (events.length === 0) {
+        const rangeHint = intent.date
+          ? intent.date.toLocaleDateString("ru-RU", { dateStyle: "long", timeZone })
+          : "ближайшую неделю";
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          `Встречи не найдены${intent.query ? ` по запросу «${intent.query}»` : ""} на ${rangeHint}.`
+        );
+        return;
+      }
+
+      if (events.length === 1) {
+        const ev = events[0];
+        await deleteEvent(ev.id, userId);
+        const start = new Date(ev.start);
+        const timeStr = start.toLocaleString("ru-RU", {
+          dateStyle: "short",
+          timeStyle: "short",
+          timeZone,
+        });
+        const safeSummary = ev.summary.replace(/([*_`\[\]])/g, "\\$1");
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          `🗑 Отменено: *${safeSummary}*\n${timeStr}`,
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      const listText = events.slice(0, 10).map((ev, i) => {
+        const start = new Date(ev.start);
+        const dateStr = start.toLocaleDateString("ru-RU", { dateStyle: "short", timeZone });
+        const timeStr = start.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
+        return `${i + 1}. ${ev.summary} (${dateStr}, ${timeStr})`;
+      }).join("\n");
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMsg.message_id,
+        undefined,
+        `Найдено несколько встреч. Уточните, какую отменить:\n\n${listText}\n\nНазовите точнее: дату, время или название.`
       );
       return;
     }

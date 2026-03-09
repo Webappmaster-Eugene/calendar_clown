@@ -68,6 +68,49 @@ export async function createEvent(
   };
 }
 
+export async function deleteEvent(
+  eventId: string,
+  userId: string
+): Promise<void> {
+  const auth = await getAuthClient(userId);
+  const calendar = google.calendar({ version: "v3", auth });
+  await calendar.events.delete({
+    calendarId: CALENDAR_ID,
+    eventId,
+  });
+}
+
+export async function searchEvents(
+  query: string,
+  timeMin: Date,
+  timeMax: Date,
+  userId: string
+): Promise<CalendarEvent[]> {
+  const auth = await getAuthClient(userId);
+  const calendar = google.calendar({ version: "v3", auth });
+  const res = await calendar.events.list({
+    calendarId: CALENDAR_ID,
+    timeMin: timeMin.toISOString(),
+    timeMax: timeMax.toISOString(),
+    singleEvents: true,
+    orderBy: "startTime",
+    q: query || undefined,
+  });
+  const items = res.data.items ?? [];
+  return items
+    .filter(
+      (e): e is typeof e & { id: string; summary: string; start: { dateTime: string }; end: { dateTime: string } } =>
+        !!e.id && !!e.summary && !!e.start?.dateTime && !!e.end?.dateTime
+    )
+    .map((e) => ({
+      id: e.id,
+      summary: e.summary,
+      start: e.start.dateTime,
+      end: e.end.dateTime,
+      htmlLink: e.htmlLink ?? undefined,
+    }));
+}
+
 export async function listEvents(
   timeMin: Date,
   timeMax: Date,

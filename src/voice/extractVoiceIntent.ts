@@ -90,17 +90,24 @@ Options:
    - "Встреча завтра в 15:00" → {"type":"calendar","title":"Встреча","start":"${tomorrowStr}T15:00:00+03:00","end":"${tomorrowStr}T16:00:00+03:00"}
    - "запиши что каждую пятницу в 17:30 мы ходим на массаж" → {"type":"calendar","title":"Массаж всей семьёй","start":"<next Friday>T17:30:00+03:00","end":"<next Friday>T18:30:00+03:00","recurrence":["RRULE:FREQ=WEEKLY;BYDAY=FR"]}
 
-2) Sending a message to someone (e.g. "отправь Анжелике Надточеевой что я ее люблю", "напиши Ивану что завтра встреча"):
+2) Cancelling/deleting a calendar event (e.g. "отмени встречу с Романом завтра", "удали встречу в 15:00", "отмени запись к врачу на вторник", "убери встречу завтра"):
+   {"type":"cancel_event","query":"search keywords","date":"YYYY-MM-DD or null"}
+   query: keywords to search in event title (e.g. "Роман", "врач", "массаж"). Extract the most specific words from the user's phrase that identify the event. If user says just "отмени встречу завтра" without specifics, use empty string "".
+   date: the target date in YYYY-MM-DD format (${TIMEZONE_MSK}), or null if no date mentioned. Use the same date rules: "завтра" = ${tomorrowStr}, "вторник" = ${tueStr}, "сегодня" = ${dateStr}, etc.
+   Trigger words: отмени, удали, убери, отменить, удалить, убрать, cancel, delete, remove — applied to встреча, событие, запись, приём.
+
+3) Sending a message to someone (e.g. "отправь Анжелике Надточеевой что я ее люблю", "напиши Ивану что завтра встреча"):
    {"type":"send_message","recipient":"recipient name or username","text":"exact message text to send"}
    recipient: full name (e.g. "Анжелика Надточеева") or Telegram username without @. Use nominative for name.
    text: the exact text the user wants to send to that person.
 
-3) Anything else or unclear:
+4) Anything else or unclear:
    {"type":"unknown"}`;
 }
 
 export type VoiceIntent =
   | { type: "calendar"; title: string; start: Date; end: Date; recurrence?: string[] }
+  | { type: "cancel_event"; query: string; date: Date | null }
   | { type: "send_message"; recipient: string; text: string }
   | { type: "unknown" };
 
@@ -151,6 +158,19 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
 
   const json = tryParseJson(content);
   if (!json || typeof json.type !== "string") return { type: "unknown" };
+
+  if (json.type === "cancel_event") {
+    const query = typeof json.query === "string" ? json.query.trim() : "";
+    const dateStr = typeof json.date === "string" ? json.date.trim() : null;
+    let date: Date | null = null;
+    if (dateStr) {
+      const parsed = new Date(dateStr + "T00:00:00+03:00");
+      if (!Number.isNaN(parsed.getTime())) {
+        date = parsed;
+      }
+    }
+    return { type: "cancel_event", query, date };
+  }
 
   if (json.type === "send_message") {
     const recipient = typeof json.recipient === "string" ? json.recipient.trim() : "";

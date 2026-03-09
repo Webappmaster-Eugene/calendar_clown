@@ -72,7 +72,8 @@ src/
 ## Потоки данных
 
 - **Текст `/new`** → chrono-node (парсинг) → Google Calendar API
-- **Голос (Calendar)** → ffmpeg (OGG) → OpenRouter STT → DeepSeek (извлечение) → Google Calendar API
+- **Голос (Calendar, создание)** → ffmpeg (OGG) → OpenRouter STT → DeepSeek (извлечение) → Google Calendar API (insert)
+- **Голос (Calendar, отмена)** → ffmpeg (OGG) → OpenRouter STT → DeepSeek (cancel_event intent) → Google Calendar API (search + delete)
 - **Голос (OpenClaw)** → ffmpeg → OpenRouter STT → OpenClaw Gateway
 - **Текст (OpenClaw)** → OpenClaw Gateway (chat completions) → ответ в чат
 - **Голос (Send Message)** → STT → DeepSeek (извлечение получателя) → Telegram sendMessage
