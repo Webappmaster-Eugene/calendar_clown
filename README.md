@@ -6,7 +6,7 @@
 
 ## Требования
 
-- Node.js 20+ (или Docker)
+- Node.js 20+
 - Аккаунт Google (календарь)
 - Токен Telegram-бота ([@BotFather](https://t.me/BotFather))
 
