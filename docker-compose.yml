@@ -1,7 +1,27 @@
 services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: expenses_bot
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bot -d expenses_bot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   bot:
     build: .
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
@@ -9,6 +29,10 @@ services:
       - OAUTH_REDIRECT_URI=${OAUTH_REDIRECT_URI}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID:-}
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
+      - DATABASE_URL=postgresql://bot:${DB_PASSWORD:-changeme}@db:5432/expenses_bot
+      - MONTHLY_EXPENSE_LIMIT=${MONTHLY_EXPENSE_LIMIT:-350000}
+      - DEFAULT_BOT_MODE=${DEFAULT_BOT_MODE:-calendar}
       - PORT=${PORT:-18790}
       - HOST=${HOST:-0.0.0.0}
     volumes:
@@ -24,6 +48,7 @@ services:
       - "traefik.http.services.calendar-bot.loadbalancer.server.port=18790"
 
 volumes:
+  pgdata:
   tokens:
   voice:
 

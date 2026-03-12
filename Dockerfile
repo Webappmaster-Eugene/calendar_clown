@@ -15,8 +15,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/src/db/migrations ./migrations
 
 RUN mkdir -p data/tokens data/voice
+
+ENV MIGRATIONS_DIR=/app/migrations
 
 EXPOSE 18790
 
