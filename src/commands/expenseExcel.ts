@@ -8,22 +8,7 @@ import {
 } from "../expenses/repository.js";
 import { generateMonthlyExcel } from "../expenses/excel.js";
 import { monthName } from "../expenses/formatter.js";
-
-const TIMEZONE = "Europe/Moscow";
-
-function getMonthLimit(): number {
-  const raw = process.env.MONTHLY_EXPENSE_LIMIT?.trim();
-  if (!raw) return 350_000;
-  const parsed = parseFloat(raw);
-  return isNaN(parsed) ? 350_000 : parsed;
-}
-
-function getMskNow(): { year: number; month: number } {
-  const now = new Date();
-  const mskStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE });
-  const [year, month] = mskStr.split("-").map(Number);
-  return { year, month };
-}
+import { getMskNow, getMonthLimit } from "../utils/date.js";
 
 /**
  * Handle "Excel" button in expense mode — generate and send Excel for current month.

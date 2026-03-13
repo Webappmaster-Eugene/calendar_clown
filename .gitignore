@@ -18,3 +18,15 @@ GB.conf
 
 # IDE
 .idea/
+.vscode/
+
+# Certificates & keys
+*.pem
+*.key
+*.crt
+
+# Test coverage
+coverage/
+
+# OS files
+Thumbs.db

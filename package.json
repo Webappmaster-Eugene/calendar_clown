@@ -8,7 +8,13 @@
     "build": "tsup src/index.ts --format esm",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "authorize": "tsx scripts/authorize.ts"
+    "authorize": "tsx scripts/authorize.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "test:parser": "tsx --test tests/parser.test.ts",
+    "test:repo": "tsx --test tests/repository.test.ts",
+    "typecheck": "tsc --noEmit",
+    "smoke": "npm run build && npm run typecheck",
+    "prepare": "husky"
   },
   "engines": {
     "node": ">=20"
@@ -25,6 +31,7 @@
   "devDependencies": {
     "@types/node": "^22.9.0",
     "@types/pg": "^8.18.0",
+    "husky": "^9.1.7",
     "tsup": "^8.3.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"

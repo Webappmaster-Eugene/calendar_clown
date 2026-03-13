@@ -15,29 +15,7 @@ import {
   formatYearReport,
   monthName,
 } from "../expenses/formatter.js";
-
-const TIMEZONE = "Europe/Moscow";
-
-function getMonthLimit(): number {
-  const raw = process.env.MONTHLY_EXPENSE_LIMIT?.trim();
-  if (!raw) return 350_000;
-  const parsed = parseFloat(raw);
-  return isNaN(parsed) ? 350_000 : parsed;
-}
-
-function getMskNow(): { year: number; month: number } {
-  const now = new Date();
-  const mskStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE });
-  const [year, month] = mskStr.split("-").map(Number);
-  return { year, month };
-}
-
-function getMonthRange(year: number, month: number): { from: Date; to: Date } {
-  return {
-    from: new Date(Date.UTC(year, month - 1, 1)),
-    to: new Date(Date.UTC(year, month, 1)),
-  };
-}
+import { getMskNow, getMonthRange, getMonthLimit } from "../utils/date.js";
 
 // ─── Report command / button ──────────────────────────────────────────
 
@@ -236,7 +214,8 @@ export async function handleStatsButton(ctx: Context): Promise<void> {
   const categoryTotals = await getCategoryTotals(dbUser.tribeId, from, to);
   const sorted = [...categoryTotals].sort((a, b) => b.total - a.total);
 
-  const text = formatUserStats(userTotals, sorted, "Надточеевы JR", year, month);
+  const tribeName = await getTribeName(dbUser.tribeId);
+  const text = formatUserStats(userTotals, sorted, tribeName, year, month);
 
   await ctx.replyWithMarkdown(text);
 }

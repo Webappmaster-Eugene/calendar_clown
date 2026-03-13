@@ -1,22 +1,18 @@
 import type { Context } from "telegraf";
 import { listEvents, NoCalendarLinkedError } from "../calendar/client.js";
+import { escapeMarkdown } from "../utils/markdown.js";
+import { getUserId, replyMarkdownSafe } from "../utils/telegram.js";
+import { TIMEZONE_MSK } from "../constants.js";
 
-const TIMEZONE_MSK = "Europe/Moscow";
-
-function getUserId(ctx: Context): string | null {
-  const id = ctx.from?.id ?? ctx.chat?.id;
-  return id != null ? String(id) : null;
-}
-
-function formatEvent(e: { summary: string; start: string; end: string }) {
+function formatEvent(e: { summary: string; start: string; end: string }): string {
   const start = new Date(e.start);
   const end = new Date(e.end);
   const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE_MSK };
   const time = `${start.toLocaleTimeString("ru-RU", timeOpt)} – ${end.toLocaleTimeString("ru-RU", timeOpt)}`;
-  return `• ${e.summary} (${time})`;
+  return `• ${escapeMarkdown(e.summary)} (${time})`;
 }
 
-export async function handleToday(ctx: Context) {
+export async function handleToday(ctx: Context): Promise<void> {
   const userId = getUserId(ctx);
   if (!userId) {
     await ctx.reply("Не удалось определить пользователя.");
@@ -34,7 +30,7 @@ export async function handleToday(ctx: Context) {
       return;
     }
     const text = "📅 *Сегодня:*\n" + events.map(formatEvent).join("\n");
-    await ctx.replyWithMarkdown(text);
+    await replyMarkdownSafe(ctx, text);
   } catch (err) {
     if (err instanceof NoCalendarLinkedError) {
       await ctx.reply(err.message);
@@ -45,7 +41,7 @@ export async function handleToday(ctx: Context) {
   }
 }
 
-export async function handleWeek(ctx: Context) {
+export async function handleWeek(ctx: Context): Promise<void> {
   const userId = getUserId(ctx);
   if (!userId) {
     await ctx.reply("Не удалось определить пользователя.");
@@ -69,11 +65,11 @@ export async function handleWeek(ctx: Context) {
       const dayKey = d.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short", timeZone: TIMEZONE_MSK });
       if (dayKey !== currentDay) {
         currentDay = dayKey;
-        lines.push(`\n*${dayKey}*`);
+        lines.push(`\n*${escapeMarkdown(dayKey)}*`);
       }
       lines.push(formatEvent(e));
     }
-    await ctx.replyWithMarkdown("📅 *Неделя:*" + lines.join("\n"));
+    await replyMarkdownSafe(ctx, "📅 *Неделя:*" + lines.join("\n"));
   } catch (err) {
     if (err instanceof NoCalendarLinkedError) {
       await ctx.reply(err.message);

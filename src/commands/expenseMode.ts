@@ -1,16 +1,20 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
-import { setUserMode, getUserMode } from "../middleware/expenseMode.js";
+import { setUserMode } from "../middleware/expenseMode.js";
 import { getCategoriesList } from "../expenses/parser.js";
+import { ensureUser } from "../expenses/repository.js";
+import { isBootstrapAdmin } from "../middleware/auth.js";
 
 const EXPENSE_KEYBOARD = Markup.keyboard([
   ["📊 Отчёт", "📥 Excel"],
   ["📋 Категории", "📈 Сравнение"],
   ["👥 Статистика", "↩️ Отменить"],
-  ["🔙 Календарь"],
+  ["📅 Календарь"],
 ]).resize();
 
-const CALENDAR_KEYBOARD = Markup.removeKeyboard();
+const MODE_KEYBOARD = Markup.keyboard([
+  ["📅 Календарь", "💰 Расходы"],
+]).resize();
 
 export function getExpenseKeyboard() {
   return EXPENSE_KEYBOARD;
@@ -20,11 +24,20 @@ export async function handleExpensesCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
-  setUserMode(telegramId, "expenses");
+  // Ensure user exists in DB before switching mode
+  await ensureUser(
+    telegramId,
+    ctx.from?.username ?? null,
+    ctx.from?.first_name ?? "",
+    ctx.from?.last_name ?? null,
+    isBootstrapAdmin(telegramId)
+  );
+
+  await setUserMode(telegramId, "expenses");
 
   const categoriesList = await getCategoriesList();
 
-  await ctx.replyWithMarkdown(
+  await ctx.reply(
     "💰 *Режим учёта расходов активирован*\n\n" +
     "Просто отправьте трату в формате:\n" +
     "📝 *Категория Описание Сумма*\n\n" +
@@ -34,7 +47,7 @@ export async function handleExpensesCommand(ctx: Context): Promise<void> {
     "• `Кафе Бургер Кинг 1200`\n\n" +
     "Или отправьте голосовое сообщение 🎤\n\n" +
     "📋 *Категории:*\n" + categoriesList,
-    { ...EXPENSE_KEYBOARD }
+    { parse_mode: "Markdown", ...EXPENSE_KEYBOARD }
   );
 }
 
@@ -42,17 +55,18 @@ export async function handleCalendarCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
-  setUserMode(telegramId, "calendar");
+  await setUserMode(telegramId, "calendar");
 
   await ctx.reply(
     "📅 Режим календаря активирован. Используйте /help для списка команд.",
-    { ...CALENDAR_KEYBOARD }
+    { ...MODE_KEYBOARD }
   );
 }
 
 export async function handleCategoriesButton(ctx: Context): Promise<void> {
   const categoriesList = await getCategoriesList();
-  await ctx.replyWithMarkdown(
-    "📋 *Доступные категории:*\n\n" + categoriesList
+  await ctx.reply(
+    "📋 *Доступные категории:*\n\n" + categoriesList,
+    { parse_mode: "Markdown" }
   );
 }

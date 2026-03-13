@@ -7,14 +7,17 @@ const HELP_TEXT = `
 
 📅 *Календарь:*
 /auth _код_ — привязать календарь
-/status — проверить привязку календаря
-/new _текст_ — создать встречу из фразы
+/status — проверить привязку
+/new _текст_ — создать встречу
 /today — встречи на сегодня
-/week — встречи на эту неделю
+/week — встречи на неделю
 
 💰 *Расходы:*
 /expenses — режим учёта расходов
-/calendar — вернуться к календарю
+/calendar — режим календаря
+
+🔧 *Администрирование:*
+/admin — управление пользователями
 
 🎤 *Голосовые команды:*
 • Создать встречу: «Встреча завтра в 15:00»
@@ -24,39 +27,37 @@ const HELP_TEXT = `
 /help — эта справка
 `;
 
-export async function handleStart(ctx: Context) {
+export async function handleStart(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
   if (userId == null) {
-    await ctx.replyWithMarkdown(`Привет! Я помогу управлять встречами в Google Calendar.\n${HELP_TEXT}`);
+    await ctx.reply("Привет! Выберите режим работы:", {
+      ...Markup.keyboard([
+        ["📅 Календарь", "💰 Расходы"],
+      ]).resize(),
+    });
     return;
   }
+
   const linked = await hasToken(String(userId));
+
+  let greeting: string;
   if (linked) {
-    await ctx.replyWithMarkdown(
-      `Привет! Календарь уже привязан. Я помогу управлять встречами.\n${HELP_TEXT}`
-    );
-    return;
+    greeting = "Привет! Календарь привязан. Выберите режим:";
+  } else {
+    greeting = "Привет! Выберите режим работы:";
   }
-  let url: string;
-  try {
-    url = getAuthUrl(String(userId));
-  } catch (err) {
-    await ctx.reply(
-      "Привязка календаря недоступна: не задан OAUTH_REDIRECT_URI. Обратитесь к администратору."
-    );
-    return;
-  }
-  await ctx.replyWithMarkdown(
-    `Привет! Чтобы пользоваться календарём, привяжите свой Google Calendar.\n\n` +
-      `Нажмите кнопку ниже и войдите в Google — календарь привяжется автоматически. Закройте страницу и вернитесь сюда.\n\n` +
-      `Если что-то пойдёт не так, можно вручную: скопируйте код из браузера и отправьте \`/auth КОД\`.`,
-    {
-      disable_web_page_preview: true,
-      ...Markup.inlineKeyboard([[Markup.button.url("Войти через Google", url)]]),
-    }
-  );
+
+  await ctx.reply(greeting, {
+    ...Markup.keyboard([
+      ["📅 Календарь", "💰 Расходы"],
+    ]).resize(),
+  });
 }
 
-export async function handleHelp(ctx: Context) {
-  await ctx.replyWithMarkdown(HELP_TEXT);
+export async function handleHelp(ctx: Context): Promise<void> {
+  try {
+    await ctx.replyWithMarkdown(HELP_TEXT);
+  } catch {
+    await ctx.reply(HELP_TEXT.replace(/[*_`\[\]\\]/g, ""));
+  }
 }

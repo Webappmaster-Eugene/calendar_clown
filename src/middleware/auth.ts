@@ -1,53 +1,37 @@
 import type { Context, MiddlewareFn } from "telegraf";
+import { isUserInDb } from "../expenses/repository.js";
 
-function getAllowedUserIds(): Set<number> {
-  const ids = new Set<number>();
-
-  const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
-  if (adminId) {
-    const parsed = parseInt(adminId, 10);
-    if (!isNaN(parsed)) ids.add(parsed);
-  }
-
-  const allowedStr = process.env.ALLOWED_USER_IDS?.trim();
-  if (allowedStr) {
-    for (const raw of allowedStr.split(",")) {
-      const parsed = parseInt(raw.trim(), 10);
-      if (!isNaN(parsed)) ids.add(parsed);
-    }
-  }
-
-  return ids;
-}
-
-export function isAdminUser(telegramId: number): boolean {
+/**
+ * Check if a telegram user is the bootstrap admin (from env).
+ * This is the ONLY env-based check — used to seed the first admin.
+ */
+export function isBootstrapAdmin(telegramId: number): boolean {
   const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
   if (!adminId) return false;
   return parseInt(adminId, 10) === telegramId;
 }
 
-export function isAllowedUser(telegramId: number): boolean {
-  const allowed = getAllowedUserIds();
-  return allowed.has(telegramId);
-}
-
 /**
- * Middleware that restricts bot access to allowed users only.
- * If ALLOWED_USER_IDS and ADMIN_TELEGRAM_ID are not set, access is unrestricted.
+ * Middleware: restrict bot access to users registered in the DB.
+ * The bootstrap admin (ADMIN_TELEGRAM_ID env) is always allowed and auto-registered.
+ * All other users must be added by the admin via /admin command.
  */
 export function accessControlMiddleware(): MiddlewareFn<Context> {
   return async (ctx, next) => {
     const telegramId = ctx.from?.id;
-    if (telegramId == null) return next();
+    if (telegramId == null) return;
 
-    const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
-    const allowedStr = process.env.ALLOWED_USER_IDS?.trim();
+    // Bootstrap admin always passes
+    if (isBootstrapAdmin(telegramId)) return next();
 
-    // If neither is set, allow everyone (backward compatibility)
-    if (!adminId && !allowedStr) return next();
+    // Check DB
+    const exists = await isUserInDb(telegramId);
+    if (exists) return next();
 
-    if (isAllowedUser(telegramId)) return next();
-
-    await ctx.reply("🚫 Доступ запрещён. Обратитесь к администратору.");
+    // Denied — show ID so user can send it to admin
+    await ctx.reply(
+      `🚫 Доступ запрещён.\n\nВаш Telegram ID: \`${telegramId}\`\nОтправьте его администратору для получения доступа.`,
+      { parse_mode: "Markdown" }
+    );
   };
 }

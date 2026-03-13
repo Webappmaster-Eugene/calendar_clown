@@ -1,4 +1,9 @@
 import { query } from "../db/connection.js";
+import {
+  MAX_EXPENSE_AMOUNT,
+  MIN_EXPENSE_AMOUNT,
+  MAX_SUBCATEGORY_LENGTH,
+} from "../constants.js";
 import type {
   Category,
   Expense,
@@ -13,6 +18,7 @@ import type {
 
 let categoriesCache: Category[] | null = null;
 
+/** Fetch all active categories (cached in memory). */
 export async function getCategories(): Promise<Category[]> {
   if (categoriesCache) return categoriesCache;
   const { rows } = await query<{
@@ -36,12 +42,14 @@ export async function getCategories(): Promise<Category[]> {
   return categoriesCache;
 }
 
+/** Clear the in-memory categories cache (e.g., after admin changes). */
 export function invalidateCategoriesCache(): void {
   categoriesCache = null;
 }
 
 // ─── Users ────────────────────────────────────────────────────────────
 
+/** Create or update a user in the DB. Updates name fields if the user already exists. */
 export async function ensureUser(
   telegramId: number,
   username: string | null,
@@ -105,6 +113,7 @@ export async function ensureUser(
   };
 }
 
+/** Look up a user by Telegram ID. Returns null if not found. */
 export async function getUserByTelegramId(telegramId: number): Promise<DbUser | null> {
   const { rows } = await query<{
     id: number;
@@ -131,6 +140,98 @@ export async function getUserByTelegramId(telegramId: number): Promise<DbUser | 
   };
 }
 
+/** Check if a telegram user exists in the DB (used for access control). */
+export async function isUserInDb(telegramId: number): Promise<boolean> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM users WHERE telegram_id = $1",
+    [telegramId]
+  );
+  return parseInt(rows[0].count, 10) > 0;
+}
+
+/** List all users in a tribe. */
+export async function listTribeUsers(tribeId: number): Promise<DbUser[]> {
+  const { rows } = await query<{
+    id: number;
+    telegram_id: string;
+    username: string | null;
+    first_name: string;
+    last_name: string | null;
+    role: string;
+    tribe_id: number;
+  }>(
+    "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE tribe_id = $1 ORDER BY id",
+    [tribeId]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    telegramId: Number(r.telegram_id),
+    username: r.username,
+    firstName: r.first_name,
+    lastName: r.last_name,
+    role: r.role as "admin" | "user",
+    tribeId: r.tribe_id,
+  }));
+}
+
+/** Add a new user by telegram ID (admin action). Returns the created user or null if already exists. */
+export async function addUserByTelegramId(
+  telegramId: number,
+  role: "admin" | "user" = "user"
+): Promise<DbUser | null> {
+  const exists = await isUserInDb(telegramId);
+  if (exists) return null;
+
+  const { rows: tribes } = await query<{ id: number }>(
+    "SELECT id FROM tribes ORDER BY id LIMIT 1"
+  );
+  const tribeId = tribes[0]?.id ?? 1;
+
+  const { rows } = await query<{ id: number }>(
+    `INSERT INTO users (telegram_id, username, first_name, role, tribe_id)
+     VALUES ($1, NULL, '', $2, $3) RETURNING id`,
+    [telegramId, role, tribeId]
+  );
+
+  return {
+    id: rows[0].id,
+    telegramId,
+    username: null,
+    firstName: "",
+    lastName: null,
+    role,
+    tribeId,
+  };
+}
+
+/** Remove a user by telegram ID (admin action). Returns true if deleted. */
+export async function removeUserByTelegramId(telegramId: number): Promise<boolean> {
+  const { rowCount } = await query(
+    "DELETE FROM users WHERE telegram_id = $1",
+    [telegramId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Get user's current bot mode from DB. */
+export async function getUserMode(telegramId: number): Promise<"calendar" | "expenses"> {
+  const { rows } = await query<{ mode: string }>(
+    "SELECT mode FROM users WHERE telegram_id = $1",
+    [telegramId]
+  );
+  const mode = rows[0]?.mode;
+  return mode === "expenses" ? "expenses" : "calendar";
+}
+
+/** Set user's bot mode in DB. */
+export async function setUserMode(telegramId: number, mode: "calendar" | "expenses"): Promise<void> {
+  await query(
+    "UPDATE users SET mode = $1 WHERE telegram_id = $2",
+    [mode, telegramId]
+  );
+}
+
+/** Get display name for a tribe. Falls back to 'Семья'. */
 export async function getTribeName(tribeId: number): Promise<string> {
   const { rows } = await query<{ name: string }>(
     "SELECT name FROM tribes WHERE id = $1",
@@ -141,6 +242,7 @@ export async function getTribeName(tribeId: number): Promise<string> {
 
 // ─── Expenses CRUD ────────────────────────────────────────────────────
 
+/** Insert a new expense. Validates amount range and subcategory length. */
 export async function addExpense(
   userId: number,
   tribeId: number,
@@ -149,6 +251,17 @@ export async function addExpense(
   subcategory: string | null,
   inputMethod: "text" | "voice"
 ): Promise<Expense> {
+  // Anti-abuse validation
+  if (amount < MIN_EXPENSE_AMOUNT || amount > MAX_EXPENSE_AMOUNT) {
+    throw new Error(`Сумма должна быть от ${MIN_EXPENSE_AMOUNT} до ${MAX_EXPENSE_AMOUNT.toLocaleString("ru-RU")} ₽`);
+  }
+  if (!Number.isFinite(amount)) {
+    throw new Error("Некорректная сумма");
+  }
+  const sanitizedSub = subcategory
+    ? subcategory.slice(0, MAX_SUBCATEGORY_LENGTH).trim() || null
+    : null;
+
   const { rows } = await query<{
     id: number;
     user_id: number;
@@ -162,7 +275,7 @@ export async function addExpense(
     `INSERT INTO expenses (user_id, tribe_id, category_id, subcategory, amount, input_method)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id, user_id, tribe_id, category_id, subcategory, amount, input_method, created_at`,
-    [userId, tribeId, categoryId, amount, subcategory || null, inputMethod]
+    [userId, tribeId, categoryId, sanitizedSub, amount, inputMethod]
   );
   const r = rows[0];
   return {
@@ -177,6 +290,7 @@ export async function addExpense(
   };
 }
 
+/** Delete an expense by ID. Only deletes if owned by the given user. */
 export async function deleteExpense(expenseId: number, userId: number): Promise<boolean> {
   const { rowCount } = await query(
     "DELETE FROM expenses WHERE id = $1 AND user_id = $2",
@@ -185,6 +299,7 @@ export async function deleteExpense(expenseId: number, userId: number): Promise<
   return (rowCount ?? 0) > 0;
 }
 
+/** Get the most recent expense for a user (for undo). */
 export async function getLastExpense(userId: number): Promise<ExpenseWithCategory | null> {
   const { rows } = await query<{
     id: number;
@@ -225,6 +340,7 @@ export async function getLastExpense(userId: number): Promise<ExpenseWithCategor
 
 // ─── Aggregation ──────────────────────────────────────────────────────
 
+/** Calculate total expenses for a tribe in a given month. */
 export async function getMonthTotal(tribeId: number, year: number, month: number): Promise<number> {
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
@@ -237,6 +353,7 @@ export async function getMonthTotal(tribeId: number, year: number, month: number
   return parseFloat(rows[0].total ?? "0");
 }
 
+/** Get per-category expense totals for a tribe in a date range. */
 export async function getCategoryTotals(
   tribeId: number,
   dateFrom: Date,
@@ -271,6 +388,7 @@ export async function getCategoryTotals(
   }));
 }
 
+/** Get per-user expense totals for a tribe in a date range. */
 export async function getUserTotals(
   tribeId: number,
   dateFrom: Date,
@@ -296,6 +414,7 @@ export async function getUserTotals(
   }));
 }
 
+/** Compare category totals between two months (for trend analysis). */
 export async function getMonthComparison(
   tribeId: number,
   year1: number,
@@ -345,6 +464,7 @@ export async function getMonthComparison(
   });
 }
 
+/** Get detailed expense rows for Excel export (includes user and category info). */
 export async function getExpensesForExcel(
   tribeId: number,
   dateFrom: Date,

@@ -1,8 +1,7 @@
 import type { Context } from "telegraf";
 import { getLastExpense, deleteExpense, getUserByTelegramId } from "../expenses/repository.js";
 import { formatMoney } from "../expenses/formatter.js";
-
-const TIMEZONE = "Europe/Moscow";
+import { TIMEZONE_MSK } from "../constants.js";
 
 /**
  * Handle undo button — delete the last expense of the current user.
@@ -34,7 +33,7 @@ export async function handleUndoButton(ctx: Context): Promise<void> {
     month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: TIMEZONE,
+    timeZone: TIMEZONE_MSK,
   });
 
   await ctx.replyWithMarkdown(

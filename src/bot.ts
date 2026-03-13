@@ -10,24 +10,15 @@ import { handleExpenseText } from "./commands/addExpense.js";
 import { handleReportButton, handleReportCallback, handleComparisonButton, handleStatsButton } from "./commands/expenseReport.js";
 import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.js";
 import { handleUndoButton } from "./commands/expenseUndo.js";
+import { handleAdminCommand, handleAdminCallback, handleAdminTextInput } from "./commands/admin.js";
 import { accessControlMiddleware } from "./middleware/auth.js";
 import { isExpenseMode } from "./middleware/expenseMode.js";
-import { trackUser } from "./users.js";
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
 
   // Access control — restrict to allowed users
   bot.use(accessControlMiddleware());
-
-  // Track every user who interacts with the bot
-  bot.use(async (ctx, next) => {
-    const userId = ctx.from?.id;
-    if (userId != null) {
-      await trackUser(String(userId));
-    }
-    return next();
-  });
 
   // ─── Commands ───────────────────────────────────────────────────────
 
@@ -44,6 +35,9 @@ export function createBot(token: string): Telegraf {
   bot.command("expenses", handleExpensesCommand);
   bot.command("calendar", handleCalendarCommand);
 
+  // Admin commands
+  bot.command("admin", handleAdminCommand);
+
   // ─── Callback queries (inline buttons) ──────────────────────────────
 
   bot.action(/^report:/, handleReportCallback);
@@ -51,11 +45,17 @@ export function createBot(token: string): Telegraf {
   bot.action(/^compare:/, handleReportCallback);
   bot.action(/^stats:/, handleReportCallback);
   bot.action(/^excel:/, handleExcelCallback);
+  bot.action(/^admin:/, handleAdminCallback);
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
   // ─── Voice ──────────────────────────────────────────────────────────
 
   bot.on("voice", handleVoice);
+
+  // ─── Mode switch buttons ──────────────────────────────────────────
+
+  bot.hears("💰 Расходы", handleExpensesCommand);
+  bot.hears("📅 Календарь", handleCalendarCommand);
 
   // ─── Text messages (expense mode buttons + expense input) ───────────
 
@@ -65,7 +65,6 @@ export function createBot(token: string): Telegraf {
   bot.hears("📈 Сравнение", handleComparisonButton);
   bot.hears("👥 Статистика", handleStatsButton);
   bot.hears("↩️ Отменить", handleUndoButton);
-  bot.hears("🔙 Календарь", handleCalendarCommand);
 
   // Text messages in expense mode (catch-all for expense input)
   bot.on("text", async (ctx, next) => {
@@ -75,8 +74,12 @@ export function createBot(token: string): Telegraf {
     // Skip commands
     if (ctx.message.text.startsWith("/")) return next();
 
+    // Admin text input (waiting for user ID)
+    const consumed = await handleAdminTextInput(ctx);
+    if (consumed) return;
+
     // Only process in expense mode
-    if (!isExpenseMode(telegramId)) return next();
+    if (!await isExpenseMode(telegramId)) return next();
 
     await handleExpenseText(ctx);
   });

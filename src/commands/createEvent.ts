@@ -1,24 +1,23 @@
 import type { Context } from "telegraf";
 import { parseEventText } from "../calendar/parse.js";
 import { createEvent, NoCalendarLinkedError } from "../calendar/client.js";
+import { escapeMarkdown } from "../utils/markdown.js";
+import { getUserId, replyMarkdownSafe } from "../utils/telegram.js";
+import { TIMEZONE_MSK } from "../constants.js";
 
-function getUserId(ctx: Context): string | null {
-  const id = ctx.from?.id ?? ctx.chat?.id;
-  return id != null ? String(id) : null;
-}
-
-export async function handleNew(ctx: Context) {
+export async function handleNew(ctx: Context): Promise<void> {
   const userId = getUserId(ctx);
   if (!userId) {
     await ctx.reply("Не удалось определить пользователя.");
     return;
   }
-  const text = "text" in ctx.message && typeof ctx.message.text === "string"
+  if (!ctx.message || !("text" in ctx.message)) return;
+  const text = typeof ctx.message.text === "string"
     ? ctx.message.text.replace(/^\/new\s*/i, "").trim()
     : "";
   if (!text) {
-    await ctx.replyWithMarkdown(
-      "Напишите событие одной фразой, например:\n`/new Встреча с командой завтра в 15:00`"
+    await ctx.reply(
+      "Напишите событие одной фразой, например:\n/new Встреча с командой завтра в 15:00"
     );
     return;
   }
@@ -30,25 +29,20 @@ export async function handleNew(ctx: Context) {
     return;
   }
   try {
-    const event = await createEvent(
-      parsed.title,
-      parsed.start,
-      parsed.end,
-      userId
-    );
+    const event = await createEvent(parsed.title, parsed.start, parsed.end, userId);
     const start = new Date(event.start);
     const end = new Date(event.end);
-    const timeZone = "Europe/Moscow";
     const timeStr = start.toLocaleString("ru-RU", {
       dateStyle: "short",
       timeStyle: "short",
-      timeZone,
+      timeZone: TIMEZONE_MSK,
     });
-    const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
-    await ctx.replyWithMarkdown(
-      `✅ Создано: *${event.summary}*\n${timeStr} – ${endStr}` +
-        (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "")
-    );
+    const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: TIMEZONE_MSK });
+    const safeSummary = escapeMarkdown(event.summary);
+    const msg =
+      `✅ Создано: *${safeSummary}*\n${timeStr} – ${endStr}` +
+      (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
+    await replyMarkdownSafe(ctx, msg);
   } catch (err) {
     if (err instanceof NoCalendarLinkedError) {
       await ctx.reply(err.message);

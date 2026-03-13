@@ -1,18 +1,26 @@
-type UserMode = "calendar" | "expenses";
+import {
+  getUserMode as getDbUserMode,
+  setUserMode as setDbUserMode,
+} from "../expenses/repository.js";
 
-const userModes = new Map<number, UserMode>();
+export type UserMode = "calendar" | "expenses";
 
-const DEFAULT_MODE: UserMode =
-  (process.env.DEFAULT_BOT_MODE as UserMode) === "expenses" ? "expenses" : "calendar";
-
-export function getUserMode(telegramId: number): UserMode {
-  return userModes.get(telegramId) ?? DEFAULT_MODE;
+/** Get user's current mode from DB. Falls back to 'calendar'. */
+export async function getUserMode(telegramId: number): Promise<UserMode> {
+  try {
+    return await getDbUserMode(telegramId);
+  } catch {
+    return "calendar";
+  }
 }
 
-export function setUserMode(telegramId: number, mode: UserMode): void {
-  userModes.set(telegramId, mode);
+/** Set user's mode in DB. */
+export async function setUserMode(telegramId: number, mode: UserMode): Promise<void> {
+  await setDbUserMode(telegramId, mode);
 }
 
-export function isExpenseMode(telegramId: number): boolean {
-  return getUserMode(telegramId) === "expenses";
+/** Check if user is in expense mode. */
+export async function isExpenseMode(telegramId: number): Promise<boolean> {
+  const mode = await getUserMode(telegramId);
+  return mode === "expenses";
 }

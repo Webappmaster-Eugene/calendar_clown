@@ -6,24 +6,16 @@ import { extractCalendarEvent } from "../calendar/extractViaOpenRouter.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { trackUser, getAllUserIds } from "../users.js";
 import { isExpenseMode } from "../middleware/expenseMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
-import { getCategories } from "../expenses/repository.js";
-
-const VOICE_DIR = "./data/voice";
-const TIMEZONE = "Europe/Moscow";
-
-function getUserId(ctx: Context): string | null {
-  const id = ctx.from?.id ?? ctx.chat?.id;
-  return id != null ? String(id) : null;
-}
+import { getCategories, getUserByTelegramId, listTribeUsers } from "../expenses/repository.js";
+import { escapeMarkdown } from "../utils/markdown.js";
+import { getUserId } from "../utils/telegram.js";
+import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
 
 export async function handleVoice(ctx: Context) {
   const userId = getUserId(ctx);
   if (!userId) return;
-
-  await trackUser(userId);
 
   const voice = "voice" in ctx.message ? ctx.message.voice : null;
   if (!voice?.file_id) return;
@@ -67,7 +59,7 @@ export async function handleVoice(ctx: Context) {
 
     // If in expense mode, try expense extraction first
     const telegramId = ctx.from?.id;
-    if (telegramId != null && isExpenseMode(telegramId)) {
+    if (telegramId != null && await isExpenseMode(telegramId)) {
       await handleVoiceInExpenseMode(ctx, transcript, statusMsg.message_id);
       return;
     }
@@ -145,7 +137,7 @@ async function handleVoiceInCalendarMode(
   const intent = await extractVoiceIntent(transcript);
 
   if (intent.type === "cancel_event") {
-    const timeZone = "Europe/Moscow";
+    const timeZone = TIMEZONE_MSK;
     let timeMin: Date;
     let timeMax: Date;
     if (intent.date) {
@@ -182,7 +174,7 @@ async function handleVoiceInCalendarMode(
         timeStyle: "short",
         timeZone,
       });
-      const safeSummary = ev.summary.replace(/([*_`\[\]])/g, "\\$1");
+      const safeSummary = escapeMarkdown(ev.summary);
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         statusMsgId,
@@ -210,7 +202,7 @@ async function handleVoiceInCalendarMode(
 
   if (intent.type === "list_today") {
     const now = new Date();
-    const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE });
+    const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
     const timeMin = new Date(todayStr + "T00:00:00+03:00");
     const timeMax = new Date(timeMin.getTime() + 24 * 60 * 60 * 1000);
     const events = await listEvents(timeMin, timeMax, userId);
@@ -224,8 +216,8 @@ async function handleVoiceInCalendarMode(
     const lines = events.map((e) => {
       const s = new Date(e.start);
       const en = new Date(e.end);
-      const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE };
-      return `• ${e.summary} (${s.toLocaleTimeString("ru-RU", timeOpt)} – ${en.toLocaleTimeString("ru-RU", timeOpt)})`;
+      const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE_MSK };
+      return `• ${escapeMarkdown(e.summary)} (${s.toLocaleTimeString("ru-RU", timeOpt)} – ${en.toLocaleTimeString("ru-RU", timeOpt)})`;
     });
     await ctx.telegram.editMessageText(
       ctx.chat!.id, statusMsgId, undefined,
@@ -237,7 +229,7 @@ async function handleVoiceInCalendarMode(
 
   if (intent.type === "list_week") {
     const now = new Date();
-    const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE });
+    const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
     const timeMin = new Date(todayStr + "T00:00:00+03:00");
     const timeMax = new Date(timeMin.getTime() + 7 * 24 * 60 * 60 * 1000);
     const events = await listEvents(timeMin, timeMax, userId);
@@ -253,15 +245,15 @@ async function handleVoiceInCalendarMode(
     for (const e of events) {
       const d = new Date(e.start);
       const dayKey = d.toLocaleDateString("ru-RU", {
-        weekday: "short", day: "numeric", month: "short", timeZone: TIMEZONE,
+        weekday: "short", day: "numeric", month: "short", timeZone: TIMEZONE_MSK,
       });
       if (dayKey !== currentDay) {
         currentDay = dayKey;
-        lines.push(`\n*${dayKey}*`);
+        lines.push(`\n*${escapeMarkdown(dayKey)}*`);
       }
       const en = new Date(e.end);
-      const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE };
-      lines.push(`• ${e.summary} (${d.toLocaleTimeString("ru-RU", timeOpt)} – ${en.toLocaleTimeString("ru-RU", timeOpt)})`);
+      const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE_MSK };
+      lines.push(`• ${escapeMarkdown(e.summary)} (${d.toLocaleTimeString("ru-RU", timeOpt)} – ${en.toLocaleTimeString("ru-RU", timeOpt)})`);
     }
     await ctx.telegram.editMessageText(
       ctx.chat!.id, statusMsgId, undefined,
@@ -280,8 +272,12 @@ async function handleVoiceInCalendarMode(
       );
       return;
     }
-    const allUsers = await getAllUserIds();
-    const recipients = allUsers.filter((id) => id !== adminId);
+    const adminUser = await getUserByTelegramId(parseInt(adminId, 10));
+    const tribeId = adminUser?.tribeId ?? 1;
+    const allUsers = await listTribeUsers(tribeId);
+    const recipients = allUsers
+      .map((u) => String(u.telegramId))
+      .filter((id) => id !== adminId);
     if (recipients.length === 0) {
       await ctx.telegram.editMessageText(
         ctx.chat!.id, statusMsgId, undefined,
@@ -321,7 +317,7 @@ async function handleVoiceInCalendarMode(
       );
       const start = new Date(event.start);
       const end = new Date(event.end);
-      const timeZone = "Europe/Moscow";
+      const timeZone = TIMEZONE_MSK;
       const timeStr = start.toLocaleString("ru-RU", {
         dateStyle: "short",
         timeStyle: "short",
@@ -329,8 +325,9 @@ async function handleVoiceInCalendarMode(
       });
       const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
       const recurringHint = fallback.recurrence?.length ? " (еженедельно)" : "";
+      const safeSummary = escapeMarkdown(event.summary);
       const text =
-        `Создано: *${event.summary}*${recurringHint}\n${timeStr} – ${endStr}` +
+        `Создано: *${safeSummary}*${recurringHint}\n${timeStr} – ${endStr}` +
         (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
@@ -368,8 +365,9 @@ async function handleVoiceInCalendarMode(
   });
   const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
   const recurringHint = intent.recurrence?.length ? " (еженедельно)" : "";
+  const safeSummary = escapeMarkdown(event.summary);
   const text =
-    `Создано: *${event.summary}*${recurringHint}\n${timeStr} – ${endStr}` +
+    `Создано: *${safeSummary}*${recurringHint}\n${timeStr} – ${endStr}` +
     (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
 
   await ctx.telegram.editMessageText(

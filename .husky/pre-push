@@ -1,0 +1,20 @@
+#!/bin/sh
+
+echo "🔍 Running pre-push smoke tests..."
+
+# Build check
+echo "  Building..."
+npm run build || exit 1
+
+# TypeScript type check (warnings only — pre-existing TS errors may exist)
+echo "  Type checking..."
+npx tsc --noEmit 2>&1 || echo "  ⚠️  TypeScript warnings (non-blocking)"
+
+# Check for secrets in staged files
+echo "  Checking for secrets..."
+if git diff --cached --name-only | grep -qE '\.env$|\.env\.local$|\.pem$|\.key$|deploy_key'; then
+  echo "  ❌ Potential secret file detected in commit!"
+  exit 1
+fi
+
+echo "✅ Pre-push checks passed"

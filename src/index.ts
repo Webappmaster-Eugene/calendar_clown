@@ -7,6 +7,7 @@ import { createBot } from "./bot.js";
 import { startOAuthServer } from "./oauthServer.js";
 import { runMigrations } from "./db/migrate.js";
 import { closePool } from "./db/connection.js";
+import { ensureUser } from "./expenses/repository.js";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -20,6 +21,16 @@ async function main(): Promise<void> {
     console.log("Connecting to PostgreSQL...");
     await runMigrations();
     console.log("Database migrations completed.");
+
+    // Auto-register bootstrap admin in DB
+    const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
+    if (adminId) {
+      const numericId = parseInt(adminId, 10);
+      if (!isNaN(numericId)) {
+        await ensureUser(numericId, null, "Admin", null, true);
+        console.log(`Bootstrap admin ${numericId} registered.`);
+      }
+    }
   } else {
     console.log("DATABASE_URL not set — expense tracking disabled.");
   }
@@ -38,6 +49,7 @@ async function main(): Promise<void> {
     { command: "week", description: "Встречи на неделю" },
     { command: "expenses", description: "Режим учёта расходов" },
     { command: "calendar", description: "Режим календаря" },
+    { command: "admin", description: "Управление пользователями" },
   ];
 
   await bot.launch();

@@ -5,6 +5,7 @@ import { getPool } from "./connection.js";
 // Migrations are copied to /app/migrations in Docker, or relative in dev
 const MIGRATIONS_DIR = process.env.MIGRATIONS_DIR || join(process.cwd(), "src", "db", "migrations");
 
+/** Run all pending SQL migrations from the migrations directory (transactional). */
 export async function runMigrations(): Promise<void> {
   const pool = getPool();
 
