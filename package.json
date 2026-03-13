@@ -14,7 +14,7 @@
     "test:repo": "tsx --test tests/repository.test.ts",
     "typecheck": "tsc --noEmit",
     "smoke": "npm run build && npm run typecheck",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "engines": {
     "node": ">=20"
