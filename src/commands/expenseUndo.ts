@@ -2,6 +2,8 @@ import type { Context } from "telegraf";
 import { getLastExpense, deleteExpense, getUserByTelegramId } from "../expenses/repository.js";
 import { formatMoney } from "../expenses/formatter.js";
 import { TIMEZONE_MSK } from "../constants.js";
+import { isDatabaseAvailable } from "../db/connection.js";
+import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 
 /**
  * Handle undo button — delete the last expense of the current user.
@@ -9,6 +11,11 @@ import { TIMEZONE_MSK } from "../constants.js";
 export async function handleUndoButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply(DB_UNAVAILABLE_MSG);
+    return;
+  }
 
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) {

@@ -1,5 +1,6 @@
 import type { Context, MiddlewareFn } from "telegraf";
 import { isUserInDb } from "../expenses/repository.js";
+import { isDatabaseAvailable } from "../db/connection.js";
 
 /**
  * Check if a telegram user is the bootstrap admin (from env).
@@ -23,6 +24,9 @@ export function accessControlMiddleware(): MiddlewareFn<Context> {
 
     // Bootstrap admin always passes
     if (isBootstrapAdmin(telegramId)) return next();
+
+    // If DB is unavailable, allow all users (calendar is protected by OAuth tokens)
+    if (!isDatabaseAvailable()) return next();
 
     // Check DB
     const exists = await isUserInDb(telegramId);

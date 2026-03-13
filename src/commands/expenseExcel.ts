@@ -9,6 +9,8 @@ import {
 import { generateMonthlyExcel } from "../expenses/excel.js";
 import { monthName } from "../expenses/formatter.js";
 import { getMskNow, getMonthLimit } from "../utils/date.js";
+import { isDatabaseAvailable } from "../db/connection.js";
+import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 
 /**
  * Handle "Excel" button in expense mode — generate and send Excel for current month.
@@ -16,6 +18,11 @@ import { getMskNow, getMonthLimit } from "../utils/date.js";
 export async function handleExcelButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply(DB_UNAVAILABLE_MSG);
+    return;
+  }
 
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) {
@@ -35,6 +42,12 @@ export async function handleExcelCallback(ctx: Context): Promise<void> {
   const data = ctx.callbackQuery.data;
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.answerCbQuery();
+    await ctx.reply(DB_UNAVAILABLE_MSG);
+    return;
+  }
 
   const match = data.match(/^excel:(\d+):(\d+)$/);
   if (!match) {

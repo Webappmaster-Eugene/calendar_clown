@@ -4,14 +4,20 @@ import { addExpense, ensureUser, getMonthTotal } from "../expenses/repository.js
 import { formatExpenseConfirmation, monthName } from "../expenses/formatter.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { checkRateLimit } from "../middleware/rateLimit.js";
-import { getExpenseKeyboard } from "./expenseMode.js";
+import { getExpenseKeyboard, DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { getMonthLimit, getMskNow } from "../utils/date.js";
+import { isDatabaseAvailable } from "../db/connection.js";
 
 /** Handle text message in expense mode — parse and save expense. */
 export async function handleExpenseText(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
   if (!ctx.message || !("text" in ctx.message)) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply(DB_UNAVAILABLE_MSG);
+    return;
+  }
 
   const text = typeof ctx.message.text === "string" ? ctx.message.text.trim() : "";
   if (!text) return;

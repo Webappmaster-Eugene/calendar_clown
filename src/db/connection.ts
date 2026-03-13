@@ -3,6 +3,15 @@ import pg from "pg";
 const { Pool } = pg;
 
 let pool: pg.Pool | null = null;
+let databaseAvailable = false;
+
+export function isDatabaseAvailable(): boolean {
+  return databaseAvailable;
+}
+
+export function setDatabaseAvailable(available: boolean): void {
+  databaseAvailable = available;
+}
 
 /** Get or create the PostgreSQL connection pool (singleton). */
 export function getPool(): pg.Pool {

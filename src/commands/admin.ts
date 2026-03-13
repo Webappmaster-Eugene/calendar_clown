@@ -7,6 +7,8 @@ import {
   listTribeUsers,
   getUserByTelegramId,
 } from "../expenses/repository.js";
+import { isDatabaseAvailable } from "../db/connection.js";
+import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 
 /** State for admin waiting for user ID input. */
 const adminWaitingForId = new Set<number>();
@@ -16,6 +18,11 @@ export async function handleAdminCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null || !isBootstrapAdmin(telegramId)) {
     await ctx.reply("Эта команда доступна только администратору.");
+    return;
+  }
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply(DB_UNAVAILABLE_MSG);
     return;
   }
 
@@ -36,6 +43,12 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null || !isBootstrapAdmin(telegramId)) {
     await ctx.answerCbQuery("Доступ запрещён.");
+    return;
+  }
+
+  if (!isDatabaseAvailable()) {
+    await ctx.answerCbQuery();
+    await ctx.reply(DB_UNAVAILABLE_MSG);
     return;
   }
 
@@ -122,6 +135,12 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
 export async function handleAdminTextInput(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null || !adminWaitingForId.has(telegramId)) return false;
+
+  if (!isDatabaseAvailable()) {
+    adminWaitingForId.delete(telegramId);
+    await ctx.reply(DB_UNAVAILABLE_MSG);
+    return true;
+  }
 
   adminWaitingForId.delete(telegramId);
 

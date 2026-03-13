@@ -4,6 +4,11 @@ import { setUserMode } from "../middleware/expenseMode.js";
 import { getCategoriesList } from "../expenses/parser.js";
 import { ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
+import { isDatabaseAvailable } from "../db/connection.js";
+
+export const DB_UNAVAILABLE_MSG =
+  "⚠️ Учёт расходов временно недоступен (нет подключения к базе данных).\n" +
+  "Календарь работает в обычном режиме.";
 
 const EXPENSE_KEYBOARD = Markup.keyboard([
   ["📊 Отчёт", "📥 Excel"],
@@ -23,6 +28,11 @@ export function getExpenseKeyboard() {
 export async function handleExpensesCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply(DB_UNAVAILABLE_MSG);
+    return;
+  }
 
   // Ensure user exists in DB before switching mode
   await ensureUser(
@@ -55,6 +65,11 @@ export async function handleCalendarCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
+  if (!isDatabaseAvailable()) {
+    await ctx.reply("📅 Календарь работает. Используйте /help для списка команд.");
+    return;
+  }
+
   await setUserMode(telegramId, "calendar");
 
   await ctx.reply(
@@ -64,6 +79,11 @@ export async function handleCalendarCommand(ctx: Context): Promise<void> {
 }
 
 export async function handleCategoriesButton(ctx: Context): Promise<void> {
+  if (!isDatabaseAvailable()) {
+    await ctx.reply(DB_UNAVAILABLE_MSG);
+    return;
+  }
+
   const categoriesList = await getCategoriesList();
   await ctx.reply(
     "📋 *Доступные категории:*\n\n" + categoriesList,
