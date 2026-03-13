@@ -31,7 +31,7 @@ cp .env.example .env
 npm install
 npm run build
 npm run authorize   # один раз для тестового пользователя
-npm start           # или npm run dev
+npm start
 ```
 
 ## Переменные окружения
