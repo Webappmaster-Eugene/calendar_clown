@@ -228,7 +228,7 @@ function correctCalendarIntentWeekday(transcript: string, intent: VoiceIntent): 
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
   const correctDateStr = nextWeekdayDateStrInMSK(dateStr, mentioned);
-  const timeOpt = { timeZone: TIMEZONE_MSK as const, hour12: false, hour: "2-digit" as const, minute: "2-digit" as const };
+  const timeOpt: Intl.DateTimeFormatOptions = { timeZone: TIMEZONE_MSK, hour12: false, hour: "2-digit", minute: "2-digit" };
   const timePart = intent.start.toLocaleTimeString("en-CA", timeOpt);
   const durationMs = intent.end.getTime() - intent.start.getTime();
   const newStart = new Date(correctDateStr + "T" + timePart + ":00+03:00");

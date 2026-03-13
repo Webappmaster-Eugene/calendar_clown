@@ -7,7 +7,8 @@ export async function handleAuth(ctx: Context) {
     await ctx.reply("Не удалось определить пользователя.");
     return;
   }
-  const text = "text" in ctx.message && typeof ctx.message.text === "string"
+  if (!ctx.message || !("text" in ctx.message)) return;
+  const text = typeof ctx.message.text === "string"
     ? ctx.message.text.replace(/^\/auth\s*/i, "").trim()
     : "";
   if (!text) {

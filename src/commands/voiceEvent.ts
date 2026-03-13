@@ -17,6 +17,7 @@ export async function handleVoice(ctx: Context) {
   const userId = getUserId(ctx);
   if (!userId) return;
 
+  if (!ctx.message) return;
   const voice = "voice" in ctx.message ? ctx.message.voice : null;
   if (!voice?.file_id) return;
 
