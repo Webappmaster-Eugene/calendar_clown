@@ -9,6 +9,7 @@ import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
 import { isExpenseMode } from "../middleware/expenseMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId, listTribeUsers } from "../expenses/repository.js";
+import { isDatabaseAvailable } from "../db/connection.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
@@ -270,6 +271,13 @@ async function handleVoiceInCalendarMode(
       await ctx.telegram.editMessageText(
         ctx.chat!.id, statusMsgId, undefined,
         "Рассылка доступна только администратору."
+      );
+      return;
+    }
+    if (!isDatabaseAvailable()) {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, statusMsgId, undefined,
+        "Рассылка недоступна (нет подключения к БД)."
       );
       return;
     }
