@@ -10,6 +10,9 @@ import { transcribeVoiceHQ } from "./transcribeHQ.js";
 import { markProcessing, markCompleted, markFailed } from "./repository.js";
 import { TRANSCRIBE_MODEL_HQ } from "../constants.js";
 import type { TranscribeJobData } from "./types.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("worker");
 
 /** Maximum transcript length that Telegram allows in a single message. */
 const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
@@ -24,6 +27,7 @@ export function createTranscribeProcessor(bot: Telegraf) {
   ): Promise<void> {
     const { transcriptionId, filePath, chatId, statusMessageId } = job.data;
 
+    log.info(`Processing job ${job.id}: transcriptionId=${transcriptionId}, file=${filePath}`);
     await markProcessing(transcriptionId);
 
     try {
@@ -41,6 +45,7 @@ export function createTranscribeProcessor(bot: Telegraf) {
         return;
       }
 
+      log.info(`Transcription ${transcriptionId} completed: ${transcript.length} chars`);
       await markCompleted(transcriptionId, transcript, TRANSCRIBE_MODEL_HQ);
 
       // Send transcript as a new message (better UX than editing the status)
@@ -53,7 +58,7 @@ export function createTranscribeProcessor(bot: Telegraf) {
       await unlink(filePath).catch(() => {});
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`Transcription ${transcriptionId} error:`, errorMsg);
+      log.error(`Transcription ${transcriptionId} error: ${errorMsg}`);
 
       // On final attempt — mark as failed and notify user.
       // On earlier attempts — leave file for retry.
@@ -85,7 +90,7 @@ async function sendTranscriptSafe(
     try {
       await bot.telegram.sendMessage(chatId, chunk);
     } catch (err) {
-      console.error("Failed to send transcript chunk:", err);
+      log.error("Failed to send transcript chunk:", err);
     }
   }
 }

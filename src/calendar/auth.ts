@@ -11,7 +11,7 @@ const TOKENS_DIR = "./data/tokens";
 /** Thrown when the user has not linked a calendar yet. */
 export class NoCalendarLinkedError extends Error {
   constructor() {
-    super("Сначала привяжите календарь. Отправьте /start");
+    super("Сначала привяжите календарь. Отправьте /auth");
     this.name = "NoCalendarLinkedError";
   }
 }

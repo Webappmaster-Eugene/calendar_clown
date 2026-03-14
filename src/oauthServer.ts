@@ -1,5 +1,8 @@
 import http from "http";
 import { saveTokenFromCode } from "./calendar/auth.js";
+import { createLogger } from "./utils/logger.js";
+
+const log = createLogger("oauth");
 
 const DEFAULT_PORT = 18790;
 
@@ -47,17 +50,17 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
       const code = searchParams.get("code");
       const state = searchParams.get("state");
       if (!code || !state) {
-        console.log("OAuth callback: missing code or state");
+        log.warn("OAuth callback: missing code or state");
         sendHtml(res, 400, `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p>Не хватает параметров (code или state). Вернитесь в Telegram и нажмите «Войти через Google» снова.</p></body></html>`);
         return;
       }
       try {
         await saveTokenFromCode(code, state);
-        console.log("OAuth callback: success for state=%s", state);
+        log.info(`OAuth callback: success for state=${state}`);
         sendHtml(res, 200, OAUTH_SUCCESS_HTML);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.log("OAuth callback: error for state=%s - %s", state, message);
+        log.error(`OAuth callback: error for state=${state} - ${message}`);
         sendHtml(res, 500, `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p>Ошибка привязки: ${escapeHtml(message)}</p><p>Вернитесь в Telegram и попробуйте снова или отправьте /auth и код из браузера.</p></body></html>`);
       }
       return;
@@ -67,7 +70,7 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
   });
 
   server.listen(port, host, () => {
-    console.log(`HTTP server listening on http://${host}:${port} (GET ${oauthCallbackPath})`);
+    log.info(`HTTP server listening on http://${host}:${port} (GET ${oauthCallbackPath})`);
   });
 
   return server;

@@ -13,6 +13,9 @@ import { getUserByTelegramId } from "../expenses/repository.js";
 import { createTranscription, transcriptionExists, countPendingForUser } from "../transcribe/repository.js";
 import { addTranscribeJob, isTranscribeAvailable } from "../transcribe/queue.js";
 import { VOICE_DIR } from "../constants.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("transcribe");
 
 /** Format duration in seconds to "M:SS" string. */
 function formatDuration(seconds: number): string {
@@ -163,7 +166,7 @@ export async function handleVoiceInTranscribeMode(
       undefined,
       "Ошибка сохранения. Попробуйте ещё раз."
     );
-    console.error("Failed to create transcription record:", err);
+    log.error("Failed to create transcription record:", err);
     return;
   }
 
@@ -183,7 +186,7 @@ export async function handleVoiceInTranscribeMode(
       undefined,
       "Не удалось поставить в очередь. Попробуйте ещё раз."
     );
-    console.error("Failed to enqueue transcription job:", err);
+    log.error("Failed to enqueue transcription job:", err);
     return;
   }
 

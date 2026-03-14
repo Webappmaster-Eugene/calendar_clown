@@ -1,6 +1,9 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { getPool } from "./connection.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("db");
 
 // Migrations are copied to /app/migrations in Docker, or relative in dev
 const MIGRATIONS_DIR = process.env.MIGRATIONS_DIR || join(process.cwd(), "src", "db", "migrations");
@@ -30,7 +33,7 @@ export async function runMigrations(): Promise<void> {
     if (appliedSet.has(file)) continue;
 
     const sql = await readFile(join(MIGRATIONS_DIR, file), "utf8");
-    console.log(`Running migration: ${file}`);
+    log.info(`Running migration: ${file}`);
 
     const client = await pool.connect();
     try {
@@ -41,7 +44,7 @@ export async function runMigrations(): Promise<void> {
         [file]
       );
       await client.query("COMMIT");
-      console.log(`Migration applied: ${file}`);
+      log.info(`Migration applied: ${file}`);
     } catch (err) {
       await client.query("ROLLBACK");
       throw new Error(

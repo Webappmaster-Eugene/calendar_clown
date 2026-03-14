@@ -50,11 +50,15 @@ services:
       - MONTHLY_EXPENSE_LIMIT=${MONTHLY_EXPENSE_LIMIT:-350000}
       - DEFAULT_BOT_MODE=${DEFAULT_BOT_MODE:-calendar}
       - REDIS_URL=redis://redis:6379
+      - TELEGRAM_PARSER_API_ID=${TELEGRAM_PARSER_API_ID:-}
+      - TELEGRAM_PARSER_API_HASH=${TELEGRAM_PARSER_API_HASH:-}
+      - DIGEST_CRON=${DIGEST_CRON:-0 6 * * *}
       - PORT=${PORT:-18790}
       - HOST=${HOST:-0.0.0.0}
     volumes:
       - tokens:/app/data/tokens
       - voice:/app/data/voice
+      - telegram-session:/app/data/telegram-session
     networks:
       - dokploy-network
     labels:
@@ -69,6 +73,7 @@ volumes:
   redis-data:
   tokens:
   voice:
+  telegram-session:
 
 networks:
   dokploy-network:

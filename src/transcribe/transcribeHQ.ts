@@ -6,6 +6,9 @@
 
 import { readFile } from "fs/promises";
 import { OPENROUTER_URL, OPENROUTER_REFERER, TRANSCRIBE_MODEL_HQ } from "../constants.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("transcribe");
 
 const TRANSCRIBE_PROMPT = `Расшифруй это аудиосообщение в текст на русском языке.
 
@@ -44,6 +47,8 @@ export async function transcribeVoiceHQ(filePath: string): Promise<string> {
   const base64Audio = fileBuffer.toString("base64");
   const mimeType = audioMimeType(filePath);
 
+  log.info(`API call: model=${TRANSCRIBE_MODEL_HQ}, file=${filePath}, size=${fileBuffer.length}b`);
+
   const res = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -72,6 +77,7 @@ export async function transcribeVoiceHQ(filePath: string): Promise<string> {
 
   if (!res.ok) {
     const errText = await res.text();
+    log.error(`API error: status=${res.status}, body=${errText}`);
     throw new Error(`OpenRouter HQ transcription failed: ${res.status} ${errText}`);
   }
 
@@ -79,5 +85,6 @@ export async function transcribeVoiceHQ(filePath: string): Promise<string> {
     choices?: Array<{ message?: { content?: string } }>;
   };
   const text = data?.choices?.[0]?.message?.content?.trim() ?? "";
+  log.info(`API response: status=${res.status}, transcript_length=${text.length}`);
   return text;
 }

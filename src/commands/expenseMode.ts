@@ -14,11 +14,12 @@ const EXPENSE_KEYBOARD = Markup.keyboard([
   ["📊 Отчёт", "📥 Excel"],
   ["📋 Категории", "📈 Сравнение"],
   ["👥 Статистика", "↩️ Отменить"],
-  ["📅 Календарь"],
+  ["📅 Календарь", "🎙 Транскрибатор"],
 ]).resize();
 
 const MODE_KEYBOARD = Markup.keyboard([
-  ["📅 Календарь", "💰 Расходы", "🎙 Транскрибатор"],
+  ["📅 Календарь", "💰 Расходы"],
+  ["🎙 Транскрибатор", "📰 Дайджест"],
 ]).resize();
 
 export function getExpenseKeyboard() {
@@ -76,6 +77,21 @@ export async function handleCalendarCommand(ctx: Context): Promise<void> {
     "📅 Режим календаря активирован. Используйте /help для списка команд.",
     { ...MODE_KEYBOARD }
   );
+}
+
+const MODE_INLINE_KEYBOARD = Markup.inlineKeyboard([
+  [
+    Markup.button.callback("📅 Календарь", "mode:calendar"),
+    Markup.button.callback("💰 Расходы", "mode:expenses"),
+  ],
+  [
+    Markup.button.callback("🎙 Транскрибатор", "mode:transcribe"),
+    Markup.button.callback("📰 Дайджест", "mode:digest"),
+  ],
+]);
+
+export async function handleModeCommand(ctx: Context): Promise<void> {
+  await ctx.reply("Выберите режим работы:", { ...MODE_INLINE_KEYBOARD });
 }
 
 export async function handleCategoriesButton(ctx: Context): Promise<void> {

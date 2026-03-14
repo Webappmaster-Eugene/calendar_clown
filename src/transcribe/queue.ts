@@ -7,6 +7,9 @@
 import { Queue, Worker } from "bullmq";
 import type { Job, ConnectionOptions } from "bullmq";
 import type { TranscribeJobData } from "./types.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("queue");
 
 let transcribeQueue: Queue<TranscribeJobData> | null = null;
 let transcribeWorker: Worker<TranscribeJobData> | null = null;
@@ -73,11 +76,11 @@ export function startTranscribeWorker(
   );
 
   transcribeWorker.on("failed", (job, err) => {
-    console.error(`Transcription job ${job?.id} failed:`, err.message);
+    log.error(`Transcription job ${job?.id} failed: ${err.message}`);
   });
 
   transcribeWorker.on("completed", (job) => {
-    console.log(`Transcription job ${job.id} completed.`);
+    log.info(`Transcription job ${job.id} completed.`);
   });
 
   return transcribeWorker;

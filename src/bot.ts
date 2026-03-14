@@ -5,13 +5,16 @@ import { handleNew } from "./commands/createEvent.js";
 import { handleToday, handleWeek } from "./commands/listEvents.js";
 import { handleVoice } from "./commands/voiceEvent.js";
 import { handleStatus } from "./commands/status.js";
-import { handleExpensesCommand, handleCalendarCommand, handleCategoriesButton } from "./commands/expenseMode.js";
+import { handleExpensesCommand, handleCalendarCommand, handleCategoriesButton, handleModeCommand } from "./commands/expenseMode.js";
+import { handleCancel } from "./commands/cancelEvent.js";
 import { handleExpenseText } from "./commands/addExpense.js";
 import { handleReportButton, handleReportCallback, handleComparisonButton, handleStatsButton } from "./commands/expenseReport.js";
 import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.js";
 import { handleUndoButton } from "./commands/expenseUndo.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput } from "./commands/admin.js";
+import { handleStatsCommand } from "./commands/adminStats.js";
 import { handleTranscribeCommand } from "./commands/transcribeMode.js";
+import { handleDigestCommand, handleRubricsButton, handleDigestNowButton } from "./commands/digestMode.js";
 import { accessControlMiddleware } from "./middleware/auth.js";
 import { isExpenseMode } from "./middleware/expenseMode.js";
 
@@ -36,9 +39,13 @@ export function createBot(token: string): Telegraf {
   bot.command("expenses", handleExpensesCommand);
   bot.command("calendar", handleCalendarCommand);
   bot.command("transcribe", handleTranscribeCommand);
+  bot.command("mode", handleModeCommand);
+  bot.command("cancel", handleCancel);
+  bot.command("digest", handleDigestCommand);
 
   // Admin commands
   bot.command("admin", handleAdminCommand);
+  bot.command("stats", handleStatsCommand);
 
   // ─── Callback queries (inline buttons) ──────────────────────────────
 
@@ -48,6 +55,22 @@ export function createBot(token: string): Telegraf {
   bot.action(/^stats:/, handleReportCallback);
   bot.action(/^excel:/, handleExcelCallback);
   bot.action(/^admin:/, handleAdminCallback);
+  bot.action("mode:calendar", async (ctx) => {
+    await ctx.answerCbQuery("📅 Календарь");
+    await handleCalendarCommand(ctx);
+  });
+  bot.action("mode:expenses", async (ctx) => {
+    await ctx.answerCbQuery("💰 Расходы");
+    await handleExpensesCommand(ctx);
+  });
+  bot.action("mode:transcribe", async (ctx) => {
+    await ctx.answerCbQuery("🎙 Транскрибатор");
+    await handleTranscribeCommand(ctx);
+  });
+  bot.action("mode:digest", async (ctx) => {
+    await ctx.answerCbQuery("📰 Дайджест");
+    await handleDigestCommand(ctx);
+  });
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
   // ─── Voice ──────────────────────────────────────────────────────────
@@ -59,6 +82,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("💰 Расходы", handleExpensesCommand);
   bot.hears("📅 Календарь", handleCalendarCommand);
   bot.hears("🎙 Транскрибатор", handleTranscribeCommand);
+  bot.hears("📰 Дайджест", handleDigestCommand);
 
   // ─── Text messages (expense mode buttons + expense input) ───────────
 
@@ -68,6 +92,8 @@ export function createBot(token: string): Telegraf {
   bot.hears("📈 Сравнение", handleComparisonButton);
   bot.hears("👥 Статистика", handleStatsButton);
   bot.hears("↩️ Отменить", handleUndoButton);
+  bot.hears("📋 Мои рубрики", handleRubricsButton);
+  bot.hears("▶️ Запустить сейчас", handleDigestNowButton);
 
   // Text messages in expense mode (catch-all for expense input)
   bot.on("text", async (ctx, next) => {

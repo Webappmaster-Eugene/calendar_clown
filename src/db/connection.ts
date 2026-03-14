@@ -1,5 +1,7 @@
 import pg from "pg";
+import { createLogger } from "../utils/logger.js";
 
+const log = createLogger("db");
 const { Pool } = pg;
 
 let pool: pg.Pool | null = null;
@@ -27,7 +29,7 @@ export function getPool(): pg.Pool {
       connectionTimeoutMillis: 5_000,
     });
     pool.on("error", (err) => {
-      console.error("Unexpected PostgreSQL pool error:", err.message);
+      log.error("Unexpected PostgreSQL pool error:", err.message);
     });
   }
   return pool;

@@ -11,6 +11,9 @@ import { monthName } from "../expenses/formatter.js";
 import { getMskNow, getMonthLimit } from "../utils/date.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("expense");
 
 /**
  * Handle "Excel" button in expense mode — generate and send Excel for current month.
@@ -105,7 +108,7 @@ async function sendExcel(
       { caption: `📥 ${monthName(month)} ${year}` }
     );
   } catch (err) {
-    console.error("Error generating Excel:", err);
+    log.error("Error generating Excel:", err);
     const msg = err instanceof Error ? err.message : "Ошибка";
     await ctx.reply(`❌ Ошибка генерации Excel: ${msg}`);
   }

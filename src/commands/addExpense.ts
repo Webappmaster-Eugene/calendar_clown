@@ -7,6 +7,9 @@ import { checkRateLimit } from "../middleware/rateLimit.js";
 import { getExpenseKeyboard, DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { getMonthLimit, getMskNow } from "../utils/date.js";
 import { isDatabaseAvailable } from "../db/connection.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("expense");
 
 /** Handle text message in expense mode — parse and save expense. */
 export async function handleExpenseText(ctx: Context): Promise<void> {
@@ -76,7 +79,7 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
 
     await ctx.replyWithMarkdown(confirmation, { ...getExpenseKeyboard() });
   } catch (err) {
-    console.error("Error adding expense:", err);
+    log.error("Error adding expense:", err);
     const msg = err instanceof Error ? err.message : "Ошибка";
     await ctx.reply(`❌ Ошибка при сохранении: ${msg}`);
   }
@@ -149,7 +152,7 @@ export async function handleVoiceExpense(
       { parse_mode: "Markdown" }
     );
   } catch (err) {
-    console.error("Error adding voice expense:", err);
+    log.error("Error adding voice expense:", err);
     const msg = err instanceof Error ? err.message : "Ошибка";
     await ctx.telegram.editMessageText(
       ctx.chat!.id,

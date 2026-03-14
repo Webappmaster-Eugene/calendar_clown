@@ -7,6 +7,9 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId, replyMarkdownSafe } from "../utils/telegram.js";
 import { TIMEZONE_MSK } from "../constants.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("calendar");
 
 export async function handleNew(ctx: Context): Promise<void> {
   const userId = getUserId(ctx);
@@ -64,7 +67,7 @@ export async function handleNew(ctx: Context): Promise<void> {
           });
         }
       } catch (dbErr) {
-        console.error("Failed to save calendar event to DB:", dbErr);
+        log.error("Failed to save calendar event to DB:", dbErr);
       }
     }
   } catch (err) {
@@ -92,7 +95,7 @@ export async function handleNew(ctx: Context): Promise<void> {
           });
         }
       } catch (dbErr) {
-        console.error("Failed to save failed calendar event to DB:", dbErr);
+        log.error("Failed to save failed calendar event to DB:", dbErr);
       }
     }
   }

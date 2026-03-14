@@ -16,6 +16,9 @@ import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
 import type { DbUser } from "../expenses/types.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("voice");
 
 export async function handleVoice(ctx: Context) {
   const userId = getUserId(ctx);
@@ -150,7 +153,7 @@ async function handleVoiceInCalendarMode(
     try {
       dbUser = await getUserByTelegramId(ctx.from.id);
     } catch (err) {
-      console.error("Failed to resolve DB user for calendar event logging:", err);
+      log.error("Failed to resolve DB user for calendar event logging:", err);
     }
   }
 
@@ -193,7 +196,7 @@ async function handleVoiceInCalendarMode(
         try {
           await markEventDeleted(ev.id, dbUser.id);
         } catch (dbErr) {
-          console.error("Failed to mark calendar event as deleted in DB:", dbErr);
+          log.error("Failed to mark calendar event as deleted in DB:", dbErr);
         }
       }
 
@@ -381,7 +384,7 @@ async function handleVoiceInCalendarMode(
             htmlLink: event.htmlLink ?? null,
           });
         } catch (dbErr) {
-          console.error("Failed to save calendar event to DB:", dbErr);
+          log.error("Failed to save calendar event to DB:", dbErr);
         }
       }
 
@@ -441,7 +444,7 @@ async function handleVoiceInCalendarMode(
         htmlLink: event.htmlLink ?? null,
       });
     } catch (dbErr) {
-      console.error("Failed to save calendar event to DB:", dbErr);
+      log.error("Failed to save calendar event to DB:", dbErr);
     }
   }
 

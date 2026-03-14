@@ -10,10 +10,16 @@ import { closePool, setDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
 import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue } from "./transcribe/queue.js";
 import { createTranscribeProcessor } from "./transcribe/worker.js";
+import { isDigestConfigured } from "./digest/telegramClient.js";
+import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
+import { setDigestBotRef } from "./commands/digestMode.js";
+import { createLogger } from "./utils/logger.js";
+
+const log = createLogger("app");
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
-  console.error("TELEGRAM_BOT_TOKEN is not set");
+  log.error("TELEGRAM_BOT_TOKEN is not set");
   process.exit(1);
 }
 
@@ -21,9 +27,9 @@ async function main(): Promise<void> {
   // Initialize database if DATABASE_URL is set
   if (process.env.DATABASE_URL) {
     try {
-      console.log("Connecting to PostgreSQL...");
+      log.info("Connecting to PostgreSQL...");
       await runMigrations();
-      console.log("Database migrations completed.");
+      log.info("Database migrations completed.");
 
       // Auto-register bootstrap admin in DB
       const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
@@ -31,20 +37,20 @@ async function main(): Promise<void> {
         const numericId = parseInt(adminId, 10);
         if (!isNaN(numericId)) {
           await ensureUser(numericId, null, "Admin", null, true);
-          console.log(`Bootstrap admin ${numericId} registered.`);
+          log.info(`Bootstrap admin ${numericId} registered.`);
         }
       }
 
       setDatabaseAvailable(true);
     } catch (err) {
-      console.error("=".repeat(60));
-      console.error("PostgreSQL initialization failed — expense tracking disabled.");
-      console.error("Calendar features will continue to work normally.");
-      console.error("Error:", err instanceof Error ? err.message : err);
-      console.error("=".repeat(60));
+      log.error("=".repeat(60));
+      log.error("PostgreSQL initialization failed — expense tracking disabled.");
+      log.error("Calendar features will continue to work normally.");
+      log.error("Error:", err instanceof Error ? err.message : err);
+      log.error("=".repeat(60));
     }
   } else {
-    console.log("DATABASE_URL not set — expense tracking disabled.");
+    log.info("DATABASE_URL not set — expense tracking disabled.");
   }
 
   const bot = createBot(token!);
@@ -55,13 +61,22 @@ async function main(): Promise<void> {
     try {
       initTranscribeQueue(redisUrl);
       startTranscribeWorker(redisUrl, createTranscribeProcessor(bot));
-      console.log("Transcribe queue initialized (Redis).");
+      log.info("Transcribe queue initialized (Redis).");
     } catch (err) {
-      console.error("Redis initialization failed — transcribe mode disabled.");
-      console.error("Error:", err instanceof Error ? err.message : err);
+      log.error("Redis initialization failed — transcribe mode disabled.");
+      log.error("Error:", err instanceof Error ? err.message : err);
     }
   } else {
-    console.log("REDIS_URL not set — transcribe mode disabled.");
+    log.info("REDIS_URL not set — transcribe mode disabled.");
+  }
+
+  // Initialize digest scheduler (GramJS + cron)
+  if (isDigestConfigured()) {
+    setDigestBotRef(bot);
+    startDigestScheduler(bot);
+    log.info("Digest mode enabled (MTProto configured).");
+  } else {
+    log.info("TELEGRAM_PARSER_API_ID not set — digest mode disabled.");
   }
 
   startOAuthServer({
@@ -77,16 +92,20 @@ async function main(): Promise<void> {
     { command: "expenses", description: "Режим учёта расходов" },
     { command: "calendar", description: "Режим календаря" },
     { command: "transcribe", description: "Режим транскрибатора" },
+    { command: "cancel", description: "Отменить встречу" },
+    { command: "digest", description: "Дайджест телеграм-каналов" },
+    { command: "mode", description: "Выбор режима работы" },
     { command: "admin", description: "Управление пользователями" },
   ];
 
   await bot.launch();
   await bot.telegram.setMyCommands(commands);
-  console.log("Bot started (long polling)");
+  log.info("Bot started (long polling)");
 
   const shutdown = async (signal: string) => {
-    console.log(`${signal} received, shutting down...`);
+    log.info(`${signal} received, shutting down...`);
     bot.stop(signal);
+    stopDigestScheduler();
     await closeTranscribeQueue();
     await closePool();
     process.exit(0);
@@ -97,6 +116,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  log.error("Fatal error:", err);
   process.exit(1);
 });

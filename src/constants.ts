@@ -11,7 +11,7 @@ export const DEEPSEEK_MODEL = "deepseek/deepseek-chat-v3.1";
 export const TRANSCRIBE_MODEL = "google/gemini-2.0-flash-001";
 
 /** Gemini model for high-quality voice transcription (transcribe mode). */
-export const TRANSCRIBE_MODEL_HQ = "google/gemini-2.5-flash-preview";
+export const TRANSCRIBE_MODEL_HQ = "google/gemini-2.0-flash-001";
 
 /** Default monthly expense limit in rubles. */
 export const DEFAULT_MONTHLY_LIMIT = 350_000;
