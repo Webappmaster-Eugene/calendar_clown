@@ -3,16 +3,19 @@ import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
 import { createEvent, deleteEvent, searchEvents, listEvents, NoCalendarLinkedError } from "../calendar/client.js";
 import { extractCalendarEvent } from "../calendar/extractViaOpenRouter.js";
+import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode } from "../middleware/expenseMode.js";
+import { isExpenseMode, isTranscribeMode } from "../middleware/expenseMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId, listTribeUsers } from "../expenses/repository.js";
+import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
+import type { DbUser } from "../expenses/types.js";
 
 export async function handleVoice(ctx: Context) {
   const userId = getUserId(ctx);
@@ -23,6 +26,13 @@ export async function handleVoice(ctx: Context) {
   if (!voice?.file_id) return;
 
   const statusMsg = await ctx.reply("Обрабатываю голосовое…");
+
+  // Check transcribe mode early — before downloading, to route to the right handler
+  const telegramId = ctx.from?.id;
+  if (telegramId != null && await isTranscribeMode(telegramId)) {
+    await handleVoiceInTranscribeMode(ctx, voice, statusMsg.message_id);
+    return;
+  }
 
   let filePath: string | null = null;
   try {
@@ -60,7 +70,6 @@ export async function handleVoice(ctx: Context) {
     }
 
     // If in expense mode, try expense extraction first
-    const telegramId = ctx.from?.id;
     if (telegramId != null && await isExpenseMode(telegramId)) {
       await handleVoiceInExpenseMode(ctx, transcript, statusMsg.message_id);
       return;
@@ -136,6 +145,15 @@ async function handleVoiceInCalendarMode(
   statusMsgId: number,
   userId: string
 ): Promise<void> {
+  let dbUser: DbUser | null = null;
+  if (isDatabaseAvailable() && ctx.from?.id) {
+    try {
+      dbUser = await getUserByTelegramId(ctx.from.id);
+    } catch (err) {
+      console.error("Failed to resolve DB user for calendar event logging:", err);
+    }
+  }
+
   const intent = await extractVoiceIntent(transcript);
 
   if (intent.type === "cancel_event") {
@@ -170,6 +188,15 @@ async function handleVoiceInCalendarMode(
     if (events.length === 1) {
       const ev = events[0];
       await deleteEvent(ev.id, userId);
+
+      if (dbUser) {
+        try {
+          await markEventDeleted(ev.id, dbUser.id);
+        } catch (dbErr) {
+          console.error("Failed to mark calendar event as deleted in DB:", dbErr);
+        }
+      }
+
       const start = new Date(ev.start);
       const timeStr = start.toLocaleString("ru-RU", {
         dateStyle: "short",
@@ -338,6 +365,26 @@ async function handleVoiceInCalendarMode(
       const text =
         `Создано: *${safeSummary}*${recurringHint}\n${timeStr} – ${endStr}` +
         (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
+
+      if (dbUser) {
+        try {
+          await saveCalendarEvent({
+            userId: dbUser.id,
+            tribeId: dbUser.tribeId,
+            googleEventId: event.id ?? null,
+            summary: event.summary,
+            startTime: start,
+            endTime: end,
+            recurrence: fallback.recurrence ?? null,
+            inputMethod: "voice",
+            status: "created",
+            htmlLink: event.htmlLink ?? null,
+          });
+        } catch (dbErr) {
+          console.error("Failed to save calendar event to DB:", dbErr);
+        }
+      }
+
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         statusMsgId,
@@ -378,6 +425,25 @@ async function handleVoiceInCalendarMode(
   const text =
     `Создано: *${safeSummary}*${recurringHint}\n${timeStr} – ${endStr}` +
     (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
+
+  if (dbUser) {
+    try {
+      await saveCalendarEvent({
+        userId: dbUser.id,
+        tribeId: dbUser.tribeId,
+        googleEventId: event.id ?? null,
+        summary: event.summary,
+        startTime: start,
+        endTime: end,
+        recurrence: intent.recurrence ?? null,
+        inputMethod: "voice",
+        status: "created",
+        htmlLink: event.htmlLink ?? null,
+      });
+    } catch (dbErr) {
+      console.error("Failed to save calendar event to DB:", dbErr);
+    }
+  }
 
   await ctx.telegram.editMessageText(
     ctx.chat!.id,

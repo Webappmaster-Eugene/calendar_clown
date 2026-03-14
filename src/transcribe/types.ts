@@ -1,0 +1,37 @@
+export type TranscriptionStatus = "pending" | "processing" | "completed" | "failed";
+
+export interface VoiceTranscription {
+  id: number;
+  userId: number;
+  telegramFileId: string;
+  telegramFileUniqueId: string;
+  durationSeconds: number;
+  fileSizeBytes: number | null;
+  forwardedFromName: string | null;
+  forwardedDate: Date | null;
+  transcript: string | null;
+  modelUsed: string | null;
+  audioFilePath: string | null;
+  status: TranscriptionStatus;
+  errorMessage: string | null;
+  createdAt: Date;
+  transcribedAt: Date | null;
+}
+
+export interface CreateTranscriptionParams {
+  userId: number;
+  telegramFileId: string;
+  telegramFileUniqueId: string;
+  durationSeconds: number;
+  fileSizeBytes: number | null;
+  forwardedFromName: string | null;
+  forwardedDate: Date | null;
+  audioFilePath: string;
+}
+
+export interface TranscribeJobData {
+  transcriptionId: number;
+  filePath: string;
+  chatId: number;
+  statusMessageId: number;
+}

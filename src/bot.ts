@@ -11,6 +11,7 @@ import { handleReportButton, handleReportCallback, handleComparisonButton, handl
 import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.js";
 import { handleUndoButton } from "./commands/expenseUndo.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput } from "./commands/admin.js";
+import { handleTranscribeCommand } from "./commands/transcribeMode.js";
 import { accessControlMiddleware } from "./middleware/auth.js";
 import { isExpenseMode } from "./middleware/expenseMode.js";
 
@@ -31,9 +32,10 @@ export function createBot(token: string): Telegraf {
   bot.command("week", handleWeek);
   bot.command("list", handleToday);
 
-  // Expense mode commands
+  // Mode switching commands
   bot.command("expenses", handleExpensesCommand);
   bot.command("calendar", handleCalendarCommand);
+  bot.command("transcribe", handleTranscribeCommand);
 
   // Admin commands
   bot.command("admin", handleAdminCommand);
@@ -56,6 +58,7 @@ export function createBot(token: string): Telegraf {
 
   bot.hears("💰 Расходы", handleExpensesCommand);
   bot.hears("📅 Календарь", handleCalendarCommand);
+  bot.hears("🎙 Транскрибатор", handleTranscribeCommand);
 
   // ─── Text messages (expense mode buttons + expense input) ───────────
 

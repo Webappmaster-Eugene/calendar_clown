@@ -18,7 +18,7 @@ const EXPENSE_KEYBOARD = Markup.keyboard([
 ]).resize();
 
 const MODE_KEYBOARD = Markup.keyboard([
-  ["📅 Календарь", "💰 Расходы"],
+  ["📅 Календарь", "💰 Расходы", "🎙 Транскрибатор"],
 ]).resize();
 
 export function getExpenseKeyboard() {

@@ -7,8 +7,11 @@ export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 /** DeepSeek model for intent/expense extraction. */
 export const DEEPSEEK_MODEL = "deepseek/deepseek-chat-v3.1";
 
-/** Gemini model for voice transcription. */
+/** Gemini model for voice transcription (calendar/expenses modes). */
 export const TRANSCRIBE_MODEL = "google/gemini-2.0-flash-001";
+
+/** Gemini model for high-quality voice transcription (transcribe mode). */
+export const TRANSCRIBE_MODEL_HQ = "google/gemini-2.5-flash-preview";
 
 /** Default monthly expense limit in rubles. */
 export const DEFAULT_MONTHLY_LIMIT = 350_000;

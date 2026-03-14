@@ -1,6 +1,9 @@
 import type { Context } from "telegraf";
 import { parseEventText } from "../calendar/parse.js";
 import { createEvent, NoCalendarLinkedError } from "../calendar/client.js";
+import { saveCalendarEvent } from "../calendar/repository.js";
+import { getUserByTelegramId } from "../expenses/repository.js";
+import { isDatabaseAvailable } from "../db/connection.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId, replyMarkdownSafe } from "../utils/telegram.js";
 import { TIMEZONE_MSK } from "../constants.js";
@@ -43,6 +46,27 @@ export async function handleNew(ctx: Context): Promise<void> {
       `✅ Создано: *${safeSummary}*\n${timeStr} – ${endStr}` +
       (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
     await replyMarkdownSafe(ctx, msg);
+
+    if (isDatabaseAvailable() && ctx.from?.id) {
+      try {
+        const dbUser = await getUserByTelegramId(ctx.from.id);
+        if (dbUser) {
+          await saveCalendarEvent({
+            userId: dbUser.id,
+            tribeId: dbUser.tribeId,
+            googleEventId: event.id ?? null,
+            summary: event.summary,
+            startTime: start,
+            endTime: end,
+            inputMethod: "text",
+            status: "created",
+            htmlLink: event.htmlLink ?? null,
+          });
+        }
+      } catch (dbErr) {
+        console.error("Failed to save calendar event to DB:", dbErr);
+      }
+    }
   } catch (err) {
     if (err instanceof NoCalendarLinkedError) {
       await ctx.reply(err.message);
@@ -50,5 +74,26 @@ export async function handleNew(ctx: Context): Promise<void> {
     }
     const msg = err instanceof Error ? err.message : "Ошибка календаря";
     await ctx.reply(`Ошибка: ${msg}`);
+
+    if (isDatabaseAvailable() && ctx.from?.id && !(err instanceof NoCalendarLinkedError)) {
+      try {
+        const dbUser = await getUserByTelegramId(ctx.from.id);
+        if (dbUser) {
+          await saveCalendarEvent({
+            userId: dbUser.id,
+            tribeId: dbUser.tribeId,
+            googleEventId: null,
+            summary: parsed.title,
+            startTime: parsed.start,
+            endTime: parsed.end,
+            inputMethod: "text",
+            status: "failed",
+            errorMessage: err instanceof Error ? err.message : "Unknown error",
+          });
+        }
+      } catch (dbErr) {
+        console.error("Failed to save failed calendar event to DB:", dbErr);
+      }
+    }
   }
 }

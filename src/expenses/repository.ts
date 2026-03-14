@@ -213,18 +213,23 @@ export async function removeUserByTelegramId(telegramId: number): Promise<boolea
   return (rowCount ?? 0) > 0;
 }
 
+/** Valid bot modes. */
+type BotMode = "calendar" | "expenses" | "transcribe";
+
+const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe"]);
+
 /** Get user's current bot mode from DB. */
-export async function getUserMode(telegramId: number): Promise<"calendar" | "expenses"> {
+export async function getUserMode(telegramId: number): Promise<BotMode> {
   const { rows } = await query<{ mode: string }>(
     "SELECT mode FROM users WHERE telegram_id = $1",
     [telegramId]
   );
   const mode = rows[0]?.mode;
-  return mode === "expenses" ? "expenses" : "calendar";
+  return VALID_MODES.has(mode) ? (mode as BotMode) : "calendar";
 }
 
 /** Set user's bot mode in DB. */
-export async function setUserMode(telegramId: number, mode: "calendar" | "expenses"): Promise<void> {
+export async function setUserMode(telegramId: number, mode: BotMode): Promise<void> {
   await query(
     "UPDATE users SET mode = $1 WHERE telegram_id = $2",
     [mode, telegramId]

@@ -16,11 +16,27 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction
+    volumes:
+      - redis-data:/data
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   bot:
     build: .
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -33,6 +49,7 @@ services:
       - DATABASE_URL=postgresql://bot:${DB_PASSWORD:-changeme}@db:5432/expenses_bot
       - MONTHLY_EXPENSE_LIMIT=${MONTHLY_EXPENSE_LIMIT:-350000}
       - DEFAULT_BOT_MODE=${DEFAULT_BOT_MODE:-calendar}
+      - REDIS_URL=redis://redis:6379
       - PORT=${PORT:-18790}
       - HOST=${HOST:-0.0.0.0}
     volumes:
@@ -49,6 +66,7 @@ services:
 
 volumes:
   pgdata:
+  redis-data:
   tokens:
   voice:
 

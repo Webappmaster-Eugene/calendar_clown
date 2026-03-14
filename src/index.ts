@@ -8,6 +8,8 @@ import { startOAuthServer } from "./oauthServer.js";
 import { runMigrations } from "./db/migrate.js";
 import { closePool, setDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
+import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue } from "./transcribe/queue.js";
+import { createTranscribeProcessor } from "./transcribe/worker.js";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -47,6 +49,21 @@ async function main(): Promise<void> {
 
   const bot = createBot(token!);
 
+  // Initialize Redis + BullMQ for voice transcription queue
+  const redisUrl = process.env.REDIS_URL?.trim();
+  if (redisUrl) {
+    try {
+      initTranscribeQueue(redisUrl);
+      startTranscribeWorker(redisUrl, createTranscribeProcessor(bot));
+      console.log("Transcribe queue initialized (Redis).");
+    } catch (err) {
+      console.error("Redis initialization failed — transcribe mode disabled.");
+      console.error("Error:", err instanceof Error ? err.message : err);
+    }
+  } else {
+    console.log("REDIS_URL not set — transcribe mode disabled.");
+  }
+
   startOAuthServer({
     oauthRedirectUri: process.env.OAUTH_REDIRECT_URI?.trim(),
   });
@@ -59,6 +76,7 @@ async function main(): Promise<void> {
     { command: "week", description: "Встречи на неделю" },
     { command: "expenses", description: "Режим учёта расходов" },
     { command: "calendar", description: "Режим календаря" },
+    { command: "transcribe", description: "Режим транскрибатора" },
     { command: "admin", description: "Управление пользователями" },
   ];
 
@@ -69,6 +87,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     console.log(`${signal} received, shutting down...`);
     bot.stop(signal);
+    await closeTranscribeQueue();
     await closePool();
     process.exit(0);
   };

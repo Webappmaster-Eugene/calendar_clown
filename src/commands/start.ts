@@ -3,7 +3,7 @@ import { Markup } from "telegraf";
 import { getAuthUrl, hasToken } from "../calendar/auth.js";
 
 const HELP_TEXT = `
-*Бот Google Calendar + Учёт расходов*
+*Бот Google Calendar + Учёт расходов + Транскрибатор*
 
 📅 *Календарь:*
 /auth _код_ — привязать календарь
@@ -16,13 +16,17 @@ const HELP_TEXT = `
 /expenses — режим учёта расходов
 /calendar — режим календаря
 
+🎙 *Транскрибатор:*
+/transcribe — режим расшифровки голосовых
+Отправьте или перешлите голосовое — бот вернёт текст
+
 🔧 *Администрирование:*
 /admin — управление пользователями
 
-🎤 *Голосовые команды:*
+🎤 *Голосовые команды (режим календаря):*
 • Создать встречу: «Встреча завтра в 15:00»
 • Отменить встречу: «Отмени встречу с Романом»
-• Записать трату: «Аптека геморрой пять тысяч»
+• Записать трату (режим расходов): «Аптека 5000»
 
 /help — эта справка
 `;
@@ -32,7 +36,7 @@ export async function handleStart(ctx: Context): Promise<void> {
   if (userId == null) {
     await ctx.reply("Привет! Выберите режим работы:", {
       ...Markup.keyboard([
-        ["📅 Календарь", "💰 Расходы"],
+        ["📅 Календарь", "💰 Расходы", "🎙 Транскрибатор"],
       ]).resize(),
     });
     return;
@@ -49,7 +53,7 @@ export async function handleStart(ctx: Context): Promise<void> {
 
   await ctx.reply(greeting, {
     ...Markup.keyboard([
-      ["📅 Календарь", "💰 Расходы"],
+      ["📅 Календарь", "💰 Расходы", "🎙 Транскрибатор"],
     ]).resize(),
   });
 }

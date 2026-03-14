@@ -4,7 +4,7 @@ import {
 } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 
-export type UserMode = "calendar" | "expenses";
+export type UserMode = "calendar" | "expenses" | "transcribe";
 
 /** Get user's current mode from DB. Falls back to 'calendar'. */
 export async function getUserMode(telegramId: number): Promise<UserMode> {
@@ -26,4 +26,10 @@ export async function setUserMode(telegramId: number, mode: UserMode): Promise<v
 export async function isExpenseMode(telegramId: number): Promise<boolean> {
   const mode = await getUserMode(telegramId);
   return mode === "expenses";
+}
+
+/** Check if user is in transcribe mode. */
+export async function isTranscribeMode(telegramId: number): Promise<boolean> {
+  const mode = await getUserMode(telegramId);
+  return mode === "transcribe";
 }
