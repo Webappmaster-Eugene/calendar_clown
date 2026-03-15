@@ -39,7 +39,7 @@ import { generateRubricMeta } from "../digest/summarizer.js";
 import { runAllDigests } from "../digest/scheduler.js";
 import { createLogger } from "../utils/logger.js";
 import { escapeMarkdown } from "../utils/markdown.js";
-import { getModeButtons } from "./expenseMode.js";
+import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import type { Telegraf } from "telegraf";
 
 const log = createLogger("digest");
@@ -86,8 +86,21 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
 
   await setUserMode(telegramId, "digest");
 
-  if (!ctx.message || !("text" in ctx.message)) return;
+  // Update hamburger menu commands for digest mode
+  await setModeMenuCommands(ctx, "digest");
+
+  if (!ctx.message || !("text" in ctx.message)) {
+    await showRubrics(ctx, telegramId);
+    return;
+  }
   const text = typeof ctx.message.text === "string" ? ctx.message.text.trim() : "";
+
+  // If called from keyboard button (not a /digest command), just show rubrics
+  if (!text.startsWith("/digest")) {
+    await showRubrics(ctx, telegramId);
+    return;
+  }
+
   const args = text.replace(/^\/digest\s*/i, "").trim();
 
   if (!args) {

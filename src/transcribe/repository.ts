@@ -96,6 +96,33 @@ export async function countPendingForUser(userId: number): Promise<number> {
   return parseInt(rows[0].count, 10);
 }
 
+/** Get recent completed transcriptions for a user (most recent first). */
+export async function getRecentTranscriptions(
+  userId: number,
+  limit: number = 10
+): Promise<VoiceTranscription[]> {
+  const { rows } = await query<TranscriptionRow>(
+    `SELECT * FROM voice_transcriptions
+     WHERE user_id = $1 AND status = 'completed'
+     ORDER BY transcribed_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  );
+  return rows.map(mapRow);
+}
+
+/** Get transcription by telegram_file_unique_id. */
+export async function getTranscriptionByFileUniqueId(
+  fileUniqueId: string
+): Promise<VoiceTranscription | null> {
+  const { rows } = await query<TranscriptionRow>(
+    "SELECT * FROM voice_transcriptions WHERE telegram_file_unique_id = $1",
+    [fileUniqueId]
+  );
+  if (rows.length === 0) return null;
+  return mapRow(rows[0]);
+}
+
 // ─── Internal ────────────────────────────────────────────────────────────
 
 interface TranscriptionRow {

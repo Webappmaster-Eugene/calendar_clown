@@ -10,7 +10,7 @@ import { mkdir, writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
-import { createTranscription, transcriptionExists, countPendingForUser } from "../transcribe/repository.js";
+import { createTranscription, transcriptionExists, countPendingForUser, getTranscriptionByFileUniqueId } from "../transcribe/repository.js";
 import { addTranscribeJob, isTranscribeAvailable } from "../transcribe/queue.js";
 import { VOICE_DIR } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
@@ -109,15 +109,26 @@ export async function handleVoiceInTranscribeMode(
     return;
   }
 
-  // Deduplication check
+  // Deduplication check — show existing transcript if available
   const alreadyExists = await transcriptionExists(voice.file_unique_id);
   if (alreadyExists) {
-    await ctx.telegram.editMessageText(
-      ctx.chat!.id,
-      statusMessageId,
-      undefined,
-      "Это голосовое уже было обработано ранее."
-    );
+    const existing = await getTranscriptionByFileUniqueId(voice.file_unique_id);
+    if (existing?.transcript) {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMessageId,
+        undefined,
+        `📝 *Ранее расшифровано:*\n\n${existing.transcript}`,
+        { parse_mode: "Markdown" }
+      );
+    } else {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMessageId,
+        undefined,
+        "Это голосовое уже было обработано ранее."
+      );
+    }
     return;
   }
 

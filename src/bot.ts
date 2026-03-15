@@ -10,15 +10,17 @@ import { handleCancel, handleCancelRecurringCallback } from "./commands/cancelEv
 import { handleExpenseText } from "./commands/addExpense.js";
 import { handleReportButton, handleReportCallback, handleComparisonButton, handleStatsButton } from "./commands/expenseReport.js";
 import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.js";
-import { handleUndoButton, handleUndoCallback } from "./commands/expenseUndo.js";
+import { handleUndoCallback } from "./commands/expenseUndo.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput } from "./commands/admin.js";
 import { handleStatsCommand } from "./commands/adminStats.js";
-import { handleTranscribeCommand } from "./commands/transcribeMode.js";
+import { handleTranscribeCommand, handleTranscribeHistoryButton } from "./commands/transcribeMode.js";
 import { handleDigestCommand, handleRubricsButton, handleDigestNowButton } from "./commands/digestMode.js";
 import { handleBroadcastCommand, handleBroadcastText } from "./commands/broadcastMode.js";
 import {
   handleNotableDatesCommand,
   handleUpcomingDatesButton,
+  handleWeekDatesButton,
+  handleMonthDatesButton,
   handleAllDatesButton,
   handleAddDateButton,
   handleDeleteDateButton,
@@ -26,7 +28,7 @@ import {
   handleNotableDatesText,
 } from "./commands/notableDatesMode.js";
 import { accessControlMiddleware } from "./middleware/auth.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode } from "./middleware/expenseMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode } from "./middleware/expenseMode.js";
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
@@ -106,6 +108,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("📰 Дайджест", handleDigestCommand);
   bot.hears("📢 Рассылка", handleBroadcastCommand);
   bot.hears("🎉 Даты", handleNotableDatesCommand);
+  bot.hears("🏠 Главное меню", handleModeCommand);
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
 
@@ -124,14 +127,23 @@ export function createBot(token: string): Telegraf {
   bot.hears("📋 Категории", expenseOnlyHandler(handleCategoriesButton));
   bot.hears("📈 Сравнение", expenseOnlyHandler(handleComparisonButton));
   bot.hears("👥 Статистика", expenseOnlyHandler(handleStatsButton));
-  bot.hears("↩️ Отменить", handleUndoButton);
 
   // Digest mode buttons
   bot.hears("📋 Мои рубрики", handleRubricsButton);
   bot.hears("▶️ Запустить сейчас", handleDigestNowButton);
 
+  // Transcribe mode buttons
+  bot.hears("📋 История", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isTranscribeMode(tid)) {
+      await handleTranscribeHistoryButton(ctx);
+    }
+  });
+
   // Notable dates mode buttons
   bot.hears("📅 Ближайшие", handleUpcomingDatesButton);
+  bot.hears("📅 На неделе", handleWeekDatesButton);
+  bot.hears("📅 За месяц", handleMonthDatesButton);
   bot.hears("📋 Все даты", handleAllDatesButton);
   bot.hears("➕ Добавить", handleAddDateButton);
   bot.hears("🗑 Удалить", handleDeleteDateButton);

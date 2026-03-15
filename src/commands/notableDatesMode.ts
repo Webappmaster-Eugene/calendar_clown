@@ -4,7 +4,7 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId, ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { setUserMode } from "../middleware/expenseMode.js";
-import { getModeButtons } from "./expenseMode.js";
+import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import {
   addNotableDate,
   removeNotableDate,
@@ -23,7 +23,8 @@ const MONTH_NAMES = [
 
 function getNotableDatesKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
-    ["📅 Ближайшие", "📋 Все даты"],
+    ["📅 Ближайшие", "📅 На неделе", "📅 За месяц"],
+    ["📋 Все даты"],
     ["➕ Добавить", "🗑 Удалить"],
     ...getModeButtons(isAdmin),
   ]).resize();
@@ -48,6 +49,7 @@ export async function handleNotableDatesCommand(ctx: Context): Promise<void> {
   );
 
   await setUserMode(telegramId, "notable_dates");
+  await setModeMenuCommands(ctx, "notable_dates");
 
   // Answer callback query if triggered from inline button
   if (ctx.callbackQuery) {
@@ -98,6 +100,84 @@ export async function handleUpcomingDatesButton(ctx: Context): Promise<void> {
     );
   } catch (err) {
     log.error("Error fetching upcoming dates:", err);
+    await ctx.reply("Ошибка при получении дат.");
+  }
+}
+
+/** Handle "На неделе" button — show dates for this week (7 days). */
+export async function handleWeekDatesButton(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply("База данных недоступна.");
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    await ctx.reply("Пользователь не найден. Отправьте /start.");
+    return;
+  }
+
+  try {
+    const dates = await getUpcomingDates(dbUser.tribeId, 7);
+    if (dates.length === 0) {
+      await ctx.reply("На этой неделе знаменательных дат нет.");
+      return;
+    }
+
+    const lines = dates.map((d) => {
+      const desc = d.description ? ` — ${d.description}` : "";
+      return `${d.emoji} ${d.name} (${d.dateDay}.${String(d.dateMonth).padStart(2, "0")})${desc}`;
+    });
+
+    await ctx.reply(
+      `📅 *Даты на этой неделе (7 дней):*\n\n${lines.join("\n")}`,
+      { parse_mode: "Markdown" }
+    );
+  } catch (err) {
+    log.error("Error fetching week dates:", err);
+    await ctx.reply("Ошибка при получении дат.");
+  }
+}
+
+/** Handle "За месяц" button — show dates for the current month. */
+export async function handleMonthDatesButton(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply("База данных недоступна.");
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    await ctx.reply("Пользователь не найден. Отправьте /start.");
+    return;
+  }
+
+  try {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const dates = await listNotableDates(dbUser.tribeId, currentMonth);
+    if (dates.length === 0) {
+      await ctx.reply(`В ${MONTH_NAMES[currentMonth].toLowerCase()} знаменательных дат нет.`);
+      return;
+    }
+
+    const lines = dates.map((d) => {
+      const desc = d.description ? ` — ${d.description}` : "";
+      return `${d.emoji} ${d.dateDay}.${String(d.dateMonth).padStart(2, "0")} ${d.name}${desc}`;
+    });
+
+    await ctx.reply(
+      `📅 *Даты за ${MONTH_NAMES[currentMonth].toLowerCase()} (${dates.length}):*\n\n${lines.join("\n")}`,
+      { parse_mode: "Markdown" }
+    );
+  } catch (err) {
+    log.error("Error fetching month dates:", err);
     await ctx.reply("Ошибка при получении дат.");
   }
 }

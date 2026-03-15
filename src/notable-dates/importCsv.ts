@@ -53,14 +53,33 @@ async function main(): Promise<void> {
 
       const [subject, startDate, , , , description] = parts;
 
-      // Extract name from "🎂 День рождения: Name"
-      const nameMatch = subject.match(/День рождения:\s*(.+)/);
-      if (!nameMatch) {
-        log.info(`Skipping non-birthday: ${subject}`);
-        skipped++;
-        continue;
+      // Extract name from "🎂 День рождения: Name" or anniversary/other events
+      const birthdayMatch = subject.match(/День рождения:\s*(.+)/);
+      const anniversaryMatch = !birthdayMatch ? subject.match(/Годовщина\s+(.+)/i) : null;
+
+      let name: string;
+      let eventType: string;
+      let emoji: string;
+
+      if (birthdayMatch) {
+        name = birthdayMatch[1].trim();
+        eventType = "birthday";
+        emoji = "🎂";
+      } else if (anniversaryMatch) {
+        name = subject.replace(/^[^\p{L}]*/u, "").trim(); // Remove leading emoji
+        eventType = "anniversary";
+        emoji = "💍";
+      } else {
+        // Import any other event as-is
+        name = subject.replace(/^[^\p{L}]*/u, "").trim();
+        if (!name) {
+          log.info(`Skipping empty subject: ${subject}`);
+          skipped++;
+          continue;
+        }
+        eventType = "other";
+        emoji = "📌";
       }
-      const name = nameMatch[1].trim();
 
       // Parse date MM/DD/YYYY
       const dateMatch = startDate.match(/^(\d{1,2})\/(\d{1,2})\/\d{4}$/);
@@ -78,9 +97,9 @@ async function main(): Promise<void> {
         name,
         dateMonth: month,
         dateDay: day,
-        eventType: "birthday",
+        eventType,
         description: description?.trim() || null,
-        emoji: "🎂",
+        emoji,
       });
 
       imported++;

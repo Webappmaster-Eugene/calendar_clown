@@ -125,6 +125,46 @@ function tryParseJson(raw: string): Record<string, unknown> | null {
   }
 }
 
+/** Russian words indicating specific date/day was mentioned. */
+const RU_DATE_MENTIONS = [
+  /завтра/i, /послезавтра/i, /сегодня/i,
+  /понедельник/i, /вторник/i, /сред[ау]/i, /четверг/i, /пятниц/i, /суббот/i, /воскресень/i,
+  /\d{1,2}[\s.](?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/i,
+  /\d{1,2}\.\d{1,2}/,
+];
+
+function mentionsSpecificDate(transcript: string): boolean {
+  return RU_DATE_MENTIONS.some((re) => re.test(transcript));
+}
+
+/** If no specific date was mentioned and the resulting time is already past → shift to tomorrow. */
+function shiftPastTimeToTomorrow(transcript: string, intent: VoiceIntent): VoiceIntent {
+  if (intent.type !== "calendar") return intent;
+
+  // Only shift if user didn't explicitly mention a date
+  if (mentionsSpecificDate(transcript)) return intent;
+
+  const now = new Date();
+  const nowMsk = new Date(now.toLocaleString("en-US", { timeZone: TIMEZONE_MSK }));
+  const startMsk = new Date(intent.start.toLocaleString("en-US", { timeZone: TIMEZONE_MSK }));
+
+  // Check if start is today and in the past
+  const isSameDay =
+    startMsk.getFullYear() === nowMsk.getFullYear() &&
+    startMsk.getMonth() === nowMsk.getMonth() &&
+    startMsk.getDate() === nowMsk.getDate();
+
+  if (isSameDay && startMsk.getTime() <= nowMsk.getTime()) {
+    // Shift to tomorrow
+    const durationMs = intent.end.getTime() - intent.start.getTime();
+    const newStart = new Date(intent.start.getTime() + 24 * 60 * 60 * 1000);
+    const newEnd = new Date(newStart.getTime() + durationMs);
+    return { type: "calendar", title: intent.title, start: newStart, end: newEnd, recurrence: intent.recurrence };
+  }
+
+  return intent;
+}
+
 export async function extractVoiceIntent(transcript: string): Promise<VoiceIntent> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -195,7 +235,8 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
           recurrence = json.recurrence;
         }
         const intent: VoiceIntent = { type: "calendar", title, start, end, recurrence };
-        return correctCalendarIntentWeekday(transcript, intent);
+        const corrected = correctCalendarIntentWeekday(transcript, intent);
+        return shiftPastTimeToTomorrow(transcript, corrected);
       }
     }
   }

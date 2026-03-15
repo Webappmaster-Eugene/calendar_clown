@@ -3,7 +3,7 @@ import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/expenseMode.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
-import { getModeButtons } from "./expenseMode.js";
+import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 
 export async function handleBroadcastCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
@@ -20,6 +20,7 @@ export async function handleBroadcastCommand(ctx: Context): Promise<void> {
   }
 
   await setUserMode(telegramId, "broadcast");
+  await setModeMenuCommands(ctx, "broadcast");
 
   await ctx.reply(
     "📢 *Режим рассылки активирован*\n\n" +
