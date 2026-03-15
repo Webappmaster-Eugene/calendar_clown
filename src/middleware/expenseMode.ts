@@ -4,7 +4,7 @@ import {
 } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 
-export type UserMode = "calendar" | "expenses" | "transcribe" | "digest";
+export type UserMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates";
 
 /** Get user's current mode from DB. Falls back to 'calendar'. */
 export async function getUserMode(telegramId: number): Promise<UserMode> {
@@ -32,4 +32,16 @@ export async function isExpenseMode(telegramId: number): Promise<boolean> {
 export async function isTranscribeMode(telegramId: number): Promise<boolean> {
   const mode = await getUserMode(telegramId);
   return mode === "transcribe";
+}
+
+/** Check if user is in broadcast mode. */
+export async function isBroadcastMode(telegramId: number): Promise<boolean> {
+  const mode = await getUserMode(telegramId);
+  return mode === "broadcast";
+}
+
+/** Check if user is in notable dates mode. */
+export async function isNotableDatesMode(telegramId: number): Promise<boolean> {
+  const mode = await getUserMode(telegramId);
+  return mode === "notable_dates";
 }

@@ -102,12 +102,7 @@ Options:
 4) Listing this week's events (e.g. "что на этой неделе", "встречи на неделю", "расписание на неделю", "какие планы на неделю"):
    {"type":"list_week"}
 
-5) Broadcasting a message to all users (admin only). Trigger: "отправь всем", "напиши всем", "рассылка", "сообщение всем", "передай всем". Extract the message text to broadcast:
-   {"type":"broadcast","message":"the message text to send to all users"}
-   Example: "Отправь всем: завтра офис закрыт" → {"type":"broadcast","message":"Завтра офис закрыт"}
-   Example: "Рассылка напоминание что в пятницу встреча в 10" → {"type":"broadcast","message":"Напоминание: в пятницу встреча в 10"}
-
-6) Anything else or unclear:
+5) Anything else or unclear:
    {"type":"unknown"}`;
 }
 
@@ -116,7 +111,6 @@ export type VoiceIntent =
   | { type: "cancel_event"; query: string; date: Date | null }
   | { type: "list_today" }
   | { type: "list_week" }
-  | { type: "broadcast"; message: string }
   | { type: "unknown" };
 
 function tryParseJson(raw: string): Record<string, unknown> | null {
@@ -173,14 +167,6 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
 
   if (json.type === "list_week") {
     return { type: "list_week" };
-  }
-
-  if (json.type === "broadcast") {
-    const message = typeof json.message === "string" ? json.message.trim() : "";
-    if (message) {
-      return { type: "broadcast", message };
-    }
-    return { type: "unknown" };
   }
 
   if (json.type === "cancel_event") {

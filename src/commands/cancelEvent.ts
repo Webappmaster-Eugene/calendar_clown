@@ -1,5 +1,6 @@
 import type { Context } from "telegraf";
-import { searchEvents, deleteEvent, NoCalendarLinkedError } from "../calendar/client.js";
+import { Markup } from "telegraf";
+import { searchEvents, deleteEvent, deleteRecurringEvent, NoCalendarLinkedError } from "../calendar/client.js";
 import { markEventDeleted } from "../calendar/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -49,6 +50,28 @@ export async function handleCancel(ctx: Context): Promise<void> {
 
     if (events.length === 1) {
       const ev = events[0];
+
+      // If recurring — ask what to delete
+      if (ev.recurringEventId) {
+        const start = new Date(ev.start);
+        const timeStr = start.toLocaleString("ru-RU", {
+          dateStyle: "short",
+          timeStyle: "short",
+          timeZone: TIMEZONE_MSK,
+        });
+        await ctx.reply(
+          `🔄 *Это повторяющееся событие:*\n*${escapeMarkdown(ev.summary)}*\n${timeStr}\n\nЧто удалить?`,
+          {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([
+              Markup.button.callback("Только это", `cancel_recurring:single:${ev.id}`),
+              Markup.button.callback("Все повторы", `cancel_recurring:all:${ev.recurringEventId}`),
+            ]),
+          }
+        );
+        return;
+      }
+
       await deleteEvent(ev.id, userId);
       log.info(`Event deleted: id=${ev.id}, summary="${ev.summary}", by user ${userId}`);
 
@@ -97,5 +120,52 @@ export async function handleCancel(ctx: Context): Promise<void> {
     log.error("Error in /cancel:", err);
     const msg = err instanceof Error ? err.message : "Ошибка";
     await ctx.reply(`Ошибка: ${msg}`);
+  }
+}
+
+/**
+ * Handle recurring event cancel callbacks.
+ */
+export async function handleCancelRecurringCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+  const userId = getUserId(ctx);
+  if (!userId) return;
+
+  await ctx.answerCbQuery();
+
+  const singleMatch = data.match(/^cancel_recurring:single:(.+)$/);
+  const allMatch = data.match(/^cancel_recurring:all:(.+)$/);
+
+  try {
+    if (singleMatch) {
+      const eventId = singleMatch[1];
+      await deleteEvent(eventId, userId);
+      log.info(`Single recurring instance deleted: id=${eventId}, by user ${userId}`);
+
+      if (isDatabaseAvailable() && ctx.from?.id) {
+        try {
+          const dbUser = await getUserByTelegramId(ctx.from.id);
+          if (dbUser) await markEventDeleted(eventId, dbUser.id);
+        } catch (dbErr) {
+          log.error("Failed to mark event as deleted in DB:", dbErr);
+        }
+      }
+
+      await ctx.editMessageText("✅ Этот экземпляр события удалён.");
+    } else if (allMatch) {
+      const recurringEventId = allMatch[1];
+      await deleteRecurringEvent(recurringEventId, userId);
+      log.info(`All recurring instances deleted: recurringId=${recurringEventId}, by user ${userId}`);
+      await ctx.editMessageText("✅ Все повторяющиеся экземпляры удалены.");
+    }
+  } catch (err) {
+    log.error("Error deleting recurring event:", err);
+    const msg = err instanceof Error ? err.message : "Ошибка";
+    try {
+      await ctx.editMessageText(`❌ Ошибка: ${msg}`);
+    } catch {
+      // already edited
+    }
   }
 }

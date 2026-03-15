@@ -27,7 +27,7 @@ export function createTranscribeProcessor(bot: Telegraf) {
   ): Promise<void> {
     const { transcriptionId, filePath, chatId, statusMessageId } = job.data;
 
-    log.info(`Processing job ${job.id}: transcriptionId=${transcriptionId}, file=${filePath}`);
+    log.info(`Processing job ${job.id}: transcriptionId=${transcriptionId}, file=${filePath}, attempt=${job.attemptsMade + 1}/${job.opts.attempts ?? 3}`);
     await markProcessing(transcriptionId);
 
     try {
@@ -58,7 +58,9 @@ export function createTranscribeProcessor(bot: Telegraf) {
       await unlink(filePath).catch(() => {});
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorStack = err instanceof Error ? err.stack : undefined;
       log.error(`Transcription ${transcriptionId} error: ${errorMsg}`);
+      if (errorStack) log.error(`Stack trace: ${errorStack}`);
 
       // On final attempt — mark as failed and notify user.
       // On earlier attempts — leave file for retry.

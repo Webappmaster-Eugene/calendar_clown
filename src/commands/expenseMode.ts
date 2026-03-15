@@ -10,20 +10,30 @@ export const DB_UNAVAILABLE_MSG =
   "⚠️ Учёт расходов временно недоступен (нет подключения к базе данных).\n" +
   "Календарь работает в обычном режиме.";
 
-const EXPENSE_KEYBOARD = Markup.keyboard([
-  ["📊 Отчёт", "📥 Excel"],
-  ["📋 Категории", "📈 Сравнение"],
-  ["👥 Статистика", "↩️ Отменить"],
-  ["📅 Календарь", "🎙 Транскрибатор"],
-]).resize();
+/** Shared bottom rows for mode switching — identical across all mode keyboards. */
+export function getModeButtons(isAdmin: boolean): string[][] {
+  const rows = [
+    ["📅 Календарь", "💰 Расходы"],
+    ["🎙 Транскрибатор", "📰 Дайджест"],
+    ["🎉 Даты"],
+  ];
+  if (isAdmin) {
+    rows.push(["📢 Рассылка"]);
+  }
+  return rows;
+}
 
-const MODE_KEYBOARD = Markup.keyboard([
-  ["📅 Календарь", "💰 Расходы"],
-  ["🎙 Транскрибатор", "📰 Дайджест"],
-]).resize();
+export function getModeKeyboard(isAdmin: boolean) {
+  return Markup.keyboard(getModeButtons(isAdmin)).resize();
+}
 
-export function getExpenseKeyboard() {
-  return EXPENSE_KEYBOARD;
+export function getExpenseKeyboard(isAdmin: boolean) {
+  return Markup.keyboard([
+    ["📊 Отчёт", "📥 Excel"],
+    ["📋 Категории", "📈 Сравнение"],
+    ["👥 Статистика", "↩️ Отменить"],
+    ...getModeButtons(isAdmin),
+  ]).resize();
 }
 
 export async function handleExpensesCommand(ctx: Context): Promise<void> {
@@ -58,7 +68,7 @@ export async function handleExpensesCommand(ctx: Context): Promise<void> {
     "• `Кафе Бургер Кинг 1200`\n\n" +
     "Или отправьте голосовое сообщение 🎤\n\n" +
     "📋 *Категории:*\n" + categoriesList,
-    { parse_mode: "Markdown", ...EXPENSE_KEYBOARD }
+    { parse_mode: "Markdown", ...getExpenseKeyboard(isBootstrapAdmin(telegramId)) }
   );
 }
 
@@ -75,23 +85,34 @@ export async function handleCalendarCommand(ctx: Context): Promise<void> {
 
   await ctx.reply(
     "📅 Режим календаря активирован. Используйте /help для списка команд.",
-    { ...MODE_KEYBOARD }
+    { ...getModeKeyboard(isBootstrapAdmin(telegramId)) }
   );
 }
 
-const MODE_INLINE_KEYBOARD = Markup.inlineKeyboard([
-  [
-    Markup.button.callback("📅 Календарь", "mode:calendar"),
-    Markup.button.callback("💰 Расходы", "mode:expenses"),
-  ],
-  [
-    Markup.button.callback("🎙 Транскрибатор", "mode:transcribe"),
-    Markup.button.callback("📰 Дайджест", "mode:digest"),
-  ],
-]);
+function getModeInlineKeyboard(isAdmin: boolean) {
+  const rows = [
+    [
+      Markup.button.callback("📅 Календарь", "mode:calendar"),
+      Markup.button.callback("💰 Расходы", "mode:expenses"),
+    ],
+    [
+      Markup.button.callback("🎙 Транскрибатор", "mode:transcribe"),
+      Markup.button.callback("📰 Дайджест", "mode:digest"),
+    ],
+    [
+      Markup.button.callback("🎉 Даты", "mode:notable_dates"),
+    ],
+  ];
+  if (isAdmin) {
+    rows.push([Markup.button.callback("📢 Рассылка", "mode:broadcast")]);
+  }
+  return Markup.inlineKeyboard(rows);
+}
 
 export async function handleModeCommand(ctx: Context): Promise<void> {
-  await ctx.reply("Выберите режим работы:", { ...MODE_INLINE_KEYBOARD });
+  const telegramId = ctx.from?.id;
+  const isAdmin = telegramId != null && isBootstrapAdmin(telegramId);
+  await ctx.reply("Выберите режим работы:", { ...getModeInlineKeyboard(isAdmin) });
 }
 
 export async function handleCategoriesButton(ctx: Context): Promise<void> {

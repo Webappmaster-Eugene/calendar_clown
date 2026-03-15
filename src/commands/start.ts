@@ -1,6 +1,8 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { getAuthUrl, hasToken } from "../calendar/auth.js";
+import { isBootstrapAdmin } from "../middleware/auth.js";
+import { getModeKeyboard } from "./expenseMode.js";
 
 const HELP_TEXT = `
 *Бот Google Calendar + Учёт расходов + Транскрибатор*
@@ -25,8 +27,14 @@ const HELP_TEXT = `
 /digest — управление рубриками и каналами
 /digest now — запустить дайджест сейчас
 
+🎉 *Знаменательные даты:*
+/dates — дни рождения, праздники и памятные даты
+
 🔀 *Переключение:*
 /mode — выбор режима работы
+
+📢 *Рассылка (только админ):*
+/broadcast — режим рассылки сообщений
 
 🔧 *Администрирование:*
 /admin — управление пользователями
@@ -42,12 +50,11 @@ const HELP_TEXT = `
 
 export async function handleStart(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
+  const isAdmin = userId != null && isBootstrapAdmin(userId);
+
   if (userId == null) {
     await ctx.reply("Привет! Выберите режим работы:", {
-      ...Markup.keyboard([
-        ["📅 Календарь", "💰 Расходы"],
-        ["🎙 Транскрибатор", "📰 Дайджест"],
-      ]).resize(),
+      ...getModeKeyboard(false),
     });
     return;
   }
@@ -62,9 +69,7 @@ export async function handleStart(ctx: Context): Promise<void> {
   }
 
   await ctx.reply(greeting, {
-    ...Markup.keyboard([
-      ["📅 Календарь", "💰 Расходы", "🎙 Транскрибатор"],
-    ]).resize(),
+    ...getModeKeyboard(isAdmin),
   });
 }
 

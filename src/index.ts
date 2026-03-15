@@ -13,6 +13,7 @@ import { createTranscribeProcessor } from "./transcribe/worker.js";
 import { isDigestConfigured } from "./digest/telegramClient.js";
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
 import { setDigestBotRef } from "./commands/digestMode.js";
+import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { createLogger } from "./utils/logger.js";
 
 const log = createLogger("app");
@@ -79,6 +80,12 @@ async function main(): Promise<void> {
     log.info("TELEGRAM_PARSER_API_ID not set — digest mode disabled.");
   }
 
+  // Initialize notable dates scheduler (birthdays, holidays)
+  if (process.env.DATABASE_URL) {
+    startNotableDatesScheduler(bot);
+    log.info("Notable dates scheduler enabled.");
+  }
+
   startOAuthServer({
     oauthRedirectUri: process.env.OAUTH_REDIRECT_URI?.trim(),
   });
@@ -94,6 +101,7 @@ async function main(): Promise<void> {
     { command: "transcribe", description: "Режим транскрибатора" },
     { command: "cancel", description: "Отменить встречу" },
     { command: "digest", description: "Дайджест телеграм-каналов" },
+    { command: "dates", description: "Знаменательные даты" },
     { command: "mode", description: "Выбор режима работы" },
     { command: "admin", description: "Управление пользователями" },
   ];
@@ -106,6 +114,7 @@ async function main(): Promise<void> {
     log.info(`${signal} received, shutting down...`);
     bot.stop(signal);
     stopDigestScheduler();
+    stopNotableDatesScheduler();
     await closeTranscribeQueue();
     await closePool();
     process.exit(0);

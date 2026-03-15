@@ -5,6 +5,7 @@ import { ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { isTranscribeAvailable } from "../transcribe/queue.js";
+import { getModeButtons } from "./expenseMode.js";
 
 const DB_UNAVAILABLE_MSG =
   "Режим транскрибатора недоступен (нет подключения к базе данных).";
@@ -12,9 +13,11 @@ const DB_UNAVAILABLE_MSG =
 const QUEUE_UNAVAILABLE_MSG =
   "Режим транскрибатора недоступен (очередь не инициализирована). Проверьте REDIS_URL.";
 
-const TRANSCRIBE_KEYBOARD = Markup.keyboard([
-  ["📅 Календарь", "💰 Расходы"],
-]).resize();
+function getTranscribeKeyboard(isAdmin: boolean) {
+  return Markup.keyboard([
+    ...getModeButtons(isAdmin),
+  ]).resize();
+}
 
 export async function handleTranscribeCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
@@ -46,6 +49,6 @@ export async function handleTranscribeCommand(ctx: Context): Promise<void> {
     "Отправьте или перешлите голосовое сообщение — я расшифрую его в текст.\n\n" +
     "Можно отправлять несколько голосовых подряд — они встанут в очередь и будут обработаны по порядку.\n\n" +
     "Для переключения режима используйте кнопки ниже или команды /calendar, /expenses.",
-    { parse_mode: "Markdown", ...TRANSCRIBE_KEYBOARD }
+    { parse_mode: "Markdown", ...getTranscribeKeyboard(isBootstrapAdmin(telegramId)) }
   );
 }

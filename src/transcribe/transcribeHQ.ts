@@ -49,42 +49,60 @@ export async function transcribeVoiceHQ(filePath: string): Promise<string> {
 
   log.info(`API call: model=${TRANSCRIBE_MODEL_HQ}, file=${filePath}, size=${fileBuffer.length}b`);
 
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": OPENROUTER_REFERER,
-    },
-    body: JSON.stringify({
-      model: TRANSCRIBE_MODEL_HQ,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: TRANSCRIBE_PROMPT },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64Audio}`,
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+  const startTime = Date.now();
+
+  try {
+    const res = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": OPENROUTER_REFERER,
+      },
+      body: JSON.stringify({
+        model: TRANSCRIBE_MODEL_HQ,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: TRANSCRIBE_PROMPT },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Audio}`,
+                },
               },
-            },
-          ],
-        },
-      ],
-    }),
-  });
+            ],
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    log.error(`API error: status=${res.status}, body=${errText}`);
-    throw new Error(`OpenRouter HQ transcription failed: ${res.status} ${errText}`);
+    const elapsed = Date.now() - startTime;
+
+    if (!res.ok) {
+      const errText = await res.text();
+      log.error(`API error: status=${res.status}, elapsed=${elapsed}ms, body=${errText}`);
+      throw new Error(`OpenRouter HQ transcription failed: ${res.status} ${errText}`);
+    }
+
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = data?.choices?.[0]?.message?.content?.trim() ?? "";
+    log.info(`API response: status=${res.status}, elapsed=${elapsed}ms, transcript_length=${text.length}`);
+    return text;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      const elapsed = Date.now() - startTime;
+      log.error(`API timeout after ${elapsed}ms for file=${filePath}`);
+      throw new Error("Транскрипция не завершилась за 60 секунд. Попробуйте ещё раз.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const text = data?.choices?.[0]?.message?.content?.trim() ?? "";
-  log.info(`API response: status=${res.status}, transcript_length=${text.length}`);
-  return text;
 }

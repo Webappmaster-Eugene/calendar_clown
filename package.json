@@ -13,6 +13,7 @@
     "test": "tsx --test tests/*.test.ts",
     "test:parser": "tsx --test tests/parser.test.ts",
     "test:repo": "tsx --test tests/repository.test.ts",
+    "import-birthdays": "tsx src/notable-dates/importCsv.ts",
     "typecheck": "tsc --noEmit",
     "smoke": "npm run build && npm run typecheck",
     "prepare": "husky || true"

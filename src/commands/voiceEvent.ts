@@ -1,17 +1,20 @@
 import type { Context } from "telegraf";
 import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
-import { createEvent, deleteEvent, searchEvents, listEvents, NoCalendarLinkedError } from "../calendar/client.js";
+import { Markup } from "telegraf";
+import { createEvent, deleteEvent, deleteRecurringEvent, searchEvents, listEvents, NoCalendarLinkedError } from "../calendar/client.js";
 import { extractCalendarEvent } from "../calendar/extractViaOpenRouter.js";
 import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode } from "../middleware/expenseMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode } from "../middleware/expenseMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
-import { getCategories, getUserByTelegramId, listTribeUsers } from "../expenses/repository.js";
+import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
 import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
 import { isDatabaseAvailable } from "../db/connection.js";
+import { isBootstrapAdmin } from "../middleware/auth.js";
+import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
@@ -75,6 +78,12 @@ export async function handleVoice(ctx: Context) {
     // If in expense mode, try expense extraction first
     if (telegramId != null && await isExpenseMode(telegramId)) {
       await handleVoiceInExpenseMode(ctx, transcript, statusMsg.message_id);
+      return;
+    }
+
+    // Broadcast mode — send transcribed text to all tribe members
+    if (telegramId != null && await isBroadcastMode(telegramId) && isBootstrapAdmin(telegramId)) {
+      await handleVoiceInBroadcastMode(ctx, transcript, statusMsg.message_id, telegramId);
       return;
     }
 
@@ -142,6 +151,37 @@ async function handleVoiceInExpenseMode(
   );
 }
 
+async function handleVoiceInBroadcastMode(
+  ctx: Context,
+  transcript: string,
+  statusMsgId: number,
+  telegramId: number
+): Promise<void> {
+  const sendMessage = async (recipientId: string, text: string): Promise<void> => {
+    await ctx.telegram.sendMessage(recipientId, text);
+  };
+
+  try {
+    const result = await broadcastToTribe(sendMessage, telegramId, transcript);
+    const safeTranscript = escapeMarkdown(transcript);
+    await ctx.telegram.editMessageText(
+      ctx.chat!.id,
+      statusMsgId,
+      undefined,
+      `🎤 Расшифровка: "${safeTranscript}"\n\n${formatBroadcastResult(result)}`,
+      { parse_mode: "Markdown" }
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Ошибка рассылки";
+    await ctx.telegram.editMessageText(
+      ctx.chat!.id,
+      statusMsgId,
+      undefined,
+      msg
+    );
+  }
+}
+
 async function handleVoiceInCalendarMode(
   ctx: Context,
   transcript: string,
@@ -190,6 +230,32 @@ async function handleVoiceInCalendarMode(
 
     if (events.length === 1) {
       const ev = events[0];
+
+      // If recurring — ask what to delete
+      if (ev.recurringEventId) {
+        const start = new Date(ev.start);
+        const timeStr = start.toLocaleString("ru-RU", {
+          dateStyle: "short",
+          timeStyle: "short",
+          timeZone,
+        });
+        const safeSummary = escapeMarkdown(ev.summary);
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsgId,
+          undefined,
+          `🔄 *Это повторяющееся событие:*\n*${safeSummary}*\n${timeStr}\n\nЧто удалить?`,
+          { parse_mode: "Markdown" }
+        );
+        await ctx.reply("Выберите:", {
+          ...Markup.inlineKeyboard([
+            Markup.button.callback("Только это", `cancel_recurring:single:${ev.id}`),
+            Markup.button.callback("Все повторы", `cancel_recurring:all:${ev.recurringEventId}`),
+          ]),
+        });
+        return;
+      }
+
       await deleteEvent(ev.id, userId);
 
       if (dbUser) {
@@ -291,54 +357,6 @@ async function handleVoiceInCalendarMode(
       ctx.chat!.id, statusMsgId, undefined,
       "📅 *Неделя:*" + lines.join("\n"),
       { parse_mode: "Markdown" }
-    );
-    return;
-  }
-
-  if (intent.type === "broadcast") {
-    const adminId = process.env.ADMIN_TELEGRAM_ID;
-    if (!adminId || userId !== adminId) {
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id, statusMsgId, undefined,
-        "Рассылка доступна только администратору."
-      );
-      return;
-    }
-    if (!isDatabaseAvailable()) {
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id, statusMsgId, undefined,
-        "Рассылка недоступна (нет подключения к БД)."
-      );
-      return;
-    }
-    const adminUser = await getUserByTelegramId(parseInt(adminId, 10));
-    const tribeId = adminUser?.tribeId ?? 1;
-    const allUsers = await listTribeUsers(tribeId);
-    const recipients = allUsers
-      .map((u) => String(u.telegramId))
-      .filter((id) => id !== adminId);
-    if (recipients.length === 0) {
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id, statusMsgId, undefined,
-        "Нет пользователей для рассылки."
-      );
-      return;
-    }
-    let sent = 0;
-    let failed = 0;
-    for (const recipientId of recipients) {
-      try {
-        await ctx.telegram.sendMessage(recipientId, intent.message);
-        sent++;
-      } catch {
-        failed++;
-      }
-    }
-    const result = `Рассылка завершена: отправлено ${sent}` +
-      (failed > 0 ? `, не удалось ${failed}` : "") +
-      ` из ${recipients.length}.`;
-    await ctx.telegram.editMessageText(
-      ctx.chat!.id, statusMsgId, undefined, result
     );
     return;
   }

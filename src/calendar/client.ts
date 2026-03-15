@@ -11,6 +11,7 @@ export interface CalendarEvent {
   start: string;
   end: string;
   htmlLink?: string;
+  recurringEventId?: string;
 }
 
 /** Thrown when event start is in the past. */
@@ -108,7 +109,21 @@ export async function searchEvents(
       start: e.start.dateTime,
       end: e.end.dateTime,
       htmlLink: e.htmlLink ?? undefined,
+      recurringEventId: e.recurringEventId ?? undefined,
     }));
+}
+
+/** Delete all instances of a recurring event (by its series ID). */
+export async function deleteRecurringEvent(
+  recurringEventId: string,
+  userId: string
+): Promise<void> {
+  const auth = await getAuthClient(userId);
+  const calendar = google.calendar({ version: "v3", auth });
+  await calendar.events.delete({
+    calendarId: CALENDAR_ID,
+    eventId: recurringEventId,
+  });
 }
 
 export async function listEvents(

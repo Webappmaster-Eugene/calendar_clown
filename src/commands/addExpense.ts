@@ -38,7 +38,7 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
       "Формат: Категория Описание Сумма\n" +
       "Пример: Аптека Геморрой 5000\n\n" +
       "Нажмите 📋 Категории для списка.",
-      { ...getExpenseKeyboard() }
+      { ...getExpenseKeyboard(isBootstrapAdmin(telegramId)) }
     );
     return;
   }
@@ -77,7 +77,7 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
       monthName(month)
     );
 
-    await ctx.replyWithMarkdown(confirmation, { ...getExpenseKeyboard() });
+    await ctx.replyWithMarkdown(confirmation, { ...getExpenseKeyboard(isBootstrapAdmin(telegramId)) });
   } catch (err) {
     log.error("Error adding expense:", err);
     const msg = err instanceof Error ? err.message : "Ошибка";

@@ -39,14 +39,17 @@ import { generateRubricMeta } from "../digest/summarizer.js";
 import { runAllDigests } from "../digest/scheduler.js";
 import { createLogger } from "../utils/logger.js";
 import { escapeMarkdown } from "../utils/markdown.js";
+import { getModeButtons } from "./expenseMode.js";
 import type { Telegraf } from "telegraf";
 
 const log = createLogger("digest");
 
-const DIGEST_KEYBOARD = Markup.keyboard([
-  ["📋 Мои рубрики", "▶️ Запустить сейчас"],
-  ["📅 Календарь", "💰 Расходы", "🎙 Транскрибатор"],
-]).resize();
+function getDigestKeyboard(isAdmin: boolean) {
+  return Markup.keyboard([
+    ["📋 Мои рубрики", "▶️ Запустить сейчас"],
+    ...getModeButtons(isAdmin),
+  ]).resize();
+}
 
 /** Stored bot reference for /digest now. */
 let botRef: Telegraf | null = null;
@@ -141,7 +144,7 @@ async function showRubrics(ctx: Context, telegramId: number): Promise<void> {
       "`/digest Название рубрики — Описание тематики`\n\n" +
       "Пример:\n" +
       "`/digest DevOps и разработка — Новости разработки, DevOps, CI/CD, Kubernetes`",
-      { parse_mode: "Markdown", ...DIGEST_KEYBOARD }
+      { parse_mode: "Markdown", ...getDigestKeyboard(isBootstrapAdmin(telegramId)) }
     );
     return;
   }
@@ -164,7 +167,7 @@ async function showRubrics(ctx: Context, telegramId: number): Promise<void> {
     "`/digest resume <название>` — возобновить\n" +
     "`/digest delete <название>` — удалить\n" +
     "`/digest now` — запустить сейчас",
-    { parse_mode: "Markdown", ...DIGEST_KEYBOARD }
+    { parse_mode: "Markdown", ...getDigestKeyboard(isBootstrapAdmin(telegramId)) }
   );
 }
 
