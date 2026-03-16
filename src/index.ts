@@ -5,7 +5,7 @@ dotenv.config({ path: ".env.local", override: true });
 
 import { createBot } from "./bot.js";
 import { startOAuthServer } from "./oauthServer.js";
-import { runMigrations } from "./db/migrate.js";
+import { runMigrations, runDrizzleMigrations } from "./db/migrate.js";
 import { closePool, setDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
 import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, startStaleJobCleaner, stopStaleJobCleaner } from "./transcribe/queue.js";
@@ -30,6 +30,7 @@ async function main(): Promise<void> {
     try {
       log.info("Connecting to PostgreSQL...");
       await runMigrations();
+      await runDrizzleMigrations();
       log.info("Database migrations completed.");
 
       // Auto-register bootstrap admin in DB

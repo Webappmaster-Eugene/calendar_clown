@@ -16,10 +16,12 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src/db/migrations ./migrations
+COPY drizzle ./drizzle
 
 RUN mkdir -p data/tokens data/voice
 
 ENV MIGRATIONS_DIR=/app/migrations
+ENV DRIZZLE_DIR=/app/drizzle
 
 EXPOSE 18790
 
