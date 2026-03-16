@@ -26,7 +26,7 @@
 
 ```bash
 cp .env.example .env
-# Отредактируйте .env
+# Отредактируй .env
 
 npm install
 npm run build
