@@ -74,10 +74,18 @@ export async function ensureUser(
 
   if (existing.length > 0) {
     const row = existing[0];
-    if (row.username !== username || row.first_name !== firstName || row.last_name !== lastName) {
+    // Only upgrade to admin (never downgrade), since other users may have been made admin via /admin
+    const newRole = isAdmin && row.role !== "admin" ? "admin" : row.role;
+    const needsUpdate =
+      row.username !== username ||
+      row.first_name !== firstName ||
+      row.last_name !== lastName ||
+      newRole !== row.role;
+
+    if (needsUpdate) {
       await query(
-        "UPDATE users SET username = $1, first_name = $2, last_name = $3 WHERE id = $4",
-        [username, firstName, lastName, row.id]
+        "UPDATE users SET username = $1, first_name = $2, last_name = $3, role = $4 WHERE id = $5",
+        [username, firstName, lastName, newRole, row.id]
       );
     }
     return {
@@ -86,7 +94,7 @@ export async function ensureUser(
       username: username ?? row.username,
       firstName: firstName || row.first_name,
       lastName: lastName ?? row.last_name,
-      role: row.role as "admin" | "user",
+      role: newRole as "admin" | "user",
       tribeId: row.tribe_id,
     };
   }

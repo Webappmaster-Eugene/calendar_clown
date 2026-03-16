@@ -83,7 +83,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📅 Календарь", "💰 Расходы"],
         ["🎙 Транскрибатор", "📝 Заметки"],
         ["📰 Дайджест", "🎉 Даты"],
-        ["📢 Рассылка"],
+        ["📢 Рассылка", "👑 Управление"],
       ]).resize();
     }
     if (context.hasTribe) {
@@ -107,7 +107,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["📰 Дайджест", "🎉 Даты"],
   ];
   if (isAdmin) {
-    rows.push(["📢 Рассылка"]);
+    rows.push(["📢 Рассылка", "👑 Управление"]);
   }
   return Markup.keyboard(rows).resize();
 }
@@ -192,7 +192,10 @@ function getModeInlineKeyboard(isAdmin: boolean) {
     ],
   ];
   if (isAdmin) {
-    rows.push([Markup.button.callback("📢 Рассылка", "mode:broadcast")]);
+    rows.push([
+      Markup.button.callback("📢 Рассылка", "mode:broadcast"),
+      Markup.button.callback("👑 Управление", "mode:admin"),
+    ]);
   }
   return Markup.inlineKeyboard(rows);
 }
@@ -204,7 +207,8 @@ export async function handleModeCommand(ctx: Context): Promise<void> {
   // If triggered from the "🏠 Главное меню" keyboard button, show keyboard-based mode selector
   const isFromKeyboard = ctx.message && "text" in ctx.message && ctx.message.text === "🏠 Главное меню";
   if (isFromKeyboard) {
-    await ctx.reply("Выберите режим работы:", { ...getModeKeyboard(isAdmin) });
+    const menuCtx = telegramId ? await getUserMenuContext(telegramId) : null;
+    await ctx.reply("Выберите режим работы:", { ...getModeKeyboard(isAdmin, menuCtx) });
     return;
   }
 

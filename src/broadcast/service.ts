@@ -30,7 +30,7 @@ export async function broadcastToTribe(
   const adminIdStr = String(adminTelegramId);
   const recipients = allUsers
     .map((u) => String(u.telegramId))
-    .filter((id) => id !== adminIdStr);
+    .filter((id) => id !== adminIdStr && Number(id) > 0);
 
   let sent = 0;
   let failed = 0;

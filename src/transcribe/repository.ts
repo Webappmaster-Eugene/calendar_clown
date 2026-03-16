@@ -150,6 +150,11 @@ export async function markUserPendingAsFailed(
   return rowCount ?? 0;
 }
 
+/** Delete a transcription record by ID (for re-queue after failure). */
+export async function deleteTranscription(id: number): Promise<void> {
+  await query("DELETE FROM voice_transcriptions WHERE id = $1", [id]);
+}
+
 /** Auto-fail transcriptions stuck in pending/processing for too long. */
 export async function markStaleAsFailed(maxAgeMinutes: number = 15): Promise<number> {
   const { rowCount } = await query(

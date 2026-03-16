@@ -25,6 +25,7 @@ import {
   handleAddDateButton,
   handleDeleteDateButton,
   handleNotableDateDeleteCallback,
+  handleNotableDatePriorityCallback,
   handleNotableDatesText,
 } from "./commands/notableDatesMode.js";
 import {
@@ -40,6 +41,8 @@ import {
   handleDeleteTopicCallback,
   handleNotesPageCallback,
   handleNoteActionCallback,
+  handleNoteMoveCallback,
+  handleNoteMoveToCallback,
   handleNotesText,
 } from "./commands/notesMode.js";
 import { accessControlMiddleware } from "./middleware/auth.js";
@@ -88,6 +91,7 @@ export function createBot(token: string): Telegraf {
   bot.action(/^undo:/, handleUndoCallback);
   bot.action(/^cancel_recurring:/, handleCancelRecurringCallback);
   bot.action(/^notable_delete:/, handleNotableDateDeleteCallback);
+  bot.action(/^notable_priority:/, handleNotableDatePriorityCallback);
   bot.action(/^tr_hist:/, handleTranscribeHistoryCallback);
 
   // Notes callbacks
@@ -100,6 +104,8 @@ export function createBot(token: string): Telegraf {
   bot.action(/^note_del:/, handleNoteActionCallback);
   bot.action(/^note_imp:/, handleNoteActionCallback);
   bot.action(/^note_urg:/, handleNoteActionCallback);
+  bot.action(/^note_move:/, handleNoteMoveCallback);
+  bot.action(/^note_move_to:/, handleNoteMoveToCallback);
 
   // Mode switch inline callbacks
   bot.action("mode:calendar", async (ctx) => {
@@ -121,6 +127,10 @@ export function createBot(token: string): Telegraf {
   bot.action("mode:broadcast", async (ctx) => {
     await handleBroadcastCommand(ctx);
   });
+  bot.action("mode:admin", async (ctx) => {
+    await ctx.answerCbQuery("👑 Управление");
+    await handleAdminCommand(ctx);
+  });
   bot.action("mode:notable_dates", async (ctx) => {
     await handleNotableDatesCommand(ctx);
   });
@@ -141,6 +151,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("🎙 Транскрибатор", handleTranscribeCommand);
   bot.hears("📰 Дайджест", handleDigestCommand);
   bot.hears("📢 Рассылка", handleBroadcastCommand);
+  bot.hears("👑 Управление", handleAdminCommand);
   bot.hears("🎉 Даты", handleNotableDatesCommand);
   bot.hears("📝 Заметки", handleNotesCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);

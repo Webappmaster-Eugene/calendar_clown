@@ -7,6 +7,7 @@
 import { Queue, Worker } from "bullmq";
 import type { Job, ConnectionOptions } from "bullmq";
 import type { TranscribeJobData } from "./types.js";
+import { markStaleAsFailed } from "./repository.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("queue");
@@ -68,6 +69,9 @@ export function startTranscribeWorker(
     {
       connection,
       concurrency: 2,
+      lockDuration: 960_000,     // 16 min — exceeds max API timeout (15min for large files)
+      stalledInterval: 120_000,  // Check for stalled jobs every 2 min
+      maxStalledCount: 2,        // Allow 2 stall events before failing
       limiter: {
         max: 10,
         duration: 60_000,
@@ -167,9 +171,12 @@ let staleJobInterval: ReturnType<typeof setInterval> | null = null;
 /** Start periodic stale job cleaner (every 5 minutes). */
 export function startStaleJobCleaner(): void {
   if (staleJobInterval) return;
-  staleJobInterval = setInterval(() => {
-    cleanStaleJobs().catch((err) => {
+  staleJobInterval = setInterval(async () => {
+    await cleanStaleJobs().catch((err) => {
       log.error("Stale job cleanup error:", err);
+    });
+    await markStaleAsFailed(30).catch((err) => {
+      log.error("Mark stale DB records as failed error:", err);
     });
   }, 5 * 60 * 1000);
   log.info("Stale job cleaner started (every 5 min)");

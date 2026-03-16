@@ -11,6 +11,7 @@ export interface NotableDate {
   description: string | null;
   greetingTemplate: string | null;
   emoji: string;
+  isPriority: boolean;
   isActive: boolean;
   createdAt: Date;
 }
@@ -25,6 +26,7 @@ interface AddNotableDateParams {
   description?: string | null;
   greetingTemplate?: string | null;
   emoji?: string;
+  isPriority?: boolean;
 }
 
 /** Get notable dates for a specific day. */
@@ -44,11 +46,12 @@ export async function getDatesByMonthDay(
     description: string | null;
     greeting_template: string | null;
     emoji: string;
+    is_priority: boolean;
     is_active: boolean;
     created_at: Date;
   }>(
     `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
-            event_type, description, greeting_template, emoji, is_active, created_at
+            event_type, description, greeting_template, emoji, is_priority, is_active, created_at
      FROM notable_dates
      WHERE tribe_id = $1 AND date_month = $2 AND date_day = $3 AND is_active = true
      ORDER BY event_type, name`,
@@ -70,13 +73,14 @@ export async function addNotableDate(params: AddNotableDateParams): Promise<Nota
     description: string | null;
     greeting_template: string | null;
     emoji: string;
+    is_priority: boolean;
     is_active: boolean;
     created_at: Date;
   }>(
-    `INSERT INTO notable_dates (tribe_id, added_by_user_id, name, date_month, date_day, event_type, description, greeting_template, emoji)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO notable_dates (tribe_id, added_by_user_id, name, date_month, date_day, event_type, description, greeting_template, emoji, is_priority)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id, tribe_id, added_by_user_id, name, date_month, date_day,
-               event_type, description, greeting_template, emoji, is_active, created_at`,
+               event_type, description, greeting_template, emoji, is_priority, is_active, created_at`,
     [
       params.tribeId,
       params.addedByUserId,
@@ -87,8 +91,45 @@ export async function addNotableDate(params: AddNotableDateParams): Promise<Nota
       params.description ?? null,
       params.greetingTemplate ?? null,
       params.emoji ?? "🎂",
+      params.isPriority ?? false,
     ]
   );
+  return mapRow(rows[0]);
+}
+
+/** Toggle is_priority flag on a notable date. */
+export async function toggleNotableDatePriority(id: number, tribeId: number): Promise<boolean> {
+  const { rowCount } = await query(
+    "UPDATE notable_dates SET is_priority = NOT is_priority, updated_at = NOW() WHERE id = $1 AND tribe_id = $2",
+    [id, tribeId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Get a notable date by id. */
+export async function getNotableDateById(id: number, tribeId: number): Promise<NotableDate | null> {
+  const { rows } = await query<{
+    id: number;
+    tribe_id: number;
+    added_by_user_id: number | null;
+    name: string;
+    date_month: number;
+    date_day: number;
+    event_type: string;
+    description: string | null;
+    greeting_template: string | null;
+    emoji: string;
+    is_priority: boolean;
+    is_active: boolean;
+    created_at: Date;
+  }>(
+    `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
+            event_type, description, greeting_template, emoji, is_priority, is_active, created_at
+     FROM notable_dates
+     WHERE id = $1 AND tribe_id = $2`,
+    [id, tribeId]
+  );
+  if (rows.length === 0) return null;
   return mapRow(rows[0]);
 }
 
@@ -168,11 +209,12 @@ export async function getUpcomingDates(
     description: string | null;
     greeting_template: string | null;
     emoji: string;
+    is_priority: boolean;
     is_active: boolean;
     created_at: Date;
   }>(
     `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
-            event_type, description, greeting_template, emoji, is_active, created_at
+            event_type, description, greeting_template, emoji, is_priority, is_active, created_at
      FROM notable_dates
      WHERE tribe_id = $1 AND is_active = true AND (${conditions})
      ORDER BY date_month, date_day, event_type, name`,
@@ -192,6 +234,7 @@ function mapRow(r: {
   description: string | null;
   greeting_template: string | null;
   emoji: string;
+  is_priority: boolean;
   is_active: boolean;
   created_at: Date;
 }): NotableDate {
@@ -206,6 +249,7 @@ function mapRow(r: {
     description: r.description,
     greetingTemplate: r.greeting_template,
     emoji: r.emoji,
+    isPriority: r.is_priority,
     isActive: r.is_active,
     createdAt: r.created_at,
   };

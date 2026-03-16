@@ -86,9 +86,9 @@ export async function createNote(params: {
   inputMethod?: string;
 }): Promise<Note> {
   const encryptedContent = encrypt(params.content);
-  const { rows } = await query<NoteRow>(
+  const { rows: inserted } = await query<{ id: number }>(
     `INSERT INTO notes (user_id, topic_id, content, is_important, is_urgent, has_image, image_file_path, input_method)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
     [
       params.userId,
       params.topicId,
@@ -100,7 +100,14 @@ export async function createNote(params: {
       params.inputMethod ?? "text",
     ]
   );
-  return mapNote(rows[0]);
+  // Fetch with topic info via JOIN so topicName/topicEmoji are populated
+  const { rows } = await query<NoteRow & { topic_name: string | null; topic_emoji: string | null }>(
+    `SELECT n.*, t.name AS topic_name, t.emoji AS topic_emoji
+     FROM notes n LEFT JOIN note_topics t ON t.id = n.topic_id
+     WHERE n.id = $1`,
+    [inserted[0].id]
+  );
+  return mapNoteWithTopic(rows[0]);
 }
 
 export async function getNoteById(noteId: number, userId: number): Promise<Note | null> {

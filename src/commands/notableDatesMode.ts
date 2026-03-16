@@ -10,6 +10,8 @@ import {
   removeNotableDate,
   listNotableDates,
   getUpcomingDates,
+  toggleNotableDatePriority,
+  getNotableDateById,
 } from "../notable-dates/repository.js";
 import { parseNotableDateInput, formatNotableDateReminder } from "../notable-dates/service.js";
 import { createLogger } from "../utils/logger.js";
@@ -331,6 +333,48 @@ export async function handleNotableDateDeleteCallback(ctx: Context): Promise<voi
   }
 }
 
+/** Handle priority toggle callback. */
+export async function handleNotableDatePriorityCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = data.match(/^notable_priority:(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const dateId = parseInt(match[1], 10);
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  try {
+    await toggleNotableDatePriority(dateId, dbUser.tribeId);
+    const date = await getNotableDateById(dateId, dbUser.tribeId);
+    if (date) {
+      const status = date.isPriority
+        ? "🔔 Расширенные напоминания включены (за 7, 3 и 1 день)"
+        : "🔕 Расширенные напоминания отключены";
+      await ctx.answerCbQuery(date.isPriority ? "🔔 Включено" : "🔕 Отключено");
+      await ctx.editMessageText(
+        `${formatNotableDateReminder(date)}\n\n${status}`,
+        {
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback(
+              date.isPriority ? "🔕 Убрать расширенные напоминания" : "🔔 Напоминать за 7, 3, 1 день",
+              `notable_priority:${date.id}`
+            )],
+          ]),
+        }
+      );
+    } else {
+      await ctx.answerCbQuery("Дата не найдена");
+    }
+  } catch (err) {
+    log.error("Error toggling priority:", err);
+    await ctx.answerCbQuery("Ошибка");
+  }
+}
+
 /** Handle text input in notable_dates mode. */
 export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
@@ -373,6 +417,14 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
 
     await ctx.reply(
       `✅ Добавлено:\n${formatNotableDateReminder(date)}`,
+      {
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback(
+            date.isPriority ? "🔔 Убрать расширенные напоминания" : "🔔 Напоминать за 7, 3, 1 день",
+            `notable_priority:${date.id}`
+          )],
+        ]),
+      }
     );
   } catch (err) {
     log.error("Error adding notable date:", err);

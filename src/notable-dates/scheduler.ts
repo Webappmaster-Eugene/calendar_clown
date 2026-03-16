@@ -84,14 +84,8 @@ async function sendNotableDateReminders(bot: Telegraf): Promise<void> {
         const future = getMskFutureDate(daysAhead);
         const futureDates = await getDatesByMonthDay(tribe.id, future.month, future.day);
 
-        // Filter by reminder flags
-        const filteredDates = futureDates.filter((d) => {
-          const dateRecord = d as unknown as Record<string, unknown>;
-          if (daysAhead === 7 && dateRecord.remind7days === false) return false;
-          if (daysAhead === 3 && dateRecord.remind3days === false) return false;
-          if (daysAhead === 1 && dateRecord.remind1day === false) return false;
-          return true;
-        });
+        // Only send advance reminders for priority dates
+        const filteredDates = futureDates.filter((d) => d.isPriority);
 
         if (filteredDates.length > 0) {
           const prefix = formatAdvancePrefix(daysAhead);
@@ -104,8 +98,8 @@ async function sendNotableDateReminders(bot: Telegraf): Promise<void> {
 
       const fullMessage = messages.join("\n\n");
 
-      // Send to all tribe members
-      const users = await listTribeUsers(tribe.id);
+      // Send to all tribe members (exclude seed users with invalid telegram_id)
+      const users = (await listTribeUsers(tribe.id)).filter((u) => u.telegramId > 0);
       let sent = 0;
       for (const user of users) {
         try {

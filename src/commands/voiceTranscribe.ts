@@ -10,7 +10,7 @@ import { mkdir, writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
-import { createTranscription, transcriptionExists, countPendingForUser, getTranscriptionByFileUniqueId } from "../transcribe/repository.js";
+import { createTranscription, countPendingForUser, getTranscriptionByFileUniqueId, deleteTranscription } from "../transcribe/repository.js";
 import { addTranscribeJob, isTranscribeAvailable } from "../transcribe/queue.js";
 import { VOICE_DIR } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
@@ -109,11 +109,10 @@ export async function handleVoiceInTranscribeMode(
     return;
   }
 
-  // Deduplication check — show existing transcript if available
-  const alreadyExists = await transcriptionExists(voice.file_unique_id);
-  if (alreadyExists) {
-    const existing = await getTranscriptionByFileUniqueId(voice.file_unique_id);
-    if (existing?.transcript) {
+  // Deduplication check — show existing transcript or allow re-queue for failed/stuck
+  const existing = await getTranscriptionByFileUniqueId(voice.file_unique_id);
+  if (existing) {
+    if (existing.status === "completed" && existing.transcript) {
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         statusMessageId,
@@ -121,15 +120,19 @@ export async function handleVoiceInTranscribeMode(
         `📝 *Ранее расшифровано:*\n\n${existing.transcript}`,
         { parse_mode: "Markdown" }
       );
-    } else {
+      return;
+    }
+    if (existing.status === "pending" || existing.status === "processing") {
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         statusMessageId,
         undefined,
-        "Это голосовое уже было обработано ранее."
+        "⏳ Голосовое уже в очереди, ожидайте результат."
       );
+      return;
     }
-    return;
+    // Failed or completed without transcript — delete old record and re-queue
+    await deleteTranscription(existing.id);
   }
 
   // Download OGG file

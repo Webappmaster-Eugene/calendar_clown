@@ -22,6 +22,7 @@ import {
   deleteNote,
   toggleNoteFlag,
   getNoteById,
+  updateNote,
 } from "../notes/repository.js";
 import type { Note } from "../notes/repository.js";
 import { createLogger } from "../utils/logger.js";
@@ -399,6 +400,64 @@ export async function handleNoteActionCallback(ctx: Context): Promise<void> {
   await ctx.answerCbQuery();
 }
 
+/** Handle note_move callback — show topic selection for moving a note. */
+export async function handleNoteMoveCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^note_move:(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const noteId = parseInt(match[1], 10);
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  const topics = await getTopicsByUser(dbUser.id);
+
+  const buttons = topics.map((t) => [
+    Markup.button.callback(`${t.emoji} ${t.name}`, `note_move_to:${noteId}:${t.id}`),
+  ]);
+  buttons.push([Markup.button.callback("📄 Без рубрики", `note_move_to:${noteId}:0`)]);
+
+  await ctx.answerCbQuery();
+  await ctx.editMessageText("Выберите рубрику для переноса:", {
+    ...Markup.inlineKeyboard(buttons),
+  });
+}
+
+/** Handle note_move_to callback — move note to selected topic. */
+export async function handleNoteMoveToCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^note_move_to:(\d+):(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const noteId = parseInt(match[1], 10);
+  const topicId = parseInt(match[2], 10);
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  try {
+    await updateNote(noteId, dbUser.id, { topicId: topicId === 0 ? null : topicId });
+    const note = await getNoteById(noteId, dbUser.id);
+    if (note) {
+      await ctx.answerCbQuery("Заметка перемещена");
+      await ctx.editMessageText(formatSingleNote(note), {
+        parse_mode: "Markdown",
+        ...buildSingleNoteButtons(note),
+      });
+    } else {
+      await ctx.answerCbQuery("Заметка не найдена");
+    }
+  } catch (err) {
+    log.error("Error moving note:", err);
+    await ctx.answerCbQuery("Ошибка при перемещении");
+  }
+}
+
 /**
  * Handle text input in notes mode.
  * Returns true if the message was consumed.
@@ -578,6 +637,9 @@ function buildSingleNoteButtons(note: Note) {
       Markup.button.callback(note.isImportant ? "⭐ Убрать" : "⭐ Важное", `note_imp:${note.id}`),
       Markup.button.callback(note.isUrgent ? "🔥 Убрать" : "🔥 Срочное", `note_urg:${note.id}`),
     ],
-    [Markup.button.callback("🗑 Удалить", `note_del:${note.id}`)],
+    [
+      Markup.button.callback("📂 Переместить", `note_move:${note.id}`),
+      Markup.button.callback("🗑 Удалить", `note_del:${note.id}`),
+    ],
   ]);
 }
