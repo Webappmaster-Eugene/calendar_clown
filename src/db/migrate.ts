@@ -9,8 +9,10 @@
  * НЕ добавляйте новые SQL-файлы сюда. Используйте Drizzle-схему (src/db/schema.ts).
  */
 
-import { readFile } from "fs/promises";
+import { readFile, readdir } from "fs/promises";
 import { join } from "path";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { getPool } from "./connection.js";
 import { createLogger } from "../utils/logger.js";
 
@@ -35,7 +37,6 @@ export async function runMigrations(): Promise<void> {
   );
   const appliedSet = new Set(applied.map((r) => r.name));
 
-  const { readdir } = await import("fs/promises");
   const files = (await readdir(MIGRATIONS_DIR))
     .filter((f) => f.endsWith(".sql"))
     .sort();
@@ -65,4 +66,21 @@ export async function runMigrations(): Promise<void> {
       client.release();
     }
   }
+}
+
+/** Run Drizzle Kit migrations from the drizzle/ directory (if it exists). */
+export async function runDrizzleMigrations(): Promise<void> {
+  const drizzleDir = process.env.DRIZZLE_DIR || join(process.cwd(), "drizzle");
+
+  try {
+    await readFile(join(drizzleDir, "meta", "_journal.json"), "utf8");
+  } catch {
+    log.info("No Drizzle migrations found, skipping.");
+    return;
+  }
+
+  const pool = getPool();
+  const db = drizzle(pool);
+  await migrate(db, { migrationsFolder: drizzleDir });
+  log.info("Drizzle migrations applied.");
 }
