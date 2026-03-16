@@ -169,7 +169,7 @@ export async function deleteTranscription(id: number): Promise<void> {
 }
 
 /** Auto-fail transcriptions stuck in pending/processing for too long. */
-export async function markStaleAsFailed(maxAgeMinutes: number = 15): Promise<number> {
+export async function markStaleAsFailed(maxAgeMinutes: number = 120): Promise<number> {
   const { rowCount } = await query(
     `UPDATE voice_transcriptions
      SET status = 'failed', error_message = 'Превышено время ожидания', transcribed_at = NOW()

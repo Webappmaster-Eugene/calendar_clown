@@ -4,7 +4,7 @@
  */
 
 import { execFile } from "child_process";
-import { mkdir, readdir, unlink, rmdir, stat, readFile, writeFile } from "fs/promises";
+import { mkdir, readdir, unlink, rmdir, stat } from "fs/promises";
 import { join, basename, extname } from "path";
 import { promisify } from "util";
 import { createLogger } from "../utils/logger.js";
@@ -16,11 +16,11 @@ const log = createLogger("audio-utils");
 export const MAX_CHUNK_DURATION_SEC = 300;
 
 /**
- * Maximum file size in bytes for single-file transcription (3 MB).
- * Files larger than this will be chunked regardless of duration,
- * because base64 encoding inflates the payload by ~33%.
+ * Maximum file size in bytes for single-file transcription (20 MB).
+ * Gemini supports up to ~20 MB inline base64 data (~27 MB base64).
+ * Files larger than this will be chunked via ffmpeg.
  */
-export const MAX_SINGLE_FILE_BYTES = 3 * 1024 * 1024;
+export const MAX_SINGLE_FILE_BYTES = 20 * 1024 * 1024;
 
 /**
  * Approximate bytes per second for OGG Opus audio (~4 KB/s at typical bitrates).
@@ -28,11 +28,27 @@ export const MAX_SINGLE_FILE_BYTES = 3 * 1024 * 1024;
  */
 export const OGG_OPUS_BYTES_PER_SEC = 4_000;
 
-/** File size threshold for converting non-OGG files to OGG Opus (20MB). */
-const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024;
-
 /** Timeout for ffprobe calls (15 seconds). */
 const FFPROBE_TIMEOUT_MS = 15_000;
+
+/** Cached ffmpeg availability check result. */
+let ffmpegAvailable: boolean | null = null;
+
+/**
+ * Check if ffmpeg/ffprobe are available on the system.
+ * Result is cached after first call.
+ */
+export async function isFFmpegAvailable(): Promise<boolean> {
+  if (ffmpegAvailable !== null) return ffmpegAvailable;
+  try {
+    await execFileAsync("ffprobe", ["-version"], { timeout: 5_000 });
+    ffmpegAvailable = true;
+  } catch {
+    ffmpegAvailable = false;
+    log.warn("ffmpeg/ffprobe not found — audio chunking and format conversion will be unavailable. Install ffmpeg for best results.");
+  }
+  return ffmpegAvailable;
+}
 
 /**
  * Get audio duration in seconds using ffprobe.
@@ -96,12 +112,18 @@ export async function splitAudio(
 }
 
 /**
- * Convert a large non-OGG file to OGG Opus to reduce base64 payload size.
- * Returns the path to the converted file, or the original path if conversion is not needed.
+ * Convert non-OGG audio files to OGG Opus to reduce base64 payload size.
+ * Compresses any non-OGG file when ffmpeg is available (mp3, wav, m4a, webm, flac, aac, etc.).
+ * Returns the path to the converted file, or the original path if conversion is not needed/possible.
  */
 export async function compressToOggIfNeeded(filePath: string): Promise<{ path: string; converted: boolean }> {
   const ext = extname(filePath).toLowerCase();
   if (ext === ".ogg") return { path: filePath, converted: false };
+
+  if (!await isFFmpegAvailable()) {
+    log.warn(`Cannot convert ${ext} to OGG — ffmpeg not available`);
+    return { path: filePath, converted: false };
+  }
 
   let fileSize: number;
   try {
@@ -110,8 +132,6 @@ export async function compressToOggIfNeeded(filePath: string): Promise<{ path: s
   } catch {
     return { path: filePath, converted: false };
   }
-
-  if (fileSize < LARGE_FILE_THRESHOLD) return { path: filePath, converted: false };
 
   const base = basename(filePath, ext);
   const outputPath = join(filePath, "..", `${base}_compressed.ogg`);
@@ -125,7 +145,7 @@ export async function compressToOggIfNeeded(filePath: string): Promise<{ path: s
       "-y",
       outputPath,
     ]);
-    log.info(`Compressed ${filePath} (${fileSize}b) → ${outputPath}`);
+    log.info(`Compressed ${filePath} (${fileSize}b, ${ext}) → ${outputPath}`);
     return { path: outputPath, converted: true };
   } catch (err) {
     log.error(`OGG compression failed for ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
@@ -134,46 +154,15 @@ export async function compressToOggIfNeeded(filePath: string): Promise<{ path: s
 }
 
 /**
- * Split an audio file into chunks by raw byte size.
- * Used as a fallback when ffmpeg is unavailable.
- * Chunks may not align to audio frame boundaries, but STT models
- * handle truncated audio gracefully — better than hanging on a 15MB payload.
+ * Get file size in bytes. Returns 0 on error.
  */
-export async function splitAudioByBytes(
-  filePath: string,
-  maxChunkBytes: number,
-  outputDir: string
-): Promise<string[]> {
-  await mkdir(outputDir, { recursive: true });
-
-  const fileBuffer = await readFile(filePath);
-  const totalSize = fileBuffer.length;
-
-  if (totalSize <= maxChunkBytes) {
-    // File fits in a single chunk — copy it as-is
-    const ext = extname(filePath) || ".ogg";
-    const chunkPath = join(outputDir, `chunk_000${ext}`);
-    await writeFile(chunkPath, fileBuffer);
-    log.info(`File ${filePath} (${totalSize}b) fits in single chunk, copied to ${chunkPath}`);
-    return [chunkPath];
+export async function getFileSize(filePath: string): Promise<number> {
+  try {
+    const s = await stat(filePath);
+    return s.size;
+  } catch {
+    return 0;
   }
-
-  const ext = extname(filePath) || ".ogg";
-  const chunkCount = Math.ceil(totalSize / maxChunkBytes);
-  const chunkPaths: string[] = [];
-
-  for (let i = 0; i < chunkCount; i++) {
-    const start = i * maxChunkBytes;
-    const end = Math.min(start + maxChunkBytes, totalSize);
-    const chunkData = fileBuffer.subarray(start, end);
-    const chunkName = `chunk_${String(i).padStart(3, "0")}${ext}`;
-    const chunkPath = join(outputDir, chunkName);
-    await writeFile(chunkPath, chunkData);
-    chunkPaths.push(chunkPath);
-  }
-
-  log.info(`Byte-split ${filePath} (${totalSize}b) into ${chunkPaths.length} chunks (max ${maxChunkBytes}b each)`);
-  return chunkPaths;
 }
 
 /**

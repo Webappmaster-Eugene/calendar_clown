@@ -71,8 +71,8 @@ export function startTranscribeWorker(
     {
       connection,
       concurrency: 2,
-      lockDuration: 1_800_000,   // 30 min — long audio chunks can take 5-10 min each
-      stalledInterval: 300_000,  // Check for stalled jobs every 5 min
+      lockDuration: 3_600_000,   // 60 min — long audio (30-60 min) needs extended lock
+      stalledInterval: 600_000,  // Check for stalled jobs every 10 min
       maxStalledCount: 3,        // Allow 3 stall events before failing
       limiter: {
         max: 10,
@@ -130,7 +130,7 @@ export function isTranscribeAvailable(): boolean {
 }
 
 /** Remove stale jobs older than maxAgeMs from the queue. */
-export async function cleanStaleJobs(maxAgeMs: number = 15 * 60 * 1000): Promise<number> {
+export async function cleanStaleJobs(maxAgeMs: number = 120 * 60 * 1000): Promise<number> {
   const queue = getTranscribeQueue();
   if (!queue) return 0;
 
@@ -197,7 +197,7 @@ export function startStaleJobCleaner(): void {
     await cleanStaleJobs().catch((err) => {
       log.error("Stale job cleanup error:", err);
     });
-    await markStaleAsFailed(30).catch((err) => {
+    await markStaleAsFailed(120).catch((err) => {
       log.error("Mark stale DB records as failed error:", err);
     });
   }, 5 * 60 * 1000);

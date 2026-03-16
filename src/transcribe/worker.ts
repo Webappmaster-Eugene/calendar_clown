@@ -8,6 +8,7 @@ import type { Telegraf } from "telegraf";
 import { unlink } from "fs/promises";
 import { transcribeVoiceHQ } from "./transcribeHQ.js";
 import { markProcessing, markCompleted, markFailed } from "./repository.js";
+import { isFFmpegAvailable } from "./audioUtils.js";
 import { TRANSCRIBE_MODEL_HQ } from "../constants.js";
 import type { TranscribeJobData } from "./types.js";
 import { createLogger } from "../utils/logger.js";
@@ -21,6 +22,9 @@ const log = createLogger("worker");
  * The bot reference is needed to send results back to the user via Telegram.
  */
 export function createTranscribeProcessor(bot: Telegraf) {
+  // Check ffmpeg on first load — logs a warning if not available
+  isFFmpegAvailable().catch(() => {});
+
   return async function processTranscribeJob(
     job: Job<TranscribeJobData>
   ): Promise<void> {
@@ -38,7 +42,7 @@ export function createTranscribeProcessor(bot: Telegraf) {
       reporter.onProgress(msg);
       const token = job.token;
       if (token) {
-        job.extendLock(token, 1_800_000).catch((err) => {
+        job.extendLock(token, 3_600_000).catch((err) => {
           log.warn(`Lock extension failed for job ${job.id}: ${err instanceof Error ? err.message : String(err)}`);
         });
       }
