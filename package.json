@@ -16,6 +16,10 @@
     "import-birthdays": "tsx src/notable-dates/importCsv.ts",
     "typecheck": "tsc --noEmit",
     "smoke": "npm run build && npm run typecheck",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:pull": "drizzle-kit pull",
+    "db:studio": "drizzle-kit studio",
     "prepare": "husky || true"
   },
   "engines": {
@@ -26,6 +30,7 @@
     "chrono-node": "^2.7.4",
     "croner": "^10.0.1",
     "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.45.1",
     "exceljs": "^4.4.0",
     "google-auth-library": "^9.14.1",
     "googleapis": "^144.0.0",
@@ -37,6 +42,7 @@
   "devDependencies": {
     "@types/node": "^22.9.0",
     "@types/pg": "^8.18.0",
+    "drizzle-kit": "^0.31.9",
     "husky": "^9.1.7",
     "tsup": "^8.3.0",
     "tsx": "^4.19.1",

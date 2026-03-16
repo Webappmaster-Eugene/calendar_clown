@@ -1,3 +1,14 @@
+/**
+ * @legacy — Кастомная система миграций.
+ *
+ * Этот файл и SQL-файлы в src/db/migrations/ обслуживают уже применённые миграции (001–006).
+ * Новые миграции создаются через Drizzle Kit:
+ *   npm run db:generate  — сгенерировать миграцию из изменений в src/db/schema.ts
+ *   npm run db:migrate   — применить миграции
+ *
+ * НЕ добавляйте новые SQL-файлы сюда. Используйте Drizzle-схему (src/db/schema.ts).
+ */
+
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { getPool } from "./connection.js";
