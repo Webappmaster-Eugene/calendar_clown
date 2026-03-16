@@ -12,8 +12,15 @@ import { createLogger } from "../utils/logger.js";
 const execFileAsync = promisify(execFile);
 const log = createLogger("audio-utils");
 
-/** Maximum chunk duration in seconds (10 minutes). */
-export const MAX_CHUNK_DURATION_SEC = 600;
+/** Maximum chunk duration in seconds (5 minutes). */
+export const MAX_CHUNK_DURATION_SEC = 300;
+
+/**
+ * Maximum file size in bytes for single-file transcription (3 MB).
+ * Files larger than this will be chunked regardless of duration,
+ * because base64 encoding inflates the payload by ~33%.
+ */
+export const MAX_SINGLE_FILE_BYTES = 3 * 1024 * 1024;
 
 /** File size threshold for converting non-OGG files to OGG Opus (20MB). */
 const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024;

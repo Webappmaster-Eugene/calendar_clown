@@ -14,6 +14,7 @@ import {
   compressToOggIfNeeded,
   cleanupChunkDir,
   MAX_CHUNK_DURATION_SEC,
+  MAX_SINGLE_FILE_BYTES,
 } from "./audioUtils.js";
 import { createLogger } from "../utils/logger.js";
 import type { OnProgressCallback } from "./types.js";
@@ -61,7 +62,21 @@ export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgres
     const durationSec = Math.floor(duration % 60);
     onProgress?.(`Длительность: ${durationMin}:${durationSec.toString().padStart(2, "0")}`);
 
-    if (duration > 0 && duration > MAX_CHUNK_DURATION_SEC) {
+    // Check file size — large files should be chunked even if duration is under threshold
+    let fileSizeBytes = 0;
+    try {
+      const s = await stat(effectivePath);
+      fileSizeBytes = s.size;
+    } catch {
+      // Proceed with duration-only check
+    }
+
+    const needsChunking =
+      (duration > 0 && duration > MAX_CHUNK_DURATION_SEC) ||
+      (duration > 0 && fileSizeBytes > MAX_SINGLE_FILE_BYTES);
+
+    if (needsChunking) {
+      log.info(`Chunking required: duration=${duration.toFixed(1)}s, size=${fileSizeBytes}b`);
       return await transcribeWithChunking(effectivePath, duration, onProgress);
     }
 
