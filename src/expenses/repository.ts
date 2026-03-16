@@ -221,6 +221,112 @@ export async function removeUserByTelegramId(telegramId: number): Promise<boolea
   return (rowCount ?? 0) > 0;
 }
 
+/** Create a pending user (onboarding request). */
+export async function createPendingUser(
+  telegramId: number,
+  username: string | null,
+  firstName: string,
+  lastName: string | null
+): Promise<DbUser> {
+  const { rows: tribes } = await query<{ id: number }>(
+    "SELECT id FROM tribes ORDER BY id LIMIT 1"
+  );
+  const tribeId = tribes[0]?.id ?? 1;
+
+  const { rows } = await query<{ id: number }>(
+    `INSERT INTO users (telegram_id, username, first_name, last_name, role, status, tribe_id)
+     VALUES ($1, $2, $3, $4, 'user', 'pending', $5) RETURNING id`,
+    [telegramId, username, firstName, lastName, tribeId]
+  );
+
+  return {
+    id: rows[0].id,
+    telegramId,
+    username,
+    firstName,
+    lastName,
+    role: "user",
+    tribeId,
+  };
+}
+
+/** Approve a pending user. */
+export async function approveUser(telegramId: number): Promise<boolean> {
+  const { rowCount } = await query(
+    "UPDATE users SET status = 'approved' WHERE telegram_id = $1 AND status = 'pending'",
+    [telegramId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Reject a pending user (delete from DB so they can re-apply). */
+export async function rejectUser(telegramId: number): Promise<boolean> {
+  const { rowCount } = await query(
+    "DELETE FROM users WHERE telegram_id = $1 AND status = 'pending'",
+    [telegramId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** List all pending users. */
+export async function listPendingUsers(): Promise<DbUser[]> {
+  const { rows } = await query<{
+    id: number;
+    telegram_id: string;
+    username: string | null;
+    first_name: string;
+    last_name: string | null;
+    role: string;
+    tribe_id: number;
+  }>(
+    "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE status = 'pending' ORDER BY id"
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    telegramId: Number(r.telegram_id),
+    username: r.username,
+    firstName: r.first_name,
+    lastName: r.last_name,
+    role: r.role as "admin" | "user",
+    tribeId: r.tribe_id,
+  }));
+}
+
+/** Get user status by telegram ID. Returns null if user not found. */
+export async function getUserStatus(telegramId: number): Promise<string | null> {
+  const { rows } = await query<{ status: string }>(
+    "SELECT COALESCE(status, 'approved') AS status FROM users WHERE telegram_id = $1",
+    [telegramId]
+  );
+  return rows[0]?.status ?? null;
+}
+
+/** Set user's tribe. */
+export async function setUserTribe(telegramId: number, tribeId: number): Promise<boolean> {
+  const { rowCount } = await query(
+    "UPDATE users SET tribe_id = $1 WHERE telegram_id = $2",
+    [tribeId, telegramId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** List all tribes. */
+export async function listTribes(): Promise<Array<{ id: number; name: string }>> {
+  const { rows } = await query<{ id: number; name: string }>(
+    "SELECT id, name FROM tribes ORDER BY name"
+  );
+  return rows;
+}
+
+/** Create a new tribe. */
+export async function createTribe(name: string): Promise<{ id: number; name: string }> {
+  const { rows } = await query<{ id: number; name: string }>(
+    "INSERT INTO tribes (name) VALUES ($1) RETURNING id, name",
+    [name]
+  );
+  return rows[0];
+}
+
 /** Valid bot modes. */
 type BotMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes";
 

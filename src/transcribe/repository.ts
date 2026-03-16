@@ -87,6 +87,19 @@ export async function getTranscriptionById(
   return mapRow(rows[0]);
 }
 
+/** Get transcription by ID with user ownership check. */
+export async function getTranscriptionByIdForUser(
+  transcriptionId: number,
+  userId: number
+): Promise<VoiceTranscription | null> {
+  const { rows } = await query<TranscriptionRow>(
+    "SELECT * FROM voice_transcriptions WHERE id = $1 AND user_id = $2",
+    [transcriptionId, userId]
+  );
+  if (rows.length === 0) return null;
+  return mapRow(rows[0]);
+}
+
 /** Count pending transcriptions for a user (for queue position display). */
 export async function countPendingForUser(userId: number): Promise<number> {
   const { rows } = await query<{ count: string }>(

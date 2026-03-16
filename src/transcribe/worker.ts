@@ -11,12 +11,10 @@ import { markProcessing, markCompleted, markFailed } from "./repository.js";
 import { TRANSCRIBE_MODEL_HQ } from "../constants.js";
 import type { TranscribeJobData } from "./types.js";
 import { createLogger } from "../utils/logger.js";
+import { splitMessage, TELEGRAM_MAX_MESSAGE_LENGTH } from "../utils/telegram.js";
 import { createProgressReporter } from "./progressReporter.js";
 
 const log = createLogger("worker");
-
-/** Maximum transcript length that Telegram allows in a single message. */
-const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
 
 /**
  * Create a job processor function bound to the bot instance.
@@ -34,8 +32,17 @@ export function createTranscribeProcessor(bot: Telegraf) {
     const reporter = createProgressReporter(bot, chatId, statusMessageId);
     reporter.onProgress("Начинаю обработку...");
 
+    // Wrap onProgress to extend BullMQ lock on each progress update.
+    // This keeps the lock alive for multi-chunk transcriptions that exceed lockDuration.
+    const onProgressWithLockExtension = (msg: string): void => {
+      reporter.onProgress(msg);
+      job.extendLock(job.token ?? "", 600_000).catch(() => {
+        // Lock extension is best-effort — ignore failures
+      });
+    };
+
     try {
-      const transcript = await transcribeVoiceHQ(filePath, reporter.onProgress);
+      const transcript = await transcribeVoiceHQ(filePath, onProgressWithLockExtension);
 
       if (!transcript) {
         await reporter.flush();
@@ -134,38 +141,3 @@ async function deleteMessageSafe(
   }
 }
 
-/** Split a long text into chunks at paragraph or sentence boundaries. */
-function splitMessage(text: string, maxLength: number): string[] {
-  if (text.length <= maxLength) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLength) {
-      chunks.push(remaining);
-      break;
-    }
-
-    // Try to split at a paragraph boundary
-    let splitIdx = remaining.lastIndexOf("\n\n", maxLength);
-    if (splitIdx === -1 || splitIdx < maxLength * 0.3) {
-      // Try a single newline
-      splitIdx = remaining.lastIndexOf("\n", maxLength);
-    }
-    if (splitIdx === -1 || splitIdx < maxLength * 0.3) {
-      // Try a sentence boundary
-      splitIdx = remaining.lastIndexOf(". ", maxLength);
-      if (splitIdx !== -1) splitIdx += 1; // Include the period
-    }
-    if (splitIdx === -1 || splitIdx < maxLength * 0.3) {
-      // Hard split at maxLength
-      splitIdx = maxLength;
-    }
-
-    chunks.push(remaining.slice(0, splitIdx).trimEnd());
-    remaining = remaining.slice(splitIdx).trimStart();
-  }
-
-  return chunks;
-}

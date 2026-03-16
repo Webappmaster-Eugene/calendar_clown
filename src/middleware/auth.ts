@@ -1,5 +1,6 @@
 import type { Context, MiddlewareFn } from "telegraf";
-import { isUserInDb, getUserByTelegramId } from "../expenses/repository.js";
+import { Markup } from "telegraf";
+import { isUserInDb, getUserByTelegramId, getUserStatus } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { query } from "../db/connection.js";
 
@@ -21,10 +22,31 @@ export function isBootstrapAdmin(telegramId: number): boolean {
   return parseInt(adminId, 10) === telegramId;
 }
 
+/** Get bootstrap admin's Telegram ID. */
+export function getAdminTelegramId(): number | null {
+  const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
+  if (!adminId) return null;
+  const parsed = parseInt(adminId, 10);
+  return isNaN(parsed) ? null : parsed;
+}
+
+const ONBOARD_WELCOME = `👋 *Добро пожаловать!*
+
+Это многофункциональный бот для управления:
+📅 Google Calendar — создание и управление встречами
+💰 Учёт расходов — трекинг семейных трат
+🎙 Транскрибатор — расшифровка голосовых сообщений
+📰 Дайджест — агрегация Telegram-каналов
+🎉 Знаменательные даты — напоминания о днях рождения
+📝 Заметки — зашифрованные заметки
+
+Для получения доступа подайте заявку администратору.`;
+
 /**
  * Middleware: restrict bot access to users registered in the DB.
  * The bootstrap admin (ADMIN_TELEGRAM_ID env) is always allowed and auto-registered.
- * All other users must be added by the admin via /admin command.
+ * New users see an onboarding flow with an application button.
+ * Pending users can only use /start and /help.
  */
 export function accessControlMiddleware(): MiddlewareFn<Context> {
   return async (ctx, next) => {
@@ -37,15 +59,44 @@ export function accessControlMiddleware(): MiddlewareFn<Context> {
     // If DB is unavailable, allow all users (calendar is protected by OAuth tokens)
     if (!isDatabaseAvailable()) return next();
 
+    // Allow onboard_request callback through for users not yet in DB
+    if (ctx.callbackQuery && "data" in ctx.callbackQuery && ctx.callbackQuery.data === "onboard_request") {
+      return next();
+    }
+
     // Check DB
     const exists = await isUserInDb(telegramId);
-    if (exists) return next();
+    if (!exists) {
+      // Show onboarding message with application button
+      await ctx.reply(
+        `${ONBOARD_WELCOME}\n\nВаш Telegram ID: \`${telegramId}\``,
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("✅ Подать заявку на доступ", "onboard_request")],
+          ]),
+        }
+      );
+      return;
+    }
 
-    // Denied — show ID so user can send it to admin
-    await ctx.reply(
-      `🚫 Доступ запрещён.\n\nВаш Telegram ID: \`${telegramId}\`\nОтправьте его администратору для получения доступа.`,
-      { parse_mode: "Markdown" }
-    );
+    // User exists — check status
+    const status = await getUserStatus(telegramId);
+    if (status === "pending") {
+      // Allow /start and /help for pending users
+      const isCommand = ctx.message && "text" in ctx.message && typeof ctx.message.text === "string";
+      if (isCommand) {
+        const text = (ctx.message as { text: string }).text;
+        if (text.startsWith("/start") || text.startsWith("/help")) {
+          return next();
+        }
+      }
+      await ctx.reply("⏳ Ваша заявка на рассмотрении. Ожидайте одобрения администратора.");
+      return;
+    }
+
+    // status === 'approved' or legacy null
+    return next();
   };
 }
 

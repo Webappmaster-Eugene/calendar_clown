@@ -8,6 +8,7 @@ import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import {
   addNotableDate,
   removeNotableDate,
+  updateNotableDate,
   listNotableDates,
   getUpcomingDates,
   toggleNotableDatePriority,
@@ -27,7 +28,7 @@ function getNotableDatesKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
     ["📅 Ближайшие", "📅 На неделе", "📅 За месяц"],
     ["📋 Все даты"],
-    ["➕ Добавить", "🗑 Удалить"],
+    ["➕ Добавить", "✏️ Изменить", "🗑 Удалить"],
     ...getModeButtons(isAdmin),
   ]).resize();
 }
@@ -244,8 +245,12 @@ export async function handleAllDatesButton(ctx: Context): Promise<void> {
   }
 }
 
-/** State for users currently adding dates. Auto-expires after 5 minutes. */
-const pendingAction = new Map<number, { action: "add"; timestamp: number }>();
+type PendingAction =
+  | { action: "add"; timestamp: number }
+  | { action: "edit"; dateId: number; field: "name" | "date" | "desc"; timestamp: number };
+
+/** State for users currently adding/editing dates. Auto-expires after 5 minutes. */
+const pendingAction = new Map<number, PendingAction>();
 
 /** Clean expired pending actions (older than 5 minutes). */
 function cleanExpiredActions(): void {
@@ -381,12 +386,24 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
   if (telegramId == null) return false;
 
   const pending = pendingAction.get(telegramId);
-  if (!pending || pending.action !== "add") return false;
+  if (!pending) return false;
 
   if (!ctx.message || !("text" in ctx.message)) return false;
   const text = typeof ctx.message.text === "string" ? ctx.message.text.trim() : "";
   if (!text) return false;
 
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    pendingAction.delete(telegramId);
+    await ctx.reply("Пользователь не найден.");
+    return true;
+  }
+
+  if (pending.action === "edit") {
+    return await handleEditTextInput(ctx, telegramId, dbUser, pending, text);
+  }
+
+  // action === "add"
   const parsed = parseNotableDateInput(text);
   if (!parsed) {
     // Keep pendingAction so user can retry without pressing "Добавить" again
@@ -398,12 +415,6 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
   }
 
   pendingAction.delete(telegramId);
-
-  const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser) {
-    await ctx.reply("Пользователь не найден.");
-    return true;
-  }
 
   try {
     const date = await addNotableDate({
@@ -432,4 +443,163 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
   }
 
   return true;
+}
+
+/** Handle text input for editing a notable date field. */
+async function handleEditTextInput(
+  ctx: Context,
+  telegramId: number,
+  dbUser: { tribeId: number },
+  pending: { action: "edit"; dateId: number; field: "name" | "date" | "desc" },
+  text: string
+): Promise<boolean> {
+  pendingAction.delete(telegramId);
+
+  try {
+    const fields: Partial<{ name: string; dateMonth: number; dateDay: number; description: string | null }> = {};
+
+    if (pending.field === "name") {
+      if (!text) {
+        await ctx.reply("❌ Имя не может быть пустым.");
+        return true;
+      }
+      fields.name = text;
+    } else if (pending.field === "date") {
+      const dateMatch = text.match(/^(\d{1,2})\.(\d{1,2})$/);
+      if (!dateMatch) {
+        await ctx.reply("❌ Неверный формат. Введите дату в формате `ДД.ММ`, например `15.03`", { parse_mode: "Markdown" });
+        return true;
+      }
+      const day = parseInt(dateMatch[1], 10);
+      const month = parseInt(dateMatch[2], 10);
+      if (month < 1 || month > 12 || day < 1 || day > 31) {
+        await ctx.reply("❌ Некорректная дата.");
+        return true;
+      }
+      fields.dateDay = day;
+      fields.dateMonth = month;
+    } else if (pending.field === "desc") {
+      fields.description = text || null;
+    }
+
+    const updated = await updateNotableDate(pending.dateId, dbUser.tribeId, fields);
+    if (!updated) {
+      await ctx.reply("❌ Дата не найдена.");
+      return true;
+    }
+
+    await ctx.reply(`✅ Обновлено:\n${formatNotableDateReminder(updated)}`);
+  } catch (err) {
+    log.error("Error updating notable date:", err);
+    await ctx.reply("❌ Ошибка при обновлении.");
+  }
+
+  return true;
+}
+
+/** Handle "✏️ Изменить" button — show list of dates to edit. */
+export async function handleEditDateButton(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply("База данных недоступна.");
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) return;
+
+  const dates = await listNotableDates(dbUser.tribeId);
+  const editable = dates.filter((d) => d.eventType !== "holiday");
+
+  if (editable.length === 0) {
+    await ctx.reply("Нет дат для редактирования.");
+    return;
+  }
+
+  const buttons = editable.slice(0, 20).map((d) =>
+    [Markup.button.callback(
+      `${d.emoji} ${d.name} (${d.dateDay}.${String(d.dateMonth).padStart(2, "0")})`,
+      `notable_edit:${d.id}`
+    )]
+  );
+
+  await ctx.reply("Выберите дату для редактирования:", {
+    ...Markup.inlineKeyboard(buttons),
+  });
+}
+
+/** Handle callback when a date is selected for editing — show field buttons. */
+export async function handleNotableDateEditCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  await ctx.answerCbQuery();
+
+  const match = data.match(/^notable_edit:(\d+)$/);
+  if (!match) return;
+
+  const dateId = parseInt(match[1], 10);
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) return;
+
+  try {
+    const date = await getNotableDateById(dateId, dbUser.tribeId);
+    if (!date) {
+      await ctx.editMessageText("Дата не найдена.");
+      return;
+    }
+
+    const desc = date.description ? `📝 ${date.description}` : "📝 (нет описания)";
+    const info = [
+      `${date.emoji} *${date.name}*`,
+      `📅 ${date.dateDay}.${String(date.dateMonth).padStart(2, "0")}`,
+      desc,
+    ].join("\n");
+
+    await ctx.editMessageText(`Редактирование:\n\n${info}\n\nВыберите что изменить:`, {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("✏️ Имя", `notable_edit_field:${dateId}:name`)],
+        [Markup.button.callback("📅 Дата", `notable_edit_field:${dateId}:date`)],
+        [Markup.button.callback("📝 Описание", `notable_edit_field:${dateId}:desc`)],
+      ]),
+    });
+  } catch (err) {
+    log.error("Error fetching date for edit:", err);
+    await ctx.editMessageText("❌ Ошибка.");
+  }
+}
+
+/** Handle callback when a field is selected for editing — prompt for new value. */
+export async function handleNotableDateEditFieldCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  await ctx.answerCbQuery();
+
+  const match = data.match(/^notable_edit_field:(\d+):(name|date|desc)$/);
+  if (!match) return;
+
+  const dateId = parseInt(match[1], 10);
+  const field = match[2] as "name" | "date" | "desc";
+
+  cleanExpiredActions();
+
+  const fieldLabels: Record<string, string> = {
+    name: "имя",
+    date: "дату (формат: `ДД.ММ`)",
+    desc: "описание",
+  };
+
+  pendingAction.set(telegramId, { action: "edit", dateId, field, timestamp: Date.now() });
+  await ctx.reply(
+    `Введите новое значение для поля: *${fieldLabels[field]}*`,
+    { parse_mode: "Markdown" }
+  );
 }

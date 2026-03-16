@@ -11,9 +11,9 @@ import { handleExpenseText } from "./commands/addExpense.js";
 import { handleReportButton, handleReportCallback, handleComparisonButton, handleStatsButton } from "./commands/expenseReport.js";
 import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.js";
 import { handleUndoCallback } from "./commands/expenseUndo.js";
-import { handleAdminCommand, handleAdminCallback, handleAdminTextInput } from "./commands/admin.js";
+import { handleAdminCommand, handleAdminCallback, handleAdminTextInput, handleOnboardRequest } from "./commands/admin.js";
 import { handleStatsCommand } from "./commands/adminStats.js";
-import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleTranscribeHistoryCallback } from "./commands/transcribeMode.js";
+import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback } from "./commands/transcribeMode.js";
 import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText } from "./commands/digestMode.js";
 import { handleBroadcastCommand, handleBroadcastText } from "./commands/broadcastMode.js";
 import {
@@ -23,8 +23,11 @@ import {
   handleMonthDatesButton,
   handleAllDatesButton,
   handleAddDateButton,
+  handleEditDateButton,
   handleDeleteDateButton,
   handleNotableDateDeleteCallback,
+  handleNotableDateEditCallback,
+  handleNotableDateEditFieldCallback,
   handleNotableDatePriorityCallback,
   handleNotableDatesText,
 } from "./commands/notableDatesMode.js";
@@ -82,6 +85,7 @@ export function createBot(token: string): Telegraf {
 
   // ─── Callback queries (inline buttons) ──────────────────────────────
 
+  bot.action("onboard_request", handleOnboardRequest);
   bot.action(/^report:/, handleReportCallback);
   bot.action(/^report_year:/, handleReportCallback);
   bot.action(/^compare:/, handleReportCallback);
@@ -91,8 +95,11 @@ export function createBot(token: string): Telegraf {
   bot.action(/^undo:/, handleUndoCallback);
   bot.action(/^cancel_recurring:/, handleCancelRecurringCallback);
   bot.action(/^notable_delete:/, handleNotableDateDeleteCallback);
+  bot.action(/^notable_edit_field:/, handleNotableDateEditFieldCallback);
+  bot.action(/^notable_edit:/, handleNotableDateEditCallback);
   bot.action(/^notable_priority:/, handleNotableDatePriorityCallback);
   bot.action(/^tr_hist:/, handleTranscribeHistoryCallback);
+  bot.action(/^tr_full:/, handleTranscribeFullCallback);
 
   // Notes callbacks
   bot.action(/^note_topic:/, handleNoteTopicCallback);
@@ -206,6 +213,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("📅 За месяц", handleMonthDatesButton);
   bot.hears("📋 Все даты", handleAllDatesButton);
   bot.hears("➕ Добавить", handleAddDateButton);
+  bot.hears("✏️ Изменить", handleEditDateButton);
   bot.hears("🗑 Удалить", handleDeleteDateButton);
 
   // Text messages catch-all (priority order)

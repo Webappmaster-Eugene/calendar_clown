@@ -9,7 +9,9 @@ import {
   getRecentTranscriptionsPaginated,
   countCompletedTranscriptions,
   markUserPendingAsFailed,
+  getTranscriptionByIdForUser,
 } from "../transcribe/repository.js";
+import { splitMessage } from "../utils/telegram.js";
 import { createLogger } from "../utils/logger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 
@@ -204,16 +206,32 @@ async function sendHistoryPage(
 
     const text = `📋 *Транскрипции (${currentPage}/${totalPages}, всего: ${total}):*\n\n${lines.join("\n\n")}`;
 
-    // Build pagination buttons
-    const buttons: Array<ReturnType<typeof Markup.button.callback>> = [];
-    if (offset > 0) {
-      buttons.push(Markup.button.callback("⬅️ Назад", `tr_hist:${offset - HISTORY_PAGE_SIZE}`));
-    }
-    if (offset + HISTORY_PAGE_SIZE < total) {
-      buttons.push(Markup.button.callback("Вперёд ➡️", `tr_hist:${offset + HISTORY_PAGE_SIZE}`));
+    // Build inline buttons: "📖 Полностью" for truncated transcripts
+    const inlineRows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
+    for (const t of transcriptions) {
+      if (t.transcript && t.transcript.length > 100) {
+        inlineRows.push([
+          Markup.button.callback(
+            `📖 #${offset + transcriptions.indexOf(t) + 1} — ${t.transcript.slice(0, 30)}…`,
+            `tr_full:${t.id}`
+          ),
+        ]);
+      }
     }
 
-    const keyboard = buttons.length > 0 ? Markup.inlineKeyboard([buttons]) : undefined;
+    // Pagination buttons
+    const paginationRow: Array<ReturnType<typeof Markup.button.callback>> = [];
+    if (offset > 0) {
+      paginationRow.push(Markup.button.callback("⬅️ Назад", `tr_hist:${offset - HISTORY_PAGE_SIZE}`));
+    }
+    if (offset + HISTORY_PAGE_SIZE < total) {
+      paginationRow.push(Markup.button.callback("Вперёд ➡️", `tr_hist:${offset + HISTORY_PAGE_SIZE}`));
+    }
+    if (paginationRow.length > 0) {
+      inlineRows.push(paginationRow);
+    }
+
+    const keyboard = inlineRows.length > 0 ? Markup.inlineKeyboard(inlineRows) : undefined;
 
     if (editExisting) {
       await ctx.editMessageText(text, { parse_mode: "Markdown", ...keyboard });
@@ -228,5 +246,48 @@ async function sendHistoryPage(
     } else {
       await ctx.reply(msg);
     }
+  }
+}
+
+/** Handle "📖 Полностью" callback — show full transcription text. */
+export async function handleTranscribeFullCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+
+  const match = data.match(/^tr_full:(\d+)$/);
+  if (!match) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const transcriptionId = parseInt(match[1], 10);
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    await ctx.answerCbQuery("Пользователь не найден.");
+    return;
+  }
+
+  try {
+    const transcription = await getTranscriptionByIdForUser(transcriptionId, dbUser.id);
+    if (!transcription || !transcription.transcript) {
+      await ctx.answerCbQuery("Транскрипция не найдена.");
+      return;
+    }
+
+    await ctx.answerCbQuery();
+
+    const chunks = splitMessage(transcription.transcript);
+    for (const chunk of chunks) {
+      await ctx.reply(chunk);
+    }
+  } catch (err) {
+    log.error("Error fetching full transcription:", err);
+    await ctx.answerCbQuery("Ошибка загрузки.");
   }
 }

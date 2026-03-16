@@ -69,8 +69,8 @@ export function startTranscribeWorker(
     {
       connection,
       concurrency: 2,
-      lockDuration: 3_600_000,   // 60 min — supports 1hr+ files with multiple chunk transcriptions
-      stalledInterval: 300_000,  // Check for stalled jobs every 5 min
+      lockDuration: 600_000,     // 10 min — chunks take 2-5 min each; lock extended via job.extendLock()
+      stalledInterval: 120_000,  // Check for stalled jobs every 2 min
       maxStalledCount: 2,        // Allow 2 stall events before failing
       limiter: {
         max: 10,

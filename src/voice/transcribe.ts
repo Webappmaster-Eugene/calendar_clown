@@ -1,11 +1,13 @@
 /**
  * Transcribe audio file to text using the shared STT client.
  * Used for calendar/expenses voice mode (short messages).
+ * Large files are delegated to the HQ transcriber which supports chunking.
  */
 
 import { stat } from "fs/promises";
 import { callStt } from "./sttClient.js";
 import { TRANSCRIBE_MODEL } from "../constants.js";
+import { MAX_SINGLE_FILE_BYTES } from "../transcribe/audioUtils.js";
 
 const TRANSCRIBE_PROMPT = "Transcribe this audio to text. Output only the transcribed text in the same language, nothing else.";
 
@@ -24,6 +26,12 @@ export async function transcribeVoice(filePath: string): Promise<string> {
     fileSizeBytes = s.size;
   } catch {
     // If stat fails, use default timeout
+  }
+
+  // Large files would hang as a single base64 payload — delegate to HQ path with chunking
+  if (fileSizeBytes > MAX_SINGLE_FILE_BYTES) {
+    const { transcribeVoiceHQ } = await import("../transcribe/transcribeHQ.js");
+    return transcribeVoiceHQ(filePath);
   }
 
   const timeoutMs = getTimeoutMs(fileSizeBytes);

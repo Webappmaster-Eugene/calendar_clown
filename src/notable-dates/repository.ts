@@ -133,6 +133,63 @@ export async function getNotableDateById(id: number, tribeId: number): Promise<N
   return mapRow(rows[0]);
 }
 
+/** Update specific fields of a notable date. */
+export async function updateNotableDate(
+  id: number,
+  tribeId: number,
+  fields: Partial<{ name: string; dateMonth: number; dateDay: number; description: string | null }>
+): Promise<NotableDate | null> {
+  const setClauses: string[] = [];
+  const params: unknown[] = [];
+  let paramIdx = 1;
+
+  if (fields.name !== undefined) {
+    setClauses.push(`name = $${paramIdx++}`);
+    params.push(fields.name);
+  }
+  if (fields.dateMonth !== undefined) {
+    setClauses.push(`date_month = $${paramIdx++}`);
+    params.push(fields.dateMonth);
+  }
+  if (fields.dateDay !== undefined) {
+    setClauses.push(`date_day = $${paramIdx++}`);
+    params.push(fields.dateDay);
+  }
+  if (fields.description !== undefined) {
+    setClauses.push(`description = $${paramIdx++}`);
+    params.push(fields.description);
+  }
+
+  if (setClauses.length === 0) return null;
+
+  setClauses.push(`updated_at = NOW()`);
+  params.push(id, tribeId);
+
+  const sql = `UPDATE notable_dates SET ${setClauses.join(", ")}
+     WHERE id = $${paramIdx++} AND tribe_id = $${paramIdx}
+     RETURNING id, tribe_id, added_by_user_id, name, date_month, date_day,
+               event_type, description, greeting_template, emoji, is_priority, is_active, created_at`;
+
+  const { rows } = await query<{
+    id: number;
+    tribe_id: number;
+    added_by_user_id: number | null;
+    name: string;
+    date_month: number;
+    date_day: number;
+    event_type: string;
+    description: string | null;
+    greeting_template: string | null;
+    emoji: string;
+    is_priority: boolean;
+    is_active: boolean;
+    created_at: Date;
+  }>(sql, params);
+
+  if (rows.length === 0) return null;
+  return mapRow(rows[0]);
+}
+
 /** Remove a notable date. */
 export async function removeNotableDate(id: number, tribeId: number): Promise<boolean> {
   const { rowCount } = await query(

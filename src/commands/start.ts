@@ -59,8 +59,20 @@ export async function handleStart(ctx: Context): Promise<void> {
     return;
   }
 
-  const linked = await hasToken(String(userId));
   const menuCtx = await getUserMenuContext(userId);
+
+  // Pending user — show application status
+  if (menuCtx && menuCtx.status === "pending") {
+    await ctx.reply(
+      "⏳ *Ваша заявка на рассмотрении*\n\n" +
+      "Администратор ещё не одобрил вашу заявку. Пожалуйста, ожидайте.\n\n" +
+      `Ваш Telegram ID: \`${userId}\``,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  const linked = await hasToken(String(userId));
 
   let greeting: string;
   if (linked) {

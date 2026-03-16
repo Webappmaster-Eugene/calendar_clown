@@ -11,10 +11,12 @@ import { TRANSCRIBE_MODEL_HQ, VOICE_DIR } from "../constants.js";
 import {
   getAudioDuration,
   splitAudio,
+  splitAudioByBytes,
   compressToOggIfNeeded,
   cleanupChunkDir,
   MAX_CHUNK_DURATION_SEC,
   MAX_SINGLE_FILE_BYTES,
+  OGG_OPUS_BYTES_PER_SEC,
 } from "./audioUtils.js";
 import { createLogger } from "../utils/logger.js";
 import type { OnProgressCallback } from "./types.js";
@@ -73,11 +75,15 @@ export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgres
 
     const needsChunking =
       (duration > 0 && duration > MAX_CHUNK_DURATION_SEC) ||
-      (duration > 0 && fileSizeBytes > MAX_SINGLE_FILE_BYTES);
+      fileSizeBytes > MAX_SINGLE_FILE_BYTES;
 
     if (needsChunking) {
-      log.info(`Chunking required: duration=${duration.toFixed(1)}s, size=${fileSizeBytes}b`);
-      return await transcribeWithChunking(effectivePath, duration, onProgress);
+      // When ffprobe failed (duration === 0) but file is large, estimate duration from file size
+      const effectiveDuration = duration > 0
+        ? duration
+        : fileSizeBytes / OGG_OPUS_BYTES_PER_SEC;
+      log.info(`Chunking required: duration=${duration.toFixed(1)}s (effective=${effectiveDuration.toFixed(1)}s), size=${fileSizeBytes}b`);
+      return await transcribeWithChunking(effectivePath, effectiveDuration, onProgress);
     }
 
     return await transcribeSingleFile(effectivePath, onProgress);
@@ -124,9 +130,15 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
   try {
     chunkPaths = await splitAudio(filePath, MAX_CHUNK_DURATION_SEC, chunkDir);
   } catch (err) {
-    log.error(`Chunking failed, falling back to single-file transcription: ${err instanceof Error ? err.message : String(err)}`);
-    // Fallback: try sending the whole file as-is
-    return transcribeSingleFile(filePath, onProgress);
+    log.error(`ffmpeg chunking failed, falling back to byte-split: ${err instanceof Error ? err.message : String(err)}`);
+    onProgress?.("ffmpeg недоступен, разделение по размеру...");
+    try {
+      chunkPaths = await splitAudioByBytes(filePath, MAX_SINGLE_FILE_BYTES, chunkDir);
+    } catch (byteErr) {
+      log.error(`Byte-split also failed: ${byteErr instanceof Error ? byteErr.message : String(byteErr)}`);
+      await cleanupChunkDir(chunkDir);
+      throw new Error(`Cannot split audio: ffmpeg and byte-split both failed`);
+    }
   }
 
   if (chunkPaths.length === 0) {
@@ -143,7 +155,8 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
 
     for (let i = 0; i < chunkPaths.length; i++) {
       const chunkPath = chunkPaths[i];
-      const chunkLabel = `Часть ${i + 1}/${chunkPaths.length}`;
+      const pct = Math.round(((i) / chunkPaths.length) * 100);
+      const chunkLabel = `Часть ${i + 1}/${chunkPaths.length} (${pct}%)`;
       log.info(`Transcribing chunk ${i + 1}/${chunkPaths.length}: ${chunkPath}`);
       onProgress?.(`${chunkLabel} — транскрибация...`);
 
@@ -168,7 +181,8 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
         transcripts.push(text);
       }
 
-      onProgress?.(`${chunkLabel} — готово (${text.length} симв.)`);
+      const donePct = Math.round(((i + 1) / chunkPaths.length) * 100);
+      onProgress?.(`Часть ${i + 1}/${chunkPaths.length} (${donePct}%) — готово (${text.length} симв.)`);
 
       // Small delay between chunks to avoid rate limiting
       if (i < chunkPaths.length - 1) {
