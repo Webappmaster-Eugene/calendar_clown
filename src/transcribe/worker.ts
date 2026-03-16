@@ -24,7 +24,7 @@ export function createTranscribeProcessor(bot: Telegraf) {
   return async function processTranscribeJob(
     job: Job<TranscribeJobData>
   ): Promise<void> {
-    const { transcriptionId, filePath, chatId, statusMessageId } = job.data;
+    const { transcriptionId, filePath, chatId, statusMessageId, durationSeconds } = job.data;
 
     log.info(`Processing job ${job.id}: transcriptionId=${transcriptionId}, file=${filePath}, attempt=${job.attemptsMade + 1}/${job.opts.attempts ?? 3}`);
     await markProcessing(transcriptionId);
@@ -36,13 +36,16 @@ export function createTranscribeProcessor(bot: Telegraf) {
     // This keeps the lock alive for multi-chunk transcriptions that exceed lockDuration.
     const onProgressWithLockExtension = (msg: string): void => {
       reporter.onProgress(msg);
-      job.extendLock(job.token ?? "", 600_000).catch(() => {
-        // Lock extension is best-effort — ignore failures
-      });
+      const token = job.token;
+      if (token) {
+        job.extendLock(token, 1_800_000).catch((err) => {
+          log.warn(`Lock extension failed for job ${job.id}: ${err instanceof Error ? err.message : String(err)}`);
+        });
+      }
     };
 
     try {
-      const transcript = await transcribeVoiceHQ(filePath, onProgressWithLockExtension);
+      const transcript = await transcribeVoiceHQ(filePath, onProgressWithLockExtension, durationSeconds);
 
       if (!transcript) {
         await reporter.flush();

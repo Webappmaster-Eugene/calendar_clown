@@ -6,8 +6,9 @@
 
 import { Queue, Worker } from "bullmq";
 import type { Job, ConnectionOptions } from "bullmq";
+import type { Telegraf } from "telegraf";
 import type { TranscribeJobData } from "./types.js";
-import { markStaleAsFailed } from "./repository.js";
+import { markStaleAsFailed, markFailed } from "./repository.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("queue");
@@ -59,7 +60,8 @@ export function getTranscribeQueue(): Queue<TranscribeJobData> | null {
  */
 export function startTranscribeWorker(
   redisUrl: string,
-  processor: (job: Job<TranscribeJobData>) => Promise<void>
+  processor: (job: Job<TranscribeJobData>) => Promise<void>,
+  bot: Telegraf
 ): Worker<TranscribeJobData> {
   const connection = parseRedisUrl(redisUrl);
 
@@ -69,9 +71,9 @@ export function startTranscribeWorker(
     {
       connection,
       concurrency: 2,
-      lockDuration: 600_000,     // 10 min — chunks take 2-5 min each; lock extended via job.extendLock()
-      stalledInterval: 120_000,  // Check for stalled jobs every 2 min
-      maxStalledCount: 2,        // Allow 2 stall events before failing
+      lockDuration: 1_800_000,   // 30 min — long audio chunks can take 5-10 min each
+      stalledInterval: 300_000,  // Check for stalled jobs every 5 min
+      maxStalledCount: 3,        // Allow 3 stall events before failing
       limiter: {
         max: 10,
         duration: 60_000,
@@ -81,6 +83,17 @@ export function startTranscribeWorker(
 
   transcribeWorker.on("failed", (job, err) => {
     log.error(`Transcription job ${job?.id} failed: ${err.message}`);
+    if (job) {
+      const { chatId, statusMessageId, transcriptionId } = job.data;
+      editStatusSafe(bot, chatId, statusMessageId, "Не удалось расшифровать голосовое сообщение. Попробуйте ещё раз.")
+        .catch((e) => log.error(`Failed to notify user about job ${job.id} failure:`, e));
+      markFailed(transcriptionId, err.message)
+        .catch((e) => log.error(`Failed to mark transcription ${transcriptionId} as failed:`, e));
+    }
+  });
+
+  transcribeWorker.on("stalled", (jobId) => {
+    log.warn(`Transcription job ${jobId} stalled — lock expired before processing completed.`);
   });
 
   transcribeWorker.on("completed", (job) => {
@@ -88,6 +101,15 @@ export function startTranscribeWorker(
   });
 
   return transcribeWorker;
+}
+
+/** Edit a Telegram message, swallowing errors if the message was already deleted. */
+async function editStatusSafe(bot: Telegraf, chatId: number, messageId: number, text: string): Promise<void> {
+  try {
+    await bot.telegram.editMessageText(chatId, messageId, undefined, text);
+  } catch {
+    // Message may have been deleted by the user — ignore
+  }
 }
 
 /** Add a transcription job to the queue. */

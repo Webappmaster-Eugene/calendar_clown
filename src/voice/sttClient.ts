@@ -60,7 +60,7 @@ export async function callStt(options: SttCallOptions): Promise<string> {
   const base64Audio = fileBuffer.toString("base64");
   const mimeType = audioMimeType(options.filePath);
 
-  log.info(`STT call: model=${model}, file=${options.filePath}, size=${fileBuffer.length}b, timeout=${options.timeoutMs}ms`);
+  log.info(`STT call: model=${model}, file=${options.filePath}, size=${fileBuffer.length}b, base64Size=${base64Audio.length}, timeout=${options.timeoutMs}ms`);
 
   options.onProgress?.(`Запрос к ${model}...`);
 

@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   if (redisUrl) {
     try {
       initTranscribeQueue(redisUrl);
-      startTranscribeWorker(redisUrl, createTranscribeProcessor(bot));
+      startTranscribeWorker(redisUrl, createTranscribeProcessor(bot), bot);
       startStaleJobCleaner();
       log.info("Transcribe queue initialized (Redis).");
     } catch (err) {

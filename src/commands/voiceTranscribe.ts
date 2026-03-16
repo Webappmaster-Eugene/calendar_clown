@@ -191,6 +191,7 @@ export async function handleVoiceInTranscribeMode(
       filePath,
       chatId: ctx.chat!.id,
       statusMessageId,
+      durationSeconds: voice.duration,
     });
   } catch (err) {
     await unlink(filePath).catch(() => {});

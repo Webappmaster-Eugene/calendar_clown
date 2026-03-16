@@ -7,7 +7,7 @@
 import { stat, unlink } from "fs/promises";
 import { join, basename, extname } from "path";
 import { callStt } from "../voice/sttClient.js";
-import { TRANSCRIBE_MODEL_HQ, VOICE_DIR } from "../constants.js";
+import { TRANSCRIBE_MODEL_HQ, TRANSCRIBE_MODEL_FALLBACK, VOICE_DIR } from "../constants.js";
 import {
   getAudioDuration,
   splitAudio,
@@ -34,19 +34,20 @@ const TRANSCRIBE_PROMPT = `Расшифруй это аудиосообщени�
 - Слова-паразиты ("эээ", "ммм", "ну типа") — убирай
 - Если часть аудио неразборчива — пропусти, не додумывай`;
 
-/** Calculate dynamic timeout based on file size in bytes. */
-function getTimeoutMs(fileSizeBytes: number): number {
-  if (fileSizeBytes < 1_000_000) return 120_000;       // <1MB: 2min
-  if (fileSizeBytes < 5_000_000) return 300_000;        // 1-5MB: 5min
-  if (fileSizeBytes < 15_000_000) return 600_000;       // 5-15MB: 10min
-  return 900_000;                                        // >15MB: 15min
+/**
+ * Calculate timeout based on audio duration.
+ * STT processing time correlates with audio duration, not file size.
+ * Uses 2x real-time + 60s buffer, clamped to [120s, 900s].
+ */
+function getTimeoutForDuration(durationSec: number): number {
+  return Math.max(120_000, Math.min(durationSec * 2_000 + 60_000, 900_000));
 }
 
 /**
  * Transcribe an audio file with high-quality Russian prompt.
  * For files longer than 10 minutes, splits into chunks and transcribes each sequentially.
  */
-export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgressCallback): Promise<string> {
+export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgressCallback, audioDurationHint?: number): Promise<string> {
   // Try to compress large non-OGG files first
   if (onProgress) {
     const ext = extname(filePath).toLowerCase();
@@ -86,7 +87,9 @@ export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgres
       return await transcribeWithChunking(effectivePath, effectiveDuration, onProgress);
     }
 
-    return await transcribeSingleFile(effectivePath, onProgress);
+    // Use detected duration, or hint from Telegram metadata
+    const singleDuration = duration > 0 ? duration : (audioDurationHint ?? 120);
+    return await transcribeSingleFile(effectivePath, singleDuration, onProgress);
   } finally {
     // Clean up compressed file if we created one
     if (converted && effectivePath !== filePath) {
@@ -96,16 +99,9 @@ export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgres
 }
 
 /** Transcribe a single audio file (no chunking). */
-async function transcribeSingleFile(filePath: string, onProgress?: OnProgressCallback): Promise<string> {
-  let fileSizeBytes = 0;
-  try {
-    const s = await stat(filePath);
-    fileSizeBytes = s.size;
-  } catch {
-    // Use default timeout
-  }
-
-  const timeoutMs = getTimeoutMs(fileSizeBytes);
+async function transcribeSingleFile(filePath: string, durationSec: number, onProgress?: OnProgressCallback): Promise<string> {
+  const timeoutMs = getTimeoutForDuration(durationSec);
+  log.info(`Single file transcription: duration=${durationSec.toFixed(1)}s, timeout=${timeoutMs}ms`);
 
   onProgress?.("Транскрибация...");
 
@@ -144,7 +140,7 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
   if (chunkPaths.length === 0) {
     log.error("No chunks produced, falling back to single-file transcription");
     await cleanupChunkDir(chunkDir);
-    return transcribeSingleFile(filePath, onProgress);
+    return transcribeSingleFile(filePath, duration, onProgress);
   }
 
   log.info(`Processing ${chunkPaths.length} chunks sequentially`);
@@ -152,30 +148,43 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
 
   try {
     const transcripts: string[] = [];
+    // Each chunk is at most MAX_CHUNK_DURATION_SEC long
+    const chunkTimeoutMs = getTimeoutForDuration(MAX_CHUNK_DURATION_SEC);
+    let failedChunks = 0;
 
     for (let i = 0; i < chunkPaths.length; i++) {
       const chunkPath = chunkPaths[i];
       const pct = Math.round(((i) / chunkPaths.length) * 100);
       const chunkLabel = `Часть ${i + 1}/${chunkPaths.length} (${pct}%)`;
-      log.info(`Transcribing chunk ${i + 1}/${chunkPaths.length}: ${chunkPath}`);
+      log.info(`Transcribing chunk ${i + 1}/${chunkPaths.length}: ${chunkPath}, timeout=${chunkTimeoutMs}ms`);
       onProgress?.(`${chunkLabel} — транскрибация...`);
 
-      let chunkSize = 0;
+      let text = "";
       try {
-        const s = await stat(chunkPath);
-        chunkSize = s.size;
-      } catch {
-        // Use default timeout
+        text = await callStt({
+          filePath: chunkPath,
+          prompt: TRANSCRIBE_PROMPT,
+          timeoutMs: chunkTimeoutMs,
+          model: TRANSCRIBE_MODEL_HQ,
+          onProgress,
+        });
+      } catch (primaryErr) {
+        log.warn(`Chunk ${i + 1} failed with primary model: ${primaryErr instanceof Error ? primaryErr.message : String(primaryErr)}`);
+        onProgress?.(`${chunkLabel} — повтор с запасной моделью...`);
+        try {
+          text = await callStt({
+            filePath: chunkPath,
+            prompt: TRANSCRIBE_PROMPT,
+            timeoutMs: chunkTimeoutMs,
+            model: TRANSCRIBE_MODEL_FALLBACK,
+            onProgress,
+          });
+        } catch (fallbackErr) {
+          log.error(`Chunk ${i + 1} fallback also failed: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`);
+          text = "[неразборчиво]";
+          failedChunks++;
+        }
       }
-
-      const timeoutMs = getTimeoutMs(chunkSize);
-      const text = await callStt({
-        filePath: chunkPath,
-        prompt: TRANSCRIBE_PROMPT,
-        timeoutMs,
-        model: TRANSCRIBE_MODEL_HQ,
-        onProgress,
-      });
 
       if (text) {
         transcripts.push(text);
@@ -188,6 +197,11 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
       if (i < chunkPaths.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, 1_000));
       }
+    }
+
+    // If ALL chunks failed, throw so BullMQ can retry the whole job
+    if (failedChunks === chunkPaths.length) {
+      throw new Error(`All ${chunkPaths.length} chunks failed transcription`);
     }
 
     const combined = transcripts.join("\n\n");

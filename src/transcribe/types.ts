@@ -37,4 +37,6 @@ export interface TranscribeJobData {
   filePath: string;
   chatId: number;
   statusMessageId: number;
+  /** Audio duration in seconds (from Telegram metadata). Used for timeout calculation. */
+  durationSeconds: number;
 }
