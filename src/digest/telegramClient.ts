@@ -223,6 +223,67 @@ export async function readMultipleChannels(
 }
 
 /**
+ * Get user's dialog folders (Telegram folders).
+ * Returns list of folder names with their IDs.
+ */
+export async function getUserDialogFolders(): Promise<Array<{ id: number; title: string }>> {
+  try {
+    const client = await connectGramClient();
+    const result = await client.invoke(new Api.messages.GetDialogFilters());
+    const folders: Array<{ id: number; title: string }> = [];
+    if (Array.isArray(result)) {
+      for (const filter of result) {
+        if (filter instanceof Api.DialogFilter && filter.title) {
+          const title = typeof filter.title === "string" ? filter.title : String(filter.title);
+          folders.push({ id: filter.id, title });
+        }
+      }
+    }
+    return folders;
+  } catch (err) {
+    log.error("Failed to get dialog folders:", err);
+    return [];
+  }
+}
+
+/**
+ * Get channels from a specific Telegram folder.
+ * Returns list of channel usernames.
+ */
+export async function getChannelsFromFolder(folderId: number): Promise<string[]> {
+  try {
+    const client = await connectGramClient();
+    const result = await client.invoke(new Api.messages.GetDialogFilters());
+    const channels: string[] = [];
+
+    if (Array.isArray(result)) {
+      const folder = result.find(
+        (f): f is Api.DialogFilter => f instanceof Api.DialogFilter && f.id === folderId
+      );
+      if (folder?.includePeers) {
+        for (const peer of folder.includePeers) {
+          if (peer instanceof Api.InputPeerChannel) {
+            try {
+              const entity = await client.getEntity(peer);
+              if (entity instanceof Api.Channel && entity.username) {
+                channels.push(entity.username);
+              }
+            } catch {
+              // Skip inaccessible channels
+            }
+          }
+        }
+      }
+    }
+
+    return channels;
+  } catch (err) {
+    log.error(`Failed to get channels from folder ${folderId}:`, err);
+    return [];
+  }
+}
+
+/**
  * Get basic info about a channel (title, subscriber count).
  * Used to cache metadata when adding a channel.
  */

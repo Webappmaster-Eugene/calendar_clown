@@ -111,6 +111,57 @@ export async function getRecentTranscriptions(
   return rows.map(mapRow);
 }
 
+/** Count total completed transcriptions for a user. */
+export async function countCompletedTranscriptions(userId: number): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM voice_transcriptions WHERE user_id = $1 AND status = 'completed'",
+    [userId]
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Get recent completed transcriptions with offset for pagination. */
+export async function getRecentTranscriptionsPaginated(
+  userId: number,
+  limit: number = 5,
+  offset: number = 0
+): Promise<VoiceTranscription[]> {
+  const { rows } = await query<TranscriptionRow>(
+    `SELECT * FROM voice_transcriptions
+     WHERE user_id = $1 AND status = 'completed'
+     ORDER BY transcribed_at DESC
+     LIMIT $2 OFFSET $3`,
+    [userId, limit, offset]
+  );
+  return rows.map(mapRow);
+}
+
+/** Batch-mark all pending/processing transcriptions for a user as failed. */
+export async function markUserPendingAsFailed(
+  userId: number,
+  errorMessage: string
+): Promise<number> {
+  const { rowCount } = await query(
+    `UPDATE voice_transcriptions
+     SET status = 'failed', error_message = $1, transcribed_at = NOW()
+     WHERE user_id = $2 AND status IN ('pending', 'processing')`,
+    [errorMessage, userId]
+  );
+  return rowCount ?? 0;
+}
+
+/** Auto-fail transcriptions stuck in pending/processing for too long. */
+export async function markStaleAsFailed(maxAgeMinutes: number = 15): Promise<number> {
+  const { rowCount } = await query(
+    `UPDATE voice_transcriptions
+     SET status = 'failed', error_message = 'Превышено время ожидания', transcribed_at = NOW()
+     WHERE status IN ('pending', 'processing')
+       AND created_at < NOW() - INTERVAL '1 minute' * $1`,
+    [maxAgeMinutes]
+  );
+  return rowCount ?? 0;
+}
+
 /** Get transcription by telegram_file_unique_id. */
 export async function getTranscriptionByFileUniqueId(
   fileUniqueId: string

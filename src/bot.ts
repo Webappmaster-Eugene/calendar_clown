@@ -13,8 +13,8 @@ import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.
 import { handleUndoCallback } from "./commands/expenseUndo.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput } from "./commands/admin.js";
 import { handleStatsCommand } from "./commands/adminStats.js";
-import { handleTranscribeCommand, handleTranscribeHistoryButton } from "./commands/transcribeMode.js";
-import { handleDigestCommand, handleRubricsButton, handleDigestNowButton } from "./commands/digestMode.js";
+import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleTranscribeHistoryCallback } from "./commands/transcribeMode.js";
+import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText } from "./commands/digestMode.js";
 import { handleBroadcastCommand, handleBroadcastText } from "./commands/broadcastMode.js";
 import {
   handleNotableDatesCommand,
@@ -27,8 +27,23 @@ import {
   handleNotableDateDeleteCallback,
   handleNotableDatesText,
 } from "./commands/notableDatesMode.js";
+import {
+  handleNotesCommand,
+  handleNewNoteButton,
+  handleTopicsButton,
+  handleImportantButton,
+  handleUrgentButton,
+  handleAllNotesButton,
+  handleNoteTopicCallback,
+  handleNewTopicCallback,
+  handleViewTopicCallback,
+  handleDeleteTopicCallback,
+  handleNotesPageCallback,
+  handleNoteActionCallback,
+  handleNotesText,
+} from "./commands/notesMode.js";
 import { accessControlMiddleware } from "./middleware/auth.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode } from "./middleware/expenseMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isNotesMode, isDigestMode } from "./middleware/expenseMode.js";
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
@@ -56,6 +71,7 @@ export function createBot(token: string): Telegraf {
   bot.command("digest", handleDigestCommand);
   bot.command("broadcast", handleBroadcastCommand);
   bot.command("dates", handleNotableDatesCommand);
+  bot.command("notes", handleNotesCommand);
 
   // Admin commands
   bot.command("admin", handleAdminCommand);
@@ -72,6 +88,20 @@ export function createBot(token: string): Telegraf {
   bot.action(/^undo:/, handleUndoCallback);
   bot.action(/^cancel_recurring:/, handleCancelRecurringCallback);
   bot.action(/^notable_delete:/, handleNotableDateDeleteCallback);
+  bot.action(/^tr_hist:/, handleTranscribeHistoryCallback);
+
+  // Notes callbacks
+  bot.action(/^note_topic:/, handleNoteTopicCallback);
+  bot.action("note_new_topic", handleNewTopicCallback);
+  bot.action(/^note_view_topic:/, handleViewTopicCallback);
+  bot.action(/^note_del_topic:/, handleDeleteTopicCallback);
+  bot.action(/^notes_page:/, handleNotesPageCallback);
+  bot.action(/^note_view:/, handleNoteActionCallback);
+  bot.action(/^note_del:/, handleNoteActionCallback);
+  bot.action(/^note_imp:/, handleNoteActionCallback);
+  bot.action(/^note_urg:/, handleNoteActionCallback);
+
+  // Mode switch inline callbacks
   bot.action("mode:calendar", async (ctx) => {
     await ctx.answerCbQuery("📅 Календарь");
     await handleCalendarCommand(ctx);
@@ -94,6 +124,10 @@ export function createBot(token: string): Telegraf {
   bot.action("mode:notable_dates", async (ctx) => {
     await handleNotableDatesCommand(ctx);
   });
+  bot.action("mode:notes", async (ctx) => {
+    await ctx.answerCbQuery("📝 Заметки");
+    await handleNotesCommand(ctx);
+  });
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
   // ─── Voice ──────────────────────────────────────────────────────────
@@ -108,6 +142,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("📰 Дайджест", handleDigestCommand);
   bot.hears("📢 Рассылка", handleBroadcastCommand);
   bot.hears("🎉 Даты", handleNotableDatesCommand);
+  bot.hears("📝 Заметки", handleNotesCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
@@ -131,6 +166,7 @@ export function createBot(token: string): Telegraf {
   // Digest mode buttons
   bot.hears("📋 Мои рубрики", handleRubricsButton);
   bot.hears("▶️ Запустить сейчас", handleDigestNowButton);
+  bot.hears("➕ Создать рубрику", handleCreateRubricButton);
 
   // Transcribe mode buttons
   bot.hears("📋 История", async (ctx) => {
@@ -139,6 +175,19 @@ export function createBot(token: string): Telegraf {
       await handleTranscribeHistoryButton(ctx);
     }
   });
+  bot.hears("🗑 Очистить очередь", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isTranscribeMode(tid)) {
+      await handleClearQueueButton(ctx);
+    }
+  });
+
+  // Notes mode buttons
+  bot.hears("📝 Новая заметка", handleNewNoteButton);
+  bot.hears("📂 Мои рубрики", handleTopicsButton);
+  bot.hears("⭐ Важное", handleImportantButton);
+  bot.hears("🔥 Срочное", handleUrgentButton);
+  bot.hears("📋 Все заметки", handleAllNotesButton);
 
   // Notable dates mode buttons
   bot.hears("📅 Ближайшие", handleUpcomingDatesButton);
@@ -148,7 +197,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("➕ Добавить", handleAddDateButton);
   bot.hears("🗑 Удалить", handleDeleteDateButton);
 
-  // Text messages catch-all (expense input, broadcast, notable dates)
+  // Text messages catch-all (priority order)
   bot.on("text", async (ctx, next) => {
     const telegramId = ctx.from?.id;
     if (telegramId == null) return next();
@@ -160,9 +209,23 @@ export function createBot(token: string): Telegraf {
     const consumed = await handleAdminTextInput(ctx);
     if (consumed) return;
 
+    // Notes mode — text input for creating notes/topics
+    if (await isNotesMode(telegramId)) {
+      const handled = await handleNotesText(ctx);
+      if (handled) return;
+      return next();
+    }
+
     // Notable dates mode — text input for adding dates
     if (await isNotableDatesMode(telegramId)) {
       const handled = await handleNotableDatesText(ctx);
+      if (handled) return;
+      return next();
+    }
+
+    // Digest mode — interactive rubric creation
+    if (await isDigestMode(telegramId)) {
+      const handled = await handleDigestText(ctx);
       if (handled) return;
       return next();
     }

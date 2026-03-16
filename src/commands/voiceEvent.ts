@@ -8,13 +8,14 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode } from "../middleware/expenseMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isNotesMode } from "../middleware/expenseMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
 import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
+import { handleNotesVoice } from "./notesMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
@@ -72,6 +73,12 @@ export async function handleVoice(ctx: Context) {
         undefined,
         "Не удалось распознать речь."
       );
+      return;
+    }
+
+    // Notes mode — save transcribed voice as a note
+    if (telegramId != null && await isNotesMode(telegramId)) {
+      await handleNotesVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 

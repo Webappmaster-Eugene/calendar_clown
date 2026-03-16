@@ -1,6 +1,15 @@
 import type { Context, MiddlewareFn } from "telegraf";
-import { isUserInDb } from "../expenses/repository.js";
+import { isUserInDb, getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
+import { query } from "../db/connection.js";
+
+export interface UserMenuContext {
+  role: "admin" | "user";
+  status: string;
+  hasTribe: boolean;
+  tribeId: number | null;
+  tribeName: string | null;
+}
 
 /**
  * Check if a telegram user is the bootstrap admin (from env).
@@ -37,5 +46,38 @@ export function accessControlMiddleware(): MiddlewareFn<Context> {
       `🚫 Доступ запрещён.\n\nВаш Telegram ID: \`${telegramId}\`\nОтправьте его администратору для получения доступа.`,
       { parse_mode: "Markdown" }
     );
+  };
+}
+
+/** Get user menu context for role-based UI. Returns null if user not found. */
+export async function getUserMenuContext(telegramId: number): Promise<UserMenuContext | null> {
+  if (!isDatabaseAvailable()) return null;
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) return null;
+
+  // Get user status
+  const { rows: statusRows } = await query<{ status: string }>(
+    "SELECT COALESCE(status, 'approved') AS status FROM users WHERE telegram_id = $1",
+    [telegramId]
+  );
+  const status = statusRows[0]?.status ?? "approved";
+
+  // Get tribe name
+  let tribeName: string | null = null;
+  if (dbUser.tribeId) {
+    const { rows: tribeRows } = await query<{ name: string }>(
+      "SELECT name FROM tribes WHERE id = $1",
+      [dbUser.tribeId]
+    );
+    tribeName = tribeRows[0]?.name ?? null;
+  }
+
+  return {
+    role: dbUser.role,
+    status,
+    hasTribe: dbUser.tribeId != null,
+    tribeId: dbUser.tribeId,
+    tribeName,
   };
 }

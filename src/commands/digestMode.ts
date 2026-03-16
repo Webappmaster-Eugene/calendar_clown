@@ -44,9 +44,18 @@ import type { Telegraf } from "telegraf";
 
 const log = createLogger("digest");
 
+/** State for interactive rubric creation. */
+interface RubricCreationState {
+  step: "name" | "description";
+  name?: string;
+}
+
+const rubricCreationStates = new Map<number, RubricCreationState>();
+
 function getDigestKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
     ["📋 Мои рубрики", "▶️ Запустить сейчас"],
+    ["➕ Создать рубрику"],
     ...getModeButtons(isAdmin),
   ]).resize();
 }
@@ -469,5 +478,48 @@ export async function handleDigestNowButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
   await handleDigestNow(ctx, telegramId);
+}
+
+/** Handle "➕ Создать рубрику" keyboard button — start interactive creation. */
+export async function handleCreateRubricButton(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  rubricCreationStates.set(telegramId, { step: "name" });
+  await ctx.reply("Введите название рубрики:");
+}
+
+/**
+ * Handle text input in digest mode for interactive rubric creation.
+ * Returns true if the message was consumed.
+ */
+export async function handleDigestText(ctx: Context): Promise<boolean> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return false;
+  if (!ctx.message || !("text" in ctx.message)) return false;
+
+  const state = rubricCreationStates.get(telegramId);
+  if (!state) return false;
+
+  const text = ctx.message.text.trim();
+
+  if (state.step === "name") {
+    if (!text || text.length > 100) {
+      await ctx.reply("Название рубрики: от 1 до 100 символов. Попробуйте ещё раз:");
+      return true;
+    }
+    rubricCreationStates.set(telegramId, { step: "description", name: text });
+    await ctx.reply(`Название: «${text}»\n\nТеперь введите описание тематики (или отправьте «—» чтобы пропустить):`);
+    return true;
+  }
+
+  if (state.step === "description" && state.name) {
+    rubricCreationStates.delete(telegramId);
+    const description = text === "—" ? state.name : text;
+    await handleCreateRubric(ctx, telegramId, `${state.name} — ${description}`);
+    return true;
+  }
+
+  return false;
 }
 

@@ -214,9 +214,9 @@ export async function removeUserByTelegramId(telegramId: number): Promise<boolea
 }
 
 /** Valid bot modes. */
-type BotMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates";
+type BotMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes";
 
-const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "digest", "broadcast", "notable_dates"]);
+const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "digest", "broadcast", "notable_dates", "notes"]);
 
 /** Get user's current bot mode from DB. */
 export async function getUserMode(telegramId: number): Promise<BotMode> {

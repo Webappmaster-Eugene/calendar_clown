@@ -1,7 +1,7 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { getAuthUrl, hasToken } from "../calendar/auth.js";
-import { isBootstrapAdmin } from "../middleware/auth.js";
+import { isBootstrapAdmin, getUserMenuContext } from "../middleware/auth.js";
 import { getModeKeyboard } from "./expenseMode.js";
 
 const HELP_TEXT = `
@@ -60,6 +60,7 @@ export async function handleStart(ctx: Context): Promise<void> {
   }
 
   const linked = await hasToken(String(userId));
+  const menuCtx = await getUserMenuContext(userId);
 
   let greeting: string;
   if (linked) {
@@ -68,8 +69,16 @@ export async function handleStart(ctx: Context): Promise<void> {
     greeting = "Привет! Привяжите календарь: /auth\nВыберите режим работы:";
   }
 
+  // Add user status info
+  if (menuCtx) {
+    const roleLabel = menuCtx.role === "admin" ? "Админ" : "Пользователь";
+    const statusLabel = menuCtx.status === "approved" ? "Активен" : menuCtx.status;
+    const tribeLabel = menuCtx.tribeName ?? "—";
+    greeting += `\n\n👤 Роль: ${roleLabel} | Статус: ${statusLabel} | Трайб: ${tribeLabel}`;
+  }
+
   await ctx.reply(greeting, {
-    ...getModeKeyboard(isAdmin),
+    ...getModeKeyboard(isAdmin, menuCtx),
   });
 }
 

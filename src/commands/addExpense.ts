@@ -1,7 +1,7 @@
 import type { Context } from "telegraf";
-import { parseExpenseText } from "../expenses/parser.js";
+import { parseExpenseText, parseMultipleExpenses } from "../expenses/parser.js";
 import { addExpense, ensureUser, getMonthTotal } from "../expenses/repository.js";
-import { formatExpenseConfirmation, monthName } from "../expenses/formatter.js";
+import { formatExpenseConfirmation, formatMoney, monthName } from "../expenses/formatter.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { checkRateLimit } from "../middleware/rateLimit.js";
 import { getExpenseKeyboard, DB_UNAVAILABLE_MSG } from "./expenseMode.js";
@@ -29,6 +29,54 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
   if (!checkRateLimit(telegramId)) {
     await ctx.reply("⏳ Слишком много записей. Подождите минуту.");
     return;
+  }
+
+  // Try multi-line expenses first
+  const multiParsed = await parseMultipleExpenses(text);
+  if (multiParsed.length > 1) {
+    try {
+      const dbUser = await ensureUser(
+        telegramId,
+        ctx.from?.username ?? null,
+        ctx.from?.first_name ?? "",
+        ctx.from?.last_name ?? null,
+        isBootstrapAdmin(telegramId)
+      );
+
+      const savedExpenses: Array<{ emoji: string; name: string; sub: string | null; amount: number }> = [];
+      for (const p of multiParsed) {
+        await addExpense(dbUser.id, dbUser.tribeId, p.categoryId, p.amount, p.subcategory, "text");
+        savedExpenses.push({ emoji: p.categoryEmoji, name: p.categoryName, sub: p.subcategory, amount: p.amount });
+      }
+
+      const { year, month } = getMskNow();
+      const total = await getMonthTotal(dbUser.tribeId, year, month);
+      const limit = getMonthLimit();
+
+      const lines = savedExpenses.map((e) => {
+        const sub = e.sub ? ` — ${e.sub}` : "";
+        return `${e.emoji} ${e.name}${sub} — ${formatMoney(e.amount)}`;
+      });
+      const totalAmount = savedExpenses.reduce((s, e) => s + e.amount, 0);
+
+      const parts = [
+        `✅ *Записано ${savedExpenses.length} трат:*`,
+        ...lines,
+        `\n💰 Сумма: ${formatMoney(totalAmount)}`,
+      ];
+      if (limit > 0) {
+        const pct = ((total / limit) * 100).toFixed(1);
+        parts.push(`📊 Итого за ${monthName(month)}: ${formatMoney(total)} / ${formatMoney(limit)} (${pct}%)`);
+      }
+
+      await ctx.replyWithMarkdown(parts.join("\n"), { ...getExpenseKeyboard(isBootstrapAdmin(telegramId)) });
+      return;
+    } catch (err) {
+      log.error("Error adding multi-expenses:", err);
+      const msg = err instanceof Error ? err.message : "Ошибка";
+      await ctx.reply(`❌ Ошибка при сохранении: ${msg}`);
+      return;
+    }
   }
 
   const parsed = await parseExpenseText(text);

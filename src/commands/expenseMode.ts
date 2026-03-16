@@ -4,7 +4,8 @@ import { setUserMode } from "../middleware/expenseMode.js";
 import type { UserMode } from "../middleware/expenseMode.js";
 import { getCategoriesList } from "../expenses/parser.js";
 import { ensureUser } from "../expenses/repository.js";
-import { isBootstrapAdmin } from "../middleware/auth.js";
+import { isBootstrapAdmin, getUserMenuContext } from "../middleware/auth.js";
+import type { UserMenuContext } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 
 export const DB_UNAVAILABLE_MSG =
@@ -53,6 +54,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  notes: [
+    { command: "notes", description: "Заметки (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
 };
 
 /** Update the Telegram hamburger menu commands for the user's current mode. */
@@ -69,11 +75,36 @@ export async function setModeMenuCommands(ctx: Context, mode: UserMode): Promise
   }
 }
 
-export function getModeKeyboard(isAdmin: boolean) {
+export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | null) {
+  // If we have context, use role-based keyboard
+  if (context) {
+    if (context.role === "admin") {
+      return Markup.keyboard([
+        ["📅 Календарь", "💰 Расходы"],
+        ["🎙 Транскрибатор", "📝 Заметки"],
+        ["📰 Дайджест", "🎉 Даты"],
+        ["📢 Рассылка"],
+      ]).resize();
+    }
+    if (context.hasTribe) {
+      return Markup.keyboard([
+        ["📅 Календарь", "💰 Расходы"],
+        ["🎙 Транскрибатор", "📝 Заметки"],
+        ["📰 Дайджест", "🎉 Даты"],
+      ]).resize();
+    }
+    // User without tribe — limited modes
+    return Markup.keyboard([
+      ["📅 Календарь", "🎙 Транскрибатор"],
+      ["📝 Заметки"],
+    ]).resize();
+  }
+
+  // Fallback: simple admin check
   const rows = [
     ["📅 Календарь", "💰 Расходы"],
-    ["🎙 Транскрибатор", "📰 Дайджест"],
-    ["🎉 Даты"],
+    ["🎙 Транскрибатор", "📝 Заметки"],
+    ["📰 Дайджест", "🎉 Даты"],
   ];
   if (isAdmin) {
     rows.push(["📢 Рассылка"]);
@@ -153,9 +184,10 @@ function getModeInlineKeyboard(isAdmin: boolean) {
     ],
     [
       Markup.button.callback("🎙 Транскрибатор", "mode:transcribe"),
-      Markup.button.callback("📰 Дайджест", "mode:digest"),
+      Markup.button.callback("📝 Заметки", "mode:notes"),
     ],
     [
+      Markup.button.callback("📰 Дайджест", "mode:digest"),
       Markup.button.callback("🎉 Даты", "mode:notable_dates"),
     ],
   ];

@@ -22,6 +22,7 @@ import { sql } from "drizzle-orm";
 export const tribes = pgTable("tribes", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull().unique(),
+  monthlyLimit: numeric("monthly_limit", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -36,6 +37,7 @@ export const users = pgTable(
     firstName: varchar("first_name", { length: 255 }).notNull().default(""),
     lastName: varchar("last_name", { length: 255 }),
     role: varchar("role", { length: 20 }).notNull().default("user"),
+    status: varchar("status", { length: 20 }).notNull().default("approved"),
     mode: varchar("mode", { length: 20 }).notNull().default("calendar"),
     tribeId: integer("tribe_id")
       .notNull()
@@ -301,6 +303,9 @@ export const notableDates = pgTable(
     greetingTemplate: text("greeting_template"),
     emoji: varchar("emoji", { length: 10 }).default("🎂"),
     isActive: boolean("is_active").default(true),
+    remind7days: boolean("remind_7days").default(true),
+    remind3days: boolean("remind_3days").default(true),
+    remind1day: boolean("remind_1day").default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -309,5 +314,70 @@ export const notableDates = pgTable(
     index("idx_notable_dates_month_day").on(table.dateMonth, table.dateDay),
     check("notable_dates_date_month_check", sql`${table.dateMonth} BETWEEN 1 AND 12`),
     check("notable_dates_date_day_check", sql`${table.dateDay} BETWEEN 1 AND 31`),
+  ],
+);
+
+// ─── Action Logs ──────────────────────────────────────────────────────────────
+
+export const actionLogs = pgTable(
+  "action_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    telegramId: bigint("telegram_id", { mode: "bigint" }),
+    action: varchar("action", { length: 100 }).notNull(),
+    details: text("details"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_action_logs_user").on(table.userId),
+    index("idx_action_logs_action").on(table.action),
+    index("idx_action_logs_created").on(table.createdAt),
+  ],
+);
+
+// ─── Note Topics ──────────────────────────────────────────────────────────────
+
+export const noteTopics = pgTable(
+  "note_topics",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    name: varchar("name", { length: 100 }).notNull(),
+    emoji: varchar("emoji", { length: 10 }).default("📁"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_note_topics_user").on(table.userId),
+    unique("note_topics_user_id_name_key").on(table.userId, table.name),
+  ],
+);
+
+// ─── Notes ────────────────────────────────────────────────────────────────────
+
+export const notes = pgTable(
+  "notes",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    topicId: integer("topic_id").references(() => noteTopics.id, { onDelete: "set null" }),
+    content: text("content").notNull(),
+    isImportant: boolean("is_important").default(false),
+    isUrgent: boolean("is_urgent").default(false),
+    hasImage: boolean("has_image").default(false),
+    imageFilePath: varchar("image_file_path", { length: 500 }),
+    inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_notes_user").on(table.userId),
+    index("idx_notes_topic").on(table.topicId),
+    index("idx_notes_flags").on(table.isImportant, table.isUrgent),
+    index("idx_notes_created").on(table.createdAt),
   ],
 );

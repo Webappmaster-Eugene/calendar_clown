@@ -1,6 +1,7 @@
 /**
  * Cron scheduler for notable date reminders.
- * Runs at 10:00 and 17:00 MSK daily and sends reminders for today's dates.
+ * Runs at 10:00 and 17:00 MSK daily.
+ * Sends reminders for today's dates AND advance reminders (7, 3, 1 days before).
  */
 
 import { Cron } from "croner";
@@ -14,6 +15,9 @@ import { query } from "../db/connection.js";
 const log = createLogger("notable-dates");
 
 let notableDatesCron: Cron | null = null;
+
+/** Advance reminder intervals in days. */
+const ADVANCE_DAYS = [7, 3, 1] as const;
 
 /** Start the notable dates reminder scheduler. */
 export function startNotableDatesScheduler(bot: Telegraf): void {
@@ -36,40 +40,83 @@ export function stopNotableDatesScheduler(): void {
   }
 }
 
-/** Send reminders for today's notable dates to all tribes. */
+/** Get a future date in Moscow timezone. */
+function getMskFutureDate(daysAhead: number): { month: number; day: number } {
+  const now = new Date();
+  const future = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+  const mskDate = new Date(future.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
+  return { month: mskDate.getMonth() + 1, day: mskDate.getDate() };
+}
+
+/** Format advance reminder prefix. */
+function formatAdvancePrefix(daysAhead: number): string {
+  if (daysAhead === 1) return "Завтра";
+  if (daysAhead === 3) return "Через 3 дня";
+  if (daysAhead === 7) return "Через 7 дней";
+  return `Через ${daysAhead} дней`;
+}
+
+/** Send reminders for today's notable dates and advance reminders to all tribes. */
 async function sendNotableDateReminders(bot: Telegraf): Promise<void> {
   const now = new Date();
-  // Use Moscow timezone for month/day
   const mskDate = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
   const month = mskDate.getMonth() + 1;
   const day = mskDate.getDate();
 
-  log.info(`Checking notable dates for ${day}.${month}`);
+  log.info(`Checking notable dates for ${day}.${month} + advance reminders`);
 
   // Get all tribes
   const { rows: tribes } = await query<{ id: number }>("SELECT id FROM tribes");
 
   for (const tribe of tribes) {
     try {
-      const dates = await getDatesByMonthDay(tribe.id, month, day);
-      if (dates.length === 0) continue;
+      const messages: string[] = [];
 
-      const message = formatDayReminders(dates);
-      if (!message) continue;
+      // Today's dates
+      const todayDates = await getDatesByMonthDay(tribe.id, month, day);
+      if (todayDates.length > 0) {
+        const todayMsg = formatDayReminders(todayDates);
+        if (todayMsg) messages.push(todayMsg);
+      }
+
+      // Advance reminders (7, 3, 1 days ahead)
+      for (const daysAhead of ADVANCE_DAYS) {
+        const future = getMskFutureDate(daysAhead);
+        const futureDates = await getDatesByMonthDay(tribe.id, future.month, future.day);
+
+        // Filter by reminder flags
+        const filteredDates = futureDates.filter((d) => {
+          const dateRecord = d as unknown as Record<string, unknown>;
+          if (daysAhead === 7 && dateRecord.remind7days === false) return false;
+          if (daysAhead === 3 && dateRecord.remind3days === false) return false;
+          if (daysAhead === 1 && dateRecord.remind1day === false) return false;
+          return true;
+        });
+
+        if (filteredDates.length > 0) {
+          const prefix = formatAdvancePrefix(daysAhead);
+          const dateLines = filteredDates.map((d) => `${d.emoji} ${d.name}`).join("\n");
+          messages.push(`⏰ *${prefix}:*\n${dateLines}`);
+        }
+      }
+
+      if (messages.length === 0) continue;
+
+      const fullMessage = messages.join("\n\n");
 
       // Send to all tribe members
       const users = await listTribeUsers(tribe.id);
       let sent = 0;
       for (const user of users) {
         try {
-          await bot.telegram.sendMessage(user.telegramId, message, { parse_mode: "Markdown" });
+          await bot.telegram.sendMessage(user.telegramId, fullMessage, { parse_mode: "Markdown" });
           sent++;
         } catch (err) {
           log.error(`Failed to send notable date reminder to user ${user.telegramId}:`, err);
         }
       }
 
-      log.info(`Tribe ${tribe.id}: sent ${sent}/${users.length} notable date reminders (${dates.length} dates)`);
+      log.info(`Tribe ${tribe.id}: sent ${sent}/${users.length} reminders (today: ${todayDates.length} dates)`);
     } catch (err) {
       log.error(`Error processing notable dates for tribe ${tribe.id}:`, err);
     }

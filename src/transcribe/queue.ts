@@ -103,6 +103,86 @@ export function isTranscribeAvailable(): boolean {
   return transcribeQueue !== null;
 }
 
+/** Remove stale jobs older than maxAgeMs from the queue. */
+export async function cleanStaleJobs(maxAgeMs: number = 15 * 60 * 1000): Promise<number> {
+  const queue = getTranscribeQueue();
+  if (!queue) return 0;
+
+  let cleaned = 0;
+  const cutoff = Date.now() - maxAgeMs;
+
+  const waiting = await queue.getWaiting();
+  for (const job of waiting) {
+    if (job.timestamp < cutoff) {
+      await job.remove();
+      cleaned++;
+    }
+  }
+
+  const delayed = await queue.getDelayed();
+  for (const job of delayed) {
+    if (job.timestamp < cutoff) {
+      await job.remove();
+      cleaned++;
+    }
+  }
+
+  if (cleaned > 0) {
+    log.info(`Cleaned ${cleaned} stale jobs from queue`);
+  }
+  return cleaned;
+}
+
+/** Remove all waiting/delayed jobs for a specific chat. */
+export async function clearUserJobs(chatId: number): Promise<number> {
+  const queue = getTranscribeQueue();
+  if (!queue) return 0;
+
+  let cleared = 0;
+
+  const waiting = await queue.getWaiting();
+  for (const job of waiting) {
+    if (job.data.chatId === chatId) {
+      await job.remove();
+      cleared++;
+    }
+  }
+
+  const delayed = await queue.getDelayed();
+  for (const job of delayed) {
+    if (job.data.chatId === chatId) {
+      await job.remove();
+      cleared++;
+    }
+  }
+
+  if (cleared > 0) {
+    log.info(`Cleared ${cleared} jobs for chat ${chatId}`);
+  }
+  return cleared;
+}
+
+let staleJobInterval: ReturnType<typeof setInterval> | null = null;
+
+/** Start periodic stale job cleaner (every 5 minutes). */
+export function startStaleJobCleaner(): void {
+  if (staleJobInterval) return;
+  staleJobInterval = setInterval(() => {
+    cleanStaleJobs().catch((err) => {
+      log.error("Stale job cleanup error:", err);
+    });
+  }, 5 * 60 * 1000);
+  log.info("Stale job cleaner started (every 5 min)");
+}
+
+/** Stop periodic stale job cleaner. */
+export function stopStaleJobCleaner(): void {
+  if (staleJobInterval) {
+    clearInterval(staleJobInterval);
+    staleJobInterval = null;
+  }
+}
+
 /** Gracefully close the queue and worker. */
 export async function closeTranscribeQueue(): Promise<void> {
   if (transcribeWorker) {

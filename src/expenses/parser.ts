@@ -158,6 +158,25 @@ function levenshtein(a: string, b: string): number {
 }
 
 /**
+ * Parse multiple expenses from a single message.
+ * Splits by newlines, parses each line independently.
+ * Returns array of parsed expenses (skips unparseable lines).
+ */
+export async function parseMultipleExpenses(text: string): Promise<ParsedExpense[]> {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length <= 1) return [];
+
+  const results: ParsedExpense[] = [];
+  for (const line of lines) {
+    const parsed = await parseExpenseText(line);
+    if (parsed) {
+      results.push(parsed);
+    }
+  }
+  return results;
+}
+
+/**
  * Get formatted categories list for display.
  */
 export async function getCategoriesList(): Promise<string> {

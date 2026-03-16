@@ -29,8 +29,19 @@ function audioMimeType(filePath: string): string {
     case "wav": return "audio/wav";
     case "mp3": return "audio/mpeg";
     case "m4a": return "audio/mp4";
+    case "webm": return "audio/webm";
+    case "flac": return "audio/flac";
+    case "aac": return "audio/aac";
     default: return "audio/ogg";
   }
+}
+
+/** Calculate dynamic timeout based on file size in bytes. */
+function getTimeoutMs(fileSizeBytes: number): number {
+  if (fileSizeBytes < 1_000_000) return 120_000;       // <1MB: 2min
+  if (fileSizeBytes < 5_000_000) return 300_000;        // 1-5MB: 5min
+  if (fileSizeBytes < 15_000_000) return 600_000;       // 5-15MB: 10min
+  return 900_000;                                        // >15MB: 15min
 }
 
 /**
@@ -47,10 +58,11 @@ export async function transcribeVoiceHQ(filePath: string): Promise<string> {
   const base64Audio = fileBuffer.toString("base64");
   const mimeType = audioMimeType(filePath);
 
-  log.info(`API call: model=${TRANSCRIBE_MODEL_HQ}, file=${filePath}, size=${fileBuffer.length}b`);
+  const timeoutMs = getTimeoutMs(fileBuffer.length);
+  log.info(`API call: model=${TRANSCRIBE_MODEL_HQ}, file=${filePath}, size=${fileBuffer.length}b, timeout=${timeoutMs}ms`);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const startTime = Date.now();
 
   try {
@@ -99,7 +111,8 @@ export async function transcribeVoiceHQ(filePath: string): Promise<string> {
     if (err instanceof Error && err.name === "AbortError") {
       const elapsed = Date.now() - startTime;
       log.error(`API timeout after ${elapsed}ms for file=${filePath}`);
-      throw new Error("Транскрипция не завершилась за 60 секунд. Попробуйте ещё раз.");
+      const timeoutSec = Math.round(timeoutMs / 1000);
+      throw new Error(`Транскрипция не завершилась за ${timeoutSec} секунд. Попробуйте ещё раз или отправьте файл меньшего размера.`);
     }
     throw err;
   } finally {

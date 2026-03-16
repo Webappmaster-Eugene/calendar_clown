@@ -44,8 +44,7 @@ export function formatMonthReport(
   }
 
   const lines = totals.map((t) => {
-    const name = truncate(t.categoryName, 22);
-    return `${t.categoryEmoji} ${name}  ${formatMoney(t.total)}`;
+    return `${t.categoryEmoji} ${t.categoryName}  ${formatMoney(t.total)}`;
   });
 
   const limitPercent = monthLimit > 0 ? ((grandTotal / monthLimit) * 100).toFixed(1) : "0";
@@ -82,7 +81,7 @@ export function formatComparisonReport(
   const lines = comparisons.map((c) => {
     const arrow = c.diff > 0 ? "↗️" : c.diff < 0 ? "↘️" : "➡️";
     const diffStr = c.diff > 0 ? `+${formatMoneyShort(c.diff)}` : formatMoneyShort(c.diff);
-    return `${c.categoryEmoji} ${truncate(c.categoryName, 16)}  ${formatMoneyShort(c.prevTotal)} → ${formatMoneyShort(c.currTotal)}  ${arrow} ${diffStr}`;
+    return `${c.categoryEmoji} ${c.categoryName}  ${formatMoneyShort(c.prevTotal)} → ${formatMoneyShort(c.currTotal)}  ${arrow} ${diffStr}`;
   });
 
   const prevSum = comparisons.reduce((s, c) => s + c.prevTotal, 0);

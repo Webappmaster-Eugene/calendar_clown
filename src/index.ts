@@ -8,7 +8,7 @@ import { startOAuthServer } from "./oauthServer.js";
 import { runMigrations } from "./db/migrate.js";
 import { closePool, setDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
-import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue } from "./transcribe/queue.js";
+import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, startStaleJobCleaner, stopStaleJobCleaner } from "./transcribe/queue.js";
 import { createTranscribeProcessor } from "./transcribe/worker.js";
 import { isDigestConfigured } from "./digest/telegramClient.js";
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
@@ -62,6 +62,7 @@ async function main(): Promise<void> {
     try {
       initTranscribeQueue(redisUrl);
       startTranscribeWorker(redisUrl, createTranscribeProcessor(bot));
+      startStaleJobCleaner();
       log.info("Transcribe queue initialized (Redis).");
     } catch (err) {
       log.error("Redis initialization failed — transcribe mode disabled.");
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
     { command: "cancel", description: "Отменить встречу" },
     { command: "digest", description: "Дайджест телеграм-каналов" },
     { command: "dates", description: "Знаменательные даты" },
+    { command: "notes", description: "Заметки" },
     { command: "mode", description: "Выбор режима работы" },
     { command: "admin", description: "Управление пользователями" },
   ];
@@ -115,6 +117,7 @@ async function main(): Promise<void> {
     bot.stop(signal);
     stopDigestScheduler();
     stopNotableDatesScheduler();
+    stopStaleJobCleaner();
     await closeTranscribeQueue();
     await closePool();
     process.exit(0);
