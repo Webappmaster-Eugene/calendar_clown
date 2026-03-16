@@ -7,6 +7,7 @@
 import { readFile } from "fs/promises";
 import { OPENROUTER_URL, OPENROUTER_REFERER, TRANSCRIBE_MODEL, TRANSCRIBE_MODEL_FALLBACK } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
+import type { OnProgressCallback } from "../transcribe/types.js";
 
 const log = createLogger("stt-client");
 
@@ -19,6 +20,8 @@ export interface SttCallOptions {
   timeoutMs: number;
   /** Model override (defaults to TRANSCRIBE_MODEL from constants). */
   model?: string;
+  /** Optional progress callback for real-time status updates. */
+  onProgress?: OnProgressCallback;
 }
 
 /** Map file extension to MIME type for audio. */
@@ -59,6 +62,8 @@ export async function callStt(options: SttCallOptions): Promise<string> {
 
   log.info(`STT call: model=${model}, file=${options.filePath}, size=${fileBuffer.length}b, timeout=${options.timeoutMs}ms`);
 
+  options.onProgress?.(`Запрос к ${model}...`);
+
   const result = await callSttRaw({
     apiKey,
     model,
@@ -67,6 +72,7 @@ export async function callStt(options: SttCallOptions): Promise<string> {
     mimeType,
     timeoutMs: options.timeoutMs,
     filePath: options.filePath,
+    onProgress: options.onProgress,
     provider: {
       order: ["vertex-ai"],
       allow_fallbacks: true,
@@ -84,12 +90,13 @@ interface SttRawOptions {
   mimeType: string;
   timeoutMs: number;
   filePath: string;
+  onProgress?: OnProgressCallback;
   provider?: { order: string[]; allow_fallbacks: boolean };
 }
 
 /** Low-level STT call with optional provider routing and geo-block fallback. */
 async function callSttRaw(options: SttRawOptions): Promise<string> {
-  const { apiKey, model, prompt, base64Audio, mimeType, timeoutMs, filePath, provider } = options;
+  const { apiKey, model, prompt, base64Audio, mimeType, timeoutMs, filePath, onProgress, provider } = options;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -138,6 +145,7 @@ async function callSttRaw(options: SttRawOptions): Promise<string> {
       // On geo-block error with primary model → retry with fallback model (no provider override)
       if (res.status === 400 && isGeoBlockError(errText) && model !== TRANSCRIBE_MODEL_FALLBACK) {
         log.info(`Geo-block detected for model=${model}, retrying with fallback model=${TRANSCRIBE_MODEL_FALLBACK}`);
+        onProgress?.(`Гео-блокировка, переключение на ${TRANSCRIBE_MODEL_FALLBACK}...`);
         clearTimeout(timeout);
         return callSttRaw({
           apiKey,
@@ -147,6 +155,7 @@ async function callSttRaw(options: SttRawOptions): Promise<string> {
           mimeType,
           timeoutMs,
           filePath,
+          onProgress,
           // No provider override for fallback — let OpenRouter pick the best route
         });
       }

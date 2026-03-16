@@ -11,6 +11,7 @@ import { markProcessing, markCompleted, markFailed } from "./repository.js";
 import { TRANSCRIBE_MODEL_HQ } from "../constants.js";
 import type { TranscribeJobData } from "./types.js";
 import { createLogger } from "../utils/logger.js";
+import { createProgressReporter } from "./progressReporter.js";
 
 const log = createLogger("worker");
 
@@ -30,10 +31,14 @@ export function createTranscribeProcessor(bot: Telegraf) {
     log.info(`Processing job ${job.id}: transcriptionId=${transcriptionId}, file=${filePath}, attempt=${job.attemptsMade + 1}/${job.opts.attempts ?? 3}`);
     await markProcessing(transcriptionId);
 
+    const reporter = createProgressReporter(bot, chatId, statusMessageId);
+    reporter.onProgress("Начинаю обработку...");
+
     try {
-      const transcript = await transcribeVoiceHQ(filePath);
+      const transcript = await transcribeVoiceHQ(filePath, reporter.onProgress);
 
       if (!transcript) {
+        await reporter.flush();
         await markFailed(transcriptionId, "Empty transcription result");
         await editStatusSafe(
           bot,
@@ -51,12 +56,17 @@ export function createTranscribeProcessor(bot: Telegraf) {
       // Send transcript as a new message (better UX than editing the status)
       await sendTranscriptSafe(bot, chatId, transcript);
 
+      // Flush any pending progress update before deleting status message
+      await reporter.flush();
+
       // Delete the status "processing" message
       await deleteMessageSafe(bot, chatId, statusMessageId);
 
       // Clean up OGG file after successful processing
       await unlink(filePath).catch(() => {});
     } catch (err) {
+      await reporter.flush();
+
       const errorMsg = err instanceof Error ? err.message : String(err);
       const errorStack = err instanceof Error ? err.stack : undefined;
       log.error(`Transcription ${transcriptionId} error: ${errorMsg}`);

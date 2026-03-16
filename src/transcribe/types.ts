@@ -1,5 +1,8 @@
 export type TranscriptionStatus = "pending" | "processing" | "completed" | "failed";
 
+/** Fire-and-forget progress callback. Accepts a Russian step description. */
+export type OnProgressCallback = (step: string) => void;
+
 export interface VoiceTranscription {
   id: number;
   userId: number;
