@@ -148,7 +148,7 @@ export async function listNotableDates(
   month?: number
 ): Promise<NotableDate[]> {
   let sql = `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
-                    event_type, description, greeting_template, emoji, is_active, created_at
+                    event_type, description, greeting_template, emoji, is_priority, is_active, created_at
              FROM notable_dates
              WHERE tribe_id = $1 AND is_active = true`;
   const params: unknown[] = [tribeId];
@@ -171,6 +171,7 @@ export async function listNotableDates(
     description: string | null;
     greeting_template: string | null;
     emoji: string;
+    is_priority: boolean;
     is_active: boolean;
     created_at: Date;
   }>(sql, params);

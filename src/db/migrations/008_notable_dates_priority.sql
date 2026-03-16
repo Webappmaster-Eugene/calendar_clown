@@ -29,5 +29,6 @@ WHERE NOT EXISTS (
   WHERE event_type = 'holiday' AND date_month = 1 AND date_day = 14
 );
 
--- Mark all birthdays as priority by default (they get advance reminders)
-UPDATE notable_dates SET is_priority = true WHERE event_type = 'birthday';
+-- NOTE: previously this migration set all birthdays as priority by default.
+-- Removed: is_priority is opt-in per date, not a blanket default for birthdays.
+-- See migration 010_birthdays_remove_priority.sql for the fix on existing data.

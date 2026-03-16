@@ -1,14 +1,23 @@
 /**
  * High-quality voice transcription for the transcriber mode.
- * Uses Gemini 2.5 Flash with an optimized Russian-language prompt
- * for clean, readable text with proper punctuation.
+ * Uses the shared STT client with provider routing and geo-block fallback.
+ * Supports long audio files via ffmpeg-based chunking.
  */
 
-import { readFile } from "fs/promises";
-import { OPENROUTER_URL, OPENROUTER_REFERER, TRANSCRIBE_MODEL_HQ } from "../constants.js";
+import { stat, unlink } from "fs/promises";
+import { join, basename, extname } from "path";
+import { callStt } from "../voice/sttClient.js";
+import { TRANSCRIBE_MODEL_HQ, VOICE_DIR } from "../constants.js";
+import {
+  getAudioDuration,
+  splitAudio,
+  compressToOggIfNeeded,
+  cleanupChunkDir,
+  MAX_CHUNK_DURATION_SEC,
+} from "./audioUtils.js";
 import { createLogger } from "../utils/logger.js";
 
-const log = createLogger("transcribe");
+const log = createLogger("transcribe-hq");
 
 const TRANSCRIBE_PROMPT = `Расшифруй это аудиосообщение в текст на русском языке.
 
@@ -21,21 +30,6 @@ const TRANSCRIBE_PROMPT = `Расшифруй это аудиосообщени�
 - Слова-паразиты ("эээ", "ммм", "ну типа") — убирай
 - Если часть аудио неразборчива — пропусти, не додумывай`;
 
-/** Map file extension to MIME type for audio. */
-function audioMimeType(filePath: string): string {
-  const ext = filePath.toLowerCase().split(".").pop();
-  switch (ext) {
-    case "ogg": return "audio/ogg";
-    case "wav": return "audio/wav";
-    case "mp3": return "audio/mpeg";
-    case "m4a": return "audio/mp4";
-    case "webm": return "audio/webm";
-    case "flac": return "audio/flac";
-    case "aac": return "audio/aac";
-    default: return "audio/ogg";
-  }
-}
-
 /** Calculate dynamic timeout based on file size in bytes. */
 function getTimeoutMs(fileSizeBytes: number): number {
   if (fileSizeBytes < 1_000_000) return 120_000;       // <1MB: 2min
@@ -45,77 +39,111 @@ function getTimeoutMs(fileSizeBytes: number): number {
 }
 
 /**
- * Transcribe an audio file using Gemini 2.5 Flash with high-quality Russian prompt.
- * Returns the transcript text or throws on error.
+ * Transcribe an audio file with high-quality Russian prompt.
+ * For files longer than 10 minutes, splits into chunks and transcribes each sequentially.
  */
 export async function transcribeVoiceHQ(filePath: string): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
-
-  const fileBuffer = await readFile(filePath);
-  const base64Audio = fileBuffer.toString("base64");
-  const mimeType = audioMimeType(filePath);
-
-  const timeoutMs = getTimeoutMs(fileBuffer.length);
-  log.info(`API call: model=${TRANSCRIBE_MODEL_HQ}, file=${filePath}, size=${fileBuffer.length}b, timeout=${timeoutMs}ms`);
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const startTime = Date.now();
+  // Try to compress large non-OGG files first
+  const { path: effectivePath, converted } = await compressToOggIfNeeded(filePath);
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": OPENROUTER_REFERER,
-      },
-      body: JSON.stringify({
-        model: TRANSCRIBE_MODEL_HQ,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: TRANSCRIBE_PROMPT },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64Audio}`,
-                },
-              },
-            ],
-          },
-        ],
-      }),
-      signal: controller.signal,
-    });
+    const duration = await getAudioDuration(effectivePath);
+    log.info(`Audio duration: ${duration.toFixed(1)}s for ${effectivePath}`);
 
-    const elapsed = Date.now() - startTime;
-
-    if (!res.ok) {
-      const errText = await res.text();
-      log.error(`API error: status=${res.status}, elapsed=${elapsed}ms, body=${errText}`);
-      throw new Error(`OpenRouter HQ transcription failed: ${res.status} ${errText}`);
+    if (duration > 0 && duration > MAX_CHUNK_DURATION_SEC) {
+      return await transcribeWithChunking(effectivePath, duration);
     }
 
-    const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const text = data?.choices?.[0]?.message?.content?.trim() ?? "";
-    log.info(`API response: status=${res.status}, elapsed=${elapsed}ms, transcript_length=${text.length}`);
-    return text;
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      const elapsed = Date.now() - startTime;
-      log.error(`API timeout after ${elapsed}ms for file=${filePath}`);
-      const timeoutSec = Math.round(timeoutMs / 1000);
-      throw new Error(`Транскрипция не завершилась за ${timeoutSec} секунд. Попробуйте ещё раз или отправьте файл меньшего размера.`);
-    }
-    throw err;
+    return await transcribeSingleFile(effectivePath);
   } finally {
-    clearTimeout(timeout);
+    // Clean up compressed file if we created one
+    if (converted && effectivePath !== filePath) {
+      await unlink(effectivePath).catch(() => {});
+    }
+  }
+}
+
+/** Transcribe a single audio file (no chunking). */
+async function transcribeSingleFile(filePath: string): Promise<string> {
+  let fileSizeBytes = 0;
+  try {
+    const s = await stat(filePath);
+    fileSizeBytes = s.size;
+  } catch {
+    // Use default timeout
+  }
+
+  const timeoutMs = getTimeoutMs(fileSizeBytes);
+
+  return callStt({
+    filePath,
+    prompt: TRANSCRIBE_PROMPT,
+    timeoutMs,
+    model: TRANSCRIBE_MODEL_HQ,
+  });
+}
+
+/** Transcribe a long audio file by splitting into chunks. */
+async function transcribeWithChunking(filePath: string, duration: number): Promise<string> {
+  const base = basename(filePath, extname(filePath));
+  const chunkDir = join(VOICE_DIR, `chunks_${base}_${Date.now()}`);
+
+  log.info(`Splitting ${filePath} (${duration.toFixed(1)}s) into ${MAX_CHUNK_DURATION_SEC}s chunks`);
+
+  let chunkPaths: string[];
+  try {
+    chunkPaths = await splitAudio(filePath, MAX_CHUNK_DURATION_SEC, chunkDir);
+  } catch (err) {
+    log.error(`Chunking failed, falling back to single-file transcription: ${err instanceof Error ? err.message : String(err)}`);
+    // Fallback: try sending the whole file as-is
+    return transcribeSingleFile(filePath);
+  }
+
+  if (chunkPaths.length === 0) {
+    log.error("No chunks produced, falling back to single-file transcription");
+    await cleanupChunkDir(chunkDir);
+    return transcribeSingleFile(filePath);
+  }
+
+  log.info(`Processing ${chunkPaths.length} chunks sequentially`);
+
+  try {
+    const transcripts: string[] = [];
+
+    for (let i = 0; i < chunkPaths.length; i++) {
+      const chunkPath = chunkPaths[i];
+      log.info(`Transcribing chunk ${i + 1}/${chunkPaths.length}: ${chunkPath}`);
+
+      let chunkSize = 0;
+      try {
+        const s = await stat(chunkPath);
+        chunkSize = s.size;
+      } catch {
+        // Use default timeout
+      }
+
+      const timeoutMs = getTimeoutMs(chunkSize);
+      const text = await callStt({
+        filePath: chunkPath,
+        prompt: TRANSCRIBE_PROMPT,
+        timeoutMs,
+        model: TRANSCRIBE_MODEL_HQ,
+      });
+
+      if (text) {
+        transcripts.push(text);
+      }
+
+      // Small delay between chunks to avoid rate limiting
+      if (i < chunkPaths.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+    }
+
+    const combined = transcripts.join("\n\n");
+    log.info(`Chunked transcription complete: ${chunkPaths.length} chunks → ${combined.length} chars`);
+    return combined;
+  } finally {
+    await cleanupChunkDir(chunkDir);
   }
 }
