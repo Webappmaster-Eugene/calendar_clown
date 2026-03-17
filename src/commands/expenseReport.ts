@@ -7,12 +7,15 @@ import {
   getMonthComparison,
   getUserByTelegramId,
   getTribeName,
+  getExpensesByCategory,
+  countExpensesByCategory,
 } from "../expenses/repository.js";
 import {
   formatMonthReport,
   formatComparisonReport,
   formatUserStats,
   formatYearReport,
+  formatExpenseDetailList,
   monthName,
 } from "../expenses/formatter.js";
 import { getMskNow, getMonthRange, getMonthLimit } from "../utils/date.js";
@@ -74,11 +77,11 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     const month = parseInt(reportMatch[2], 10);
     const { from, to } = getMonthRange(year, month);
 
-    const totals = await getCategoryTotals(dbUser.tribeId, from, to);
+    const totals = await getCategoryTotals(dbUser.tribeId!, from, to);
     const grandTotal = totals.reduce((s, t) => s + t.total, 0);
     const limit = getMonthLimit();
 
-    const tribeName = await getTribeName(dbUser.tribeId);
+    const tribeName = await getTribeName(dbUser.tribeId!);
     const text = formatMonthReport(totals, grandTotal, limit, year, month, tribeName);
 
     // Navigation buttons
@@ -111,11 +114,11 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     const year = parseInt(yearMatch[1], 10);
     const monthlyData: Array<{ month: number; total: number }> = [];
     for (let m = 1; m <= 12; m++) {
-      const total = await getMonthTotal(dbUser.tribeId, year, m);
+      const total = await getMonthTotal(dbUser.tribeId!, year, m);
       monthlyData.push({ month: m, total });
     }
 
-    const tribeName = await getTribeName(dbUser.tribeId);
+    const tribeName = await getTribeName(dbUser.tribeId!);
     const text = formatYearReport(monthlyData, year, tribeName);
 
     await ctx.editMessageText(text, {
@@ -140,7 +143,7 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     const month1 = month2 === 1 ? 12 : month2 - 1;
     const year1 = month2 === 1 ? year2 - 1 : year2;
 
-    const comparisons = await getMonthComparison(dbUser.tribeId, year1, month1, year2, month2);
+    const comparisons = await getMonthComparison(dbUser.tribeId!, year1, month1, year2, month2);
     const text = formatComparisonReport(comparisons, year1, month1, year2, month2);
 
     await ctx.editMessageText(text, {
@@ -160,11 +163,11 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     const month = parseInt(statsMatch[2], 10);
     const { from, to } = getMonthRange(year, month);
 
-    const userTotals = await getUserTotals(dbUser.tribeId, from, to);
-    const categoryTotals = await getCategoryTotals(dbUser.tribeId, from, to);
+    const userTotals = await getUserTotals(dbUser.tribeId!, from, to);
+    const categoryTotals = await getCategoryTotals(dbUser.tribeId!, from, to);
     const sorted = [...categoryTotals].sort((a, b) => b.total - a.total);
 
-    const tribeName = await getTribeName(dbUser.tribeId);
+    const tribeName = await getTribeName(dbUser.tribeId!);
     const text = formatUserStats(userTotals, sorted, tribeName, year, month);
 
     await ctx.editMessageText(text, {
@@ -172,6 +175,50 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
       ...Markup.inlineKeyboard([
         [Markup.button.callback("◀️ Назад к отчёту", `report:${year}:${month}`)],
       ]),
+    });
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  // drilldown:<categoryId>:<year>:<month>:<offset>
+  const drillMatch = data.match(/^drilldown:(\d+):(\d+):(\d+):(\d+)$/);
+  if (drillMatch) {
+    const categoryId = parseInt(drillMatch[1], 10);
+    const year = parseInt(drillMatch[2], 10);
+    const month = parseInt(drillMatch[3], 10);
+    const offset = parseInt(drillMatch[4], 10);
+    const { from, to } = getMonthRange(year, month);
+    const PAGE_SIZE = 10;
+
+    const total = await countExpensesByCategory(dbUser.tribeId!, categoryId, from, to);
+    const expenses = await getExpensesByCategory(dbUser.tribeId!, categoryId, from, to, PAGE_SIZE, offset);
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+
+    // Get category info from totals
+    const cats = await getCategoryTotals(dbUser.tribeId!, from, to);
+    const cat = cats.find((c) => c.categoryId === categoryId);
+    const catName = cat?.categoryName ?? "Категория";
+    const catEmoji = cat?.categoryEmoji ?? "📦";
+
+    const text = formatExpenseDetailList(expenses, catName, catEmoji, total, currentPage, totalPages);
+
+    const navButtons: Array<ReturnType<typeof Markup.button.callback>> = [];
+    if (offset > 0) {
+      navButtons.push(Markup.button.callback("⬅️ Назад", `drilldown:${categoryId}:${year}:${month}:${offset - PAGE_SIZE}`));
+    }
+    if (offset + PAGE_SIZE < total) {
+      navButtons.push(Markup.button.callback("Вперёд ➡️", `drilldown:${categoryId}:${year}:${month}:${offset + PAGE_SIZE}`));
+    }
+
+    const buttons = [
+      ...navButtons.length > 0 ? [navButtons] : [],
+      [Markup.button.callback("◀️ К отчёту", `report:${year}:${month}`)],
+    ];
+
+    await ctx.editMessageText(text, {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard(buttons),
     });
     await ctx.answerCbQuery();
     return;
@@ -207,7 +254,7 @@ export async function handleComparisonButton(ctx: Context): Promise<void> {
   const prevMonth = month === 1 ? 12 : month - 1;
   const prevYear = month === 1 ? year - 1 : year;
 
-  const comparisons = await getMonthComparison(dbUser.tribeId, prevYear, prevMonth, year, month);
+  const comparisons = await getMonthComparison(dbUser.tribeId!, prevYear, prevMonth, year, month);
   const text = formatComparisonReport(comparisons, prevYear, prevMonth, year, month);
 
   await ctx.replyWithMarkdown(text);
@@ -233,11 +280,11 @@ export async function handleStatsButton(ctx: Context): Promise<void> {
   const { year, month } = getMskNow();
   const { from, to } = getMonthRange(year, month);
 
-  const userTotals = await getUserTotals(dbUser.tribeId, from, to);
-  const categoryTotals = await getCategoryTotals(dbUser.tribeId, from, to);
+  const userTotals = await getUserTotals(dbUser.tribeId!, from, to);
+  const categoryTotals = await getCategoryTotals(dbUser.tribeId!, from, to);
   const sorted = [...categoryTotals].sort((a, b) => b.total - a.total);
 
-  const tribeName = await getTribeName(dbUser.tribeId);
+  const tribeName = await getTribeName(dbUser.tribeId!);
   const text = formatUserStats(userTotals, sorted, tribeName, year, month);
 
   await ctx.replyWithMarkdown(text);

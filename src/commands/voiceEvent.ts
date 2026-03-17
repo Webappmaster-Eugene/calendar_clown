@@ -8,7 +8,7 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isNotesMode } from "../middleware/expenseMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isNotesMode, isGandalfMode } from "../middleware/expenseMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
 import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
@@ -16,6 +16,7 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
 import { handleNotesVoice } from "./notesMode.js";
+import { handleGandalfVoice } from "./gandalfMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
@@ -79,6 +80,12 @@ export async function handleVoice(ctx: Context) {
     // Notes mode — save transcribed voice as a note
     if (telegramId != null && await isNotesMode(telegramId)) {
       await handleNotesVoice(ctx, transcript, statusMsg.message_id);
+      return;
+    }
+
+    // Gandalf mode — extract structured entry from voice
+    if (telegramId != null && await isGandalfMode(telegramId)) {
+      await handleGandalfVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
@@ -204,6 +211,9 @@ async function handleVoiceInCalendarMode(
     }
   }
 
+  const safeTranscript = escapeMarkdown(transcript.length > 500 ? transcript.slice(0, 500) + "…" : transcript);
+  const transcriptLine = `🎤 Расшифровка: "${safeTranscript}"\n\n`;
+
   const intent = await extractVoiceIntent(transcript);
 
   if (intent.type === "cancel_event") {
@@ -230,7 +240,7 @@ async function handleVoiceInCalendarMode(
         ctx.chat!.id,
         statusMsgId,
         undefined,
-        `Встречи не найдены${intent.query ? ` по запросу «${intent.query}»` : ""} на ${rangeHint}.`
+        transcriptLine + `Встречи не найдены${intent.query ? ` по запросу «${intent.query}»` : ""} на ${rangeHint}.`
       );
       return;
     }
@@ -251,7 +261,7 @@ async function handleVoiceInCalendarMode(
           ctx.chat!.id,
           statusMsgId,
           undefined,
-          `🔄 *Это повторяющееся событие:*\n*${safeSummary}*\n${timeStr}\n\nЧто удалить?`,
+          transcriptLine + `🔄 *Это повторяющееся событие:*\n*${safeSummary}*\n${timeStr}\n\nЧто удалить?`,
           { parse_mode: "Markdown" }
         );
         await ctx.reply("Выберите:", {
@@ -284,7 +294,7 @@ async function handleVoiceInCalendarMode(
         ctx.chat!.id,
         statusMsgId,
         undefined,
-        `Отменено: *${safeSummary}*\n${timeStr}`,
+        transcriptLine + `Отменено: *${safeSummary}*\n${timeStr}`,
         { parse_mode: "Markdown" }
       );
       return;
@@ -300,7 +310,7 @@ async function handleVoiceInCalendarMode(
       ctx.chat!.id,
       statusMsgId,
       undefined,
-      `Найдено несколько встреч. Уточните, какую отменить:\n\n${listText}\n\nНазовите точнее: дату, время или название.`
+      transcriptLine + `Найдено несколько встреч. Уточните, какую отменить:\n\n${listText}\n\nНазовите точнее: дату, время или название.`
     );
     return;
   }
@@ -314,7 +324,7 @@ async function handleVoiceInCalendarMode(
     if (events.length === 0) {
       await ctx.telegram.editMessageText(
         ctx.chat!.id, statusMsgId, undefined,
-        "На сегодня встреч нет."
+        transcriptLine + "На сегодня встреч нет."
       );
       return;
     }
@@ -326,7 +336,7 @@ async function handleVoiceInCalendarMode(
     });
     await ctx.telegram.editMessageText(
       ctx.chat!.id, statusMsgId, undefined,
-      "📅 *Сегодня:*\n" + lines.join("\n"),
+      transcriptLine + "📅 *Сегодня:*\n" + lines.join("\n"),
       { parse_mode: "Markdown" }
     );
     return;
@@ -341,7 +351,7 @@ async function handleVoiceInCalendarMode(
     if (events.length === 0) {
       await ctx.telegram.editMessageText(
         ctx.chat!.id, statusMsgId, undefined,
-        "На эту неделю встреч нет."
+        transcriptLine + "На эту неделю встреч нет."
       );
       return;
     }
@@ -362,7 +372,7 @@ async function handleVoiceInCalendarMode(
     }
     await ctx.telegram.editMessageText(
       ctx.chat!.id, statusMsgId, undefined,
-      "📅 *Неделя:*" + lines.join("\n"),
+      transcriptLine + "📅 *Неделя:*" + lines.join("\n"),
       { parse_mode: "Markdown" }
     );
     return;
@@ -371,28 +381,66 @@ async function handleVoiceInCalendarMode(
   if (intent.type === "unknown") {
     const fallback = await extractCalendarEvent(transcript);
     if (fallback) {
+      const createdLines = await createAndSaveEvents(ctx, [fallback], userId, dbUser);
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMsgId,
+        undefined,
+        transcriptLine + createdLines,
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+    await ctx.telegram.editMessageText(
+      ctx.chat!.id,
+      statusMsgId,
+      undefined,
+      transcriptLine + "Не удалось разобрать запись. Опишите встречу подробнее: с кем, о чём и когда (день и время). Например: «Запись к Роману на ремонт во вторник в 10 утра» или «Встреча завтра в 15:00»."
+    );
+    return;
+  }
+
+  const eventsData = intent.events;
+  const createdLines = await createAndSaveEvents(ctx, eventsData, userId, dbUser);
+  await ctx.telegram.editMessageText(
+    ctx.chat!.id,
+    statusMsgId,
+    undefined,
+    transcriptLine + createdLines,
+    { parse_mode: "Markdown" }
+  );
+}
+
+/** Create events in Google Calendar and save to DB. Returns formatted text. */
+async function createAndSaveEvents(
+  ctx: Context,
+  eventsData: Array<{ title: string; start: Date; end: Date; recurrence?: string[] }>,
+  userId: string,
+  dbUser: DbUser | null
+): Promise<string> {
+  const timeZone = TIMEZONE_MSK;
+  const lines: string[] = [];
+  let failCount = 0;
+
+  for (const evData of eventsData) {
+    try {
       const event = await createEvent(
-        fallback.title,
-        fallback.start,
-        fallback.end,
+        evData.title,
+        evData.start,
+        evData.end,
         userId,
         undefined,
-        fallback.recurrence
+        evData.recurrence
       );
       const start = new Date(event.start);
       const end = new Date(event.end);
-      const timeZone = TIMEZONE_MSK;
-      const timeStr = start.toLocaleString("ru-RU", {
-        dateStyle: "short",
-        timeStyle: "short",
-        timeZone,
-      });
+      const timeStr = start.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone });
       const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
-      const recurringHint = fallback.recurrence?.length ? " (еженедельно)" : "";
+      const recurringHint = evData.recurrence?.length ? " (еженедельно)" : "";
       const safeSummary = escapeMarkdown(event.summary);
-      const text =
-        `Создано: *${safeSummary}*${recurringHint}\n${timeStr} – ${endStr}` +
-        (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
+      let line = `Создано: *${safeSummary}*${recurringHint}\n${timeStr} – ${endStr}`;
+      if (event.htmlLink) line += `\n[Открыть в календаре](${event.htmlLink})`;
+      lines.push(line);
 
       if (dbUser) {
         try {
@@ -403,7 +451,7 @@ async function handleVoiceInCalendarMode(
             summary: event.summary,
             startTime: start,
             endTime: end,
-            recurrence: fallback.recurrence ?? null,
+            recurrence: evData.recurrence ?? null,
             inputMethod: "voice",
             status: "created",
             htmlLink: event.htmlLink ?? null,
@@ -412,72 +460,14 @@ async function handleVoiceInCalendarMode(
           log.error("Failed to save calendar event to DB:", dbErr);
         }
       }
-
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id,
-        statusMsgId,
-        undefined,
-        text,
-        { parse_mode: "Markdown" }
-      );
-      return;
-    }
-    await ctx.telegram.editMessageText(
-      ctx.chat!.id,
-      statusMsgId,
-      undefined,
-      "Не удалось разобрать запись. Опишите встречу подробнее: с кем, о чём и когда (день и время). Например: «Запись к Роману на ремонт во вторник в 10 утра» или «Встреча завтра в 15:00»."
-    );
-    return;
-  }
-
-  const event = await createEvent(
-    intent.title,
-    intent.start,
-    intent.end,
-    userId,
-    undefined,
-    intent.recurrence
-  );
-  const start = new Date(event.start);
-  const end = new Date(event.end);
-  const timeZone = "Europe/Moscow";
-  const timeStr = start.toLocaleString("ru-RU", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone,
-  });
-  const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
-  const recurringHint = intent.recurrence?.length ? " (еженедельно)" : "";
-  const safeSummary = escapeMarkdown(event.summary);
-  const text =
-    `Создано: *${safeSummary}*${recurringHint}\n${timeStr} – ${endStr}` +
-    (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
-
-  if (dbUser) {
-    try {
-      await saveCalendarEvent({
-        userId: dbUser.id,
-        tribeId: dbUser.tribeId,
-        googleEventId: event.id ?? null,
-        summary: event.summary,
-        startTime: start,
-        endTime: end,
-        recurrence: intent.recurrence ?? null,
-        inputMethod: "voice",
-        status: "created",
-        htmlLink: event.htmlLink ?? null,
-      });
-    } catch (dbErr) {
-      log.error("Failed to save calendar event to DB:", dbErr);
+    } catch (err) {
+      failCount++;
+      log.error(`Failed to create event "${evData.title}":`, err);
     }
   }
 
-  await ctx.telegram.editMessageText(
-    ctx.chat!.id,
-    statusMsgId,
-    undefined,
-    text,
-    { parse_mode: "Markdown" }
-  );
+  if (lines.length === 0) return "Не удалось создать событие.";
+  const result = lines.join("\n\n");
+  if (failCount > 0) return result + `\n\n⚠️ Не удалось создать: ${failCount}`;
+  return result;
 }

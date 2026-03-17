@@ -5,6 +5,7 @@ import { getUserByTelegramId, ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { setUserMode } from "../middleware/expenseMode.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
+import type { NotableDate } from "../notable-dates/repository.js";
 import {
   addNotableDate,
   removeNotableDate,
@@ -13,6 +14,8 @@ import {
   getUpcomingDates,
   toggleNotableDatePriority,
   getNotableDateById,
+  countNotableDates,
+  listNotableDatesPaginated,
 } from "../notable-dates/repository.js";
 import { parseNotableDateInput, formatNotableDateReminder } from "../notable-dates/service.js";
 import { createLogger } from "../utils/logger.js";
@@ -23,6 +26,8 @@ const MONTH_NAMES = [
   "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
+
+const NOTABLE_DATES_PAGE_SIZE = 10;
 
 function getNotableDatesKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
@@ -43,13 +48,18 @@ export async function handleNotableDatesCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  await ensureUser(
+  const dbUser = await ensureUser(
     telegramId,
     ctx.from?.username ?? null,
     ctx.from?.first_name ?? "",
     ctx.from?.last_name ?? null,
     isBootstrapAdmin(telegramId)
   );
+
+  if (!dbUser.tribeId) {
+    await ctx.reply("🎉 Знаменательные даты доступны только для участников трайба. Обратитесь к администратору.");
+    return;
+  }
 
   await setUserMode(telegramId, "notable_dates");
   await setModeMenuCommands(ctx, "notable_dates");
@@ -86,7 +96,7 @@ export async function handleUpcomingDatesButton(ctx: Context): Promise<void> {
   }
 
   try {
-    const dates = await getUpcomingDates(dbUser.tribeId, 14);
+    const dates = await getUpcomingDates(dbUser.tribeId!, 14);
     if (dates.length === 0) {
       await ctx.reply("В ближайшие 2 недели знаменательных дат нет.");
       return;
@@ -124,7 +134,7 @@ export async function handleWeekDatesButton(ctx: Context): Promise<void> {
   }
 
   try {
-    const dates = await getUpcomingDates(dbUser.tribeId, 7);
+    const dates = await getUpcomingDates(dbUser.tribeId!, 7);
     if (dates.length === 0) {
       await ctx.reply("На этой неделе знаменательных дат нет.");
       return;
@@ -164,7 +174,7 @@ export async function handleMonthDatesButton(ctx: Context): Promise<void> {
   try {
     const now = new Date();
     const currentMonth = now.getMonth() + 1;
-    const dates = await listNotableDates(dbUser.tribeId, currentMonth);
+    const dates = await listNotableDates(dbUser.tribeId!, currentMonth);
     if (dates.length === 0) {
       await ctx.reply(`В ${MONTH_NAMES[currentMonth].toLowerCase()} знаменательных дат нет.`);
       return;
@@ -185,7 +195,31 @@ export async function handleMonthDatesButton(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle "Все даты" button — show all dates grouped by month. */
+/** Format a flat list of notable dates for display. */
+function formatNotableDatesList(dates: NotableDate[]): string {
+  return dates.map((d) => {
+    const desc = d.description ? ` — ${d.description}` : "";
+    return `${d.emoji} ${d.dateDay}.${String(d.dateMonth).padStart(2, "0")} ${d.name}${desc}`;
+  }).join("\n");
+}
+
+/** Build inline keyboard buttons for a paginated notable dates list. */
+function buildNotableDatesNavButtons(
+  type: "all" | "delete" | "edit",
+  offset: number,
+  total: number
+): Array<ReturnType<typeof Markup.button.callback>> {
+  const navButtons: Array<ReturnType<typeof Markup.button.callback>> = [];
+  if (offset > 0) {
+    navButtons.push(Markup.button.callback("⬅️ Назад", `notable_page:${type}:${offset - NOTABLE_DATES_PAGE_SIZE}`));
+  }
+  if (offset + NOTABLE_DATES_PAGE_SIZE < total) {
+    navButtons.push(Markup.button.callback("Вперёд ➡️", `notable_page:${type}:${offset + NOTABLE_DATES_PAGE_SIZE}`));
+  }
+  return navButtons;
+}
+
+/** Handle "Все даты" button — show all dates with pagination. */
 export async function handleAllDatesButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -202,43 +236,24 @@ export async function handleAllDatesButton(ctx: Context): Promise<void> {
   }
 
   try {
-    const dates = await listNotableDates(dbUser.tribeId);
-    if (dates.length === 0) {
+    const total = await countNotableDates(dbUser.tribeId!);
+    if (total === 0) {
       await ctx.reply("Знаменательных дат пока нет. Нажмите ➕ Добавить.");
       return;
     }
 
-    // Group by month
-    const byMonth = new Map<number, typeof dates>();
-    for (const d of dates) {
-      const arr = byMonth.get(d.dateMonth) ?? [];
-      arr.push(d);
-      byMonth.set(d.dateMonth, arr);
-    }
+    const dates = await listNotableDatesPaginated(dbUser.tribeId!, NOTABLE_DATES_PAGE_SIZE, 0);
+    const totalPages = Math.ceil(total / NOTABLE_DATES_PAGE_SIZE);
 
-    const sections: string[] = [];
-    for (let m = 1; m <= 12; m++) {
-      const monthDates = byMonth.get(m);
-      if (!monthDates) continue;
-      const lines = monthDates.map((d) => {
-        const desc = d.description ? ` — ${d.description}` : "";
-        return `  ${d.emoji} ${d.dateDay}.${String(m).padStart(2, "0")} ${d.name}${desc}`;
-      });
-      sections.push(`*${MONTH_NAMES[m]}:*\n${lines.join("\n")}`);
-    }
+    const navButtons = buildNotableDatesNavButtons("all", 0, total);
+    const keyboard = navButtons.length > 0
+      ? Markup.inlineKeyboard([navButtons])
+      : undefined;
 
-    const text = `📋 *Все знаменательные даты (${dates.length}):*\n\n${sections.join("\n\n")}`;
-
-    // Split if too long
-    if (text.length > 4000) {
-      const half = Math.ceil(sections.length / 2);
-      const first = `📋 *Все даты (часть 1):*\n\n${sections.slice(0, half).join("\n\n")}`;
-      const second = `📋 *Все даты (часть 2):*\n\n${sections.slice(half).join("\n\n")}`;
-      await ctx.reply(first, { parse_mode: "Markdown" });
-      await ctx.reply(second, { parse_mode: "Markdown" });
-    } else {
-      await ctx.reply(text, { parse_mode: "Markdown" });
-    }
+    await ctx.reply(
+      `📋 *Все знаменательные даты (1/${totalPages}, всего: ${total}):*\n\n${formatNotableDatesList(dates)}`,
+      { parse_mode: "Markdown", ...keyboard }
+    );
   } catch (err) {
     log.error("Error listing all dates:", err);
     await ctx.reply("Ошибка при получении дат.");
@@ -287,23 +302,28 @@ export async function handleDeleteDateButton(ctx: Context): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
 
-  const dates = await listNotableDates(dbUser.tribeId);
-  const deletable = dates.filter((d) => d.eventType !== "holiday");
-
-  if (deletable.length === 0) {
+  const total = await countNotableDates(dbUser.tribeId!, true);
+  if (total === 0) {
     await ctx.reply("Нет дат для удаления.");
     return;
   }
 
-  // Show numbered list with inline buttons
-  const buttons = deletable.slice(0, 20).map((d) =>
+  const dates = await listNotableDatesPaginated(dbUser.tribeId!, NOTABLE_DATES_PAGE_SIZE, 0, true);
+  const totalPages = Math.ceil(total / NOTABLE_DATES_PAGE_SIZE);
+
+  const buttons = dates.map((d) =>
     [Markup.button.callback(
       `${d.emoji} ${d.name} (${d.dateDay}.${String(d.dateMonth).padStart(2, "0")})`,
       `notable_delete:${d.id}`
     )]
   );
 
-  await ctx.reply("Выберите дату для удаления:", {
+  const navButtons = buildNotableDatesNavButtons("delete", 0, total);
+  if (navButtons.length > 0) {
+    buttons.push(navButtons);
+  }
+
+  await ctx.reply(`Выберите дату для удаления (1/${totalPages}):`, {
     ...Markup.inlineKeyboard(buttons),
   });
 }
@@ -326,7 +346,7 @@ export async function handleNotableDateDeleteCallback(ctx: Context): Promise<voi
   if (!dbUser) return;
 
   try {
-    const deleted = await removeNotableDate(dateId, dbUser.tribeId);
+    const deleted = await removeNotableDate(dateId, dbUser.tribeId!);
     if (deleted) {
       await ctx.editMessageText("✅ Дата удалена.");
     } else {
@@ -353,8 +373,8 @@ export async function handleNotableDatePriorityCallback(ctx: Context): Promise<v
   if (!dbUser) { await ctx.answerCbQuery(); return; }
 
   try {
-    await toggleNotableDatePriority(dateId, dbUser.tribeId);
-    const date = await getNotableDateById(dateId, dbUser.tribeId);
+    await toggleNotableDatePriority(dateId, dbUser.tribeId!);
+    const date = await getNotableDateById(dateId, dbUser.tribeId!);
     if (date) {
       const status = date.isPriority
         ? "🔔 Расширенные напоминания включены (за 7, 3 и 1 день)"
@@ -418,7 +438,7 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
 
   try {
     const date = await addNotableDate({
-      tribeId: dbUser.tribeId,
+      tribeId: dbUser.tribeId!,
       addedByUserId: dbUser.id,
       name: parsed.name,
       dateMonth: parsed.dateMonth,
@@ -449,7 +469,7 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
 async function handleEditTextInput(
   ctx: Context,
   telegramId: number,
-  dbUser: { tribeId: number },
+  dbUser: { tribeId: number | null },
   pending: { action: "edit"; dateId: number; field: "name" | "date" | "desc" },
   text: string
 ): Promise<boolean> {
@@ -482,7 +502,7 @@ async function handleEditTextInput(
       fields.description = text || null;
     }
 
-    const updated = await updateNotableDate(pending.dateId, dbUser.tribeId, fields);
+    const updated = await updateNotableDate(pending.dateId, dbUser.tribeId!, fields);
     if (!updated) {
       await ctx.reply("❌ Дата не найдена.");
       return true;
@@ -510,22 +530,28 @@ export async function handleEditDateButton(ctx: Context): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
 
-  const dates = await listNotableDates(dbUser.tribeId);
-  const editable = dates.filter((d) => d.eventType !== "holiday");
-
-  if (editable.length === 0) {
+  const total = await countNotableDates(dbUser.tribeId!, true);
+  if (total === 0) {
     await ctx.reply("Нет дат для редактирования.");
     return;
   }
 
-  const buttons = editable.slice(0, 20).map((d) =>
+  const dates = await listNotableDatesPaginated(dbUser.tribeId!, NOTABLE_DATES_PAGE_SIZE, 0, true);
+  const totalPages = Math.ceil(total / NOTABLE_DATES_PAGE_SIZE);
+
+  const buttons = dates.map((d) =>
     [Markup.button.callback(
       `${d.emoji} ${d.name} (${d.dateDay}.${String(d.dateMonth).padStart(2, "0")})`,
       `notable_edit:${d.id}`
     )]
   );
 
-  await ctx.reply("Выберите дату для редактирования:", {
+  const navButtons = buildNotableDatesNavButtons("edit", 0, total);
+  if (navButtons.length > 0) {
+    buttons.push(navButtons);
+  }
+
+  await ctx.reply(`Выберите дату для редактирования (1/${totalPages}):`, {
     ...Markup.inlineKeyboard(buttons),
   });
 }
@@ -547,7 +573,7 @@ export async function handleNotableDateEditCallback(ctx: Context): Promise<void>
   if (!dbUser) return;
 
   try {
-    const date = await getNotableDateById(dateId, dbUser.tribeId);
+    const date = await getNotableDateById(dateId, dbUser.tribeId!);
     if (!date) {
       await ctx.editMessageText("Дата не найдена.");
       return;
@@ -571,6 +597,67 @@ export async function handleNotableDateEditCallback(ctx: Context): Promise<void>
   } catch (err) {
     log.error("Error fetching date for edit:", err);
     await ctx.editMessageText("❌ Ошибка.");
+  }
+}
+
+/** Handle notable dates pagination callback. */
+export async function handleNotableDatesPageCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^notable_page:(all|delete|edit):(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const type = match[1] as "all" | "delete" | "edit";
+  const offset = parseInt(match[2], 10);
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  try {
+    const excludeHolidays = type !== "all";
+    const total = await countNotableDates(dbUser.tribeId!, excludeHolidays);
+    const dates = await listNotableDatesPaginated(dbUser.tribeId!, NOTABLE_DATES_PAGE_SIZE, offset, excludeHolidays);
+    const totalPages = Math.ceil(total / NOTABLE_DATES_PAGE_SIZE);
+    const currentPage = Math.floor(offset / NOTABLE_DATES_PAGE_SIZE) + 1;
+
+    const navButtons = buildNotableDatesNavButtons(type, offset, total);
+
+    if (type === "all") {
+      const keyboard = navButtons.length > 0
+        ? Markup.inlineKeyboard([navButtons])
+        : undefined;
+
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        `📋 *Все знаменательные даты (${currentPage}/${totalPages}, всего: ${total}):*\n\n${formatNotableDatesList(dates)}`,
+        { parse_mode: "Markdown", ...keyboard }
+      );
+    } else {
+      const callbackPrefix = type === "delete" ? "notable_delete" : "notable_edit";
+      const label = type === "delete" ? "удаления" : "редактирования";
+
+      const buttons = dates.map((d) =>
+        [Markup.button.callback(
+          `${d.emoji} ${d.name} (${d.dateDay}.${String(d.dateMonth).padStart(2, "0")})`,
+          `${callbackPrefix}:${d.id}`
+        )]
+      );
+
+      if (navButtons.length > 0) {
+        buttons.push(navButtons);
+      }
+
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        `Выберите дату для ${label} (${currentPage}/${totalPages}):`,
+        { ...Markup.inlineKeyboard(buttons) }
+      );
+    }
+  } catch (err) {
+    log.error("Error in notable dates pagination:", err);
+    await ctx.answerCbQuery("Ошибка");
   }
 }
 
@@ -602,4 +689,157 @@ export async function handleNotableDateEditFieldCallback(ctx: Context): Promise<
     `Введите новое значение для поля: *${fieldLabels[field]}*`,
     { parse_mode: "Markdown" }
   );
+}
+
+// ─── CSV Import via Document Upload ─────────────────────────────────────
+
+/** Simple CSV line parser that handles quoted fields. */
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+/**
+ * Handle document upload in notable dates mode — import CSV file.
+ * CSV format: Subject,Start Date,Start Time,End Date,End Time,Description
+ * Subject: "🎂 День рождения: Имя Фамилия"
+ * Start Date: MM/DD/YYYY
+ */
+export async function handleNotableDatesDocument(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply("База данных недоступна.");
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser?.tribeId) {
+    await ctx.reply("Пользователь не найден или не в трайбе.");
+    return;
+  }
+
+  const doc = ctx.message && "document" in ctx.message ? ctx.message.document : null;
+  if (!doc) return;
+
+  // Only accept CSV/text files
+  const fileName = doc.file_name ?? "";
+  if (!fileName.endsWith(".csv") && doc.mime_type !== "text/csv" && doc.mime_type !== "text/plain") {
+    await ctx.reply("Пожалуйста, отправьте файл в формате CSV.");
+    return;
+  }
+
+  // Limit file size to 1 MB
+  if (doc.file_size && doc.file_size > 1024 * 1024) {
+    await ctx.reply("Файл слишком большой. Максимум 1 МБ.");
+    return;
+  }
+
+  try {
+    const fileLink = await ctx.telegram.getFileLink(doc.file_id);
+    const response = await fetch(fileLink.href);
+    if (!response.ok) {
+      await ctx.reply("Не удалось скачать файл.");
+      return;
+    }
+
+    const content = await response.text();
+    const lines = content.split("\n").filter((l) => l.trim());
+
+    if (lines.length < 2) {
+      await ctx.reply("Файл пуст или содержит только заголовок.");
+      return;
+    }
+
+    // Skip header
+    const dataLines = lines.slice(1);
+    let imported = 0;
+    let skipped = 0;
+
+    for (const line of dataLines) {
+      try {
+        const parts = parseCSVLine(line);
+        if (parts.length < 2) {
+          skipped++;
+          continue;
+        }
+
+        const [subject, startDate] = parts;
+        const description = parts.length >= 6 ? parts[5]?.trim() || null : null;
+
+        // Extract name and type
+        const birthdayMatch = subject.match(/День рождения:\s*(.+)/);
+        const anniversaryMatch = !birthdayMatch ? subject.match(/Годовщина\s+(.+)/i) : null;
+
+        let name: string;
+        let eventType: string;
+        let emoji: string;
+
+        if (birthdayMatch) {
+          name = birthdayMatch[1].trim();
+          eventType = "birthday";
+          emoji = "🎂";
+        } else if (anniversaryMatch) {
+          name = subject.replace(/^[^\p{L}]*/u, "").trim();
+          eventType = "anniversary";
+          emoji = "💍";
+        } else {
+          name = subject.replace(/^[^\p{L}]*/u, "").trim();
+          if (!name) {
+            skipped++;
+            continue;
+          }
+          eventType = "other";
+          emoji = "📌";
+        }
+
+        // Parse date MM/DD/YYYY
+        const dateMatch = startDate.match(/^(\d{1,2})\/(\d{1,2})\/\d{4}$/);
+        if (!dateMatch) {
+          skipped++;
+          continue;
+        }
+        const month = parseInt(dateMatch[1], 10);
+        const day = parseInt(dateMatch[2], 10);
+
+        await addNotableDate({
+          tribeId: dbUser.tribeId!,
+          addedByUserId: dbUser.id,
+          name,
+          dateMonth: month,
+          dateDay: day,
+          eventType,
+          description,
+          emoji,
+        });
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    await ctx.reply(
+      `📥 *Импорт завершён*\n\n✅ Импортировано: ${imported}\n⏭ Пропущено: ${skipped}`,
+      { parse_mode: "Markdown" }
+    );
+  } catch (err) {
+    log.error("Error importing CSV:", err);
+    await ctx.reply("Ошибка при импорте файла.");
+  }
 }

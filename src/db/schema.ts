@@ -40,7 +40,6 @@ export const users = pgTable(
     status: varchar("status", { length: 20 }).notNull().default("approved"),
     mode: varchar("mode", { length: 20 }).notNull().default("calendar"),
     tribeId: integer("tribe_id")
-      .notNull()
       .references(() => tribes.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -369,6 +368,8 @@ export const notes = pgTable(
     hasImage: boolean("has_image").default(false),
     imageFilePath: varchar("image_file_path", { length: 500 }),
     inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
+    visibility: varchar("visibility", { length: 10 }).notNull().default("private"),
+    tribeId: integer("tribe_id").references(() => tribes.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -377,5 +378,85 @@ export const notes = pgTable(
     index("idx_notes_topic").on(table.topicId),
     index("idx_notes_flags").on(table.isImportant, table.isUrgent),
     index("idx_notes_created").on(table.createdAt),
+    index("idx_notes_visibility").on(table.visibility),
+    index("idx_notes_tribe_visibility").on(table.tribeId, table.visibility),
+    check("notes_visibility_check", sql`${table.visibility} IN ('public', 'private')`),
+  ],
+);
+
+// ─── Gandalf Categories ─────────────────────────────────────────────────────
+
+export const gandalfCategories = pgTable(
+  "gandalf_categories",
+  {
+    id: serial("id").primaryKey(),
+    tribeId: integer("tribe_id")
+      .notNull()
+      .references(() => tribes.id),
+    name: varchar("name", { length: 100 }).notNull(),
+    emoji: varchar("emoji", { length: 10 }).default("📁"),
+    createdByUserId: integer("created_by_user_id").references(() => users.id),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("idx_gandalf_categories_tribe").on(table.tribeId),
+    unique("gandalf_categories_tribe_id_name_key").on(table.tribeId, table.name),
+  ],
+);
+
+// ─── Gandalf Entries ────────────────────────────────────────────────────────
+
+export const gandalfEntries = pgTable(
+  "gandalf_entries",
+  {
+    id: serial("id").primaryKey(),
+    tribeId: integer("tribe_id")
+      .notNull()
+      .references(() => tribes.id),
+    categoryId: integer("category_id")
+      .notNull()
+      .references(() => gandalfCategories.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 500 }).notNull(),
+    price: numeric("price", { precision: 12, scale: 2 }),
+    addedByUserId: integer("added_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    nextDate: timestamp("next_date", { withTimezone: true }),
+    additionalInfo: text("additional_info"),
+    inputMethod: varchar("input_method", { length: 10 }).default("text"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("idx_gandalf_entries_tribe_created").on(table.tribeId, table.createdAt),
+    index("idx_gandalf_entries_category").on(table.categoryId),
+    index("idx_gandalf_entries_user_created").on(table.addedByUserId, table.createdAt),
+    check("gandalf_entries_price_check", sql`${table.price} IS NULL OR ${table.price} >= 0`),
+    check(
+      "gandalf_entries_input_method_check",
+      sql`${table.inputMethod} IN ('text', 'voice')`,
+    ),
+  ],
+);
+
+// ─── Gandalf Entry Files ────────────────────────────────────────────────────
+
+export const gandalfEntryFiles = pgTable(
+  "gandalf_entry_files",
+  {
+    id: serial("id").primaryKey(),
+    entryId: integer("entry_id")
+      .notNull()
+      .references(() => gandalfEntries.id, { onDelete: "cascade" }),
+    telegramFileId: varchar("telegram_file_id", { length: 255 }).notNull(),
+    fileType: varchar("file_type", { length: 20 }).notNull(),
+    fileName: varchar("file_name", { length: 255 }),
+    mimeType: varchar("mime_type", { length: 100 }),
+    fileSizeBytes: integer("file_size_bytes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("idx_gandalf_entry_files_entry").on(table.entryId),
   ],
 );

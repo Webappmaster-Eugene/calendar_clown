@@ -54,7 +54,7 @@ export interface DbUser {
   firstName: string;
   lastName: string | null;
   role: "admin" | "user";
-  tribeId: number;
+  tribeId: number | null;
 }
 
 export interface ParsedExpense {

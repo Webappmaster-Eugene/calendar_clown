@@ -5,7 +5,7 @@ export type CalendarEventStatus = "created" | "deleted" | "failed";
 export interface CalendarEventRecord {
   id: number;
   userId: number;
-  tribeId: number;
+  tribeId: number | null;
   googleEventId: string | null;
   summary: string;
   description: string | null;
@@ -23,7 +23,7 @@ export interface CalendarEventRecord {
 
 export interface CreateCalendarEventParams {
   userId: number;
-  tribeId: number;
+  tribeId: number | null;
   googleEventId: string | null;
   summary: string;
   description?: string | null;

@@ -21,10 +21,13 @@ import {
   countNotesByFlag,
   deleteNote,
   toggleNoteFlag,
+  toggleNoteVisibility,
   getNoteById,
   updateNote,
+  getPublicNotesByTribe,
+  countPublicNotesByTribe,
 } from "../notes/repository.js";
-import type { Note } from "../notes/repository.js";
+import type { Note, NoteVisibility } from "../notes/repository.js";
 import { createLogger } from "../utils/logger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { logAction } from "../logging/actionLogger.js";
@@ -35,8 +38,9 @@ const NOTES_PAGE_SIZE = 5;
 
 /** State for note creation flow. */
 interface NoteCreationState {
-  step: "topic" | "content";
+  step: "topic" | "visibility" | "content";
   topicId: number | null;
+  visibility: NoteVisibility;
 }
 
 const creationStates = new Map<number, NoteCreationState>();
@@ -44,13 +48,17 @@ const creationStates = new Map<number, NoteCreationState>();
 /** State for topic creation. */
 const topicCreationWaiting = new Set<number>();
 
-function getNotesKeyboard(isAdmin: boolean) {
-  return Markup.keyboard([
+function getNotesKeyboard(isAdmin: boolean, hasTribe: boolean = false) {
+  const rows = [
     ["📝 Новая заметка", "📂 Мои рубрики"],
     ["⭐ Важное", "🔥 Срочное"],
     ["📋 Все заметки"],
-    ...getModeButtons(isAdmin),
-  ]).resize();
+  ];
+  if (hasTribe) {
+    rows.push(["🌐 Публичные заметки"]);
+  }
+  rows.push(...getModeButtons(isAdmin));
+  return Markup.keyboard(rows).resize();
 }
 
 /** Handle /notes command — enter notes mode. */
@@ -63,7 +71,7 @@ export async function handleNotesCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  await ensureUser(
+  const dbUser = await ensureUser(
     telegramId,
     ctx.from?.username ?? null,
     ctx.from?.first_name ?? "",
@@ -75,12 +83,14 @@ export async function handleNotesCommand(ctx: Context): Promise<void> {
   await setModeMenuCommands(ctx, "notes");
 
   const isAdmin = isBootstrapAdmin(telegramId);
+  const hasTribe = dbUser.tribeId != null;
   await ctx.reply(
     "📝 *Режим заметок активирован*\n\n" +
     "Создавайте заметки текстом или голосом.\n" +
-    "Организуйте по рубрикам, отмечайте важное и срочное.\n\n" +
-    "Используйте кнопки ниже для навигации.",
-    { parse_mode: "Markdown", ...getNotesKeyboard(isAdmin) }
+    "Организуйте по рубрикам, отмечайте важное и срочное.\n" +
+    (hasTribe ? "Делитесь публичными заметками с трайбом.\n" : "") +
+    "\nИспользуйте кнопки ниже для навигации.",
+    { parse_mode: "Markdown", ...getNotesKeyboard(isAdmin, hasTribe) }
   );
 }
 
@@ -122,13 +132,130 @@ export async function handleNoteTopicCallback(ctx: Context): Promise<void> {
   }
 
   const topicId = parseInt(match[1], 10);
+
+  // Check if user has tribe — if yes, ask visibility
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (dbUser?.tribeId) {
+    creationStates.set(telegramId, {
+      step: "visibility",
+      topicId: topicId === 0 ? null : topicId,
+      visibility: "private",
+    });
+    await ctx.answerCbQuery();
+    await ctx.editMessageText("Выберите видимость заметки:", {
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("🔒 Приватная (только для меня)", "note_vis:private")],
+        [Markup.button.callback("🌐 Публичная (для трайба)", "note_vis:public")],
+      ]),
+    });
+    return;
+  }
+
   creationStates.set(telegramId, {
     step: "content",
     topicId: topicId === 0 ? null : topicId,
+    visibility: "private",
   });
 
   await ctx.answerCbQuery();
   await ctx.editMessageText("Отправьте текст заметки (или голосовое сообщение):");
+}
+
+/** Handle visibility selection for new note. */
+export async function handleNoteVisibilityCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = data.match(/^note_vis:(private|public)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const visibility = match[1] as NoteVisibility;
+  const state = creationStates.get(telegramId);
+  if (!state || state.step !== "visibility") {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  creationStates.set(telegramId, {
+    step: "content",
+    topicId: state.topicId,
+    visibility,
+  });
+
+  await ctx.answerCbQuery();
+  const visLabel = visibility === "public" ? "🌐 Публичная" : "🔒 Приватная";
+  await ctx.editMessageText(`${visLabel}\n\nОтправьте текст заметки (или голосовое сообщение):`);
+}
+
+/** Handle "🌐 Публичные заметки" button. */
+export async function handlePublicNotesButton(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser?.tribeId) {
+    await ctx.reply("Публичные заметки доступны только участникам трайба.");
+    return;
+  }
+
+  const total = await countPublicNotesByTribe(dbUser.tribeId);
+  if (total === 0) {
+    await ctx.reply("В трайбе пока нет публичных заметок.");
+    return;
+  }
+
+  const notes = await getPublicNotesByTribe(dbUser.tribeId, NOTES_PAGE_SIZE, 0);
+  const totalPages = Math.ceil(total / NOTES_PAGE_SIZE);
+
+  const buttons = buildNoteButtons(notes);
+  if (total > NOTES_PAGE_SIZE) {
+    const navButtons = [Markup.button.callback("Вперёд ➡️", `pub_notes_page:${NOTES_PAGE_SIZE}`)];
+    buttons.reply_markup.inline_keyboard.push(navButtons);
+  }
+
+  await ctx.reply(`🌐 *Публичные заметки трайба (1/${totalPages}, всего: ${total}):*\n\n` + formatNotesList(notes, true), {
+    parse_mode: "Markdown",
+    ...buttons,
+  });
+}
+
+/** Handle public notes pagination. */
+export async function handlePublicNotesPageCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^pub_notes_page:(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const offset = parseInt(match[1], 10);
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser?.tribeId) { await ctx.answerCbQuery(); return; }
+
+  const total = await countPublicNotesByTribe(dbUser.tribeId);
+  const notes = await getPublicNotesByTribe(dbUser.tribeId, NOTES_PAGE_SIZE, offset);
+  const totalPages = Math.ceil(total / NOTES_PAGE_SIZE);
+  const currentPage = Math.floor(offset / NOTES_PAGE_SIZE) + 1;
+
+  const buttons = buildNoteButtons(notes);
+  const navButtons: Array<ReturnType<typeof Markup.button.callback>> = [];
+  if (offset > 0) {
+    navButtons.push(Markup.button.callback("⬅️ Назад", `pub_notes_page:${offset - NOTES_PAGE_SIZE}`));
+  }
+  if (offset + NOTES_PAGE_SIZE < total) {
+    navButtons.push(Markup.button.callback("Вперёд ➡️", `pub_notes_page:${offset + NOTES_PAGE_SIZE}`));
+  }
+  if (navButtons.length > 0) {
+    buttons.reply_markup.inline_keyboard.push(navButtons);
+  }
+
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(
+    `🌐 *Публичные заметки (${currentPage}/${totalPages}, всего: ${total}):*\n\n` + formatNotesList(notes, true),
+    { parse_mode: "Markdown", ...buttons }
+  );
 }
 
 /** Handle new topic creation request. */
@@ -380,6 +507,26 @@ export async function handleNoteActionCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  // Toggle visibility
+  const visMatch = data.match(/^note_vis_toggle:(\d+)$/);
+  if (visMatch) {
+    const noteId = parseInt(visMatch[1], 10);
+    const newVis = await toggleNoteVisibility(noteId, dbUser.id);
+    if (newVis) {
+      await ctx.answerCbQuery(newVis === "public" ? "🌐 Публичная" : "🔒 Приватная");
+      const note = await getNoteById(noteId, dbUser.id);
+      if (note) {
+        await ctx.editMessageText(formatSingleNote(note), {
+          parse_mode: "Markdown",
+          ...buildSingleNoteButtons(note),
+        });
+      }
+    } else {
+      await ctx.answerCbQuery("Ошибка");
+    }
+    return;
+  }
+
   // View note detail
   const viewMatch = data.match(/^note_view:(\d+)$/);
   if (viewMatch) {
@@ -491,7 +638,7 @@ export async function handleNotesText(ctx: Context): Promise<boolean> {
       logAction(dbUser.id, telegramId, "note_topic_create", { topicId: topic.id, name });
 
       // After creating topic, start note creation in this topic
-      creationStates.set(telegramId, { step: "content", topicId: topic.id });
+      creationStates.set(telegramId, { step: "content", topicId: topic.id, visibility: "private" });
       await ctx.reply(
         `${topic.emoji} Рубрика «${topic.name}» создана!\n\nТеперь отправьте текст заметки:`
       );
@@ -512,8 +659,10 @@ export async function handleNotesText(ctx: Context): Promise<boolean> {
         topicId: state.topicId,
         content: text,
         inputMethod: "text",
+        visibility: state.visibility,
+        tribeId: state.visibility === "public" ? dbUser.tribeId : null,
       });
-      logAction(dbUser.id, telegramId, "note_create", { noteId: note.id, inputMethod: "text" });
+      logAction(dbUser.id, telegramId, "note_create", { noteId: note.id, inputMethod: "text", visibility: state.visibility });
 
       const topicLabel = note.topicName ? `${note.topicEmoji ?? "📁"} ${note.topicName}` : "Без рубрики";
       await ctx.reply(
@@ -588,18 +737,20 @@ export async function handleNotesVoice(
 
 // ─── Formatting helpers ─────────────────────────────────────────────────
 
-function formatNotesList(notes: Note[]): string {
+function formatNotesList(notes: Note[], showAuthor: boolean = false): string {
   return notes.map((n, i) => {
     const flags = [
       n.isImportant ? "⭐" : "",
       n.isUrgent ? "🔥" : "",
+      n.visibility === "public" ? "🌐" : "",
     ].filter(Boolean).join(" ");
     const topic = n.topicName ? `${n.topicEmoji ?? "📁"} ${n.topicName}` : "";
+    const author = showAuthor && n.authorName ? ` 👤 ${n.authorName}` : "";
     const date = n.createdAt.toLocaleDateString("ru-RU", {
       day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
     });
     const preview = n.content.length > 80 ? n.content.slice(0, 80) + "..." : n.content;
-    return `*${i + 1}.* ${flags} ${topic}\n${preview}\n_${date}_`;
+    return `*${i + 1}.* ${flags} ${topic}${author}\n${preview}\n_${date}_`;
   }).join("\n\n");
 }
 
@@ -609,12 +760,13 @@ function formatSingleNote(note: Note): string {
     note.isUrgent ? "🔥 Срочное" : "",
   ].filter(Boolean).join(" | ");
   const topic = note.topicName ? `📂 ${note.topicEmoji ?? "📁"} ${note.topicName}` : "📂 Без рубрики";
+  const visLabel = note.visibility === "public" ? "🌐 Публичная" : "🔒 Приватная";
   const date = note.createdAt.toLocaleDateString("ru-RU", {
     day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
   const method = note.inputMethod === "voice" ? "🎤 Голосом" : "⌨️ Текстом";
 
-  const parts = [`📝 *Заметка #${note.id}*`, topic];
+  const parts = [`📝 *Заметка #${note.id}*`, topic, visLabel];
   if (flags) parts.push(flags);
   parts.push(`📅 ${date} | ${method}`);
   parts.push("");
@@ -636,6 +788,12 @@ function buildSingleNoteButtons(note: Note) {
     [
       Markup.button.callback(note.isImportant ? "⭐ Убрать" : "⭐ Важное", `note_imp:${note.id}`),
       Markup.button.callback(note.isUrgent ? "🔥 Убрать" : "🔥 Срочное", `note_urg:${note.id}`),
+    ],
+    [
+      Markup.button.callback(
+        note.visibility === "public" ? "🔒 Сделать приватной" : "🌐 Сделать публичной",
+        `note_vis_toggle:${note.id}`
+      ),
     ],
     [
       Markup.button.callback("📂 Переместить", `note_move:${note.id}`),

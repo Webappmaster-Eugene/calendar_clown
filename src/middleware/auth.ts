@@ -12,6 +12,22 @@ export interface UserMenuContext {
   tribeName: string | null;
 }
 
+/** Modes available to any approved user (even without a tribe). */
+export const INDIVIDUAL_MODES = new Set(["calendar", "transcribe", "notes"]);
+
+/** Modes that require tribe membership. */
+export const TRIBE_MODES = new Set(["expenses", "digest", "notable_dates", "gandalf"]);
+
+/** Modes that require admin role. */
+export const ADMIN_MODES = new Set(["broadcast", "admin"]);
+
+/** Check if a user can access a given mode based on their context. */
+export function canAccessMode(mode: string, context: UserMenuContext): boolean {
+  if (ADMIN_MODES.has(mode)) return context.role === "admin";
+  if (TRIBE_MODES.has(mode)) return context.hasTribe;
+  return true; // INDIVIDUAL_MODES or unknown modes — allow
+}
+
 /**
  * Check if a telegram user is the bootstrap admin (from env).
  * This is the ONLY env-based check — used to seed the first admin.

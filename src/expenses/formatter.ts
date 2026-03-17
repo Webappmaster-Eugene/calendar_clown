@@ -197,7 +197,25 @@ export function formatYearReport(
   ].join("\n");
 }
 
-function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str;
-  return str.substring(0, maxLen - 1) + "…";
+export function formatExpenseDetailList(
+  expenses: Array<{ id: number; subcategory: string | null; amount: number; firstName: string; createdAt: Date }>,
+  categoryName: string,
+  categoryEmoji: string,
+  total: number,
+  currentPage: number,
+  totalPages: number
+): string {
+  const header = `${categoryEmoji} *${categoryName}* (${currentPage}/${totalPages}, всего: ${total})`;
+  const separator = "━━━━━━━━━━━━━━━━━━━━━━━";
+
+  const lines = expenses.map((e) => {
+    const date = e.createdAt.toLocaleDateString("ru-RU", {
+      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+      timeZone: TIMEZONE,
+    });
+    const sub = e.subcategory ? ` — ${e.subcategory}` : "";
+    return `${formatMoney(e.amount)}${sub}\n  👤 ${e.firstName} | ${date}`;
+  });
+
+  return [header, separator, ...lines].join("\n");
 }

@@ -14,7 +14,7 @@ import { handleUndoCallback } from "./commands/expenseUndo.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput, handleOnboardRequest } from "./commands/admin.js";
 import { handleStatsCommand } from "./commands/adminStats.js";
 import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback } from "./commands/transcribeMode.js";
-import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText } from "./commands/digestMode.js";
+import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText, handleFolderImportButton, handleDigestFolderCallback, handleDigestFolderToCallback } from "./commands/digestMode.js";
 import { handleBroadcastCommand, handleBroadcastText } from "./commands/broadcastMode.js";
 import {
   handleNotableDatesCommand,
@@ -30,6 +30,8 @@ import {
   handleNotableDateEditFieldCallback,
   handleNotableDatePriorityCallback,
   handleNotableDatesText,
+  handleNotableDatesPageCallback,
+  handleNotableDatesDocument,
 } from "./commands/notableDatesMode.js";
 import {
   handleNotesCommand,
@@ -40,6 +42,9 @@ import {
   handleAllNotesButton,
   handleNoteTopicCallback,
   handleNewTopicCallback,
+  handleNoteVisibilityCallback,
+  handlePublicNotesButton,
+  handlePublicNotesPageCallback,
   handleViewTopicCallback,
   handleDeleteTopicCallback,
   handleNotesPageCallback,
@@ -48,8 +53,26 @@ import {
   handleNoteMoveToCallback,
   handleNotesText,
 } from "./commands/notesMode.js";
-import { accessControlMiddleware } from "./middleware/auth.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isNotesMode, isDigestMode } from "./middleware/expenseMode.js";
+import {
+  handleGandalfCommand,
+  handleGandalfCategoriesButton,
+  handleGandalfNewEntryButton,
+  handleGandalfAllEntriesButton,
+  handleGandalfStatsButton,
+  handleGandalfNewCatCallback,
+  handleGandalfViewCatCallback,
+  handleGandalfDelCatCallback,
+  handleGandalfEntryCatCallback,
+  handleGandalfPageCallback,
+  handleGandalfEntryActionCallback,
+  handleGandalfFilesCallback,
+  handleGandalfOptionalCallback,
+  handleGandalfStatsCallback,
+  handleGandalfText,
+  handleGandalfFileAttachment,
+} from "./commands/gandalfMode.js";
+import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isNotesMode, isDigestMode, isGandalfMode } from "./middleware/expenseMode.js";
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
@@ -78,6 +101,7 @@ export function createBot(token: string): Telegraf {
   bot.command("broadcast", handleBroadcastCommand);
   bot.command("dates", handleNotableDatesCommand);
   bot.command("notes", handleNotesCommand);
+  bot.command("gandalf", handleGandalfCommand);
 
   // Admin commands
   bot.command("admin", handleAdminCommand);
@@ -90,10 +114,12 @@ export function createBot(token: string): Telegraf {
   bot.action(/^report_year:/, handleReportCallback);
   bot.action(/^compare:/, handleReportCallback);
   bot.action(/^stats:/, handleReportCallback);
+  bot.action(/^drilldown:/, handleReportCallback);
   bot.action(/^excel:/, handleExcelCallback);
   bot.action(/^admin:/, handleAdminCallback);
   bot.action(/^undo:/, handleUndoCallback);
   bot.action(/^cancel_recurring:/, handleCancelRecurringCallback);
+  bot.action(/^notable_page:/, handleNotableDatesPageCallback);
   bot.action(/^notable_delete:/, handleNotableDateDeleteCallback);
   bot.action(/^notable_edit_field:/, handleNotableDateEditFieldCallback);
   bot.action(/^notable_edit:/, handleNotableDateEditCallback);
@@ -101,9 +127,16 @@ export function createBot(token: string): Telegraf {
   bot.action(/^tr_hist:/, handleTranscribeHistoryCallback);
   bot.action(/^tr_full:/, handleTranscribeFullCallback);
 
+  // Digest folder import callbacks
+  bot.action(/^digest_folder:/, handleDigestFolderCallback);
+  bot.action(/^digest_folder_to:/, handleDigestFolderToCallback);
+
   // Notes callbacks
   bot.action(/^note_topic:/, handleNoteTopicCallback);
   bot.action("note_new_topic", handleNewTopicCallback);
+  bot.action(/^note_vis:/, handleNoteVisibilityCallback);
+  bot.action(/^note_vis_toggle:/, handleNoteActionCallback);
+  bot.action(/^pub_notes_page:/, handlePublicNotesPageCallback);
   bot.action(/^note_view_topic:/, handleViewTopicCallback);
   bot.action(/^note_del_topic:/, handleDeleteTopicCallback);
   bot.action(/^notes_page:/, handleNotesPageCallback);
@@ -114,12 +147,34 @@ export function createBot(token: string): Telegraf {
   bot.action(/^note_move:/, handleNoteMoveCallback);
   bot.action(/^note_move_to:/, handleNoteMoveToCallback);
 
+  // Gandalf callbacks
+  bot.action("gandalf_new_cat", handleGandalfNewCatCallback);
+  bot.action(/^gandalf_view_cat:/, handleGandalfViewCatCallback);
+  bot.action(/^gandalf_del_cat:/, handleGandalfDelCatCallback);
+  bot.action(/^gandalf_entry_cat:/, handleGandalfEntryCatCallback);
+  bot.action(/^gandalf_page:/, handleGandalfPageCallback);
+  bot.action(/^gandalf_view:/, handleGandalfEntryActionCallback);
+  bot.action(/^gandalf_del:/, handleGandalfEntryActionCallback);
+  bot.action(/^gandalf_files:/, handleGandalfFilesCallback);
+  bot.action(/^gandalf_opt_date:/, handleGandalfOptionalCallback);
+  bot.action(/^gandalf_opt_info:/, handleGandalfOptionalCallback);
+  bot.action(/^gandalf_opt_done:/, handleGandalfOptionalCallback);
+  bot.action(/^gandalf_stats:/, handleGandalfStatsCallback);
+
   // Mode switch inline callbacks
   bot.action("mode:calendar", async (ctx) => {
     await ctx.answerCbQuery("📅 Календарь");
     await handleCalendarCommand(ctx);
   });
   bot.action("mode:expenses", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid) {
+      const mc = await getUserMenuContext(tid);
+      if (mc && !canAccessMode("expenses", mc)) {
+        await ctx.answerCbQuery("Требуется трайб");
+        return;
+      }
+    }
     await ctx.answerCbQuery("💰 Расходы");
     await handleExpensesCommand(ctx);
   });
@@ -128,6 +183,14 @@ export function createBot(token: string): Telegraf {
     await handleTranscribeCommand(ctx);
   });
   bot.action("mode:digest", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid) {
+      const mc = await getUserMenuContext(tid);
+      if (mc && !canAccessMode("digest", mc)) {
+        await ctx.answerCbQuery("Требуется трайб");
+        return;
+      }
+    }
     await ctx.answerCbQuery("📰 Дайджест");
     await handleDigestCommand(ctx);
   });
@@ -139,11 +202,31 @@ export function createBot(token: string): Telegraf {
     await handleAdminCommand(ctx);
   });
   bot.action("mode:notable_dates", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid) {
+      const mc = await getUserMenuContext(tid);
+      if (mc && !canAccessMode("notable_dates", mc)) {
+        await ctx.answerCbQuery("Требуется трайб");
+        return;
+      }
+    }
     await handleNotableDatesCommand(ctx);
   });
   bot.action("mode:notes", async (ctx) => {
     await ctx.answerCbQuery("📝 Заметки");
     await handleNotesCommand(ctx);
+  });
+  bot.action("mode:gandalf", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid) {
+      const mc = await getUserMenuContext(tid);
+      if (mc && !canAccessMode("gandalf", mc)) {
+        await ctx.answerCbQuery("Требуется трайб");
+        return;
+      }
+    }
+    await ctx.answerCbQuery("🧙 Гэндальф");
+    await handleGandalfCommand(ctx);
   });
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
@@ -157,10 +240,11 @@ export function createBot(token: string): Telegraf {
   bot.hears("📅 Календарь", handleCalendarCommand);
   bot.hears("🎙 Транскрибатор", handleTranscribeCommand);
   bot.hears("📰 Дайджест", handleDigestCommand);
-  bot.hears("📢 Рассылка", handleBroadcastCommand);
+  bot.hears("📢 Царская почта", handleBroadcastCommand);
   bot.hears("👑 Управление", handleAdminCommand);
   bot.hears("🎉 Даты", handleNotableDatesCommand);
   bot.hears("📝 Заметки", handleNotesCommand);
+  bot.hears("🧙 Гэндальф", handleGandalfCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
@@ -185,6 +269,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("📋 Мои рубрики", handleRubricsButton);
   bot.hears("▶️ Запустить сейчас", handleDigestNowButton);
   bot.hears("➕ Создать рубрику", handleCreateRubricButton);
+  bot.hears("📂 Импорт из папки", handleFolderImportButton);
 
   // Transcribe mode buttons
   bot.hears("📋 История", async (ctx) => {
@@ -206,6 +291,13 @@ export function createBot(token: string): Telegraf {
   bot.hears("⭐ Важное", handleImportantButton);
   bot.hears("🔥 Срочное", handleUrgentButton);
   bot.hears("📋 Все заметки", handleAllNotesButton);
+  bot.hears("🌐 Публичные заметки", handlePublicNotesButton);
+
+  // Gandalf mode buttons
+  bot.hears("📦 Категории", handleGandalfCategoriesButton);
+  bot.hears("➕ Новая запись", handleGandalfNewEntryButton);
+  bot.hears("📊 Статистика", handleGandalfStatsButton);
+  bot.hears("📋 Все записи", handleGandalfAllEntriesButton);
 
   // Notable dates mode buttons
   bot.hears("📅 Ближайшие", handleUpcomingDatesButton);
@@ -215,6 +307,26 @@ export function createBot(token: string): Telegraf {
   bot.hears("➕ Добавить", handleAddDateButton);
   bot.hears("✏️ Изменить", handleEditDateButton);
   bot.hears("🗑 Удалить", handleDeleteDateButton);
+
+  // Photo/document handlers (gandalf file attachments)
+  bot.on("photo", async (ctx) => {
+    const telegramId = ctx.from?.id;
+    if (telegramId != null && await isGandalfMode(telegramId)) {
+      await handleGandalfFileAttachment(ctx);
+    }
+  });
+  bot.on("document", async (ctx) => {
+    const telegramId = ctx.from?.id;
+    if (telegramId == null) return;
+    if (await isGandalfMode(telegramId)) {
+      await handleGandalfFileAttachment(ctx);
+      return;
+    }
+    if (await isNotableDatesMode(telegramId)) {
+      await handleNotableDatesDocument(ctx);
+      return;
+    }
+  });
 
   // Text messages catch-all (priority order)
   bot.on("text", async (ctx, next) => {
@@ -227,6 +339,13 @@ export function createBot(token: string): Telegraf {
     // Admin text input (waiting for user ID)
     const consumed = await handleAdminTextInput(ctx);
     if (consumed) return;
+
+    // Gandalf mode — text input for creating entries/categories
+    if (await isGandalfMode(telegramId)) {
+      const handled = await handleGandalfText(ctx);
+      if (handled) return;
+      return next();
+    }
 
     // Notes mode — text input for creating notes/topics
     if (await isNotesMode(telegramId)) {

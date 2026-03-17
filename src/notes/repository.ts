@@ -16,6 +16,8 @@ export interface NoteTopic {
   createdAt: Date;
 }
 
+export type NoteVisibility = "public" | "private";
+
 export interface Note {
   id: number;
   userId: number;
@@ -26,10 +28,13 @@ export interface Note {
   hasImage: boolean;
   imageFilePath: string | null;
   inputMethod: string;
+  visibility: NoteVisibility;
+  tribeId: number | null;
   createdAt: Date;
   updatedAt: Date;
   topicName?: string;
   topicEmoji?: string;
+  authorName?: string;
 }
 
 // ─── Topics ─────────────────────────────────────────────────────────────
@@ -84,11 +89,13 @@ export async function createNote(params: {
   hasImage?: boolean;
   imageFilePath?: string | null;
   inputMethod?: string;
+  visibility?: NoteVisibility;
+  tribeId?: number | null;
 }): Promise<Note> {
   const encryptedContent = encrypt(params.content);
   const { rows: inserted } = await query<{ id: number }>(
-    `INSERT INTO notes (user_id, topic_id, content, is_important, is_urgent, has_image, image_file_path, input_method)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    `INSERT INTO notes (user_id, topic_id, content, is_important, is_urgent, has_image, image_file_path, input_method, visibility, tribe_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
     [
       params.userId,
       params.topicId,
@@ -98,6 +105,8 @@ export async function createNote(params: {
       params.hasImage ?? false,
       params.imageFilePath ?? null,
       params.inputMethod ?? "text",
+      params.visibility ?? "private",
+      params.tribeId ?? null,
     ]
   );
   // Fetch with topic info via JOIN so topicName/topicEmoji are populated
@@ -245,6 +254,61 @@ export async function toggleNoteFlag(
   return (rowCount ?? 0) > 0;
 }
 
+// ─── Public notes (tribe-level) ─────────────────────────────────────────
+
+export async function getPublicNotesByTribe(
+  tribeId: number,
+  limit: number = 10,
+  offset: number = 0
+): Promise<Note[]> {
+  const { rows } = await query<NoteRow & { topic_name: string | null; topic_emoji: string | null; first_name: string }>(
+    `SELECT n.*, t.name AS topic_name, t.emoji AS topic_emoji, u.first_name
+     FROM notes n
+     LEFT JOIN note_topics t ON t.id = n.topic_id
+     JOIN users u ON u.id = n.user_id
+     WHERE n.tribe_id = $1 AND n.visibility = 'public'
+     ORDER BY n.created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [tribeId, limit, offset]
+  );
+  return rows.map((r) => ({ ...mapNoteWithTopic(r), authorName: r.first_name }));
+}
+
+export async function countPublicNotesByTribe(tribeId: number): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM notes WHERE tribe_id = $1 AND visibility = 'public'",
+    [tribeId]
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+export async function toggleNoteVisibility(noteId: number, userId: number): Promise<NoteVisibility | null> {
+  const { rows } = await query<{ visibility: string }>(
+    `UPDATE notes SET visibility = CASE WHEN visibility = 'public' THEN 'private' ELSE 'public' END,
+     updated_at = NOW()
+     WHERE id = $1 AND user_id = $2
+     RETURNING visibility`,
+    [noteId, userId]
+  );
+  if (rows.length === 0) return null;
+  return rows[0].visibility as NoteVisibility;
+}
+
+export async function appendToNote(noteId: number, tribeId: number, additionalContent: string): Promise<boolean> {
+  const { rows } = await query<{ content: string }>(
+    "SELECT content FROM notes WHERE id = $1 AND tribe_id = $2 AND visibility = 'public'",
+    [noteId, tribeId]
+  );
+  if (rows.length === 0) return false;
+  const decrypted = decrypt(rows[0].content);
+  const newContent = encrypt(decrypted + "\n\n" + additionalContent);
+  const { rowCount } = await query(
+    "UPDATE notes SET content = $1, updated_at = NOW() WHERE id = $2",
+    [newContent, noteId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 // ─── Internal ──────────────────────────────────────────────────────────
 
 interface NoteRow {
@@ -257,6 +321,8 @@ interface NoteRow {
   has_image: boolean;
   image_file_path: string | null;
   input_method: string;
+  visibility: string;
+  tribe_id: number | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -276,6 +342,8 @@ function mapNote(r: NoteRow): Note {
     hasImage: r.has_image,
     imageFilePath: r.image_file_path,
     inputMethod: r.input_method,
+    visibility: (r.visibility ?? "private") as NoteVisibility,
+    tribeId: r.tribe_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

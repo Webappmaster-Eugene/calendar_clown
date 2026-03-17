@@ -3,6 +3,9 @@ import dotenv from "dotenv";
 dotenv.config();
 dotenv.config({ path: ".env.local", override: true });
 
+// OpenTelemetry — must be initialized before other imports
+import { shutdownTelemetry } from "./telemetry.js";
+
 import { createBot } from "./bot.js";
 import { startOAuthServer } from "./oauthServer.js";
 import { runMigrations, runDrizzleMigrations } from "./db/migrate.js";
@@ -121,6 +124,7 @@ async function main(): Promise<void> {
     stopStaleJobCleaner();
     await closeTranscribeQueue();
     await closePool();
+    await shutdownTelemetry();
     process.exit(0);
   };
 

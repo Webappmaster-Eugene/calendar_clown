@@ -18,7 +18,7 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId, ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { setUserMode } from "../middleware/expenseMode.js";
-import { isDigestConfigured } from "../digest/telegramClient.js";
+import { isDigestConfigured, getUserDialogFolders, getChannelsFromFolder } from "../digest/telegramClient.js";
 import {
   getRubricsByUser,
   getRubricByUserAndName,
@@ -55,7 +55,7 @@ const rubricCreationStates = new Map<number, RubricCreationState>();
 function getDigestKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
     ["📋 Мои рубрики", "▶️ Запустить сейчас"],
-    ["➕ Создать рубрику"],
+    ["➕ Создать рубрику", "📂 Импорт из папки"],
     ...getModeButtons(isAdmin),
   ]).resize();
 }
@@ -85,13 +85,18 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  await ensureUser(
+  const dbUser = await ensureUser(
     telegramId,
     ctx.from?.username ?? null,
     ctx.from?.first_name ?? "",
     ctx.from?.last_name ?? null,
     isBootstrapAdmin(telegramId)
   );
+
+  if (!dbUser.tribeId) {
+    await ctx.reply("📰 Дайджест доступен только для участников трайба. Обратитесь к администратору.");
+    return;
+  }
 
   await setUserMode(telegramId, "digest");
 
@@ -521,5 +526,134 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
   }
 
   return false;
+}
+
+// ─── Folder import ──────────────────────────────────────────────────────
+
+/** State for folder import flow: maps telegramId → rubric name to import into. */
+const folderImportStates = new Map<number, { rubricName: string }>();
+
+/** Handle "📂 Импорт из папки" keyboard button. */
+export async function handleFolderImportButton(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  if (!isDigestConfigured()) {
+    await ctx.reply("Telegram Parser не настроен.");
+    return;
+  }
+
+  const statusMsg = await ctx.reply("Загружаю папки Telegram...");
+
+  try {
+    const folders = await getUserDialogFolders();
+    if (folders.length === 0) {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, statusMsg.message_id, undefined,
+        "У вас нет папок в Telegram. Создайте папку с каналами в настройках Telegram."
+      );
+      return;
+    }
+
+    const buttons = folders.map((f) => [
+      Markup.button.callback(`📂 ${f.title}`, `digest_folder:${f.id}`),
+    ]);
+
+    await ctx.telegram.editMessageText(
+      ctx.chat!.id, statusMsg.message_id, undefined,
+      "Выберите папку для импорта каналов:",
+      { ...Markup.inlineKeyboard(buttons) }
+    );
+  } catch (err) {
+    log.error("Failed to get folders:", err);
+    await ctx.telegram.editMessageText(
+      ctx.chat!.id, statusMsg.message_id, undefined,
+      "Ошибка при загрузке папок."
+    );
+  }
+}
+
+/** Handle folder selection callback — show channels and ask which rubric. */
+export async function handleDigestFolderCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^digest_folder:(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const folderId = parseInt(match[1], 10);
+  await ctx.answerCbQuery("Загружаю каналы...");
+
+  try {
+    const channels = await getChannelsFromFolder(folderId);
+    if (channels.length === 0) {
+      await ctx.editMessageText("В этой папке нет каналов.");
+      return;
+    }
+
+    const dbUser = await getUserByTelegramId(telegramId);
+    if (!dbUser) return;
+
+    const rubrics = await getRubricsByUser(dbUser.id);
+    if (rubrics.length === 0) {
+      await ctx.editMessageText(
+        `Найдено каналов: ${channels.length}\n\n` +
+        `Но у вас нет рубрик. Сначала создайте рубрику, затем импортируйте каналы.`
+      );
+      return;
+    }
+
+    const buttons = rubrics.map((r) => [
+      Markup.button.callback(
+        `${r.emoji ?? "📰"} ${r.name}`,
+        `digest_folder_to:${folderId}:${r.id}`
+      ),
+    ]);
+
+    await ctx.editMessageText(
+      `Найдено каналов: ${channels.length}\n\nВыберите рубрику для импорта:`,
+      { ...Markup.inlineKeyboard(buttons) }
+    );
+  } catch (err) {
+    log.error("Failed to get channels from folder:", err);
+    await ctx.editMessageText("Ошибка при загрузке каналов.");
+  }
+}
+
+/** Handle folder-to-rubric import callback. */
+export async function handleDigestFolderToCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^digest_folder_to:(\d+):(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const folderId = parseInt(match[1], 10);
+  const rubricId = parseInt(match[2], 10);
+  await ctx.answerCbQuery("Импортирую...");
+
+  try {
+    const channels = await getChannelsFromFolder(folderId);
+    let added = 0;
+    let skipped = 0;
+
+    for (const username of channels) {
+      try {
+        await addChannel(rubricId, username);
+        added++;
+      } catch {
+        skipped++; // Already exists or error
+      }
+    }
+
+    await ctx.editMessageText(
+      `✅ Импорт завершён!\n\nДобавлено: ${added}\nПропущено (уже есть): ${skipped}`
+    );
+  } catch (err) {
+    log.error("Failed to import channels:", err);
+    await ctx.editMessageText("Ошибка при импорте каналов.");
+  }
 }
 

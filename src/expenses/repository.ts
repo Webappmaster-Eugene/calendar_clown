@@ -47,6 +47,92 @@ export function invalidateCategoriesCache(): void {
   categoriesCache = null;
 }
 
+/** Create a new expense category (admin). */
+export async function createCategory(
+  name: string,
+  emoji: string,
+  aliases: string[] = [],
+  sortOrder: number = 0
+): Promise<Category> {
+  const { rows } = await query<{
+    id: number; name: string; emoji: string; aliases: string[]; sort_order: number; is_active: boolean;
+  }>(
+    `INSERT INTO categories (name, emoji, aliases, sort_order) VALUES ($1, $2, $3, $4) RETURNING *`,
+    [name, emoji, JSON.stringify(aliases), sortOrder]
+  );
+  invalidateCategoriesCache();
+  const r = rows[0];
+  return { id: r.id, name: r.name, emoji: r.emoji, aliases: r.aliases, sortOrder: r.sort_order, isActive: r.is_active };
+}
+
+/** Rename an existing category (admin). */
+export async function renameCategory(categoryId: number, newName: string): Promise<boolean> {
+  const { rowCount } = await query(
+    "UPDATE categories SET name = $1 WHERE id = $2",
+    [newName, categoryId]
+  );
+  invalidateCategoriesCache();
+  return (rowCount ?? 0) > 0;
+}
+
+/** Set monthly limit for a category (stored in description-like field — here we use a lightweight approach). */
+// Note: category limits could be stored in a separate table; for now we skip this
+// as the plan focuses on adding the management UI.
+
+/** Get detailed expense rows for a category in a date range (drilldown). */
+export async function getExpensesByCategory(
+  tribeId: number,
+  categoryId: number,
+  dateFrom: Date,
+  dateTo: Date,
+  limit: number = 20,
+  offset: number = 0
+): Promise<Array<{
+  id: number;
+  subcategory: string | null;
+  amount: number;
+  firstName: string;
+  createdAt: Date;
+}>> {
+  const { rows } = await query<{
+    id: number;
+    subcategory: string | null;
+    amount: string;
+    first_name: string;
+    created_at: Date;
+  }>(
+    `SELECT e.id, e.subcategory, e.amount, u.first_name, e.created_at
+     FROM expenses e
+     JOIN users u ON u.id = e.user_id
+     WHERE e.tribe_id = $1 AND e.category_id = $2 AND e.created_at >= $3 AND e.created_at < $4
+     ORDER BY e.created_at DESC
+     LIMIT $5 OFFSET $6`,
+    [tribeId, categoryId, dateFrom.toISOString(), dateTo.toISOString(), limit, offset]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    subcategory: r.subcategory,
+    amount: parseFloat(r.amount),
+    firstName: r.first_name,
+    createdAt: r.created_at,
+  }));
+}
+
+/** Count expenses in a category for a date range. */
+export async function countExpensesByCategory(
+  tribeId: number,
+  categoryId: number,
+  dateFrom: Date,
+  dateTo: Date
+): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM expenses
+     WHERE tribe_id = $1 AND category_id = $2 AND created_at >= $3 AND created_at < $4`,
+    [tribeId, categoryId, dateFrom.toISOString(), dateTo.toISOString()]
+  );
+  return parseInt(rows[0].count, 10);
+}
+
 // ─── Users ────────────────────────────────────────────────────────────
 
 /** Create or update a user in the DB. Updates name fields if the user already exists. */
@@ -66,7 +152,7 @@ export async function ensureUser(
     first_name: string;
     last_name: string | null;
     role: string;
-    tribe_id: number;
+    tribe_id: number | null;
   }>(
     "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE telegram_id = $1",
     [telegramId]
@@ -130,7 +216,7 @@ export async function getUserByTelegramId(telegramId: number): Promise<DbUser | 
     first_name: string;
     last_name: string | null;
     role: string;
-    tribe_id: number;
+    tribe_id: number | null;
   }>(
     "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE telegram_id = $1",
     [telegramId]
@@ -166,7 +252,7 @@ export async function listTribeUsers(tribeId: number): Promise<DbUser[]> {
     first_name: string;
     last_name: string | null;
     role: string;
-    tribe_id: number;
+    tribe_id: number | null;
   }>(
     "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE tribe_id = $1 ORDER BY id",
     [tribeId]
@@ -221,22 +307,17 @@ export async function removeUserByTelegramId(telegramId: number): Promise<boolea
   return (rowCount ?? 0) > 0;
 }
 
-/** Create a pending user (onboarding request). */
+/** Create a pending user (onboarding request). No tribe assigned — admin assigns later. */
 export async function createPendingUser(
   telegramId: number,
   username: string | null,
   firstName: string,
   lastName: string | null
 ): Promise<DbUser> {
-  const { rows: tribes } = await query<{ id: number }>(
-    "SELECT id FROM tribes ORDER BY id LIMIT 1"
-  );
-  const tribeId = tribes[0]?.id ?? 1;
-
   const { rows } = await query<{ id: number }>(
-    `INSERT INTO users (telegram_id, username, first_name, last_name, role, status, tribe_id)
-     VALUES ($1, $2, $3, $4, 'user', 'pending', $5) RETURNING id`,
-    [telegramId, username, firstName, lastName, tribeId]
+    `INSERT INTO users (telegram_id, username, first_name, last_name, role, status)
+     VALUES ($1, $2, $3, $4, 'user', 'pending') RETURNING id`,
+    [telegramId, username, firstName, lastName]
   );
 
   return {
@@ -246,7 +327,7 @@ export async function createPendingUser(
     firstName,
     lastName,
     role: "user",
-    tribeId,
+    tribeId: null,
   };
 }
 
@@ -277,7 +358,7 @@ export async function listPendingUsers(): Promise<DbUser[]> {
     first_name: string;
     last_name: string | null;
     role: string;
-    tribe_id: number;
+    tribe_id: number | null;
   }>(
     "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE status = 'pending' ORDER BY id"
   );
@@ -310,6 +391,15 @@ export async function setUserTribe(telegramId: number, tribeId: number): Promise
   return (rowCount ?? 0) > 0;
 }
 
+/** Remove user from tribe (set tribe_id to NULL). */
+export async function removeUserFromTribe(telegramId: number): Promise<boolean> {
+  const { rowCount } = await query(
+    "UPDATE users SET tribe_id = NULL WHERE telegram_id = $1",
+    [telegramId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 /** List all tribes. */
 export async function listTribes(): Promise<Array<{ id: number; name: string }>> {
   const { rows } = await query<{ id: number; name: string }>(
@@ -328,9 +418,9 @@ export async function createTribe(name: string): Promise<{ id: number; name: str
 }
 
 /** Valid bot modes. */
-type BotMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes";
+type BotMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes" | "gandalf";
 
-const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "digest", "broadcast", "notable_dates", "notes"]);
+const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "digest", "broadcast", "notable_dates", "notes", "gandalf"]);
 
 /** Get user's current bot mode from DB. */
 export async function getUserMode(telegramId: number): Promise<BotMode> {

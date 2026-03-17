@@ -4,7 +4,7 @@ import { setUserMode } from "../middleware/expenseMode.js";
 import type { UserMode } from "../middleware/expenseMode.js";
 import { getCategoriesList } from "../expenses/parser.js";
 import { ensureUser } from "../expenses/repository.js";
-import { isBootstrapAdmin, getUserMenuContext } from "../middleware/auth.js";
+import { isBootstrapAdmin, getUserMenuContext, canAccessMode } from "../middleware/auth.js";
 import type { UserMenuContext } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 
@@ -32,6 +32,7 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
   expenses: [
     { command: "expenses", description: "Режим расходов (текущий)" },
     { command: "mode", description: "Выбор режима работы" },
+    { command: "stats", description: "Статистика бота" },
     { command: "help", description: "Справка" },
   ],
   transcribe: [
@@ -45,7 +46,7 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "help", description: "Справка" },
   ],
   broadcast: [
-    { command: "broadcast", description: "Рассылка сообщений" },
+    { command: "broadcast", description: "Царская почта — рассылка" },
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
@@ -56,6 +57,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
   ],
   notes: [
     { command: "notes", description: "Заметки (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
+  gandalf: [
+    { command: "gandalf", description: "Гэндальф — трекер (текущий)" },
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
@@ -83,7 +89,8 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📅 Календарь", "💰 Расходы"],
         ["🎙 Транскрибатор", "📝 Заметки"],
         ["📰 Дайджест", "🎉 Даты"],
-        ["📢 Рассылка", "👑 Управление"],
+        ["🧙 Гэндальф"],
+        ["📢 Царская почта", "👑 Управление"],
       ]).resize();
     }
     if (context.hasTribe) {
@@ -91,6 +98,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📅 Календарь", "💰 Расходы"],
         ["🎙 Транскрибатор", "📝 Заметки"],
         ["📰 Дайджест", "🎉 Даты"],
+        ["🧙 Гэндальф"],
       ]).resize();
     }
     // User without tribe — limited modes
@@ -105,9 +113,10 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["📅 Календарь", "💰 Расходы"],
     ["🎙 Транскрибатор", "📝 Заметки"],
     ["📰 Дайджест", "🎉 Даты"],
+    ["🧙 Гэндальф"],
   ];
   if (isAdmin) {
-    rows.push(["📢 Рассылка", "👑 Управление"]);
+    rows.push(["📢 Царская почта", "👑 Управление"]);
   }
   return Markup.keyboard(rows).resize();
 }
@@ -131,13 +140,18 @@ export async function handleExpensesCommand(ctx: Context): Promise<void> {
   }
 
   // Ensure user exists in DB before switching mode
-  await ensureUser(
+  const dbUser = await ensureUser(
     telegramId,
     ctx.from?.username ?? null,
     ctx.from?.first_name ?? "",
     ctx.from?.last_name ?? null,
     isBootstrapAdmin(telegramId)
   );
+
+  if (!dbUser.tribeId) {
+    await ctx.reply("💰 Расходы доступны только для участников трайба. Обратитесь к администратору.");
+    return;
+  }
 
   await setUserMode(telegramId, "expenses");
   await setModeMenuCommands(ctx, "expenses");
@@ -176,24 +190,30 @@ export async function handleCalendarCommand(ctx: Context): Promise<void> {
   );
 }
 
-function getModeInlineKeyboard(isAdmin: boolean) {
+function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | null) {
+  const ctx = context ?? { role: isAdmin ? "admin" as const : "user" as const, status: "approved", hasTribe: true, tribeId: 1, tribeName: null };
   const rows = [
     [
       Markup.button.callback("📅 Календарь", "mode:calendar"),
-      Markup.button.callback("💰 Расходы", "mode:expenses"),
+      ...(canAccessMode("expenses", ctx) ? [Markup.button.callback("💰 Расходы", "mode:expenses")] : []),
     ],
     [
       Markup.button.callback("🎙 Транскрибатор", "mode:transcribe"),
       Markup.button.callback("📝 Заметки", "mode:notes"),
     ],
-    [
-      Markup.button.callback("📰 Дайджест", "mode:digest"),
-      Markup.button.callback("🎉 Даты", "mode:notable_dates"),
-    ],
   ];
+  if (canAccessMode("digest", ctx) || canAccessMode("notable_dates", ctx)) {
+    rows.push([
+      ...(canAccessMode("digest", ctx) ? [Markup.button.callback("📰 Дайджест", "mode:digest")] : []),
+      ...(canAccessMode("notable_dates", ctx) ? [Markup.button.callback("🎉 Даты", "mode:notable_dates")] : []),
+    ]);
+  }
+  if (canAccessMode("gandalf", ctx)) {
+    rows.push([Markup.button.callback("🧙 Гэндальф", "mode:gandalf")]);
+  }
   if (isAdmin) {
     rows.push([
-      Markup.button.callback("📢 Рассылка", "mode:broadcast"),
+      Markup.button.callback("📢 Царская почта", "mode:broadcast"),
       Markup.button.callback("👑 Управление", "mode:admin"),
     ]);
   }
@@ -212,7 +232,8 @@ export async function handleModeCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  await ctx.reply("Выберите режим работы:", { ...getModeInlineKeyboard(isAdmin) });
+  const menuCtx2 = telegramId ? await getUserMenuContext(telegramId) : null;
+  await ctx.reply("Выберите режим работы:", { ...getModeInlineKeyboard(isAdmin, menuCtx2) });
 }
 
 export async function handleCategoriesButton(ctx: Context): Promise<void> {

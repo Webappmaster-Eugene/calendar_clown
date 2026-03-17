@@ -75,10 +75,12 @@ function buildSystemPrompt(): string {
 
 Options:
 
-1) Creating a calendar meeting/event. Use type "calendar" for ANY phrase where the user asks to schedule, record, or create something AND mentions a date or time (explicit or from context). This includes:
+1) Creating calendar meeting(s)/event(s). Use type "calendar" for ANY phrase where the user asks to schedule, record, or create something AND mentions a date or time (explicit or from context). This includes:
    - Short: "встреча завтра в 15:00", "создай событие в понедельник в 10"
    - Rich context: "запиши меня к Роману на ремонт автомобиля во вторник в 10 утра", "встреча завтра, ремонт Романа автомобиль в 10 утра", "приём у врача в понедельник в 9"
-   {"type":"calendar","title":"event title","start":"ISO8601","end":"ISO8601"} or with optional "recurrence":["RRULE:..."] for repeating events.
+   - Multiple: "завтра встреча в 10 и обед в 13" — return events array
+   Single event: {"type":"calendar","title":"event title","start":"ISO8601","end":"ISO8601"} or with optional "recurrence":["RRULE:..."] for repeating events.
+   Multiple events: {"type":"calendar","events":[{"title":"...","start":"...","end":"..."},{"title":"...","start":"...","end":"..."}]}
    title: short descriptive title for the calendar event, preserving who and what (e.g. "Ремонт автомобиля у Романа", "Запись к Роману: ремонт авто"). Do not reduce to a single word.
    Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. ${year}-03-09T10:00:00+03:00).
    Today is ${dateStr} (${weekday}). Use year ${year}. No date → today. No time → 10:00. Default duration 1 hour.
@@ -106,8 +108,15 @@ Options:
    {"type":"unknown"}`;
 }
 
+export interface CalendarEventData {
+  title: string;
+  start: Date;
+  end: Date;
+  recurrence?: string[];
+}
+
 export type VoiceIntent =
-  | { type: "calendar"; title: string; start: Date; end: Date; recurrence?: string[] }
+  | { type: "calendar"; events: CalendarEventData[] }
   | { type: "cancel_event"; query: string; date: Date | null }
   | { type: "list_today" }
   | { type: "list_week" }
@@ -146,23 +155,24 @@ function shiftPastTimeToTomorrow(transcript: string, intent: VoiceIntent): Voice
 
   const now = new Date();
   const nowMsk = new Date(now.toLocaleString("en-US", { timeZone: TIMEZONE_MSK }));
-  const startMsk = new Date(intent.start.toLocaleString("en-US", { timeZone: TIMEZONE_MSK }));
 
-  // Check if start is today and in the past
-  const isSameDay =
-    startMsk.getFullYear() === nowMsk.getFullYear() &&
-    startMsk.getMonth() === nowMsk.getMonth() &&
-    startMsk.getDate() === nowMsk.getDate();
+  const shiftedEvents = intent.events.map((ev) => {
+    const startMsk = new Date(ev.start.toLocaleString("en-US", { timeZone: TIMEZONE_MSK }));
+    const isSameDay =
+      startMsk.getFullYear() === nowMsk.getFullYear() &&
+      startMsk.getMonth() === nowMsk.getMonth() &&
+      startMsk.getDate() === nowMsk.getDate();
 
-  if (isSameDay && startMsk.getTime() <= nowMsk.getTime()) {
-    // Shift to tomorrow
-    const durationMs = intent.end.getTime() - intent.start.getTime();
-    const newStart = new Date(intent.start.getTime() + 24 * 60 * 60 * 1000);
-    const newEnd = new Date(newStart.getTime() + durationMs);
-    return { type: "calendar", title: intent.title, start: newStart, end: newEnd, recurrence: intent.recurrence };
-  }
+    if (isSameDay && startMsk.getTime() <= nowMsk.getTime()) {
+      const durationMs = ev.end.getTime() - ev.start.getTime();
+      const newStart = new Date(ev.start.getTime() + 24 * 60 * 60 * 1000);
+      const newEnd = new Date(newStart.getTime() + durationMs);
+      return { ...ev, start: newStart, end: newEnd };
+    }
+    return ev;
+  });
 
-  return intent;
+  return { type: "calendar", events: shiftedEvents };
 }
 
 export async function extractVoiceIntent(transcript: string): Promise<VoiceIntent> {
@@ -223,21 +233,40 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
   }
 
   if (json.type === "calendar") {
-    const title = typeof json.title === "string" ? json.title.trim() : "";
-    const startStr = typeof json.start === "string" ? json.start : "";
-    const endStr = typeof json.end === "string" ? json.end : "";
-    if (title && startStr && endStr) {
+    // Parse single or multiple events
+    const rawEvents: Array<Record<string, unknown>> = [];
+    if (Array.isArray(json.events)) {
+      rawEvents.push(...(json.events as Array<Record<string, unknown>>));
+    } else if (typeof json.title === "string") {
+      rawEvents.push(json as Record<string, unknown>);
+    }
+
+    const events: CalendarEventData[] = [];
+    for (const ev of rawEvents) {
+      const title = typeof ev.title === "string" ? (ev.title as string).trim() : "";
+      const startStr = typeof ev.start === "string" ? ev.start as string : "";
+      const endStr = typeof ev.end === "string" ? ev.end as string : "";
+      if (!title || !startStr || !endStr) continue;
       const start = new Date(startStr);
       const end = new Date(endStr);
-      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-        let recurrence: string[] | undefined;
-        if (Array.isArray(json.recurrence) && json.recurrence.every((r): r is string => typeof r === "string") && json.recurrence.length > 0) {
-          recurrence = json.recurrence;
-        }
-        const intent: VoiceIntent = { type: "calendar", title, start, end, recurrence };
-        const corrected = correctCalendarIntentWeekday(transcript, intent);
-        return shiftPastTimeToTomorrow(transcript, corrected);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+
+      let recurrence: string[] | undefined;
+      if (Array.isArray(ev.recurrence) && (ev.recurrence as unknown[]).every((r): r is string => typeof r === "string") && (ev.recurrence as string[]).length > 0) {
+        recurrence = ev.recurrence as string[];
       }
+      events.push({ title, start, end, recurrence });
+    }
+
+    if (events.length > 0) {
+      // Apply corrections to each event
+      const correctedEvents = events.map((ev) => {
+        const singleIntent: VoiceIntent = { type: "calendar", events: [ev] };
+        const corrected = correctCalendarIntentWeekday(transcript, singleIntent);
+        const shifted = shiftPastTimeToTomorrow(transcript, corrected);
+        return shifted.type === "calendar" ? shifted.events[0] : ev;
+      });
+      return { type: "calendar", events: correctedEvents };
     }
   }
 
@@ -249,16 +278,21 @@ function correctCalendarIntentWeekday(transcript: string, intent: VoiceIntent): 
   if (intent.type !== "calendar") return intent;
   const mentioned = getMentionedWeekdayRu(transcript);
   if (mentioned === null) return intent;
-  const startWeekday = getWeekdayInMSK(intent.start);
-  if (startWeekday === mentioned) return intent;
 
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
-  const correctDateStr = nextWeekdayDateStrInMSK(dateStr, mentioned);
-  const timeOpt: Intl.DateTimeFormatOptions = { timeZone: TIMEZONE_MSK, hour12: false, hour: "2-digit", minute: "2-digit" };
-  const timePart = intent.start.toLocaleTimeString("en-CA", timeOpt);
-  const durationMs = intent.end.getTime() - intent.start.getTime();
-  const newStart = new Date(correctDateStr + "T" + timePart + ":00+03:00");
-  const newEnd = new Date(newStart.getTime() + durationMs);
-  return { type: "calendar", title: intent.title, start: newStart, end: newEnd, recurrence: intent.recurrence };
+  const correctedEvents = intent.events.map((ev) => {
+    const startWeekday = getWeekdayInMSK(ev.start);
+    if (startWeekday === mentioned) return ev;
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
+    const correctDateStr = nextWeekdayDateStrInMSK(dateStr, mentioned);
+    const timeOpt: Intl.DateTimeFormatOptions = { timeZone: TIMEZONE_MSK, hour12: false, hour: "2-digit", minute: "2-digit" };
+    const timePart = ev.start.toLocaleTimeString("en-CA", timeOpt);
+    const durationMs = ev.end.getTime() - ev.start.getTime();
+    const newStart = new Date(correctDateStr + "T" + timePart + ":00+03:00");
+    const newEnd = new Date(newStart.getTime() + durationMs);
+    return { ...ev, start: newStart, end: newEnd };
+  });
+
+  return { type: "calendar", events: correctedEvents };
 }

@@ -34,7 +34,7 @@ export async function handleExcelButton(ctx: Context): Promise<void> {
   }
 
   const { year, month } = getMskNow();
-  await sendExcel(ctx, dbUser.tribeId, year, month);
+  await sendExcel(ctx, dbUser.tribeId!, year, month);
 }
 
 /**
@@ -68,7 +68,7 @@ export async function handleExcelCallback(ctx: Context): Promise<void> {
   const month = parseInt(match[2], 10);
 
   await ctx.answerCbQuery("Генерирую Excel...");
-  await sendExcel(ctx, dbUser.tribeId, year, month);
+  await sendExcel(ctx, dbUser.tribeId!, year, month);
 }
 
 async function sendExcel(

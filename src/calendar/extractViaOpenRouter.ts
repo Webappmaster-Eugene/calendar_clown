@@ -13,9 +13,10 @@ function buildSystemPrompt(): string {
   const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK }); // YYYY-MM-DD
   const weekday = now.toLocaleDateString("en-GB", { weekday: "long", timeZone: TIMEZONE_MSK });
   const year = now.getFullYear();
-  return `Task: from the user message extract exactly one calendar event.
-Output: only a valid JSON object, no other text.
-Format: {"title":"event title","start":"ISO8601","end":"ISO8601"} or with optional "recurrence":["RRULE:..."] for repeating events.
+  return `Task: from the user message extract one or more calendar events.
+Output: only a valid JSON, no other text.
+If one event: {"title":"event title","start":"ISO8601","end":"ISO8601"} or with optional "recurrence":["RRULE:..."] for repeating events.
+If multiple events: {"events":[{"title":"...","start":"...","end":"..."},{"title":"...","start":"...","end":"..."}]}
 Recurring: if the user says "каждую пятницу", "каждую неделю", "еженедельно", "по понедельникам" etc., add "recurrence":["RRULE:FREQ=WEEKLY;BYDAY=XX"] where XX is MO,TU,WE,TH,FR,SA,SU. Set start/end to the first occurrence.
 Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. ${year}-03-09T10:00:00+03:00).
 IMPORTANT: Today is ${dateStr} (${weekday}), ${TIMEZONE_MSK}. Always use the current year (${year}) when the user does not specify a year. "Tomorrow", "next Monday", "today" must refer to dates in ${year} or later. No date → today. No time → 10:00. Default duration: 1 hour.
@@ -30,9 +31,10 @@ export interface ExtractedEvent {
   recurrence?: string[];
 }
 
-export async function extractCalendarEvent(
+/** Extract one or more calendar events from transcript. */
+export async function extractCalendarEvents(
   transcript: string
-): Promise<ExtractedEvent | null> {
+): Promise<ExtractedEvent[]> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY is not set");
@@ -63,33 +65,48 @@ export async function extractCalendarEvent(
     choices?: Array<{ message?: { content?: string } }>;
   };
   const content = data?.choices?.[0]?.message?.content?.trim();
-  if (!content) return null;
+  if (!content) return [];
 
   const json = tryParseJson(content);
-  if (
-    !json ||
-    typeof json.title !== "string" ||
-    typeof json.start !== "string" ||
-    typeof json.end !== "string"
-  ) {
-    return null;
+  if (!json) return [];
+
+  // Support both single event and array of events
+  const rawEvents: Array<Record<string, unknown>> = [];
+  if (Array.isArray(json.events)) {
+    rawEvents.push(...(json.events as Array<Record<string, unknown>>));
+  } else if (typeof json.title === "string") {
+    rawEvents.push(json as Record<string, unknown>);
   }
 
-  const start = new Date(json.start);
-  const end = new Date(json.end);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const results: ExtractedEvent[] = [];
+  for (const ev of rawEvents) {
+    if (typeof ev.title !== "string" || typeof ev.start !== "string" || typeof ev.end !== "string") continue;
+    const start = new Date(ev.start as string);
+    const end = new Date(ev.end as string);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
 
-  let recurrence: string[] | undefined;
-  if (Array.isArray(json.recurrence) && json.recurrence.every((r): r is string => typeof r === "string") && json.recurrence.length > 0) {
-    recurrence = json.recurrence;
+    let recurrence: string[] | undefined;
+    if (Array.isArray(ev.recurrence) && ev.recurrence.every((r): r is string => typeof r === "string") && ev.recurrence.length > 0) {
+      recurrence = ev.recurrence;
+    }
+
+    results.push({ title: ev.title as string, start, end, recurrence });
   }
 
-  return { title: json.title, start, end, recurrence };
+  return results;
+}
+
+/** Extract exactly one calendar event (backwards-compat wrapper). */
+export async function extractCalendarEvent(
+  transcript: string
+): Promise<ExtractedEvent | null> {
+  const events = await extractCalendarEvents(transcript);
+  return events.length > 0 ? events[0] : null;
 }
 
 function tryParseJson(
   raw: string
-): { title?: string; start?: string; end?: string; recurrence?: unknown } | null {
+): { title?: string; start?: string; end?: string; recurrence?: unknown; events?: unknown[] } | null {
   const stripped = raw
     .replace(/^```json\s*/i, "")
     .replace(/\s*```$/i, "")
@@ -100,6 +117,7 @@ function tryParseJson(
       start?: string;
       end?: string;
       recurrence?: unknown;
+      events?: unknown[];
     };
   } catch {
     return null;

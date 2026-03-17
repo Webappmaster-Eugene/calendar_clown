@@ -45,12 +45,12 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
 
       const savedExpenses: Array<{ emoji: string; name: string; sub: string | null; amount: number }> = [];
       for (const p of multiParsed) {
-        await addExpense(dbUser.id, dbUser.tribeId, p.categoryId, p.amount, p.subcategory, "text");
+        await addExpense(dbUser.id, dbUser.tribeId!, p.categoryId, p.amount, p.subcategory, "text");
         savedExpenses.push({ emoji: p.categoryEmoji, name: p.categoryName, sub: p.subcategory, amount: p.amount });
       }
 
       const { year, month } = getMskNow();
-      const total = await getMonthTotal(dbUser.tribeId, year, month);
+      const total = await getMonthTotal(dbUser.tribeId!, year, month);
       const limit = getMonthLimit();
 
       const lines = savedExpenses.map((e) => {
@@ -102,7 +102,7 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
 
     const expense = await addExpense(
       dbUser.id,
-      dbUser.tribeId,
+      dbUser.tribeId!,
       parsed.categoryId,
       parsed.amount,
       parsed.subcategory,
@@ -110,7 +110,7 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
     );
 
     const { year, month } = getMskNow();
-    const total = await getMonthTotal(dbUser.tribeId, year, month);
+    const total = await getMonthTotal(dbUser.tribeId!, year, month);
     const limit = getMonthLimit();
 
     const confirmation = formatExpenseConfirmation(
@@ -169,7 +169,7 @@ export async function handleVoiceExpense(
 
     const expense = await addExpense(
       dbUser.id,
-      dbUser.tribeId,
+      dbUser.tribeId!,
       parsed.categoryId,
       parsed.amount,
       parsed.subcategory,
@@ -177,7 +177,7 @@ export async function handleVoiceExpense(
     );
 
     const { year, month } = getMskNow();
-    const total = await getMonthTotal(dbUser.tribeId, year, month);
+    const total = await getMonthTotal(dbUser.tribeId!, year, month);
     const limit = getMonthLimit();
 
     const confirmation = formatExpenseConfirmation(

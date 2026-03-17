@@ -12,6 +12,7 @@ import {
   listPendingUsers,
   isUserInDb,
   setUserTribe,
+  removeUserFromTribe,
   listTribes,
   createTribe,
 } from "../expenses/repository.js";
@@ -58,6 +59,7 @@ export async function handleAdminCommand(ctx: Context): Promise<void> {
       [Markup.button.callback("➖ Удалить пользователя", "admin:remove")],
       [Markup.button.callback("📋 Заявки", "admin:pending")],
       [Markup.button.callback("🏷 Назначить трайб", "admin:tribes")],
+      [Markup.button.callback("🚫 Убрать из трайба", "admin:remove_tribe")],
       [Markup.button.callback("➕ Создать трайб", "admin:new_tribe")],
     ]),
   });
@@ -271,6 +273,46 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
       const tribes = await listTribes();
       const tribeName = tribes.find((t) => t.id === tribeId)?.name ?? String(tribeId);
       await ctx.editMessageText(`✅ Пользователь ${targetId} назначен в трайб «${tribeName}».`);
+    } else {
+      await ctx.editMessageText(`Пользователь ${targetId} не найден.`);
+    }
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  // ─── Remove from tribe ──────────────────────────────────────────────
+  if (data === "admin:remove_tribe") {
+    const admin = await getUserByTelegramId(telegramId);
+    const tribeId = admin?.tribeId ?? 1;
+    const users = await listTribeUsers(tribeId);
+    const nonAdmins = users.filter((u) => u.role !== "admin");
+
+    if (nonAdmins.length === 0) {
+      await ctx.editMessageText("Нет пользователей для удаления из трайба.");
+      await ctx.answerCbQuery();
+      return;
+    }
+
+    const buttons = nonAdmins.map((u) => {
+      const name = u.firstName || u.username || String(u.telegramId);
+      return [Markup.button.callback(`🚫 ${name} (${u.telegramId})`, `admin:untribe:${u.telegramId}`)];
+    });
+
+    await ctx.editMessageText("🚫 *Выберите пользователя для удаления из трайба:*", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard(buttons),
+    });
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  // admin:untribe:<telegramId>
+  const untribeMatch = data.match(/^admin:untribe:(\d+)$/);
+  if (untribeMatch) {
+    const targetId = parseInt(untribeMatch[1], 10);
+    const removed = await removeUserFromTribe(targetId);
+    if (removed) {
+      await ctx.editMessageText(`✅ Пользователь ${targetId} убран из трайба.`);
     } else {
       await ctx.editMessageText(`Пользователь ${targetId} не найден.`);
     }

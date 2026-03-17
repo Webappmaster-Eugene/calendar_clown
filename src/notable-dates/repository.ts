@@ -235,6 +235,61 @@ export async function listNotableDates(
   return rows.map(mapRow);
 }
 
+/** Count notable dates for a tribe (optionally filtered by month, excluding holidays). */
+export async function countNotableDates(
+  tribeId: number,
+  excludeHolidays: boolean = false
+): Promise<number> {
+  let sql = `SELECT COUNT(*)::int AS cnt FROM notable_dates WHERE tribe_id = $1 AND is_active = true`;
+  const params: unknown[] = [tribeId];
+
+  if (excludeHolidays) {
+    sql += ` AND event_type != 'holiday'`;
+  }
+
+  const { rows } = await query<{ cnt: number }>(sql, params);
+  return rows[0]?.cnt ?? 0;
+}
+
+/** List notable dates with pagination (flat list, ordered by date). */
+export async function listNotableDatesPaginated(
+  tribeId: number,
+  limit: number,
+  offset: number,
+  excludeHolidays: boolean = false
+): Promise<NotableDate[]> {
+  let sql = `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
+                    event_type, description, greeting_template, emoji, is_priority, is_active, created_at
+             FROM notable_dates
+             WHERE tribe_id = $1 AND is_active = true`;
+  const params: unknown[] = [tribeId];
+  let paramIdx = 2;
+
+  if (excludeHolidays) {
+    sql += ` AND event_type != 'holiday'`;
+  }
+
+  sql += ` ORDER BY date_month, date_day, event_type, name LIMIT $${paramIdx++} OFFSET $${paramIdx}`;
+  params.push(limit, offset);
+
+  const { rows } = await query<{
+    id: number;
+    tribe_id: number;
+    added_by_user_id: number | null;
+    name: string;
+    date_month: number;
+    date_day: number;
+    event_type: string;
+    description: string | null;
+    greeting_template: string | null;
+    emoji: string;
+    is_priority: boolean;
+    is_active: boolean;
+    created_at: Date;
+  }>(sql, params);
+  return rows.map(mapRow);
+}
+
 /** Get upcoming notable dates (next N days from today). */
 export async function getUpcomingDates(
   tribeId: number,

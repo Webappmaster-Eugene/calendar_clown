@@ -10,20 +10,20 @@ export async function handleBroadcastCommand(ctx: Context): Promise<void> {
   if (telegramId == null) return;
 
   if (!isBootstrapAdmin(telegramId)) {
-    await ctx.reply("Рассылка доступна только администратору.");
+    await ctx.reply("Царская почта доступна только администратору.");
     return;
   }
 
   // Answer callback query if triggered from inline button
   if (ctx.callbackQuery) {
-    await ctx.answerCbQuery("📢 Рассылка");
+    await ctx.answerCbQuery("📢 Царская почта");
   }
 
   await setUserMode(telegramId, "broadcast");
   await setModeMenuCommands(ctx, "broadcast");
 
   await ctx.reply(
-    "📢 *Режим рассылки активирован*\n\n" +
+    "📢 *Царская почта активирована*\n\n" +
     "Отправьте текстовое или голосовое сообщение — оно будет разослано всем пользователям.\n\n" +
     "Для выхода переключитесь в другой режим.",
     {

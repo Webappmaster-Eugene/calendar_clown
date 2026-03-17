@@ -26,6 +26,11 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.71.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
+    "@opentelemetry/sdk-node": "^0.213.0",
+    "@opentelemetry/sdk-trace-node": "^2.6.0",
     "bullmq": "^5.34.0",
     "chrono-node": "^2.7.4",
     "croner": "^10.0.1",
