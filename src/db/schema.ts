@@ -440,6 +440,28 @@ export const gandalfEntries = pgTable(
   ],
 );
 
+// ─── Chat Messages ──────────────────────────────────────────────────────────
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 20 }).notNull(),
+    content: text("content").notNull(),
+    modelUsed: varchar("model_used", { length: 100 }),
+    tokensUsed: integer("tokens_used"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_chat_messages_user_id").on(table.userId),
+    index("idx_chat_messages_created_at").on(table.createdAt),
+    check("chat_messages_role_check", sql`${table.role} IN ('user', 'assistant')`),
+  ],
+);
+
 // ─── Gandalf Entry Files ────────────────────────────────────────────────────
 
 export const gandalfEntryFiles = pgTable(

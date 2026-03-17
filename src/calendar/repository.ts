@@ -89,6 +89,57 @@ export async function getEventsByUser(
   return rows.map(mapRow);
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: get all calendar events paginated (all users). */
+export async function getAllEventsPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<CalendarEventRecord & { firstName: string }>> {
+  const { rows } = await query<{
+    id: number; user_id: number; tribe_id: number;
+    google_event_id: string | null; summary: string; description: string | null;
+    start_time: Date; end_time: Date; recurrence: string[] | null;
+    input_method: string; status: string; error_message: string | null;
+    html_link: string | null; created_at: Date; updated_at: Date | null;
+    deleted_at: Date | null; first_name: string;
+  }>(
+    `SELECT ce.*, u.first_name
+     FROM calendar_events ce
+     JOIN users u ON u.id = ce.user_id
+     ORDER BY ce.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({ ...mapRow(r), firstName: r.first_name }));
+}
+
+/** Admin: count all calendar events. */
+export async function countAllEvents(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM calendar_events"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Admin: bulk soft-delete calendar events (set status='deleted'). */
+export async function bulkDeleteEvents(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "UPDATE calendar_events SET status = 'deleted', deleted_at = NOW(), updated_at = NOW() WHERE id = ANY($1) AND status != 'deleted'",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: soft-delete all calendar events. */
+export async function deleteAllEvents(): Promise<number> {
+  const { rowCount } = await query(
+    "UPDATE calendar_events SET status = 'deleted', deleted_at = NOW(), updated_at = NOW() WHERE status != 'deleted'"
+  );
+  return rowCount ?? 0;
+}
+
 function mapRow(r: {
   id: number;
   user_id: number;

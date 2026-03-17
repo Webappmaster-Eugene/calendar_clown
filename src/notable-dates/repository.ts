@@ -336,6 +336,58 @@ export async function getUpcomingDates(
   return rows.map(mapRow);
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: bulk delete notable dates by ID array. */
+export async function bulkDeleteDates(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM notable_dates WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete all notable dates for a tribe. */
+export async function deleteAllDates(tribeId: number): Promise<number> {
+  const { rowCount } = await query(
+    "DELETE FROM notable_dates WHERE tribe_id = $1",
+    [tribeId]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: get all notable dates paginated (all tribes). */
+export async function getAllDatesPaginated(
+  limit: number,
+  offset: number
+): Promise<NotableDate[]> {
+  const { rows } = await query<{
+    id: number; tribe_id: number; added_by_user_id: number | null;
+    name: string; date_month: number; date_day: number;
+    event_type: string; description: string | null;
+    greeting_template: string | null; emoji: string;
+    is_priority: boolean; is_active: boolean; created_at: Date;
+  }>(
+    `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
+            event_type, description, greeting_template, emoji, is_priority, is_active, created_at
+     FROM notable_dates
+     ORDER BY date_month, date_day, name
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map(mapRow);
+}
+
+/** Admin: count all notable dates for a tribe. */
+export async function countAllDates(tribeId: number): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM notable_dates WHERE tribe_id = $1",
+    [tribeId]
+  );
+  return parseInt(rows[0].count, 10);
+}
+
 function mapRow(r: {
   id: number;
   tribe_id: number;

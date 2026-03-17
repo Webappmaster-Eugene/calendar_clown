@@ -13,7 +13,9 @@ import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.
 import { handleUndoCallback } from "./commands/expenseUndo.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput, handleOnboardRequest } from "./commands/admin.js";
 import { handleStatsCommand } from "./commands/adminStats.js";
-import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback } from "./commands/transcribeMode.js";
+import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback, handleTranscribeDeleteCallback } from "./commands/transcribeMode.js";
+import { handleAdminDataCallback, handleAdminDataTextInput } from "./commands/adminData.js";
+import { handleBulkCallback } from "./utils/bulkSelect.js";
 import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText, handleFolderImportButton, handleDigestFolderCallback, handleDigestFolderToCallback } from "./commands/digestMode.js";
 import { handleBroadcastCommand, handleBroadcastText } from "./commands/broadcastMode.js";
 import {
@@ -71,8 +73,9 @@ import {
   handleGandalfText,
   handleGandalfFileAttachment,
 } from "./commands/gandalfMode.js";
+import { handleNeuroCommand, handleNeuroText, handleNeuroClearButton } from "./commands/chatMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isNotesMode, isDigestMode, isGandalfMode } from "./middleware/expenseMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isNotesMode, isDigestMode, isGandalfMode, isNeuroMode } from "./middleware/expenseMode.js";
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
@@ -102,6 +105,7 @@ export function createBot(token: string): Telegraf {
   bot.command("dates", handleNotableDatesCommand);
   bot.command("notes", handleNotesCommand);
   bot.command("gandalf", handleGandalfCommand);
+  bot.command("neuro", handleNeuroCommand);
 
   // Admin commands
   bot.command("admin", handleAdminCommand);
@@ -126,6 +130,14 @@ export function createBot(token: string): Telegraf {
   bot.action(/^notable_priority:/, handleNotableDatePriorityCallback);
   bot.action(/^tr_hist:/, handleTranscribeHistoryCallback);
   bot.action(/^tr_full:/, handleTranscribeFullCallback);
+  bot.action(/^tr_del:/, handleTranscribeDeleteCallback);
+  bot.action(/^tr_del_yes:/, handleTranscribeDeleteCallback);
+
+  // Admin data management callbacks
+  bot.action(/^adm_/, handleAdminDataCallback);
+
+  // Bulk selection callbacks
+  bot.action(/^bulk:/, handleBulkCallback);
 
   // Digest folder import callbacks
   bot.action(/^digest_folder:/, handleDigestFolderCallback);
@@ -228,6 +240,10 @@ export function createBot(token: string): Telegraf {
     await ctx.answerCbQuery("🧙 Гэндальф");
     await handleGandalfCommand(ctx);
   });
+  bot.action("mode:neuro", async (ctx) => {
+    await ctx.answerCbQuery("🧠 Нейро");
+    await handleNeuroCommand(ctx);
+  });
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
   // ─── Voice ──────────────────────────────────────────────────────────
@@ -245,6 +261,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("🎉 Даты", handleNotableDatesCommand);
   bot.hears("📝 Заметки", handleNotesCommand);
   bot.hears("🧙 Гэндальф", handleGandalfCommand);
+  bot.hears("🧠 Нейро", handleNeuroCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
@@ -299,6 +316,14 @@ export function createBot(token: string): Telegraf {
   bot.hears("📊 Статистика", handleGandalfStatsButton);
   bot.hears("📋 Все записи", handleGandalfAllEntriesButton);
 
+  // Neuro mode buttons
+  bot.hears("🗑 Очистить историю", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNeuroMode(tid)) {
+      await handleNeuroClearButton(ctx);
+    }
+  });
+
   // Notable dates mode buttons
   bot.hears("📅 Ближайшие", handleUpcomingDatesButton);
   bot.hears("📅 На неделе", handleWeekDatesButton);
@@ -336,9 +361,19 @@ export function createBot(token: string): Telegraf {
     // Skip commands
     if (ctx.message.text.startsWith("/")) return next();
 
-    // Admin text input (waiting for user ID)
+    // Admin text input (waiting for user ID, tribe name, etc.)
     const consumed = await handleAdminTextInput(ctx);
     if (consumed) return;
+
+    // Admin data text input (edit operations)
+    const consumedData = await handleAdminDataTextInput(ctx);
+    if (consumedData) return;
+
+    // Neuro mode — AI chat
+    if (await isNeuroMode(telegramId)) {
+      await handleNeuroText(ctx);
+      return;
+    }
 
     // Gandalf mode — text input for creating entries/categories
     if (await isGandalfMode(telegramId)) {

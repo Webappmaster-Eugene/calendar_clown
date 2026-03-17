@@ -417,6 +417,81 @@ export async function getLatestEntryByUser(tribeId: number, userId: number): Pro
   return mapEntryWithJoins(rows[0]);
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: update entry title/price. */
+export async function updateEntryFields(
+  entryId: number,
+  fields: { title?: string; price?: number | null }
+): Promise<boolean> {
+  const sets: string[] = ["updated_at = NOW()"];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (fields.title !== undefined) {
+    sets.push(`title = $${idx++}`);
+    params.push(fields.title);
+  }
+  if (fields.price !== undefined) {
+    sets.push(`price = $${idx++}`);
+    params.push(fields.price);
+  }
+
+  if (sets.length === 1) return false; // only updated_at
+  params.push(entryId);
+
+  const { rowCount } = await query(
+    `UPDATE gandalf_entries SET ${sets.join(", ")} WHERE id = $${idx}`,
+    params
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Admin: bulk delete entries by ID array. */
+export async function bulkDeleteEntries(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM gandalf_entries WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete all entries for a tribe. */
+export async function deleteAllEntries(tribeId: number): Promise<number> {
+  const { rowCount } = await query(
+    "DELETE FROM gandalf_entries WHERE tribe_id = $1",
+    [tribeId]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: get all entries paginated (with joins). */
+export async function getAllEntriesPaginated(
+  limit: number,
+  offset: number
+): Promise<GandalfEntry[]> {
+  const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
+    `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
+     FROM gandalf_entries e
+     JOIN gandalf_categories c ON c.id = e.category_id
+     JOIN users u ON u.id = e.added_by_user_id
+     ORDER BY e.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map(mapEntryWithJoins);
+}
+
+/** Admin: count all entries for a tribe. */
+export async function countAllEntries(tribeId: number): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id = $1",
+    [tribeId]
+  );
+  return parseInt(rows[0].count, 10);
+}
+
 // ─── Internal ───────────────────────────────────────────────────────────
 
 interface CategoryRow {

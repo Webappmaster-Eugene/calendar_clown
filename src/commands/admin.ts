@@ -19,12 +19,19 @@ import {
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { createLogger } from "../utils/logger.js";
+import { showDataManagementMenu } from "./adminData.js";
+import {
+  updateTribe,
+  deleteTribe,
+} from "../expenses/repository.js";
 
 const log = createLogger("admin");
 
 type AdminPendingAction =
   | { type: "add_user"; timestamp: number }
-  | { type: "new_tribe"; timestamp: number };
+  | { type: "new_tribe"; timestamp: number }
+  | { type: "edit_tribe"; tribeId: number; timestamp: number }
+  | { type: "edit_user_role"; userId: number; timestamp: number };
 
 /** State for admin pending text input. */
 const adminPendingAction = new Map<number, AdminPendingAction>();
@@ -61,6 +68,9 @@ export async function handleAdminCommand(ctx: Context): Promise<void> {
       [Markup.button.callback("🏷 Назначить трайб", "admin:tribes")],
       [Markup.button.callback("🚫 Убрать из трайба", "admin:remove_tribe")],
       [Markup.button.callback("➕ Создать трайб", "admin:new_tribe")],
+      [Markup.button.callback("✏️ Редактировать трайб", "admin:edit_tribe")],
+      [Markup.button.callback("🗑 Удалить трайб", "admin:del_tribe")],
+      [Markup.button.callback("📊 Управление данными", "admin:data")],
     ]),
   });
 }
@@ -328,6 +338,107 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  // ─── Data Management ─────────────────────────────────────────────────
+  if (data === "admin:data") {
+    await showDataManagementMenu(ctx);
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  if (data === "admin:back") {
+    await ctx.editMessageText("🔧 *Панель администратора*", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("👥 Список пользователей", "admin:list")],
+        [Markup.button.callback("➕ Добавить пользователя", "admin:add")],
+        [Markup.button.callback("➖ Удалить пользователя", "admin:remove")],
+        [Markup.button.callback("📋 Заявки", "admin:pending")],
+        [Markup.button.callback("🏷 Назначить трайб", "admin:tribes")],
+        [Markup.button.callback("🚫 Убрать из трайба", "admin:remove_tribe")],
+        [Markup.button.callback("➕ Создать трайб", "admin:new_tribe")],
+        [Markup.button.callback("✏️ Редактировать трайб", "admin:edit_tribe")],
+        [Markup.button.callback("🗑 Удалить трайб", "admin:del_tribe")],
+        [Markup.button.callback("📊 Управление данными", "admin:data")],
+      ]),
+    });
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  // ─── Edit tribe ──────────────────────────────────────────────────────
+  if (data === "admin:edit_tribe") {
+    const tribes = await listTribes();
+    if (tribes.length === 0) {
+      await ctx.editMessageText("Нет трайбов.");
+      await ctx.answerCbQuery();
+      return;
+    }
+    const buttons = tribes.map((t) =>
+      [Markup.button.callback(`✏️ ${t.name}`, `admin:edit_tribe_sel:${t.id}`)]
+    );
+    await ctx.editMessageText("✏️ *Выберите трайб для редактирования:*", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard(buttons),
+    });
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const editTribeSelMatch = data.match(/^admin:edit_tribe_sel:(\d+)$/);
+  if (editTribeSelMatch) {
+    const tribeId = parseInt(editTribeSelMatch[1], 10);
+    cleanExpiredAdminActions();
+    adminPendingAction.set(telegramId, { type: "edit_tribe", tribeId, timestamp: Date.now() });
+    await ctx.editMessageText(`✏️ Введите новое название для трайба #${tribeId}:`);
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  // ─── Delete tribe ────────────────────────────────────────────────────
+  if (data === "admin:del_tribe") {
+    const tribes = await listTribes();
+    if (tribes.length === 0) {
+      await ctx.editMessageText("Нет трайбов.");
+      await ctx.answerCbQuery();
+      return;
+    }
+    const buttons = tribes.map((t) =>
+      [Markup.button.callback(`🗑 ${t.name}`, `admin:del_tribe_conf:${t.id}`)]
+    );
+    await ctx.editMessageText("🗑 *Выберите трайб для удаления:*\n\n⚠️ Удаление возможно только если нет пользователей.", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard(buttons),
+    });
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const delTribeConfMatch = data.match(/^admin:del_tribe_conf:(\d+)$/);
+  if (delTribeConfMatch) {
+    const tribeId = parseInt(delTribeConfMatch[1], 10);
+    await ctx.editMessageText(`⚠️ Удалить трайб #${tribeId}?\n\nЕсли в трайбе есть пользователи, удаление невозможно.`, {
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("✅ Да, удалить", `admin:del_tribe_yes:${tribeId}`)],
+        [Markup.button.callback("❌ Отмена", "admin:del_tribe")],
+      ]),
+    });
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const delTribeYesMatch = data.match(/^admin:del_tribe_yes:(\d+)$/);
+  if (delTribeYesMatch) {
+    const tribeId = parseInt(delTribeYesMatch[1], 10);
+    const deleted = await deleteTribe(tribeId);
+    if (deleted) {
+      await ctx.editMessageText(`✅ Трайб #${tribeId} удалён.`);
+    } else {
+      await ctx.editMessageText(`❌ Не удалось удалить трайб #${tribeId}. Возможно, в нём есть пользователи.`);
+    }
+    await ctx.answerCbQuery();
+    return;
+  }
+
   await ctx.answerCbQuery();
 }
 
@@ -382,6 +493,26 @@ export async function handleAdminTextInput(ctx: Context): Promise<boolean> {
     } catch (err) {
       log.error("Error creating tribe:", err);
       await ctx.reply("❌ Ошибка при создании трайба.");
+    }
+    return true;
+  }
+
+  if (pending.type === "edit_tribe") {
+    if (!text || text.length > 100) {
+      await ctx.reply("❌ Название трайба должно быть от 1 до 100 символов.");
+      return true;
+    }
+
+    try {
+      const updated = await updateTribe(pending.tribeId, { name: text });
+      if (updated) {
+        await ctx.reply(`✅ Трайб #${pending.tribeId} переименован в «${text}».`);
+      } else {
+        await ctx.reply(`❌ Трайб #${pending.tribeId} не найден.`);
+      }
+    } catch (err) {
+      log.error("Error updating tribe:", err);
+      await ctx.reply("❌ Ошибка при обновлении трайба.");
     }
     return true;
   }

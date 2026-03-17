@@ -230,6 +230,88 @@ export async function getUsersWithActiveDigest(): Promise<number[]> {
   return rows.map((r) => r.user_id);
 }
 
+// ─── Admin functions ─────────────────────────────────────────────────────────
+
+/** Admin: update rubric fields. */
+export async function updateRubric(
+  rubricId: number,
+  fields: { name?: string; description?: string | null; emoji?: string | null; keywords?: string[] }
+): Promise<boolean> {
+  const sets: string[] = ["updated_at = NOW()"];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (fields.name !== undefined) {
+    sets.push(`name = $${idx++}`);
+    params.push(fields.name);
+  }
+  if (fields.description !== undefined) {
+    sets.push(`description = $${idx++}`);
+    params.push(fields.description);
+  }
+  if (fields.emoji !== undefined) {
+    sets.push(`emoji = $${idx++}`);
+    params.push(fields.emoji);
+  }
+  if (fields.keywords !== undefined) {
+    sets.push(`keywords = $${idx++}`);
+    params.push(fields.keywords);
+  }
+
+  if (sets.length === 1) return false; // only updated_at
+  params.push(rubricId);
+
+  const { rowCount } = await query(
+    `UPDATE digest_rubrics SET ${sets.join(", ")} WHERE id = $${idx}`,
+    params
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Admin: bulk delete rubrics by ID array. */
+export async function bulkDeleteRubrics(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM digest_rubrics WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete all rubrics (optionally by user). */
+export async function deleteAllRubrics(userId?: number): Promise<number> {
+  if (userId != null) {
+    const { rowCount } = await query("DELETE FROM digest_rubrics WHERE user_id = $1", [userId]);
+    return rowCount ?? 0;
+  }
+  const { rowCount } = await query("DELETE FROM digest_rubrics");
+  return rowCount ?? 0;
+}
+
+/** Admin: get all rubrics paginated (all users). */
+export async function getAllRubricsPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<DigestRubric & { firstName: string }>> {
+  const { rows } = await query<RubricRow & { first_name: string }>(
+    `SELECT r.*, u.first_name
+     FROM digest_rubrics r
+     JOIN users u ON u.id = r.user_id
+     ORDER BY r.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({ ...mapRubric(r), firstName: r.first_name }));
+}
+
+/** Admin: count all rubrics. */
+export async function countAllRubrics(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM digest_rubrics"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
 // ─── Row mappers ─────────────────────────────────────────────────────────────
 
 interface RubricRow {

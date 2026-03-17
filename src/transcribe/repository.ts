@@ -192,6 +192,66 @@ export async function getTranscriptionByFileUniqueId(
   return mapRow(rows[0]);
 }
 
+// ─── Admin functions ──────────────────────────────────────────────────────
+
+/** Delete a transcription by ID with ownership check. */
+export async function deleteTranscriptionForUser(id: number, userId: number): Promise<boolean> {
+  const { rowCount } = await query(
+    "DELETE FROM voice_transcriptions WHERE id = $1 AND user_id = $2",
+    [id, userId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Delete all completed transcriptions for a user. */
+export async function deleteAllTranscriptionsForUser(userId: number): Promise<number> {
+  const { rowCount } = await query(
+    "DELETE FROM voice_transcriptions WHERE user_id = $1 AND status = 'completed'",
+    [userId]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete ALL transcriptions across all users. */
+export async function deleteAllTranscriptions(): Promise<number> {
+  const { rowCount } = await query("DELETE FROM voice_transcriptions");
+  return rowCount ?? 0;
+}
+
+/** Delete transcriptions by an array of IDs. */
+export async function bulkDeleteTranscriptions(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM voice_transcriptions WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: get all transcriptions paginated (all users, with user info). */
+export async function getAllTranscriptionsPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<VoiceTranscription & { firstName: string }>> {
+  const { rows } = await query<TranscriptionRow & { first_name: string }>(
+    `SELECT vt.*, u.first_name
+     FROM voice_transcriptions vt
+     JOIN users u ON u.id = vt.user_id
+     ORDER BY vt.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({ ...mapRow(r), firstName: r.first_name }));
+}
+
+/** Admin: count all transcriptions. */
+export async function countAllTranscriptions(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM voice_transcriptions"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
 // ─── Internal ────────────────────────────────────────────────────────────
 
 interface TranscriptionRow {

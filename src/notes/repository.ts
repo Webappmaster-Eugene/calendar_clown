@@ -309,6 +309,62 @@ export async function appendToNote(noteId: number, tribeId: number, additionalCo
   return (rowCount ?? 0) > 0;
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: update note content (encrypts). */
+export async function updateNoteContent(noteId: number, newContent: string): Promise<boolean> {
+  const { rowCount } = await query(
+    "UPDATE notes SET content = $1, updated_at = NOW() WHERE id = $2",
+    [encrypt(newContent), noteId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Admin: bulk delete notes by ID array. */
+export async function bulkDeleteNotes(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM notes WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete all notes (optionally by user). */
+export async function deleteAllNotes(userId?: number): Promise<number> {
+  if (userId != null) {
+    const { rowCount } = await query("DELETE FROM notes WHERE user_id = $1", [userId]);
+    return rowCount ?? 0;
+  }
+  const { rowCount } = await query("DELETE FROM notes");
+  return rowCount ?? 0;
+}
+
+/** Admin: get all notes paginated (all users). */
+export async function getAllNotesPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<Note & { authorName: string }>> {
+  const { rows } = await query<NoteRow & { topic_name: string | null; topic_emoji: string | null; first_name: string }>(
+    `SELECT n.*, t.name AS topic_name, t.emoji AS topic_emoji, u.first_name
+     FROM notes n
+     LEFT JOIN note_topics t ON t.id = n.topic_id
+     JOIN users u ON u.id = n.user_id
+     ORDER BY n.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({ ...mapNoteWithTopic(r), authorName: r.first_name }));
+}
+
+/** Admin: count all notes. */
+export async function countAllNotes(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM notes"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
 // ─── Internal ──────────────────────────────────────────────────────────
 
 interface NoteRow {

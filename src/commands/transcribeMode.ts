@@ -10,6 +10,7 @@ import {
   countCompletedTranscriptions,
   markUserPendingAsFailed,
   getTranscriptionByIdForUser,
+  deleteTranscriptionForUser,
 } from "../transcribe/repository.js";
 import { splitMessage } from "../utils/telegram.js";
 import { createLogger } from "../utils/logger.js";
@@ -206,17 +207,22 @@ async function sendHistoryPage(
 
     const text = `📋 *Транскрипции (${currentPage}/${totalPages}, всего: ${total}):*\n\n${lines.join("\n\n")}`;
 
-    // Build inline buttons: "📖 Полностью" for truncated transcripts
+    // Build inline buttons: "📖 Полностью" + "🗑" per item
     const inlineRows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
     for (const t of transcriptions) {
+      const idx = transcriptions.indexOf(t);
+      const num = offset + idx + 1;
+      const row: Array<ReturnType<typeof Markup.button.callback>> = [];
       if (t.transcript && t.transcript.length > 100) {
-        inlineRows.push([
+        row.push(
           Markup.button.callback(
-            `📖 #${offset + transcriptions.indexOf(t) + 1} — ${t.transcript.slice(0, 30)}…`,
+            `📖 #${num} — ${t.transcript.slice(0, 30)}…`,
             `tr_full:${t.id}`
           ),
-        ]);
+        );
       }
+      row.push(Markup.button.callback(`🗑 #${num}`, `tr_del:${t.id}`));
+      inlineRows.push(row);
     }
 
     // Pagination buttons
@@ -290,4 +296,59 @@ export async function handleTranscribeFullCallback(ctx: Context): Promise<void> 
     log.error("Error fetching full transcription:", err);
     await ctx.answerCbQuery("Ошибка загрузки.");
   }
+}
+
+/** Handle "🗑" delete callbacks for transcription history items. */
+export async function handleTranscribeDeleteCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    await ctx.answerCbQuery("Пользователь не найден.");
+    return;
+  }
+
+  // tr_del:<id> — show confirmation
+  const delMatch = data.match(/^tr_del:(\d+)$/);
+  if (delMatch) {
+    const id = parseInt(delMatch[1], 10);
+    await ctx.editMessageText(
+      `⚠️ Удалить транскрипцию #${id}?\n\nЭто действие необратимо.`,
+      {
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("✅ Да, удалить", `tr_del_yes:${id}`)],
+          [Markup.button.callback("❌ Отмена", `tr_hist:0`)],
+        ]),
+      }
+    );
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  // tr_del_yes:<id> — confirm delete
+  const delYesMatch = data.match(/^tr_del_yes:(\d+)$/);
+  if (delYesMatch) {
+    const id = parseInt(delYesMatch[1], 10);
+    try {
+      const deleted = await deleteTranscriptionForUser(id, dbUser.id);
+      if (deleted) {
+        await ctx.editMessageText(`✅ Транскрипция #${id} удалена.`);
+      } else {
+        await ctx.editMessageText("❌ Транскрипция не найдена или уже удалена.");
+      }
+    } catch (err) {
+      log.error("Error deleting transcription:", err);
+      await ctx.editMessageText("❌ Ошибка при удалении.");
+    }
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  await ctx.answerCbQuery();
 }

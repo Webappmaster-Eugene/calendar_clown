@@ -13,7 +13,7 @@ export interface UserMenuContext {
 }
 
 /** Modes available to any approved user (even without a tribe). */
-export const INDIVIDUAL_MODES = new Set(["calendar", "transcribe", "notes"]);
+export const INDIVIDUAL_MODES = new Set(["calendar", "transcribe", "notes", "neuro"]);
 
 /** Modes that require tribe membership. */
 export const TRIBE_MODES = new Set(["expenses", "digest", "notable_dates", "gandalf"]);

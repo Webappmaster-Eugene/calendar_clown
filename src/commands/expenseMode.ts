@@ -65,6 +65,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  neuro: [
+    { command: "neuro", description: "Нейро — AI-чат (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
 };
 
 /** Update the Telegram hamburger menu commands for the user's current mode. */
@@ -89,7 +94,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📅 Календарь", "💰 Расходы"],
         ["🎙 Транскрибатор", "📝 Заметки"],
         ["📰 Дайджест", "🎉 Даты"],
-        ["🧙 Гэндальф"],
+        ["🧙 Гэндальф", "🧠 Нейро"],
         ["📢 Царская почта", "👑 Управление"],
       ]).resize();
     }
@@ -98,13 +103,13 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📅 Календарь", "💰 Расходы"],
         ["🎙 Транскрибатор", "📝 Заметки"],
         ["📰 Дайджест", "🎉 Даты"],
-        ["🧙 Гэндальф"],
+        ["🧙 Гэндальф", "🧠 Нейро"],
       ]).resize();
     }
     // User without tribe — limited modes
     return Markup.keyboard([
       ["📅 Календарь", "🎙 Транскрибатор"],
-      ["📝 Заметки"],
+      ["📝 Заметки", "🧠 Нейро"],
     ]).resize();
   }
 
@@ -113,7 +118,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["📅 Календарь", "💰 Расходы"],
     ["🎙 Транскрибатор", "📝 Заметки"],
     ["📰 Дайджест", "🎉 Даты"],
-    ["🧙 Гэндальф"],
+    ["🧙 Гэндальф", "🧠 Нейро"],
   ];
   if (isAdmin) {
     rows.push(["📢 Царская почта", "👑 Управление"]);
@@ -211,6 +216,7 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
   if (canAccessMode("gandalf", ctx)) {
     rows.push([Markup.button.callback("🧙 Гэндальф", "mode:gandalf")]);
   }
+  rows.push([Markup.button.callback("🧠 Нейро", "mode:neuro")]);
   if (isAdmin) {
     rows.push([
       Markup.button.callback("📢 Царская почта", "mode:broadcast"),

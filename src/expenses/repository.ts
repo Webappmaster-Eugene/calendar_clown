@@ -418,9 +418,9 @@ export async function createTribe(name: string): Promise<{ id: number; name: str
 }
 
 /** Valid bot modes. */
-type BotMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes" | "gandalf";
+type BotMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes" | "gandalf" | "neuro";
 
-const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "digest", "broadcast", "notable_dates", "notes", "gandalf"]);
+const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "digest", "broadcast", "notable_dates", "notes", "gandalf", "neuro"]);
 
 /** Get user's current bot mode from DB. */
 export async function getUserMode(telegramId: number): Promise<BotMode> {
@@ -671,6 +671,152 @@ export async function getMonthComparison(
       diff: currTotal - prevTotal,
     };
   });
+}
+
+// ─── Admin functions ──────────────────────────────────────────────────
+
+/** Admin: get expenses paginated with category/user info. */
+export async function getExpensesPaginated(
+  tribeId: number,
+  limit: number,
+  offset: number
+): Promise<Array<ExpenseWithCategory & { firstName: string }>> {
+  const { rows } = await query<{
+    id: number;
+    user_id: number;
+    tribe_id: number;
+    category_id: number;
+    subcategory: string | null;
+    amount: string;
+    input_method: string;
+    created_at: Date;
+    category_name: string;
+    category_emoji: string;
+    first_name: string;
+  }>(
+    `SELECT e.id, e.user_id, e.tribe_id, e.category_id, e.subcategory, e.amount,
+            e.input_method, e.created_at, c.name AS category_name, c.emoji AS category_emoji,
+            u.first_name
+     FROM expenses e
+     JOIN categories c ON c.id = e.category_id
+     JOIN users u ON u.id = e.user_id
+     WHERE e.tribe_id = $1
+     ORDER BY e.created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [tribeId, limit, offset]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    tribeId: r.tribe_id,
+    categoryId: r.category_id,
+    subcategory: r.subcategory,
+    amount: parseFloat(r.amount),
+    inputMethod: r.input_method as "text" | "voice",
+    createdAt: r.created_at,
+    categoryName: r.category_name,
+    categoryEmoji: r.category_emoji,
+    firstName: r.first_name,
+  }));
+}
+
+/** Admin: count all expenses for a tribe. */
+export async function countExpenses(tribeId: number): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM expenses WHERE tribe_id = $1",
+    [tribeId]
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Admin: update expense fields (no ownership check). */
+export async function updateExpense(
+  expenseId: number,
+  fields: { amount?: number; categoryId?: number; subcategory?: string | null }
+): Promise<boolean> {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (fields.amount !== undefined) {
+    sets.push(`amount = $${idx++}`);
+    params.push(fields.amount);
+  }
+  if (fields.categoryId !== undefined) {
+    sets.push(`category_id = $${idx++}`);
+    params.push(fields.categoryId);
+  }
+  if (fields.subcategory !== undefined) {
+    sets.push(`subcategory = $${idx++}`);
+    params.push(fields.subcategory);
+  }
+
+  if (sets.length === 0) return false;
+  params.push(expenseId);
+
+  const { rowCount } = await query(
+    `UPDATE expenses SET ${sets.join(", ")} WHERE id = $${idx}`,
+    params
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Admin: bulk delete expenses by ID array. */
+export async function bulkDeleteExpenses(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM expenses WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete all expenses for a tribe. */
+export async function deleteAllExpenses(tribeId: number): Promise<number> {
+  const { rowCount } = await query(
+    "DELETE FROM expenses WHERE tribe_id = $1",
+    [tribeId]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: update tribe name/monthlyLimit. */
+export async function updateTribe(
+  tribeId: number,
+  fields: { name?: string; monthlyLimit?: number | null }
+): Promise<boolean> {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (fields.name !== undefined) {
+    sets.push(`name = $${idx++}`);
+    params.push(fields.name);
+  }
+  if (fields.monthlyLimit !== undefined) {
+    sets.push(`monthly_limit = $${idx++}`);
+    params.push(fields.monthlyLimit);
+  }
+
+  if (sets.length === 0) return false;
+  params.push(tribeId);
+
+  const { rowCount } = await query(
+    `UPDATE tribes SET ${sets.join(", ")} WHERE id = $${idx}`,
+    params
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Admin: delete a tribe (only if no users assigned). */
+export async function deleteTribe(tribeId: number): Promise<boolean> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM users WHERE tribe_id = $1",
+    [tribeId]
+  );
+  if (parseInt(rows[0].count, 10) > 0) return false;
+  const { rowCount } = await query("DELETE FROM tribes WHERE id = $1", [tribeId]);
+  return (rowCount ?? 0) > 0;
 }
 
 /** Get detailed expense rows for Excel export (includes user and category info). */
