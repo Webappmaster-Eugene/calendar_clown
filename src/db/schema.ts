@@ -482,3 +482,74 @@ export const gandalfEntryFiles = pgTable(
     index("idx_gandalf_entry_files_entry").on(table.entryId),
   ],
 );
+
+// ─── Wishlists ──────────────────────────────────────────────────────────
+
+export const wishlists = pgTable(
+  "wishlists",
+  {
+    id: serial("id").primaryKey(),
+    tribeId: integer("tribe_id")
+      .notNull()
+      .references(() => tribes.id),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    name: varchar("name", { length: 100 }).notNull(),
+    emoji: varchar("emoji", { length: 10 }).default("🎁"),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("idx_wishlists_tribe").on(table.tribeId),
+    index("idx_wishlists_user").on(table.userId),
+    uniqueIndex("wishlists_user_id_name_key")
+      .on(table.userId, table.name)
+      .where(sql`is_active = true`),
+  ],
+);
+
+// ─── Wishlist Items ─────────────────────────────────────────────────────
+
+export const wishlistItems = pgTable(
+  "wishlist_items",
+  {
+    id: serial("id").primaryKey(),
+    wishlistId: integer("wishlist_id")
+      .notNull()
+      .references(() => wishlists.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 500 }).notNull(),
+    description: text("description"),
+    link: text("link"),
+    priority: integer("priority").notNull().default(1),
+    isReserved: boolean("is_reserved").default(false),
+    reservedByUserId: integer("reserved_by_user_id").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("idx_wishlist_items_wishlist").on(table.wishlistId),
+  ],
+);
+
+// ─── Wishlist Item Files ────────────────────────────────────────────────
+
+export const wishlistItemFiles = pgTable(
+  "wishlist_item_files",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => wishlistItems.id, { onDelete: "cascade" }),
+    telegramFileId: varchar("telegram_file_id", { length: 255 }).notNull(),
+    fileType: varchar("file_type", { length: 20 }).notNull(),
+    fileName: varchar("file_name", { length: 255 }),
+    mimeType: varchar("mime_type", { length: 100 }),
+    fileSizeBytes: integer("file_size_bytes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("idx_wishlist_item_files_item").on(table.itemId),
+  ],
+);

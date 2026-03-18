@@ -27,6 +27,7 @@ export function getPool(): pg.Pool {
       max: 10,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
+      statement_timeout: 10_000,
     });
     pool.on("error", (err) => {
       log.error("Unexpected PostgreSQL pool error:", err.message);

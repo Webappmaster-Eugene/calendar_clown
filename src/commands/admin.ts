@@ -556,7 +556,8 @@ export async function handleOnboardRequest(ctx: Context): Promise<void> {
     if (adminId) {
       const name = ctx.from?.first_name ?? "";
       const username = ctx.from?.username ? `@${ctx.from.username}` : "";
-      const userInfo = [name, username].filter(Boolean).join(" ");
+      const userInfoRaw = [name, username].filter(Boolean).join(" ");
+      const userInfo = userInfoRaw.replace(/([_*`\[])/g, "\\$1");
 
       try {
         await ctx.telegram.sendMessage(

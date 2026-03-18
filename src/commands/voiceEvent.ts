@@ -8,7 +8,7 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isNotesMode, isGandalfMode } from "../middleware/expenseMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isNotesMode, isGandalfMode, isWishlistMode } from "../middleware/expenseMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
 import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
@@ -35,8 +35,19 @@ export async function handleVoice(ctx: Context) {
 
   const statusMsg = await ctx.reply("Обрабатываю голосовое…");
 
-  // Check transcribe mode early — before downloading, to route to the right handler
+  // Check modes that don't need voice processing
   const telegramId = ctx.from?.id;
+  if (telegramId != null && await isWishlistMode(telegramId)) {
+    await ctx.telegram.editMessageText(
+      ctx.chat!.id,
+      statusMsg.message_id,
+      undefined,
+      "В режиме Вишлист голосовые сообщения не поддерживаются. Используйте текст."
+    );
+    return;
+  }
+
+  // Check transcribe mode early — before downloading, to route to the right handler
   if (telegramId != null && await isTranscribeMode(telegramId)) {
     await handleVoiceInTranscribeMode(ctx, voice, statusMsg.message_id);
     return;

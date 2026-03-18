@@ -70,6 +70,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  wishlist: [
+    { command: "wishlist", description: "Вишлист — списки желаний (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
 };
 
 /** Update the Telegram hamburger menu commands for the user's current mode. */
@@ -94,7 +99,8 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📅 Календарь", "💰 Расходы"],
         ["🎙 Транскрибатор", "📝 Заметки"],
         ["📰 Дайджест", "🎉 Даты"],
-        ["🧙 Гэндальф", "🧠 Нейро"],
+        ["🧙 Гэндальф", "🎁 Вишлист"],
+        ["🧠 Нейро"],
         ["📢 Царская почта", "👑 Управление"],
       ]).resize();
     }
@@ -103,7 +109,8 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📅 Календарь", "💰 Расходы"],
         ["🎙 Транскрибатор", "📝 Заметки"],
         ["📰 Дайджест", "🎉 Даты"],
-        ["🧙 Гэндальф", "🧠 Нейро"],
+        ["🧙 Гэндальф", "🎁 Вишлист"],
+        ["🧠 Нейро"],
       ]).resize();
     }
     // User without tribe — limited modes
@@ -118,7 +125,8 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["📅 Календарь", "💰 Расходы"],
     ["🎙 Транскрибатор", "📝 Заметки"],
     ["📰 Дайджест", "🎉 Даты"],
-    ["🧙 Гэндальф", "🧠 Нейро"],
+    ["🧙 Гэндальф", "🎁 Вишлист"],
+    ["🧠 Нейро"],
   ];
   if (isAdmin) {
     rows.push(["📢 Царская почта", "👑 Управление"]);
@@ -213,8 +221,11 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
       ...(canAccessMode("notable_dates", ctx) ? [Markup.button.callback("🎉 Даты", "mode:notable_dates")] : []),
     ]);
   }
-  if (canAccessMode("gandalf", ctx)) {
-    rows.push([Markup.button.callback("🧙 Гэндальф", "mode:gandalf")]);
+  if (canAccessMode("gandalf", ctx) || canAccessMode("wishlist", ctx)) {
+    rows.push([
+      ...(canAccessMode("gandalf", ctx) ? [Markup.button.callback("🧙 Гэндальф", "mode:gandalf")] : []),
+      ...(canAccessMode("wishlist", ctx) ? [Markup.button.callback("🎁 Вишлист", "mode:wishlist")] : []),
+    ]);
   }
   rows.push([Markup.button.callback("🧠 Нейро", "mode:neuro")]);
   if (isAdmin) {

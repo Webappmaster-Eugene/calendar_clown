@@ -74,8 +74,27 @@ import {
   handleGandalfFileAttachment,
 } from "./commands/gandalfMode.js";
 import { handleNeuroCommand, handleNeuroText, handleNeuroClearButton } from "./commands/chatMode.js";
+import {
+  handleWishlistCommand,
+  handleMyWishlistsButton,
+  handleTribeWishlistsButton,
+  handleNewWishlistButton,
+  handleWlMyCallback,
+  handleWlMyDelCallback,
+  handleWlAddCallback,
+  handleWlItemCallback,
+  handleWlItemDelCallback,
+  handleWlItemFilesCallback,
+  handleWlTribeCallback,
+  handleWlTribeUserCallback,
+  handleWlReserveCallback,
+  handleWlUnreserveCallback,
+  handleWlPageCallback,
+  handleWishlistText,
+  handleWishlistFileAttachment,
+} from "./commands/wishlistMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isNotesMode, isDigestMode, isGandalfMode, isNeuroMode } from "./middleware/expenseMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isNotesMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode } from "./middleware/expenseMode.js";
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
@@ -105,6 +124,7 @@ export function createBot(token: string): Telegraf {
   bot.command("dates", handleNotableDatesCommand);
   bot.command("notes", handleNotesCommand);
   bot.command("gandalf", handleGandalfCommand);
+  bot.command("wishlist", handleWishlistCommand);
   bot.command("neuro", handleNeuroCommand);
 
   // Admin commands
@@ -173,6 +193,19 @@ export function createBot(token: string): Telegraf {
   bot.action(/^gandalf_opt_done:/, handleGandalfOptionalCallback);
   bot.action(/^gandalf_stats:/, handleGandalfStatsCallback);
 
+  // Wishlist callbacks
+  bot.action(/^wl_my:/, handleWlMyCallback);
+  bot.action(/^wl_my_del:/, handleWlMyDelCallback);
+  bot.action(/^wl_add:/, handleWlAddCallback);
+  bot.action(/^wl_item:/, handleWlItemCallback);
+  bot.action(/^wl_item_del:/, handleWlItemDelCallback);
+  bot.action(/^wl_item_files:/, handleWlItemFilesCallback);
+  bot.action(/^wl_tribe:/, handleWlTribeCallback);
+  bot.action(/^wl_tribe_user:/, handleWlTribeUserCallback);
+  bot.action(/^wl_reserve:/, handleWlReserveCallback);
+  bot.action(/^wl_unreserve:/, handleWlUnreserveCallback);
+  bot.action(/^wl_page:/, handleWlPageCallback);
+
   // Mode switch inline callbacks
   bot.action("mode:calendar", async (ctx) => {
     await ctx.answerCbQuery("📅 Календарь");
@@ -240,6 +273,18 @@ export function createBot(token: string): Telegraf {
     await ctx.answerCbQuery("🧙 Гэндальф");
     await handleGandalfCommand(ctx);
   });
+  bot.action("mode:wishlist", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid) {
+      const mc = await getUserMenuContext(tid);
+      if (mc && !canAccessMode("wishlist", mc)) {
+        await ctx.answerCbQuery("Требуется трайб");
+        return;
+      }
+    }
+    await ctx.answerCbQuery("🎁 Вишлист");
+    await handleWishlistCommand(ctx);
+  });
   bot.action("mode:neuro", async (ctx) => {
     await ctx.answerCbQuery("🧠 Нейро");
     await handleNeuroCommand(ctx);
@@ -261,6 +306,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("🎉 Даты", handleNotableDatesCommand);
   bot.hears("📝 Заметки", handleNotesCommand);
   bot.hears("🧙 Гэндальф", handleGandalfCommand);
+  bot.hears("🎁 Вишлист", handleWishlistCommand);
   bot.hears("🧠 Нейро", handleNeuroCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
@@ -316,6 +362,11 @@ export function createBot(token: string): Telegraf {
   bot.hears("📋 Все заметки", handleAllNotesButton);
   bot.hears("🌐 Публичные заметки", handlePublicNotesButton);
 
+  // Wishlist mode buttons
+  bot.hears("🎁 Мои вишлисты", handleMyWishlistsButton);
+  bot.hears("👀 Вишлисты семьи", handleTribeWishlistsButton);
+  bot.hears("➕ Новый вишлист", handleNewWishlistButton);
+
   // Gandalf mode buttons
   bot.hears("📦 Категории", handleGandalfCategoriesButton);
   bot.hears("➕ Новая запись", handleGandalfNewEntryButton);
@@ -342,8 +393,14 @@ export function createBot(token: string): Telegraf {
   // Photo/document handlers (gandalf file attachments)
   bot.on("photo", async (ctx) => {
     const telegramId = ctx.from?.id;
-    if (telegramId != null && await isGandalfMode(telegramId)) {
+    if (telegramId == null) return;
+    if (await isGandalfMode(telegramId)) {
       await handleGandalfFileAttachment(ctx);
+      return;
+    }
+    if (await isWishlistMode(telegramId)) {
+      await handleWishlistFileAttachment(ctx);
+      return;
     }
   });
   bot.on("document", async (ctx) => {
@@ -351,6 +408,10 @@ export function createBot(token: string): Telegraf {
     if (telegramId == null) return;
     if (await isGandalfMode(telegramId)) {
       await handleGandalfFileAttachment(ctx);
+      return;
+    }
+    if (await isWishlistMode(telegramId)) {
+      await handleWishlistFileAttachment(ctx);
       return;
     }
     if (await isNotableDatesMode(telegramId)) {
@@ -379,6 +440,13 @@ export function createBot(token: string): Telegraf {
     if (await isNeuroMode(telegramId)) {
       await handleNeuroText(ctx);
       return;
+    }
+
+    // Wishlist mode — text input for creating wishlists/items
+    if (await isWishlistMode(telegramId)) {
+      const handled = await handleWishlistText(ctx);
+      if (handled) return;
+      return next();
     }
 
     // Gandalf mode — text input for creating entries/categories
