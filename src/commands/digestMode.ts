@@ -84,7 +84,7 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
     if (!isDigestConfigured()) {
       await ctx.reply("Дайджест не настроен. Необходимо задать TELEGRAM_PARSER_API_ID и TELEGRAM_PARSER_API_HASH.");
     } else {
-      await ctx.reply("Дайджест не готов: отсутствует MTProto-сессия. Выполните `npm run tg-auth` на сервере.");
+      await ctx.reply("Дайджест не готов: отсутствует MTProto-сессия. Задайте TELEGRAM_SESSION в env или выполните `npm run tg-auth`.");
     }
     return;
   }
@@ -546,7 +546,7 @@ export async function handleFolderImportButton(ctx: Context): Promise<void> {
     if (!isDigestConfigured()) {
       await ctx.reply("Telegram Parser не настроен.");
     } else {
-      await ctx.reply("Telegram Parser не готов: отсутствует MTProto-сессия. Выполните `npm run tg-auth` на сервере.");
+      await ctx.reply("Telegram Parser не готов: отсутствует MTProto-сессия. Задайте TELEGRAM_SESSION в env или выполните `npm run tg-auth`.");
     }
     return;
   }

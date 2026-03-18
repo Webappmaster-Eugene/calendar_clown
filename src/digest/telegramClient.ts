@@ -34,8 +34,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Load saved session string from file. Returns empty string if not found. */
+/** Load saved session string. Checks TELEGRAM_SESSION env first, then file. */
 async function loadSession(): Promise<string> {
+  const envSession = process.env.TELEGRAM_SESSION?.trim();
+  if (envSession) return envSession;
   try {
     const data = await readFile(SESSION_FILE, "utf-8");
     return data.trim();
