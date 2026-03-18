@@ -19,10 +19,13 @@ let transcribeWorker: Worker<TranscribeJobData> | null = null;
 /** Parse Redis URL into BullMQ connection options. */
 function parseRedisUrl(redisUrl: string): ConnectionOptions {
   const url = new URL(redisUrl);
+  const db = url.pathname?.replace("/", "");
   return {
     host: url.hostname,
     port: parseInt(url.port || "6379", 10),
     password: url.password || undefined,
+    username: url.username || undefined,
+    db: db ? parseInt(db, 10) : undefined,
     maxRetriesPerRequest: null,
   };
 }
@@ -44,6 +47,9 @@ export function initTranscribeQueue(redisUrl: string): Queue<TranscribeJobData> 
       removeOnFail: { count: 200 },
     },
   });
+
+  // Clear potentially corrupted rate limit state from previous run
+  transcribeQueue.removeRateLimitKey().catch(() => {});
 
   return transcribeQueue;
 }
@@ -150,13 +156,20 @@ export async function getQueueStatus(): Promise<QueueStatus | null> {
     transcribeQueue.getDelayedCount(),
     transcribeQueue.getFailedCount(),
   ]);
-  return {
-    workerRunning: transcribeWorker !== null && !transcribeWorker.closing,
-    waiting,
-    active,
-    delayed,
-    failed,
-  };
+
+  let workerRunning = false;
+  if (transcribeWorker && !transcribeWorker.closing) {
+    try {
+      const client = await transcribeWorker.client;
+      if (client.status === "ready") {
+        workerRunning = true;
+      }
+    } catch {
+      workerRunning = false;
+    }
+  }
+
+  return { workerRunning, waiting, active, delayed, failed };
 }
 
 /** Remove stale jobs older than maxAgeMs from the queue. */
@@ -250,6 +263,71 @@ export function stopStaleJobCleaner(): void {
     clearInterval(staleJobInterval);
     staleJobInterval = null;
   }
+}
+
+let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+let stuckSince: number | null = null;
+const STUCK_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+/**
+ * Start periodic health monitor for the transcription worker.
+ * If waiting > 0 && active === 0 for longer than STUCK_THRESHOLD_MS,
+ * clears rate limit key and restarts the worker.
+ */
+export function startWorkerHealthMonitor(
+  redisUrl: string,
+  processor: (job: Job<TranscribeJobData>) => Promise<void>,
+  bot: Telegraf
+): void {
+  if (healthCheckInterval) return;
+
+  healthCheckInterval = setInterval(async () => {
+    try {
+      const status = await getQueueStatus();
+      if (!status) return;
+
+      if (status.waiting > 0 && status.active === 0) {
+        if (!stuckSince) {
+          stuckSince = Date.now();
+          log.warn(`Health: ${status.waiting} waiting, 0 active — monitoring...`);
+          return;
+        }
+
+        if (Date.now() - stuckSince < STUCK_THRESHOLD_MS) return;
+
+        log.error(`Health: worker stuck for ${Math.round((Date.now() - stuckSince) / 1000)}s — restarting`);
+        stuckSince = null;
+
+        // 1. Clear potentially corrupted rate limit key
+        await transcribeQueue?.removeRateLimitKey().catch(() => {});
+
+        // 2. Close zombie worker
+        if (transcribeWorker) {
+          await transcribeWorker.close().catch(() => {});
+          transcribeWorker = null;
+        }
+
+        // 3. Restart worker
+        startTranscribeWorker(redisUrl, processor, bot);
+        log.info("Health: worker restarted successfully");
+      } else {
+        stuckSince = null;
+      }
+    } catch (err) {
+      log.error("Health check error:", err instanceof Error ? err.message : err);
+    }
+  }, 30_000);
+
+  log.info("Worker health monitor started (every 30s)");
+}
+
+/** Stop the worker health monitor. */
+export function stopWorkerHealthMonitor(): void {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
+  stuckSince = null;
 }
 
 /** Gracefully close the queue and worker. */

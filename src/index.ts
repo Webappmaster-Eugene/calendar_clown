@@ -11,7 +11,7 @@ import { startOAuthServer } from "./oauthServer.js";
 import { runMigrations, runDrizzleMigrations } from "./db/migrate.js";
 import { closePool, setDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
-import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, startStaleJobCleaner, stopStaleJobCleaner } from "./transcribe/queue.js";
+import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, startStaleJobCleaner, stopStaleJobCleaner, startWorkerHealthMonitor, stopWorkerHealthMonitor } from "./transcribe/queue.js";
 import { createTranscribeProcessor } from "./transcribe/worker.js";
 import { isDigestConfigured, isDigestReady } from "./digest/telegramClient.js";
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
@@ -65,8 +65,10 @@ async function main(): Promise<void> {
   if (redisUrl) {
     try {
       initTranscribeQueue(redisUrl);
-      startTranscribeWorker(redisUrl, createTranscribeProcessor(bot), bot);
+      const transcribeProcessor = createTranscribeProcessor(bot);
+      startTranscribeWorker(redisUrl, transcribeProcessor, bot);
       startStaleJobCleaner();
+      startWorkerHealthMonitor(redisUrl, transcribeProcessor, bot);
       log.info("Transcribe queue initialized (Redis).");
     } catch (err) {
       log.error("Redis initialization failed — transcribe mode disabled.");
@@ -123,6 +125,7 @@ async function main(): Promise<void> {
     bot.stop(signal);
     stopDigestScheduler();
     stopNotableDatesScheduler();
+    stopWorkerHealthMonitor();
     stopStaleJobCleaner();
     await closeTranscribeQueue();
     await closePool();
