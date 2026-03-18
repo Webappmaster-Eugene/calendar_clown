@@ -418,9 +418,9 @@ export async function createTribe(name: string): Promise<{ id: number; name: str
 }
 
 /** Valid bot modes. */
-type BotMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes" | "gandalf" | "neuro";
+type BotMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes" | "gandalf" | "neuro" | "wishlist";
 
-const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "digest", "broadcast", "notable_dates", "notes", "gandalf", "neuro"]);
+const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "digest", "broadcast", "notable_dates", "notes", "gandalf", "neuro", "wishlist"]);
 
 /** Get user's current bot mode from DB. */
 export async function getUserMode(telegramId: number): Promise<BotMode> {
