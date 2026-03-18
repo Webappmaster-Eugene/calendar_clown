@@ -13,7 +13,7 @@ import { closePool, setDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
 import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, startStaleJobCleaner, stopStaleJobCleaner } from "./transcribe/queue.js";
 import { createTranscribeProcessor } from "./transcribe/worker.js";
-import { isDigestConfigured } from "./digest/telegramClient.js";
+import { isDigestConfigured, isDigestReady } from "./digest/telegramClient.js";
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
 import { setDigestBotRef } from "./commands/digestMode.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
@@ -77,10 +77,12 @@ async function main(): Promise<void> {
   }
 
   // Initialize digest scheduler (GramJS + cron)
-  if (isDigestConfigured()) {
+  if (await isDigestReady()) {
     setDigestBotRef(bot);
     startDigestScheduler(bot);
     log.info("Digest mode enabled (MTProto configured).");
+  } else if (isDigestConfigured()) {
+    log.warn("Digest credentials set but session file missing. Run `npm run tg-auth`.");
   } else {
     log.info("TELEGRAM_PARSER_API_ID not set — digest mode disabled.");
   }

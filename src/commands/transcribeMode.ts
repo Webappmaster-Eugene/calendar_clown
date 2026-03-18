@@ -4,13 +4,15 @@ import { setUserMode } from "../middleware/expenseMode.js";
 import { ensureUser, getUserByTelegramId } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { isTranscribeAvailable, clearUserJobs } from "../transcribe/queue.js";
+import { isTranscribeAvailable, clearUserJobs, getQueueStatus } from "../transcribe/queue.js";
 import {
   getRecentTranscriptionsPaginated,
   countCompletedTranscriptions,
   markUserPendingAsFailed,
   getTranscriptionByIdForUser,
   deleteTranscriptionForUser,
+  getPendingForUser,
+  getAllPending,
 } from "../transcribe/repository.js";
 import { splitMessage } from "../utils/telegram.js";
 import { createLogger } from "../utils/logger.js";
@@ -26,7 +28,7 @@ const HISTORY_PAGE_SIZE = 5;
 
 function getTranscribeKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
-    ["📋 История", "🗑 Очистить очередь"],
+    ["📋 История", "📊 Очередь", "🗑 Очистить очередь"],
     ...getModeButtons(isAdmin),
   ]).resize();
 }
@@ -295,6 +297,83 @@ export async function handleTranscribeFullCallback(ctx: Context): Promise<void> 
   } catch (err) {
     log.error("Error fetching full transcription:", err);
     await ctx.answerCbQuery("Ошибка загрузки.");
+  }
+}
+
+/** Handle "📊 Очередь" keyboard button — show current queue status. */
+export async function handleQueueStatusButton(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply("База данных недоступна.");
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    await ctx.reply("Пользователь не найден. Отправьте /start.");
+    return;
+  }
+
+  try {
+    const isAdmin = isBootstrapAdmin(telegramId);
+
+    if (isAdmin) {
+      const items = await getAllPending();
+
+      // BullMQ queue health
+      const qs = await getQueueStatus();
+      const qsText = qs
+        ? `\n\n*BullMQ:* ${qs.workerRunning ? "🟢 Worker" : "🔴 Worker остановлен"}\n` +
+          `Waiting: ${qs.waiting} | Active: ${qs.active} | Delayed: ${qs.delayed} | Failed: ${qs.failed}`
+        : "\n\n⚠️ BullMQ очередь не инициализирована";
+
+      if (items.length === 0) {
+        await ctx.reply(
+          `📊 Очередь пуста — нет заданий в обработке.${qsText}`,
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      const lines = items.map((t, i) => {
+        const status = t.status === "processing" ? "🔄 обработка" : "⏳ ожидает";
+        const duration = formatDuration(t.durationSeconds);
+        const time = t.createdAt.toLocaleString("ru-RU", {
+          day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+        });
+        return `${i + 1}. ${t.firstName} | ⏱ ${duration} | ${status} | ${time}`;
+      });
+
+      await ctx.reply(
+        `📊 *Очередь транскрибации (${items.length}):*\n\n${lines.join("\n")}${qsText}`,
+        { parse_mode: "Markdown" }
+      );
+    } else {
+      const items = await getPendingForUser(dbUser.id);
+      if (items.length === 0) {
+        await ctx.reply("📊 Очередь пуста — нет заданий в обработке.");
+        return;
+      }
+
+      const lines = items.map((t, i) => {
+        const status = t.status === "processing" ? "🔄 обработка" : "⏳ ожидает";
+        const duration = formatDuration(t.durationSeconds);
+        const time = t.createdAt.toLocaleString("ru-RU", {
+          day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+        });
+        return `${i + 1}. ⏱ ${duration} | ${status} | ${time}`;
+      });
+
+      await ctx.reply(
+        `📊 *Ваша очередь (${items.length}):*\n\n${lines.join("\n")}`,
+        { parse_mode: "Markdown" }
+      );
+    }
+  } catch (err) {
+    log.error("Error fetching queue status:", err);
+    await ctx.reply("Ошибка при получении статуса очереди.");
   }
 }
 

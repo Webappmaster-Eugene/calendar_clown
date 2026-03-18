@@ -149,6 +149,30 @@ export async function getRecentTranscriptionsPaginated(
   return rows.map(mapRow);
 }
 
+/** Get pending/processing transcriptions for a specific user. */
+export async function getPendingForUser(userId: number): Promise<VoiceTranscription[]> {
+  const { rows } = await query<TranscriptionRow>(
+    `SELECT * FROM voice_transcriptions
+     WHERE user_id = $1 AND status IN ('pending', 'processing')
+     ORDER BY created_at ASC`,
+    [userId]
+  );
+  return rows.map(mapRow);
+}
+
+/** Admin: get ALL pending/processing transcriptions (all users, with user info). */
+export async function getAllPending(): Promise<Array<VoiceTranscription & { firstName: string }>> {
+  const { rows } = await query<TranscriptionRow & { first_name: string }>(
+    `SELECT vt.*, u.first_name
+     FROM voice_transcriptions vt
+     JOIN users u ON u.id = vt.user_id
+     WHERE vt.status IN ('pending', 'processing')
+     ORDER BY vt.created_at ASC`,
+    []
+  );
+  return rows.map((r) => ({ ...mapRow(r), firstName: r.first_name }));
+}
+
 /** Batch-mark all pending/processing transcriptions for a user as failed. */
 export async function markUserPendingAsFailed(
   userId: number,

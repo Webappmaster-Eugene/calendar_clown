@@ -7,7 +7,7 @@ import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
 import { getUsersWithActiveDigest } from "./repository.js";
-import { connectGramClient, disconnectGramClient } from "./telegramClient.js";
+import { connectGramClient, disconnectGramClient, isDigestReady } from "./telegramClient.js";
 import { runDigestForUser } from "./worker.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { query } from "../db/connection.js";
@@ -46,6 +46,11 @@ export function stopDigestScheduler(): void {
  * Called by cron or manually via /digest now.
  */
 export async function runAllDigests(bot: Telegraf): Promise<number> {
+  if (!await isDigestReady()) {
+    log.warn("Digest skipped: session not ready.");
+    return 0;
+  }
+
   let totalProcessed = 0;
 
   try {

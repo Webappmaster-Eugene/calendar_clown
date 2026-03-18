@@ -63,6 +63,22 @@ export function isDigestConfigured(): boolean {
   return getCredentials() !== null;
 }
 
+let sessionChecked: boolean | null = null;
+
+/** Check if session file exists (cached after first call). */
+async function hasSession(): Promise<boolean> {
+  if (sessionChecked !== null) return sessionChecked;
+  const s = await loadSession();
+  sessionChecked = s.length > 0;
+  return sessionChecked;
+}
+
+/** Credentials AND session file exist. Cached after first call. */
+export async function isDigestReady(): Promise<boolean> {
+  if (!isDigestConfigured()) return false;
+  return hasSession();
+}
+
 /** Connect to Telegram via MTProto. Uses saved session. */
 export async function connectGramClient(): Promise<TelegramClient> {
   if (gramClient?.connected) return gramClient;
@@ -83,6 +99,7 @@ export async function connectGramClient(): Promise<TelegramClient> {
   });
 
   await gramClient.connect();
+  sessionChecked = true;
   log.info("GramJS connected to Telegram.");
 
   // Update saved session (in case Telegram rotated keys)
@@ -231,12 +248,18 @@ export async function getUserDialogFolders(): Promise<Array<{ id: number; title:
     const client = await connectGramClient();
     const result = await client.invoke(new Api.messages.GetDialogFilters());
     const folders: Array<{ id: number; title: string }> = [];
-    if (Array.isArray(result)) {
-      for (const filter of result) {
-        if (filter instanceof Api.DialogFilter && filter.title) {
-          const title = typeof filter.title === "string" ? filter.title : String(filter.title);
-          folders.push({ id: filter.id, title });
-        }
+    const filters = "filters" in result && Array.isArray(result.filters) ? result.filters : [];
+    for (const filter of filters) {
+      if (filter instanceof Api.DialogFilterDefault) continue;
+      if (
+        (filter instanceof Api.DialogFilter || filter instanceof Api.DialogFilterChatlist) &&
+        filter.title
+      ) {
+        const titleObj = filter.title;
+        const title = typeof titleObj === "string"
+          ? titleObj
+          : (titleObj as Api.TextWithEntities).text ?? String(titleObj);
+        folders.push({ id: filter.id, title });
       }
     }
     return folders;
@@ -256,9 +279,11 @@ export async function getChannelsFromFolder(folderId: number): Promise<string[]>
     const result = await client.invoke(new Api.messages.GetDialogFilters());
     const channels: string[] = [];
 
-    if (Array.isArray(result)) {
-      const folder = result.find(
-        (f): f is Api.DialogFilter => f instanceof Api.DialogFilter && f.id === folderId
+    const filters = "filters" in result && Array.isArray(result.filters) ? result.filters : [];
+    {
+      const folder = filters.find(
+        (f): f is Api.DialogFilter | Api.DialogFilterChatlist =>
+          (f instanceof Api.DialogFilter || f instanceof Api.DialogFilterChatlist) && f.id === folderId
       );
       if (folder?.includePeers) {
         for (const peer of folder.includePeers) {

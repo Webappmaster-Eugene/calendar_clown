@@ -100,6 +100,10 @@ export function startTranscribeWorker(
     log.info(`Transcription job ${job.id} completed.`);
   });
 
+  transcribeWorker.on("error", (err) => {
+    log.error(`Worker error: ${err.message}`);
+  });
+
   return transcribeWorker;
 }
 
@@ -129,6 +133,32 @@ export function isTranscribeAvailable(): boolean {
   return transcribeQueue !== null;
 }
 
+export interface QueueStatus {
+  workerRunning: boolean;
+  waiting: number;
+  active: number;
+  delayed: number;
+  failed: number;
+}
+
+/** Get BullMQ queue counts and worker health status. */
+export async function getQueueStatus(): Promise<QueueStatus | null> {
+  if (!transcribeQueue) return null;
+  const [waiting, active, delayed, failed] = await Promise.all([
+    transcribeQueue.getWaitingCount(),
+    transcribeQueue.getActiveCount(),
+    transcribeQueue.getDelayedCount(),
+    transcribeQueue.getFailedCount(),
+  ]);
+  return {
+    workerRunning: transcribeWorker !== null && !transcribeWorker.closing,
+    waiting,
+    active,
+    delayed,
+    failed,
+  };
+}
+
 /** Remove stale jobs older than maxAgeMs from the queue. */
 export async function cleanStaleJobs(maxAgeMs: number = 120 * 60 * 1000): Promise<number> {
   const queue = getTranscribeQueue();
@@ -150,6 +180,16 @@ export async function cleanStaleJobs(maxAgeMs: number = 120 * 60 * 1000): Promis
     if (job.timestamp < cutoff) {
       await job.remove();
       cleaned++;
+    }
+  }
+
+  const active = await queue.getActive();
+  for (const job of active) {
+    if (job.timestamp < cutoff) {
+      try {
+        await job.moveToFailed(new Error("Stale active job cleaned up"), "0", true);
+        cleaned++;
+      } catch { /* job may have been moved already */ }
     }
   }
 

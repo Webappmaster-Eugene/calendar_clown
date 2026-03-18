@@ -18,7 +18,7 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId, ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { setUserMode } from "../middleware/expenseMode.js";
-import { isDigestConfigured, getUserDialogFolders, getChannelsFromFolder } from "../digest/telegramClient.js";
+import { isDigestConfigured, isDigestReady, getUserDialogFolders, getChannelsFromFolder } from "../digest/telegramClient.js";
 import {
   getRubricsByUser,
   getRubricByUserAndName,
@@ -80,8 +80,12 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  if (!isDigestConfigured()) {
-    await ctx.reply("Дайджест не настроен. Необходимо задать TELEGRAM_PARSER_API_ID и TELEGRAM_PARSER_API_HASH.");
+  if (!await isDigestReady()) {
+    if (!isDigestConfigured()) {
+      await ctx.reply("Дайджест не настроен. Необходимо задать TELEGRAM_PARSER_API_ID и TELEGRAM_PARSER_API_HASH.");
+    } else {
+      await ctx.reply("Дайджест не готов: отсутствует MTProto-сессия. Выполните `npm run tg-auth` на сервере.");
+    }
     return;
   }
 
@@ -538,8 +542,12 @@ export async function handleFolderImportButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
-  if (!isDigestConfigured()) {
-    await ctx.reply("Telegram Parser не настроен.");
+  if (!await isDigestReady()) {
+    if (!isDigestConfigured()) {
+      await ctx.reply("Telegram Parser не настроен.");
+    } else {
+      await ctx.reply("Telegram Parser не готов: отсутствует MTProto-сессия. Выполните `npm run tg-auth` на сервере.");
+    }
     return;
   }
 

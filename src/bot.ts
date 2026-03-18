@@ -13,7 +13,7 @@ import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.
 import { handleUndoCallback } from "./commands/expenseUndo.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput, handleOnboardRequest } from "./commands/admin.js";
 import { handleStatsCommand } from "./commands/adminStats.js";
-import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback, handleTranscribeDeleteCallback } from "./commands/transcribeMode.js";
+import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleQueueStatusButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback, handleTranscribeDeleteCallback } from "./commands/transcribeMode.js";
 import { handleAdminDataCallback, handleAdminDataTextInput } from "./commands/adminData.js";
 import { handleBulkCallback } from "./utils/bulkSelect.js";
 import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText, handleFolderImportButton, handleDigestFolderCallback, handleDigestFolderToCallback } from "./commands/digestMode.js";
@@ -293,6 +293,12 @@ export function createBot(token: string): Telegraf {
     const tid = ctx.from?.id;
     if (tid != null && await isTranscribeMode(tid)) {
       await handleTranscribeHistoryButton(ctx);
+    }
+  });
+  bot.hears("📊 Очередь", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isTranscribeMode(tid)) {
+      await handleQueueStatusButton(ctx);
     }
   });
   bot.hears("🗑 Очистить очередь", async (ctx) => {
