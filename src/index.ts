@@ -137,7 +137,7 @@ async function main(): Promise<void> {
     { command: "cancel", description: "Отменить встречу" },
     { command: "digest", description: "Дайджест телеграм-каналов" },
     { command: "dates", description: "Знаменательные даты" },
-    { command: "notes", description: "Заметки" },
+    { command: "gandalf", description: "База знаний" },
     { command: "goals", description: "Хранитель целей" },
     { command: "mode", description: "Выбор режима работы" },
     { command: "admin", description: "Управление пользователями" },

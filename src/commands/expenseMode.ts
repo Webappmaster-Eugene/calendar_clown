@@ -55,13 +55,8 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
-  notes: [
-    { command: "notes", description: "Заметки (текущий)" },
-    { command: "mode", description: "Выбор режима работы" },
-    { command: "help", description: "Справка" },
-  ],
   gandalf: [
-    { command: "gandalf", description: "Гэндальф — трекер (текущий)" },
+    { command: "gandalf", description: "База знаний (текущий)" },
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
@@ -102,26 +97,26 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     if (context.role === "admin") {
       return Markup.keyboard([
         ["📅 Календарь", "💰 Расходы"],
-        ["🎙 Транскрибатор", "📝 Заметки"],
+        ["🎙 Транскрибатор", "📚 База знаний"],
         ["📰 Дайджест", "🎉 Даты"],
-        ["🧙 Гэндальф", "🎁 Вишлист"],
-        ["🧠 Нейро", "🎯 Цели"],
+        ["🎁 Вишлист", "🧠 Нейро"],
+        ["🎯 Цели"],
         ["📢 Царская почта", "👑 Управление"],
       ]).resize();
     }
     if (context.hasTribe) {
       return Markup.keyboard([
         ["📅 Календарь", "💰 Расходы"],
-        ["🎙 Транскрибатор", "📝 Заметки"],
+        ["🎙 Транскрибатор", "📚 База знаний"],
         ["📰 Дайджест", "🎉 Даты"],
-        ["🧙 Гэндальф", "🎁 Вишлист"],
-        ["🧠 Нейро", "🎯 Цели"],
+        ["🎁 Вишлист", "🧠 Нейро"],
+        ["🎯 Цели"],
       ]).resize();
     }
     // User without tribe — limited modes
     return Markup.keyboard([
       ["📅 Календарь", "🎙 Транскрибатор"],
-      ["📝 Заметки", "🧠 Нейро"],
+      ["📚 База знаний", "🧠 Нейро"],
       ["🎯 Цели"],
     ]).resize();
   }
@@ -129,10 +124,10 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
   // Fallback: simple admin check
   const rows = [
     ["📅 Календарь", "💰 Расходы"],
-    ["🎙 Транскрибатор", "📝 Заметки"],
+    ["🎙 Транскрибатор", "📚 База знаний"],
     ["📰 Дайджест", "🎉 Даты"],
-    ["🧙 Гэндальф", "🎁 Вишлист"],
-    ["🧠 Нейро", "🎯 Цели"],
+    ["🎁 Вишлист", "🧠 Нейро"],
+    ["🎯 Цели"],
   ];
   if (isAdmin) {
     rows.push(["📢 Царская почта", "👑 Управление"]);
@@ -218,7 +213,7 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
     ],
     [
       Markup.button.callback("🎙 Транскрибатор", "mode:transcribe"),
-      Markup.button.callback("📝 Заметки", "mode:notes"),
+      Markup.button.callback("📚 База знаний", "mode:gandalf"),
     ],
   ];
   if (canAccessMode("digest", ctx) || canAccessMode("notable_dates", ctx)) {
@@ -227,10 +222,9 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
       ...(canAccessMode("notable_dates", ctx) ? [Markup.button.callback("🎉 Даты", "mode:notable_dates")] : []),
     ]);
   }
-  if (canAccessMode("gandalf", ctx) || canAccessMode("wishlist", ctx)) {
+  if (canAccessMode("wishlist", ctx)) {
     rows.push([
-      ...(canAccessMode("gandalf", ctx) ? [Markup.button.callback("🧙 Гэндальф", "mode:gandalf")] : []),
-      ...(canAccessMode("wishlist", ctx) ? [Markup.button.callback("🎁 Вишлист", "mode:wishlist")] : []),
+      Markup.button.callback("🎁 Вишлист", "mode:wishlist"),
     ]);
   }
   rows.push([

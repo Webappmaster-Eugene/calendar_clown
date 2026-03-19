@@ -13,10 +13,10 @@ export interface UserMenuContext {
 }
 
 /** Modes available to any approved user (even without a tribe). */
-export const INDIVIDUAL_MODES = new Set(["calendar", "transcribe", "notes", "neuro", "goals"]);
+export const INDIVIDUAL_MODES = new Set(["calendar", "transcribe", "gandalf", "neuro", "goals"]);
 
 /** Modes that require tribe membership. */
-export const TRIBE_MODES = new Set(["expenses", "digest", "notable_dates", "gandalf", "wishlist"]);
+export const TRIBE_MODES = new Set(["expenses", "digest", "notable_dates", "wishlist"]);
 
 /** Modes that require admin role. */
 export const ADMIN_MODES = new Set(["broadcast", "admin"]);
@@ -54,7 +54,7 @@ const ONBOARD_WELCOME = `👋 *Добро пожаловать!*
 🎙 Транскрибатор — расшифровка голосовых сообщений
 📰 Дайджест — агрегация Telegram-каналов
 🎉 Знаменательные даты — напоминания о днях рождения
-📝 Заметки — зашифрованные заметки
+📚 База знаний — структурированные записи
 🎁 Вишлист — списки желаний для семьи
 
 Для получения доступа подайте заявку администратору.`;

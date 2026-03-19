@@ -359,56 +359,6 @@ export const actionLogs = pgTable(
   ],
 );
 
-// ─── Note Topics ──────────────────────────────────────────────────────────────
-
-export const noteTopics = pgTable(
-  "note_topics",
-  {
-    id: serial("id").primaryKey(),
-    userId: integer("user_id")
-      .notNull()
-      .references(() => users.id),
-    name: varchar("name", { length: 100 }).notNull(),
-    emoji: varchar("emoji", { length: 10 }).default("📁"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("idx_note_topics_user").on(table.userId),
-    unique("note_topics_user_id_name_key").on(table.userId, table.name),
-  ],
-);
-
-// ─── Notes ────────────────────────────────────────────────────────────────────
-
-export const notes = pgTable(
-  "notes",
-  {
-    id: serial("id").primaryKey(),
-    userId: integer("user_id")
-      .notNull()
-      .references(() => users.id),
-    topicId: integer("topic_id").references(() => noteTopics.id, { onDelete: "set null" }),
-    content: text("content").notNull(),
-    isImportant: boolean("is_important").default(false),
-    isUrgent: boolean("is_urgent").default(false),
-    hasImage: boolean("has_image").default(false),
-    imageFilePath: varchar("image_file_path", { length: 500 }),
-    inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
-    visibility: varchar("visibility", { length: 10 }).notNull().default("private"),
-    tribeId: integer("tribe_id").references(() => tribes.id),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("idx_notes_user").on(table.userId),
-    index("idx_notes_topic").on(table.topicId),
-    index("idx_notes_flags").on(table.isImportant, table.isUrgent),
-    index("idx_notes_created").on(table.createdAt),
-    index("idx_notes_visibility").on(table.visibility),
-    index("idx_notes_tribe_visibility").on(table.tribeId, table.visibility),
-    check("notes_visibility_check", sql`${table.visibility} IN ('public', 'private')`),
-  ],
-);
 
 // ─── Gandalf Categories ─────────────────────────────────────────────────────
 
@@ -417,7 +367,6 @@ export const gandalfCategories = pgTable(
   {
     id: serial("id").primaryKey(),
     tribeId: integer("tribe_id")
-      .notNull()
       .references(() => tribes.id),
     name: varchar("name", { length: 100 }).notNull(),
     emoji: varchar("emoji", { length: 10 }).default("📁"),
@@ -438,7 +387,6 @@ export const gandalfEntries = pgTable(
   {
     id: serial("id").primaryKey(),
     tribeId: integer("tribe_id")
-      .notNull()
       .references(() => tribes.id),
     categoryId: integer("category_id")
       .notNull()
@@ -451,6 +399,9 @@ export const gandalfEntries = pgTable(
     nextDate: timestamp("next_date", { withTimezone: true }),
     additionalInfo: text("additional_info"),
     inputMethod: varchar("input_method", { length: 10 }).default("text"),
+    isImportant: boolean("is_important").default(false),
+    isUrgent: boolean("is_urgent").default(false),
+    visibility: varchar("visibility", { length: 10 }).notNull().default("tribe"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -458,10 +409,17 @@ export const gandalfEntries = pgTable(
     index("idx_gandalf_entries_tribe_created").on(table.tribeId, table.createdAt),
     index("idx_gandalf_entries_category").on(table.categoryId),
     index("idx_gandalf_entries_user_created").on(table.addedByUserId, table.createdAt),
+    index("idx_gandalf_entries_important").on(table.isImportant).where(sql`is_important = true`),
+    index("idx_gandalf_entries_urgent").on(table.isUrgent).where(sql`is_urgent = true`),
+    index("idx_gandalf_entries_visibility").on(table.visibility),
     check("gandalf_entries_price_check", sql`${table.price} IS NULL OR ${table.price} >= 0`),
     check(
       "gandalf_entries_input_method_check",
       sql`${table.inputMethod} IN ('text', 'voice')`,
+    ),
+    check(
+      "gandalf_entries_visibility_check",
+      sql`${table.visibility} IN ('tribe', 'private')`,
     ),
   ],
 );

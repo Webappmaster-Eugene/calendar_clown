@@ -30,14 +30,6 @@ import {
 } from "../expenses/repository.js";
 
 import {
-  getAllNotesPaginated,
-  countAllNotes,
-  updateNoteContent,
-  bulkDeleteNotes,
-  deleteAllNotes,
-} from "../notes/repository.js";
-
-import {
   getAllEntriesPaginated,
   countAllEntries,
   updateEntryFields,
@@ -76,7 +68,6 @@ const PAGE_SIZE = 5;
 
 type AdminDataPendingAction =
   | { type: "edit_expense"; expenseId: number; timestamp: number }
-  | { type: "edit_note"; noteId: number; timestamp: number }
   | { type: "edit_gandalf"; entryId: number; timestamp: number }
   | { type: "edit_rubric"; rubricId: number; timestamp: number };
 
@@ -100,8 +91,7 @@ export async function showDataManagementMenu(ctx: Context): Promise<void> {
       [Markup.button.callback("💰 Расходы", "adm_exp:menu")],
       [Markup.button.callback("🎙 Транскрипции", "adm_tr:menu")],
       [Markup.button.callback("📰 Дайджест", "adm_dig:menu")],
-      [Markup.button.callback("📝 Заметки", "adm_note:menu")],
-      [Markup.button.callback("🧙 Гэндальф", "adm_gand:menu")],
+      [Markup.button.callback("📚 База знаний", "adm_gand:menu")],
       [Markup.button.callback("🎉 Даты", "adm_date:menu")],
       [Markup.button.callback("📅 Календарь", "adm_cal:menu")],
       [Markup.button.callback("◀️ Назад", "admin:back")],
@@ -133,8 +123,6 @@ export async function handleAdminDataCallback(ctx: Context): Promise<void> {
       await handleTranscriptions(ctx, data, telegramId);
     } else if (data.startsWith("adm_exp:")) {
       await handleExpenses(ctx, data, telegramId);
-    } else if (data.startsWith("adm_note:")) {
-      await handleNotes(ctx, data, telegramId);
     } else if (data.startsWith("adm_gand:")) {
       await handleGandalf(ctx, data, telegramId);
     } else if (data.startsWith("adm_dig:")) {
@@ -173,16 +161,6 @@ export async function handleAdminDataTextInput(ctx: Context): Promise<boolean> {
       }
       const updated = await updateExpense(pending.expenseId, { amount });
       await ctx.reply(updated ? `✅ Расход #${pending.expenseId} обновлён. Новая сумма: ${amount}` : "❌ Расход не найден.");
-      return true;
-    }
-
-    if (pending.type === "edit_note") {
-      if (!text) {
-        await ctx.reply("❌ Пустой текст.");
-        return true;
-      }
-      const updated = await updateNoteContent(pending.noteId, text);
-      await ctx.reply(updated ? `✅ Заметка #${pending.noteId} обновлена.` : "❌ Заметка не найдена.");
       return true;
     }
 
@@ -362,88 +340,14 @@ async function handleExpenses(ctx: Context, data: string, telegramId: number): P
   }
 }
 
-// ─── Notes ─────────────────────────────────────────────────────────────
-
-async function handleNotes(ctx: Context, data: string, telegramId: number): Promise<void> {
-  if (data === "adm_note:menu") {
-    await showModeMenu(ctx, "📝 Заметки", "adm_note", true);
-    return;
-  }
-
-  const listMatch = data.match(/^adm_note:list:(\d+)$/);
-  if (listMatch) {
-    const offset = parseInt(listMatch[1], 10);
-    const total = await countAllNotes();
-    const items = await getAllNotesPaginated(PAGE_SIZE, offset);
-    const lines = items.map((n, i) => {
-      const num = offset + i + 1;
-      const preview = n.content.slice(0, 50) + (n.content.length > 50 ? "…" : "");
-      const topic = n.topicEmoji ? `${n.topicEmoji} ` : "";
-      return `*${num}.* ${topic}${n.authorName}\n${preview}`;
-    });
-    await showPaginatedList(ctx, "📝 Заметки", lines, total, offset, "adm_note", items.map((n) => n.id));
-    return;
-  }
-
-  const delMatch = data.match(/^adm_note:del:(\d+)$/);
-  if (delMatch) {
-    const id = parseInt(delMatch[1], 10);
-    await showDeleteConfirm(ctx, "заметку", id, "adm_note");
-    return;
-  }
-
-  const delYesMatch = data.match(/^adm_note:del_yes:(\d+)$/);
-  if (delYesMatch) {
-    const id = parseInt(delYesMatch[1], 10);
-    const { query } = await import("../db/connection.js");
-    await query("DELETE FROM notes WHERE id = $1", [id]);
-    await ctx.editMessageText(`✅ Заметка #${id} удалена.`);
-    return;
-  }
-
-  const editMatch = data.match(/^adm_note:edit:(\d+)$/);
-  if (editMatch) {
-    const id = parseInt(editMatch[1], 10);
-    cleanExpiredPending();
-    adminDataPendingAction.set(telegramId, { type: "edit_note", noteId: id, timestamp: Date.now() });
-    await ctx.editMessageText(`✏️ Введите новый текст для заметки #${id}:`);
-    return;
-  }
-
-  if (data === "adm_note:bulk") {
-    const items = await getAllNotesPaginated(100, 0);
-    await initBulkSelect(
-      ctx, telegramId, "notes",
-      items.map((n) => ({
-        id: n.id,
-        label: `${n.authorName}: ${n.content.slice(0, 30)}`,
-      })),
-      bulkDeleteNotes
-    );
-    return;
-  }
-
-  if (data === "adm_note:delall") {
-    const count = await countAllNotes();
-    await showDeleteAllConfirm(ctx, "заметки", count, "adm_note");
-    return;
-  }
-
-  if (data === "adm_note:delall_yes") {
-    const deleted = await deleteAllNotes();
-    await ctx.editMessageText(`✅ Удалено заметок: ${deleted}`);
-    return;
-  }
-}
-
-// ─── Gandalf ───────────────────────────────────────────────────────────
+// ─── Gandalf (База знаний) ───────────────────────────────────────────
 
 async function handleGandalf(ctx: Context, data: string, telegramId: number): Promise<void> {
   const admin = await getUserByTelegramId(telegramId);
   const tribeId = admin?.tribeId ?? 1;
 
   if (data === "adm_gand:menu") {
-    await showModeMenu(ctx, "🧙 Гэндальф", "adm_gand", true);
+    await showModeMenu(ctx, "📚 База знаний", "adm_gand", true);
     return;
   }
 
@@ -457,7 +361,7 @@ async function handleGandalf(ctx: Context, data: string, telegramId: number): Pr
       const price = e.price != null ? ` ${e.price}₽` : "";
       return `*${num}.* ${e.categoryEmoji ?? "📁"} ${e.title}${price} · ${e.addedByName ?? "—"}`;
     });
-    await showPaginatedList(ctx, "🧙 Гэндальф", lines, total, offset, "adm_gand", items.map((e) => e.id));
+    await showPaginatedList(ctx, "📚 База знаний", lines, total, offset, "adm_gand", items.map((e) => e.id));
     return;
   }
 
@@ -501,7 +405,7 @@ async function handleGandalf(ctx: Context, data: string, telegramId: number): Pr
 
   if (data === "adm_gand:delall") {
     const count = await countAllEntries(tribeId);
-    await showDeleteAllConfirm(ctx, "записи Гэндальф", count, "adm_gand");
+    await showDeleteAllConfirm(ctx, "записи Базы знаний", count, "adm_gand");
     return;
   }
 

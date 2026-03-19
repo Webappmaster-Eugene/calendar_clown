@@ -8,7 +8,7 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isNotesMode, isGandalfMode, isWishlistMode, isGoalsMode } from "../middleware/expenseMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode } from "../middleware/expenseMode.js";
 import { handleGoalsVoice } from "./goalsMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
@@ -16,7 +16,6 @@ import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
-import { handleNotesVoice } from "./notesMode.js";
 import { handleGandalfVoice } from "./gandalfMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
@@ -89,13 +88,7 @@ export async function handleVoice(ctx: Context) {
       return;
     }
 
-    // Notes mode — save transcribed voice as a note
-    if (telegramId != null && await isNotesMode(telegramId)) {
-      await handleNotesVoice(ctx, transcript, statusMsg.message_id);
-      return;
-    }
-
-    // Gandalf mode — extract structured entry from voice
+    // Gandalf (База знаний) mode — extract structured entry from voice
     if (telegramId != null && await isGandalfMode(telegramId)) {
       await handleGandalfVoice(ctx, transcript, statusMsg.message_id);
       return;

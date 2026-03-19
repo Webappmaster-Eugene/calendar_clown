@@ -16,6 +16,7 @@ import {
   formatUserStats,
   formatYearReport,
   formatExpenseDetailList,
+  formatMoney,
   monthName,
 } from "../expenses/formatter.js";
 import { getMskNow, getMonthRange, getMonthLimit } from "../utils/date.js";
@@ -90,9 +91,30 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
 
+    // Кнопки категорий для drilldown (по 2 в ряд)
+    const categoryButtons: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
+    for (let i = 0; i < totals.length; i += 2) {
+      const row = [
+        Markup.button.callback(
+          `${totals[i].categoryEmoji} ${formatMoney(totals[i].total)}`,
+          `drilldown:${totals[i].categoryId}:${year}:${month}:0`
+        ),
+      ];
+      if (i + 1 < totals.length) {
+        row.push(
+          Markup.button.callback(
+            `${totals[i + 1].categoryEmoji} ${formatMoney(totals[i + 1].total)}`,
+            `drilldown:${totals[i + 1].categoryId}:${year}:${month}:0`
+          )
+        );
+      }
+      categoryButtons.push(row);
+    }
+
     await ctx.editMessageText(text, {
       parse_mode: "Markdown",
       ...Markup.inlineKeyboard([
+        ...categoryButtons,
         [
           Markup.button.callback(`◀️ ${monthName(prevMonth)}`, `report:${prevYear}:${prevMonth}`),
           Markup.button.callback(`${monthName(month)} ${year}`, `noop`),

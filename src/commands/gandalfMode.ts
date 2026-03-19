@@ -1,6 +1,7 @@
 /**
- * Gandalf mode command handler.
- * Tribe-wide structured information tracker with categories, entries, files.
+ * База знаний (formerly Gandalf) mode command handler.
+ * Structured information tracker with categories, entries, files.
+ * Supports both tribe-scoped and personal (no tribe) use.
  */
 
 import type { Context } from "telegraf";
@@ -11,25 +12,30 @@ import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import {
   createCategory,
-  getCategoriesByTribe,
+  getCategoriesByScope,
   getCategoryById,
   deleteCategory,
   createEntry,
   getEntriesByCategory,
-  getEntriesByTribe,
-  getEntryById,
+  getEntriesByScope,
+  getEntryByIdScoped,
   deleteEntry,
   updateEntry,
   countEntriesByCategory,
-  countEntriesByTribe,
+  countEntriesByScope,
   addFileToEntry,
   getFilesByEntry,
   getStatsByCategory,
   getStatsByYear,
   getStatsByUser,
   getLatestEntryByUser,
+  getEntriesByFlag,
+  countEntriesByFlag,
+  toggleEntryFlag,
+  toggleEntryVisibility,
+  moveEntryToCategory,
 } from "../gandalf/repository.js";
-import type { GandalfEntry } from "../gandalf/repository.js";
+import type { GandalfEntry, GandalfScope } from "../gandalf/repository.js";
 import { extractGandalfIntent } from "../voice/extractGandalfIntent.js";
 import { createLogger } from "../utils/logger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
@@ -43,11 +49,12 @@ const ENTRIES_PAGE_SIZE = 5;
 // ─── State ──────────────────────────────────────────────────────────────
 
 interface EntryCreationState {
-  step: "title" | "price" | "optional";
+  step: "title" | "price" | "visibility" | "optional";
   categoryId: number;
   title?: string;
   price?: number | null;
   entryId?: number;
+  hasTribe: boolean;
 }
 
 const creationStates = new Map<number, EntryCreationState>();
@@ -56,9 +63,22 @@ const categoryCreationWaiting = new Set<number>();
 // Track which entry user wants to add optional fields to
 const optionalFieldStates = new Map<number, { entryId: number; field: "next_date" | "additional_info" }>();
 
+/** Build scope object for the user. */
+function buildScope(dbUser: { id: number; tribeId: number | null }): GandalfScope {
+  if (dbUser.tribeId) {
+    return { type: "tribe", tribeId: dbUser.tribeId, userId: dbUser.id };
+  }
+  return { type: "personal", userId: dbUser.id };
+}
+
+function getScopeTribeId(scope: GandalfScope): number | null {
+  return scope.type === "tribe" ? scope.tribeId : null;
+}
+
 function getGandalfKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
     ["📦 Категории", "➕ Новая запись"],
+    ["⭐ Важное", "🔥 Срочное"],
     ["📊 Статистика", "📋 Все записи"],
     ...getModeButtons(isAdmin),
   ]).resize();
@@ -71,7 +91,7 @@ export async function handleGandalfCommand(ctx: Context): Promise<void> {
   if (telegramId == null) return;
 
   if (!isDatabaseAvailable()) {
-    await ctx.reply("🧙 Гэндальф недоступен (нет подключения к базе данных).");
+    await ctx.reply("📚 База знаний недоступна (нет подключения к базе данных).");
     return;
   }
 
@@ -83,22 +103,20 @@ export async function handleGandalfCommand(ctx: Context): Promise<void> {
     isBootstrapAdmin(telegramId)
   );
 
-  if (!dbUser.tribeId) {
-    await ctx.reply("🧙 Гэндальф доступен только для участников семьи. Обратитесь к администратору.");
-    return;
-  }
-
   await setUserMode(telegramId, "gandalf");
   await setModeMenuCommands(ctx, "gandalf");
 
   const isAdmin = isBootstrapAdmin(telegramId);
+  const scopeLabel = dbUser.tribeId
+    ? "Записи видны всем участникам семьи (можно делать приватными)."
+    : "Ваша личная база знаний.";
+
   await ctx.reply(
-    "🧙 *Режим Гэндальф активирован*\n\n" +
-    "Общий семейный трекер записей.\n" +
-    "Создавайте категории (ЖКХ, Ремонт, Здоровье и т.д.),\n" +
-    "добавляйте записи текстом или голосом.\n" +
-    "Прикрепляйте фото и документы.\n\n" +
-    "Все участники семьи видят все записи.",
+    "📚 *База знаний активирована*\n\n" +
+    "Создавайте категории, добавляйте записи текстом или голосом.\n" +
+    "Прикрепляйте фото и документы.\n" +
+    "Отмечайте важное ⭐ и срочное 🔥\n\n" +
+    scopeLabel,
     { parse_mode: "Markdown", ...getGandalfKeyboard(isAdmin) }
   );
 }
@@ -110,12 +128,10 @@ export async function handleGandalfCategoriesButton(ctx: Context): Promise<void>
   if (telegramId == null) return;
 
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) {
-    await ctx.reply("Вы не в семье. Обратитесь к администратору.");
-    return;
-  }
+  if (!dbUser) return;
 
-  const categories = await getCategoriesByTribe(dbUser.tribeId);
+  const scope = buildScope(dbUser);
+  const categories = await getCategoriesByScope(scope);
 
   if (categories.length === 0) {
     await ctx.reply(
@@ -162,10 +178,11 @@ export async function handleGandalfViewCatCallback(ctx: Context): Promise<void> 
 
   const categoryId = parseInt(match[1], 10);
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) { await ctx.answerCbQuery(); return; }
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
 
-  const count = await countEntriesByCategory(dbUser.tribeId, categoryId);
-  const entries = await getEntriesByCategory(dbUser.tribeId, categoryId, ENTRIES_PAGE_SIZE, 0);
+  const tribeId = dbUser.tribeId;
+  const count = await countEntriesByCategory(tribeId, categoryId);
+  const entries = await getEntriesByCategory(tribeId, categoryId, ENTRIES_PAGE_SIZE, 0);
 
   await ctx.answerCbQuery();
 
@@ -197,7 +214,7 @@ export async function handleGandalfDelCatCallback(ctx: Context): Promise<void> {
 
   const categoryId = parseInt(match[1], 10);
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) { await ctx.answerCbQuery(); return; }
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
 
   await deleteCategory(categoryId, dbUser.tribeId);
   logAction(dbUser.id, telegramId, "gandalf_category_delete", { categoryId });
@@ -212,12 +229,10 @@ export async function handleGandalfNewEntryButton(ctx: Context): Promise<void> {
   if (telegramId == null) return;
 
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) {
-    await ctx.reply("Вы не в семье. Обратитесь к администратору.");
-    return;
-  }
+  if (!dbUser) return;
 
-  const categories = await getCategoriesByTribe(dbUser.tribeId);
+  const scope = buildScope(dbUser);
+  const categories = await getCategoriesByScope(scope);
 
   if (categories.length === 0) {
     await ctx.reply(
@@ -244,7 +259,9 @@ export async function handleGandalfEntryCatCallback(ctx: Context): Promise<void>
   if (!match) { await ctx.answerCbQuery(); return; }
 
   const categoryId = parseInt(match[1], 10);
-  creationStates.set(telegramId, { step: "title", categoryId });
+  const dbUser = await getUserByTelegramId(telegramId);
+  const hasTribe = dbUser?.tribeId != null;
+  creationStates.set(telegramId, { step: "title", categoryId, hasTribe });
 
   await ctx.answerCbQuery();
   await ctx.editMessageText("Введите название записи:");
@@ -257,15 +274,16 @@ export async function handleGandalfAllEntriesButton(ctx: Context): Promise<void>
   if (telegramId == null) return;
 
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) return;
+  if (!dbUser) return;
 
-  const total = await countEntriesByTribe(dbUser.tribeId);
+  const scope = buildScope(dbUser);
+  const total = await countEntriesByScope(scope);
   if (total === 0) {
     await ctx.reply("Записей пока нет. Нажмите «➕ Новая запись» чтобы создать первую.");
     return;
   }
 
-  const entries = await getEntriesByTribe(dbUser.tribeId, ENTRIES_PAGE_SIZE, 0);
+  const entries = await getEntriesByScope(scope, ENTRIES_PAGE_SIZE, 0);
   const totalPages = Math.ceil(total / ENTRIES_PAGE_SIZE);
   const buttons = buildEntryButtons(entries);
 
@@ -277,6 +295,42 @@ export async function handleGandalfAllEntriesButton(ctx: Context): Promise<void>
 
   await ctx.reply(
     `📋 *Все записи (1/${totalPages}, всего: ${total}):*\n\n` + formatEntriesList(entries),
+    { parse_mode: "Markdown", ...buttons }
+  );
+}
+
+// ─── Important / Urgent Buttons ─────────────────────────────────────────
+
+export async function handleGandalfImportantButton(ctx: Context): Promise<void> {
+  await showFlaggedEntries(ctx, "important");
+}
+
+export async function handleGandalfUrgentButton(ctx: Context): Promise<void> {
+  await showFlaggedEntries(ctx, "urgent");
+}
+
+async function showFlaggedEntries(ctx: Context, flag: "important" | "urgent"): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) return;
+
+  const scope = buildScope(dbUser);
+  const total = await countEntriesByFlag(scope, flag);
+  const label = flag === "important" ? "⭐ Важное" : "🔥 Срочное";
+
+  if (total === 0) {
+    await ctx.reply(`${label}: пока нет записей с этой отметкой.`);
+    return;
+  }
+
+  const entries = await getEntriesByFlag(scope, flag, ENTRIES_PAGE_SIZE, 0);
+  const totalPages = Math.ceil(total / ENTRIES_PAGE_SIZE);
+  const buttons = buildEntryButtons(entries);
+
+  await ctx.reply(
+    `${label} *(1/${totalPages}, всего: ${total}):*\n\n` + formatEntriesList(entries),
     { parse_mode: "Markdown", ...buttons }
   );
 }
@@ -294,14 +348,15 @@ export async function handleGandalfPageCallback(ctx: Context): Promise<void> {
   const categoryId = parseInt(match[1], 10);
   const offset = parseInt(match[2], 10);
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) { await ctx.answerCbQuery(); return; }
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
 
+  const scope = buildScope(dbUser);
   const isAllEntries = categoryId === 0;
   const total = isAllEntries
-    ? await countEntriesByTribe(dbUser.tribeId)
+    ? await countEntriesByScope(scope)
     : await countEntriesByCategory(dbUser.tribeId, categoryId);
   const entries = isAllEntries
-    ? await getEntriesByTribe(dbUser.tribeId, ENTRIES_PAGE_SIZE, offset)
+    ? await getEntriesByScope(scope, ENTRIES_PAGE_SIZE, offset)
     : await getEntriesByCategory(dbUser.tribeId, categoryId, ENTRIES_PAGE_SIZE, offset);
 
   const totalPages = Math.ceil(total / ENTRIES_PAGE_SIZE);
@@ -335,13 +390,15 @@ export async function handleGandalfEntryActionCallback(ctx: Context): Promise<vo
   if (telegramId == null) return;
 
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) { await ctx.answerCbQuery(); return; }
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  const scope = buildScope(dbUser);
 
   // View entry detail
   const viewMatch = data.match(/^gandalf_view:(\d+)$/);
   if (viewMatch) {
     const entryId = parseInt(viewMatch[1], 10);
-    const entry = await getEntryById(entryId, dbUser.tribeId);
+    const entry = await getEntryByIdScoped(entryId, scope);
     if (!entry) {
       await ctx.answerCbQuery("Запись не найдена");
       return;
@@ -350,7 +407,7 @@ export async function handleGandalfEntryActionCallback(ctx: Context): Promise<vo
     await ctx.answerCbQuery();
     await ctx.editMessageText(formatSingleEntry(entry, files.length), {
       parse_mode: "Markdown",
-      ...buildSingleEntryButtons(entry, files.length),
+      ...buildSingleEntryButtons(entry, files.length, scope),
     });
     return;
   }
@@ -359,7 +416,7 @@ export async function handleGandalfEntryActionCallback(ctx: Context): Promise<vo
   const delMatch = data.match(/^gandalf_del:(\d+)$/);
   if (delMatch) {
     const entryId = parseInt(delMatch[1], 10);
-    await deleteEntry(entryId, dbUser.tribeId);
+    await deleteEntry(entryId, getScopeTribeId(scope));
     logAction(dbUser.id, telegramId, "gandalf_entry_delete", { entryId });
     await ctx.answerCbQuery("Запись удалена");
     await ctx.editMessageText("✅ Запись удалена.");
@@ -367,6 +424,204 @@ export async function handleGandalfEntryActionCallback(ctx: Context): Promise<vo
   }
 
   await ctx.answerCbQuery();
+}
+
+// ─── Flag Toggle Callbacks ──────────────────────────────────────────────
+
+export async function handleGandalfFlagCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  const scope = buildScope(dbUser);
+  const tribeId = getScopeTribeId(scope);
+
+  const impMatch = data.match(/^gandalf_imp:(\d+)$/);
+  const urgMatch = data.match(/^gandalf_urg:(\d+)$/);
+  const match = impMatch ?? urgMatch;
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const entryId = parseInt(match[1], 10);
+  const flag = impMatch ? "important" : "urgent";
+
+  await toggleEntryFlag(entryId, tribeId, flag);
+  const emoji = flag === "important" ? "⭐" : "🔥";
+  await ctx.answerCbQuery(`${emoji} Переключено`);
+
+  // Re-render entry
+  const entry = await getEntryByIdScoped(entryId, scope);
+  if (entry) {
+    const files = await getFilesByEntry(entryId);
+    try {
+      await ctx.editMessageText(formatSingleEntry(entry, files.length), {
+        parse_mode: "Markdown",
+        ...buildSingleEntryButtons(entry, files.length, scope),
+      });
+    } catch {
+      // Message not modified — ignore
+    }
+  }
+}
+
+// ─── Visibility Toggle Callback ─────────────────────────────────────────
+
+export async function handleGandalfVisibilityCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^gandalf_vis_toggle:(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const entryId = parseInt(match[1], 10);
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  const scope = buildScope(dbUser);
+  const tribeId = getScopeTribeId(scope);
+  const newVis = await toggleEntryVisibility(entryId, tribeId);
+  const label = newVis === "private" ? "🔒 Приватная" : "🌐 Для трайба";
+  await ctx.answerCbQuery(label);
+
+  // Re-render
+  const entry = await getEntryByIdScoped(entryId, scope);
+  if (entry) {
+    const files = await getFilesByEntry(entryId);
+    try {
+      await ctx.editMessageText(formatSingleEntry(entry, files.length), {
+        parse_mode: "Markdown",
+        ...buildSingleEntryButtons(entry, files.length, scope),
+      });
+    } catch {
+      // Message not modified — ignore
+    }
+  }
+}
+
+// ─── Visibility Selection (during creation) ─────────────────────────────
+
+export async function handleGandalfVisibilitySelectCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^gandalf_vis:(tribe|private)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const visibility = match[1] as "tribe" | "private";
+  const state = creationStates.get(telegramId);
+  if (!state || state.step !== "visibility") {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  await ctx.answerCbQuery();
+  creationStates.delete(telegramId);
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) return;
+
+  const scope = buildScope(dbUser);
+  const tribeId = getScopeTribeId(scope);
+
+  try {
+    const entry = await createEntry({
+      tribeId,
+      categoryId: state.categoryId,
+      title: state.title!,
+      price: state.price,
+      addedByUserId: dbUser.id,
+      inputMethod: "text",
+      visibility,
+    });
+    logAction(dbUser.id, telegramId, "gandalf_entry_create", {
+      entryId: entry.id,
+      inputMethod: "text",
+    });
+
+    const cat = entry.categoryName
+      ? `${entry.categoryEmoji ?? "📁"} ${entry.categoryName}`
+      : "";
+    const priceStr = state.price != null ? `\n💰 ${formatPrice(state.price)}` : "";
+    const visLabel = visibility === "private" ? "🔒 Приватная" : "🌐 Для трайба";
+
+    await ctx.editMessageText(
+      `✅ Запись сохранена ${visLabel}\n📦 ${cat}\n📝 ${entry.title}${priceStr}`,
+    );
+    await ctx.reply("Дополнительные опции:", {
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback("📅 Добавить дату", `gandalf_opt_date:${entry.id}`),
+          Markup.button.callback("ℹ️ Доп. инфо", `gandalf_opt_info:${entry.id}`),
+        ],
+        [Markup.button.callback("✅ Готово", `gandalf_opt_done:${entry.id}`)],
+      ]),
+    });
+  } catch (err) {
+    log.error("Error creating gandalf entry:", err);
+    await ctx.editMessageText("Ошибка при создании записи.");
+  }
+}
+
+// ─── Move Entry ─────────────────────────────────────────────────────────
+
+export async function handleGandalfMoveCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^gandalf_move:(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const entryId = parseInt(match[1], 10);
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  const scope = buildScope(dbUser);
+  const categories = await getCategoriesByScope(scope);
+
+  if (categories.length <= 1) {
+    await ctx.answerCbQuery("Нужно больше одной категории");
+    return;
+  }
+
+  const buttons = categories.map((c) => [
+    Markup.button.callback(`${c.emoji} ${c.name}`, `gandalf_move_to:${entryId}:${c.id}`),
+  ]);
+
+  await ctx.answerCbQuery();
+  await ctx.editMessageText("📂 Выберите категорию для перемещения:", {
+    ...Markup.inlineKeyboard(buttons),
+  });
+}
+
+export async function handleGandalfMoveToCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^gandalf_move_to:(\d+):(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const entryId = parseInt(match[1], 10);
+  const newCategoryId = parseInt(match[2], 10);
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  const scope = buildScope(dbUser);
+  const tribeId = getScopeTribeId(scope);
+
+  const moved = await moveEntryToCategory(entryId, tribeId, newCategoryId);
+  if (moved) {
+    await ctx.answerCbQuery("✅ Перемещено");
+    await ctx.editMessageText("✅ Запись перемещена в другую категорию.");
+  } else {
+    await ctx.answerCbQuery("Ошибка перемещения");
+  }
 }
 
 // ─── Entry Files ────────────────────────────────────────────────────────
@@ -380,9 +635,6 @@ export async function handleGandalfFilesCallback(ctx: Context): Promise<void> {
   if (!match) { await ctx.answerCbQuery(); return; }
 
   const entryId = parseInt(match[1], 10);
-  const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) { await ctx.answerCbQuery(); return; }
-
   const files = await getFilesByEntry(entryId);
   await ctx.answerCbQuery();
 
@@ -452,12 +704,20 @@ export async function handleGandalfStatsButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) return;
+
+  const buttons = [
+    [Markup.button.callback("📦 По категориям", "gandalf_stats:categories")],
+    [Markup.button.callback("📅 По годам", "gandalf_stats:years")],
+  ];
+  // User stats only for tribes
+  if (dbUser.tribeId) {
+    buttons.push([Markup.button.callback("👥 По участникам", "gandalf_stats:users")]);
+  }
+
   await ctx.reply("Выберите вид статистики:", {
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback("📦 По категориям", "gandalf_stats:categories")],
-      [Markup.button.callback("📅 По годам", "gandalf_stats:years")],
-      [Markup.button.callback("👥 По участникам", "gandalf_stats:users")],
-    ]),
+    ...Markup.inlineKeyboard(buttons),
   });
 }
 
@@ -471,8 +731,14 @@ export async function handleGandalfStatsCallback(ctx: Context): Promise<void> {
 
   const statsType = match[1];
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) {
-    await ctx.answerCbQuery("Вы не в семье");
+  if (!dbUser) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  // Stats require tribeId for now (personal stats not yet implemented)
+  if (!dbUser.tribeId) {
+    await ctx.answerCbQuery("Статистика пока доступна только в трайбе");
     return;
   }
 
@@ -544,7 +810,10 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
   if (!text) return false;
 
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) return false;
+  if (!dbUser) return false;
+
+  const scope = buildScope(dbUser);
+  const tribeId = getScopeTribeId(scope);
 
   // Category creation flow
   if (categoryCreationWaiting.has(telegramId)) {
@@ -559,7 +828,7 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
       }
       if (!name) name = text;
 
-      const category = await createCategory(dbUser.tribeId, name, emoji, dbUser.id);
+      const category = await createCategory(tribeId, name, emoji, dbUser.id);
       logAction(dbUser.id, telegramId, "gandalf_category_create", { categoryId: category.id, name });
       await ctx.reply(`${category.emoji} Категория «${category.name}» создана!`);
     } catch (err) {
@@ -580,10 +849,10 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
           await ctx.reply("Не удалось разобрать дату. Запись сохранена без даты.");
           return true;
         }
-        await updateEntry(optState.entryId, dbUser.tribeId, { nextDate: parsed });
+        await updateEntry(optState.entryId, tribeId, { nextDate: parsed });
         await ctx.reply(`📅 Дата установлена: ${parsed.toLocaleDateString("ru-RU")}`);
       } else {
-        await updateEntry(optState.entryId, dbUser.tribeId, { additionalInfo: text });
+        await updateEntry(optState.entryId, tribeId, { additionalInfo: text });
         await ctx.reply("ℹ️ Дополнительная информация сохранена.");
       }
     } catch (err) {
@@ -606,8 +875,6 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
   }
 
   if (state.step === "price") {
-    creationStates.delete(telegramId);
-
     let price: number | null = null;
     if (text !== "-") {
       const parsed = parseFloat(text.replace(/\s/g, "").replace(",", "."));
@@ -617,15 +884,35 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
         await ctx.reply("Некорректная цена. Запись создана без цены.");
       }
     }
+    state.price = price;
+
+    // If user has tribe — ask for visibility
+    if (state.hasTribe) {
+      state.step = "visibility";
+      creationStates.set(telegramId, state);
+      await ctx.reply("Выберите видимость записи:", {
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback("🌐 Для трайба", "gandalf_vis:tribe"),
+            Markup.button.callback("🔒 Приватная", "gandalf_vis:private"),
+          ],
+        ]),
+      });
+      return true;
+    }
+
+    // No tribe — create immediately as private
+    creationStates.delete(telegramId);
 
     try {
       const entry = await createEntry({
-        tribeId: dbUser.tribeId,
+        tribeId: null,
         categoryId: state.categoryId,
         title: state.title!,
         price,
         addedByUserId: dbUser.id,
         inputMethod: "text",
+        visibility: "private",
       });
       logAction(dbUser.id, telegramId, "gandalf_entry_create", {
         entryId: entry.id,
@@ -670,10 +957,13 @@ export async function handleGandalfVoice(
   if (telegramId == null) return;
 
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) return;
+  if (!dbUser) return;
+
+  const scope = buildScope(dbUser);
+  const tribeId = getScopeTribeId(scope);
 
   try {
-    const categories = await getCategoriesByTribe(dbUser.tribeId);
+    const categories = await getCategoriesByScope(scope);
     if (categories.length === 0) {
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
@@ -692,7 +982,7 @@ export async function handleGandalfVoice(
         ctx.chat!.id,
         statusMsgId,
         undefined,
-        "Это не похоже на запись для трекера. Скажите что записать, например: «Запиши в ЖКХ показания счётчика 123»."
+        "Это не похоже на запись для базы знаний. Скажите что записать, например: «Запиши в ЖКХ показания счётчика 123»."
       );
       return;
     }
@@ -709,18 +999,21 @@ export async function handleGandalfVoice(
 
     if (result.type === "partial") {
       if (result.category && result.title) {
-        // Have enough to create, find category
         const cat = categories.find(
           (c) => c.name.toLowerCase() === result.category!.toLowerCase()
         );
         if (cat) {
+          const visibility = tribeId ? "tribe" : "private";
           const entry = await createEntry({
-            tribeId: dbUser.tribeId,
+            tribeId,
             categoryId: cat.id,
             title: result.title,
             price: result.price,
             addedByUserId: dbUser.id,
             inputMethod: "voice",
+            visibility,
+            isImportant: result.isImportant ?? false,
+            isUrgent: result.isUrgent ?? false,
           });
           logAction(dbUser.id, telegramId, "gandalf_entry_create", {
             entryId: entry.id,
@@ -760,8 +1053,9 @@ export async function handleGandalfVoice(
     }
 
     const nextDate = result.nextDate ? new Date(result.nextDate) : null;
+    const visibility = tribeId ? "tribe" : "private";
     const entry = await createEntry({
-      tribeId: dbUser.tribeId,
+      tribeId,
       categoryId: cat.id,
       title: result.title,
       price: result.price,
@@ -769,6 +1063,9 @@ export async function handleGandalfVoice(
       nextDate: nextDate && !isNaN(nextDate.getTime()) ? nextDate : null,
       additionalInfo: result.additionalInfo,
       inputMethod: "voice",
+      visibility,
+      isImportant: result.isImportant ?? false,
+      isUrgent: result.isUrgent ?? false,
     });
     logAction(dbUser.id, telegramId, "gandalf_entry_create", {
       entryId: entry.id,
@@ -780,12 +1077,13 @@ export async function handleGandalfVoice(
       ? `\n📅 Следующая: ${nextDate.toLocaleDateString("ru-RU")}`
       : "";
     const infoStr = result.additionalInfo ? `\nℹ️ ${result.additionalInfo}` : "";
+    const flagsStr = (result.isImportant ? " ⭐" : "") + (result.isUrgent ? " 🔥" : "");
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
       statusMsgId,
       undefined,
-      `✅ Запись из голосового сохранена\n${cat.emoji} ${cat.name}\n📝 ${result.title}${priceStr}${dateStr}${infoStr}`
+      `✅ Запись из голосового сохранена${flagsStr}\n${cat.emoji} ${cat.name}\n📝 ${result.title}${priceStr}${dateStr}${infoStr}`
     );
   } catch (err) {
     log.error("Error processing gandalf voice:", err);
@@ -805,7 +1103,10 @@ export async function handleGandalfFileAttachment(ctx: Context): Promise<boolean
   if (telegramId == null) return false;
 
   const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser?.tribeId) return false;
+  if (!dbUser) return false;
+
+  const scope = buildScope(dbUser);
+  const tribeId = getScopeTribeId(scope);
 
   let fileId: string | undefined;
   let fileType: string = "document";
@@ -851,7 +1152,7 @@ export async function handleGandalfFileAttachment(ctx: Context): Promise<boolean
   }
 
   // Otherwise, attach to latest entry
-  const latestEntry = await getLatestEntryByUser(dbUser.tribeId, dbUser.id);
+  const latestEntry = await getLatestEntryByUser(tribeId, dbUser.id);
   if (!latestEntry) {
     await ctx.reply("Нет записей для прикрепления файла. Сначала создайте запись.");
     return true;
@@ -885,11 +1186,13 @@ function formatEntriesList(entries: GandalfEntry[]): string {
   return entries.map((e, i) => {
     const cat = e.categoryName ? `${e.categoryEmoji ?? "📁"} ${e.categoryName}` : "";
     const priceStr = e.price != null ? ` | 💰 ${formatPrice(e.price)}` : "";
+    const flags = (e.isImportant ? "⭐" : "") + (e.isUrgent ? "🔥" : "") + (e.visibility === "private" ? "🔒" : "");
+    const flagsStr = flags ? ` ${flags}` : "";
     const date = e.createdAt.toLocaleDateString("ru-RU", {
       day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
     });
     const author = e.addedByName ? ` — ${e.addedByName}` : "";
-    return `*${i + 1}.* ${cat}${priceStr}\n${escapeMarkdown(e.title)}\n_${date}${author}_`;
+    return `*${i + 1}.* ${cat}${priceStr}${flagsStr}\n${escapeMarkdown(e.title)}\n_${date}${author}_`;
   }).join("\n\n");
 }
 
@@ -911,14 +1214,22 @@ function formatSingleEntry(entry: GandalfEntry, filesCount: number): string {
   const author = entry.addedByName ? `👤 ${escapeMarkdown(entry.addedByName)}` : "";
   const filesStr = filesCount > 0 ? `\n📎 Файлов: ${filesCount}` : "";
 
+  const flagsArr: string[] = [];
+  if (entry.isImportant) flagsArr.push("⭐ Важное");
+  if (entry.isUrgent) flagsArr.push("🔥 Срочное");
+  const visLabel = entry.visibility === "private" ? "🔒 Приватная" : "🌐 Трайб";
+  flagsArr.push(visLabel);
+  const flagsStr = flagsArr.length > 0 ? `\n${flagsArr.join(" | ")}` : "";
+
   const parts = [
-    `🧙 *Запись #${entry.id}*`,
+    `📚 *Запись #${entry.id}*`,
     cat,
     `📝 ${escapeMarkdown(entry.title)}`,
   ];
   if (priceStr) parts.push(priceStr.trim());
   if (dateStr) parts.push(dateStr.trim());
   if (infoStr) parts.push(infoStr.trim());
+  parts.push(flagsStr.trim());
   parts.push(`${date} | ${method}`);
   if (author) parts.push(author);
   if (filesStr) parts.push(filesStr.trim());
@@ -928,14 +1239,35 @@ function formatSingleEntry(entry: GandalfEntry, filesCount: number): string {
 
 function buildEntryButtons(entries: GandalfEntry[]) {
   const buttons = entries.map((e) => [
-    Markup.button.callback(`🧙 #${e.id}`, `gandalf_view:${e.id}`),
+    Markup.button.callback(`📚 #${e.id}`, `gandalf_view:${e.id}`),
     Markup.button.callback("🗑", `gandalf_del:${e.id}`),
   ]);
   return Markup.inlineKeyboard(buttons);
 }
 
-function buildSingleEntryButtons(entry: GandalfEntry, filesCount: number) {
+function buildSingleEntryButtons(entry: GandalfEntry, filesCount: number, scope: GandalfScope) {
   const buttons: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
+
+  // Flag toggles
+  const impLabel = entry.isImportant ? "⭐ Убрать важное" : "⭐ Важное";
+  const urgLabel = entry.isUrgent ? "🔥 Убрать срочное" : "🔥 Срочное";
+  buttons.push([
+    Markup.button.callback(impLabel, `gandalf_imp:${entry.id}`),
+    Markup.button.callback(urgLabel, `gandalf_urg:${entry.id}`),
+  ]);
+
+  // Visibility toggle (only for tribe users)
+  if (scope.type === "tribe") {
+    const visLabel = entry.visibility === "private" ? "🌐 Сделать публичной" : "🔒 Сделать приватной";
+    buttons.push([
+      Markup.button.callback(visLabel, `gandalf_vis_toggle:${entry.id}`),
+      Markup.button.callback("📂 Переместить", `gandalf_move:${entry.id}`),
+    ]);
+  } else {
+    buttons.push([
+      Markup.button.callback("📂 Переместить", `gandalf_move:${entry.id}`),
+    ]);
+  }
 
   if (filesCount > 0) {
     buttons.push([
