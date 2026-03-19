@@ -243,6 +243,60 @@ export async function isUserInDb(telegramId: number): Promise<boolean> {
   return parseInt(rows[0].count, 10) > 0;
 }
 
+/** List approved users without a tribe (for tribe assignment). */
+export async function listUsersWithoutTribe(): Promise<DbUser[]> {
+  const { rows } = await query<{
+    id: number;
+    telegram_id: string;
+    username: string | null;
+    first_name: string;
+    last_name: string | null;
+    role: string;
+    tribe_id: number | null;
+  }>(
+    `SELECT id, telegram_id, username, first_name, last_name, role, tribe_id
+     FROM users
+     WHERE tribe_id IS NULL AND COALESCE(status, 'approved') = 'approved' AND role != 'admin'
+     ORDER BY id`
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    telegramId: Number(r.telegram_id),
+    username: r.username,
+    firstName: r.first_name,
+    lastName: r.last_name,
+    role: r.role as "admin" | "user",
+    tribeId: r.tribe_id,
+  }));
+}
+
+/** List all approved (non-pending) users. */
+export async function listAllApprovedUsers(): Promise<DbUser[]> {
+  const { rows } = await query<{
+    id: number;
+    telegram_id: string;
+    username: string | null;
+    first_name: string;
+    last_name: string | null;
+    role: string;
+    tribe_id: number | null;
+  }>(
+    `SELECT id, telegram_id, username, first_name, last_name, role, tribe_id
+     FROM users
+     WHERE COALESCE(status, 'approved') != 'pending'
+     ORDER BY id`
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    telegramId: Number(r.telegram_id),
+    username: r.username,
+    firstName: r.first_name,
+    lastName: r.last_name,
+    role: r.role as "admin" | "user",
+    tribeId: r.tribe_id,
+  }));
+}
+
 /** List all users in a tribe. */
 export async function listTribeUsers(tribeId: number): Promise<DbUser[]> {
   const { rows } = await query<{

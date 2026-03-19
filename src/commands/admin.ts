@@ -5,6 +5,8 @@ import {
   addUserByTelegramId,
   removeUserByTelegramId,
   listTribeUsers,
+  listUsersWithoutTribe,
+  listAllApprovedUsers,
   getUserByTelegramId,
   createPendingUser,
   approveUser,
@@ -15,6 +17,7 @@ import {
   removeUserFromTribe,
   listTribes,
   createTribe,
+  getTribeName,
 } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
@@ -92,9 +95,7 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
   }
 
   if (data === "admin:list") {
-    const admin = await getUserByTelegramId(telegramId);
-    const tribeId = admin?.tribeId ?? 1;
-    const users = await listTribeUsers(tribeId);
+    const users = await listAllApprovedUsers();
 
     if (users.length === 0) {
       await ctx.editMessageText("Пользователей нет.");
@@ -102,11 +103,12 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    const lines = users.map((u) => {
+    const lines = await Promise.all(users.map(async (u) => {
       const name = u.firstName || u.username || "—";
       const roleIcon = u.role === "admin" ? "👑" : "👤";
-      return `${roleIcon} ${name} — ID: \`${u.telegramId}\``;
-    });
+      const tribe = u.tribeId ? await getTribeName(u.tribeId) : "без трайба";
+      return `${roleIcon} ${name} — ID: \`${u.telegramId}\` (${tribe})`;
+    }));
 
     await ctx.editMessageText(
       `👥 *Пользователи:*\n\n${lines.join("\n")}`,
@@ -128,9 +130,7 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
   }
 
   if (data === "admin:remove") {
-    const admin = await getUserByTelegramId(telegramId);
-    const tribeId = admin?.tribeId ?? 1;
-    const users = await listTribeUsers(tribeId);
+    const users = await listAllApprovedUsers();
     const nonAdmins = users.filter((u) => u.role !== "admin");
 
     if (nonAdmins.length === 0) {
@@ -232,18 +232,15 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
 
   // ─── Tribe management ─────────────────────────────────────────────
   if (data === "admin:tribes") {
-    const admin = await getUserByTelegramId(telegramId);
-    const tribeId = admin?.tribeId ?? 1;
-    const users = await listTribeUsers(tribeId);
-    const nonAdmins = users.filter((u) => u.role !== "admin");
+    const users = await listUsersWithoutTribe();
 
-    if (nonAdmins.length === 0) {
-      await ctx.editMessageText("Нет пользователей для назначения трайба.");
+    if (users.length === 0) {
+      await ctx.editMessageText("Нет пользователей без трайба.");
       await ctx.answerCbQuery();
       return;
     }
 
-    const buttons = nonAdmins.map((u) => {
+    const buttons = users.map((u) => {
       const name = u.firstName || u.username || String(u.telegramId);
       return [Markup.button.callback(`🏷 ${name}`, `admin:set_tribe:${u.telegramId}`)];
     });
