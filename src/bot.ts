@@ -16,7 +16,7 @@ import { handleStatsCommand } from "./commands/adminStats.js";
 import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleQueueStatusButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback, handleTranscribeDeleteCallback } from "./commands/transcribeMode.js";
 import { handleAdminDataCallback, handleAdminDataTextInput } from "./commands/adminData.js";
 import { handleBulkCallback } from "./utils/bulkSelect.js";
-import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText, handleFolderImportButton, handleDigestFolderCallback, handleDigestFolderToCallback } from "./commands/digestMode.js";
+import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText, handleFolderImportButton, handleDigestFolderCallback, handleDigestFolderToCallback, handleRubricViewCallback, handleRubricToggleCallback, handleRubricDeleteCallback, handleRubricDeleteConfirmCallback, handleRubricChannelsCallback, handleChannelRemoveCallback, handleChannelAddCallback, handleRubricListCallback } from "./commands/digestMode.js";
 import { handleMtprotoAuthButton, handleDigestAuthText } from "./commands/digestAuth.js";
 import { handleBroadcastCommand, handleBroadcastText } from "./commands/broadcastMode.js";
 import {
@@ -173,6 +173,17 @@ export function createBot(token: string): Telegraf {
 
   // Bulk selection callbacks
   bot.action(/^bulk:/, handleBulkCallback);
+
+  // Digest rubric inline callbacks
+  bot.action("drub_back", handleRubricListCallback);
+  bot.action(/^drub_view:/, handleRubricViewCallback);
+  bot.action(/^drub_pause:/, handleRubricToggleCallback);
+  bot.action(/^drub_resume:/, handleRubricToggleCallback);
+  bot.action(/^drub_del:\d+$/, handleRubricDeleteCallback);
+  bot.action(/^drub_del_yes:\d+$/, handleRubricDeleteConfirmCallback);
+  bot.action(/^drub_ch:/, handleRubricChannelsCallback);
+  bot.action(/^drub_ch_rm:/, handleChannelRemoveCallback);
+  bot.action(/^drub_ch_add:/, handleChannelAddCallback);
 
   // Digest folder import callbacks
   bot.action(/^digest_folder:/, handleDigestFolderCallback);

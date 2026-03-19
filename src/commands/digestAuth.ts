@@ -5,7 +5,9 @@
  * Flow: phone → code → (optional 2FA) → session saved.
  */
 
+import crypto from "crypto";
 import type { Context } from "telegraf";
+import type { Telegraf } from "telegraf";
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { Api } from "telegram/tl/index.js";
@@ -26,6 +28,190 @@ interface AuthFlowState {
 }
 
 const authStates = new Map<number, AuthFlowState>();
+
+/* ── Bot reference for sending notifications from web flow ── */
+
+let botRef: Telegraf | null = null;
+
+export function setAuthBotRef(bot: Telegraf): void {
+  botRef = bot;
+}
+
+/* ── Web auth tokens ── */
+
+interface WebAuthToken {
+  token: string;
+  telegramId: number;
+  chatId: number;
+  createdAt: number;
+}
+
+const WEB_TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+const webTokens = new Map<string, WebAuthToken>();
+
+// Periodic cleanup of expired tokens
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of webTokens) {
+    if (now - data.createdAt > 15 * 60 * 1000) webTokens.delete(token);
+  }
+}, 5 * 60 * 1000);
+
+/* ── Web auth result type and exported functions ── */
+
+export type WebAuthResult =
+  | { status: "success"; phoneHint: string }
+  | { status: "2fa_required" }
+  | { status: "invalid_code"; message: string }
+  | { status: "expired" }
+  | { status: "invalid_token" }
+  | { status: "flood"; waitSeconds: number }
+  | { status: "error"; message: string };
+
+export function getAuthStateByToken(
+  token: string
+): { telegramId: number; chatId: number; state: AuthFlowState } | null {
+  const webToken = webTokens.get(token);
+  if (!webToken) return null;
+  if (Date.now() - webToken.createdAt > WEB_TOKEN_TTL_MS) {
+    webTokens.delete(token);
+    return null;
+  }
+  const state = authStates.get(webToken.telegramId);
+  if (!state) return null;
+  return { telegramId: webToken.telegramId, chatId: webToken.chatId, state };
+}
+
+export async function submitCodeViaWeb(token: string, code: string): Promise<WebAuthResult> {
+  const entry = getAuthStateByToken(token);
+  if (!entry) return { status: "invalid_token" };
+  const { telegramId, chatId, state } = entry;
+
+  if (state.step !== "code") return { status: "error", message: "Unexpected step" };
+  if (!state.client || !state.phoneNumber || !state.phoneCodeHash) {
+    clearState(telegramId);
+    return { status: "expired" };
+  }
+
+  const cleanCode = code.replace(/[\s\-]/g, "");
+  if (!/^\d{4,8}$/.test(cleanCode)) {
+    return { status: "invalid_code", message: "Код должен содержать 4-8 цифр." };
+  }
+
+  try {
+    await state.client.invoke(
+      new Api.auth.SignIn({
+        phoneNumber: state.phoneNumber,
+        phoneCodeHash: state.phoneCodeHash,
+        phoneCode: cleanCode,
+      })
+    );
+
+    const hint = await saveSessionFromWeb(telegramId, chatId, state);
+    return { status: "success", phoneHint: hint };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+
+    if (msg.includes("SESSION_PASSWORD_NEEDED")) {
+      authStates.set(telegramId, { ...state, step: "password" });
+      return { status: "2fa_required" };
+    }
+    if (msg.includes("PHONE_CODE_INVALID")) {
+      return { status: "invalid_code", message: "Неверный код. Попробуйте ещё раз." };
+    }
+    if (msg.includes("PHONE_CODE_EXPIRED")) {
+      clearState(telegramId);
+      webTokens.delete(token);
+      return { status: "expired" };
+    }
+    if (msg.includes("FLOOD")) {
+      const wait = msg.match(/\d+/);
+      const seconds = wait ? parseInt(wait[0], 10) : 60;
+      clearState(telegramId);
+      webTokens.delete(token);
+      return { status: "flood", waitSeconds: seconds };
+    }
+
+    log.error(`submitCodeViaWeb error for ${telegramId}: ${msg}`);
+    clearState(telegramId);
+    webTokens.delete(token);
+    return { status: "error", message: msg };
+  }
+}
+
+export async function submit2faViaWeb(token: string, password: string): Promise<WebAuthResult> {
+  const entry = getAuthStateByToken(token);
+  if (!entry) return { status: "invalid_token" };
+  const { telegramId, chatId, state } = entry;
+
+  if (state.step !== "password") return { status: "error", message: "Unexpected step" };
+  if (!state.client) {
+    clearState(telegramId);
+    return { status: "expired" };
+  }
+
+  try {
+    const srpResult = await state.client.invoke(new Api.account.GetPassword());
+    const inputPassword = await computeCheck(srpResult, password);
+    await state.client.invoke(
+      new Api.auth.CheckPassword({ password: inputPassword })
+    );
+
+    const hint = await saveSessionFromWeb(telegramId, chatId, state);
+    return { status: "success", phoneHint: hint };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+
+    if (msg.includes("PASSWORD_HASH_INVALID")) {
+      return { status: "invalid_code", message: "Неверный пароль. Попробуйте ещё раз." };
+    }
+
+    log.error(`submit2faViaWeb error for ${telegramId}: ${msg}`);
+    clearState(telegramId);
+    webTokens.delete(token);
+    return { status: "error", message: msg };
+  }
+}
+
+async function saveSessionFromWeb(
+  telegramId: number,
+  chatId: number,
+  state: AuthFlowState
+): Promise<string> {
+  if (!state.client || !state.phoneNumber) throw new Error("Invalid state");
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    clearState(telegramId);
+    throw new Error("User not found");
+  }
+
+  const sessionString = state.client.session.save() as unknown as string;
+  const hint = phoneHint(state.phoneNumber);
+  await saveUserSession(dbUser.id, sessionString, hint);
+
+  state.client.disconnect().catch(() => {});
+  authStates.delete(telegramId);
+
+  // Clean up all web tokens for this user
+  for (const [t, d] of webTokens) {
+    if (d.telegramId === telegramId) webTokens.delete(t);
+  }
+
+  log.info(`User ${telegramId} (db:${dbUser.id}) linked MTProto session via web (${hint})`);
+
+  // Notify user in Telegram chat
+  if (botRef) {
+    botRef.telegram.sendMessage(
+      chatId,
+      `✅ Telegram-аккаунт привязан (${hint})!\n\n` +
+      "Теперь вы можете импортировать каналы из своих папок: «📂 Импорт из папки»"
+    ).catch((e) => log.error(`Failed to send chat notification: ${e}`));
+  }
+
+  return hint;
+}
 
 function getCredentials(): { apiId: number; apiHash: string } | null {
   const apiId = parseInt(process.env.TELEGRAM_PARSER_API_ID ?? "", 10);
@@ -109,9 +295,11 @@ export async function handleDigestAuthText(ctx: Context): Promise<boolean> {
       case "phone":
         return await handlePhoneStep(ctx, telegramId, text, state);
       case "code":
-        return await handleCodeStep(ctx, telegramId, text, state);
+        await ctx.reply("Введите код через веб-ссылку выше, а не в чат.");
+        return true;
       case "password":
-        return await handlePasswordStep(ctx, telegramId, text, state);
+        await ctx.reply("Введите пароль 2FA через веб-ссылку выше.");
+        return true;
       default:
         return false;
     }
@@ -152,14 +340,27 @@ async function handlePhoneStep(
   });
   await client.connect();
 
-  const result = await client.invoke(
-    new Api.auth.SendCode({
-      phoneNumber: cleaned,
-      apiId: creds.apiId,
-      apiHash: creds.apiHash,
-      settings: new Api.CodeSettings({}),
-    })
-  );
+  let result: Api.auth.SentCode | Api.auth.SentCodeSuccess;
+  try {
+    result = await client.invoke(
+      new Api.auth.SendCode({
+        phoneNumber: cleaned,
+        apiId: creds.apiId,
+        apiHash: creds.apiHash,
+        settings: new Api.CodeSettings({}),
+      })
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("FLOOD")) {
+      const wait = msg.match(/\d+/);
+      const seconds = wait ? parseInt(wait[0], 10) : 60;
+      clearState(telegramId);
+      await ctx.reply(`❌ Слишком много попыток. Подождите ${seconds} сек и попробуйте снова.`);
+      return true;
+    }
+    throw err;
+  }
 
   // GramJS may return SentCode or SentCodeSuccess; we need phoneCodeHash from SentCode
   const phoneCodeHash = "phoneCodeHash" in result ? (result as Api.auth.SentCode).phoneCodeHash : undefined;
@@ -177,135 +378,30 @@ async function handlePhoneStep(
     client,
   });
 
+  // Generate web token and send link instead of asking for code in chat
+  const webToken = crypto.randomBytes(32).toString("hex");
+  webTokens.set(webToken, {
+    token: webToken,
+    telegramId,
+    chatId: ctx.chat!.id,
+    createdAt: Date.now(),
+  });
+
+  const baseUrl = new URL(process.env.OAUTH_REDIRECT_URI!).origin;
+  const url = `${baseUrl}/auth/mtproto/${webToken}`;
+
   await ctx.reply(
-    "📨 Код отправлен в Telegram. Введите код авторизации:\n\n" +
-    "_(Введите «отмена» для отмены)_",
-    { parse_mode: "Markdown" }
+    "📨 Код отправлен в Telegram.\n\n" +
+    "Для ввода кода откройте ссылку ниже в браузере:\n\n" +
+    "_(Ссылка действительна 10 минут)_",
+    {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [[{ text: "🔑 Ввести код", url }]],
+      },
+    }
   );
   return true;
-}
-
-async function handleCodeStep(
-  ctx: Context,
-  telegramId: number,
-  code: string,
-  state: AuthFlowState
-): Promise<boolean> {
-  if (!state.client || !state.phoneNumber || !state.phoneCodeHash) {
-    clearState(telegramId);
-    await ctx.reply("Сессия авторизации истекла. Начните заново.");
-    return true;
-  }
-
-  // Remove spaces/dashes from code
-  const cleanCode = code.replace(/[\s\-]/g, "");
-  if (!/^\d{4,8}$/.test(cleanCode)) {
-    await ctx.reply("Введите числовой код (4-8 цифр):");
-    return true;
-  }
-
-  try {
-    await state.client.invoke(
-      new Api.auth.SignIn({
-        phoneNumber: state.phoneNumber,
-        phoneCodeHash: state.phoneCodeHash,
-        phoneCode: cleanCode,
-      })
-    );
-
-    // Success — save session
-    await saveSessionAndFinish(ctx, telegramId, state);
-    return true;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-
-    if (msg.includes("SESSION_PASSWORD_NEEDED")) {
-      authStates.set(telegramId, {
-        ...state,
-        step: "password",
-      });
-      await ctx.reply(
-        "🔐 Требуется пароль двухфакторной аутентификации.\nВведите пароль 2FA:"
-      );
-      return true;
-    }
-
-    if (msg.includes("PHONE_CODE_INVALID")) {
-      await ctx.reply("❌ Неверный код. Попробуйте ещё раз:");
-      return true;
-    }
-
-    if (msg.includes("PHONE_CODE_EXPIRED")) {
-      clearState(telegramId);
-      await ctx.reply("❌ Код истёк. Начните заново: «🔑 Привязать Telegram»");
-      return true;
-    }
-
-    throw err;
-  }
-}
-
-async function handlePasswordStep(
-  ctx: Context,
-  telegramId: number,
-  password: string,
-  state: AuthFlowState
-): Promise<boolean> {
-  if (!state.client) {
-    clearState(telegramId);
-    await ctx.reply("Сессия авторизации истекла. Начните заново.");
-    return true;
-  }
-
-  try {
-    const srpResult = await state.client.invoke(new Api.account.GetPassword());
-
-    const inputPassword = await computeCheck(srpResult, password);
-    await state.client.invoke(
-      new Api.auth.CheckPassword({ password: inputPassword })
-    );
-
-    await saveSessionAndFinish(ctx, telegramId, state);
-    return true;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-
-    if (msg.includes("PASSWORD_HASH_INVALID")) {
-      await ctx.reply("❌ Неверный пароль. Попробуйте ещё раз:");
-      return true;
-    }
-
-    throw err;
-  }
-}
-
-async function saveSessionAndFinish(
-  ctx: Context,
-  telegramId: number,
-  state: AuthFlowState
-): Promise<void> {
-  if (!state.client || !state.phoneNumber) return;
-
-  const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser) {
-    clearState(telegramId);
-    return;
-  }
-
-  const sessionString = state.client.session.save() as unknown as string;
-  const hint = phoneHint(state.phoneNumber);
-
-  await saveUserSession(dbUser.id, sessionString, hint);
-
-  // Disconnect the auth client (session manager will create a new one when needed)
-  state.client.disconnect().catch(() => {});
-  authStates.delete(telegramId);
-
-  log.info(`User ${telegramId} (db:${dbUser.id}) linked MTProto session (${hint})`);
-  await ctx.reply(
-    `✅ Telegram-аккаунт привязан (${hint})!\n\n` +
-    "Теперь вы можете импортировать каналы из своих папок: «📂 Импорт из папки»"
-  );
 }
 
 /** Check if user is in the middle of auth flow. */

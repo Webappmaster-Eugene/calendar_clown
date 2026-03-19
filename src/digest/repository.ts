@@ -59,13 +59,26 @@ export async function getRubricById(rubricId: number): Promise<DigestRubric | nu
   return rows.length > 0 ? mapRubric(rows[0]) : null;
 }
 
+export async function getRubricByIdAndUser(rubricId: number, userId: number): Promise<DigestRubric | null> {
+  const { rows } = await query<RubricRow>(
+    "SELECT * FROM digest_rubrics WHERE id = $1 AND user_id = $2",
+    [rubricId, userId]
+  );
+  return rows.length > 0 ? mapRubric(rows[0]) : null;
+}
+
 export async function getRubricByUserAndName(
   userId: number,
   name: string
 ): Promise<DigestRubric | null> {
+  // Escape LIKE wildcards in user input to prevent unintended matches
+  const escapedName = name.replace(/[%_\\]/g, "\\$&");
   const { rows } = await query<RubricRow>(
-    "SELECT * FROM digest_rubrics WHERE user_id = $1 AND LOWER(name) = LOWER($2)",
-    [userId, name]
+    `SELECT * FROM digest_rubrics
+     WHERE user_id = $1
+       AND (LOWER(name) = LOWER($2) OR LOWER(TRIM(name)) LIKE '%' || LOWER($3) || '%' ESCAPE '\\')
+     LIMIT 1`,
+    [userId, name, escapedName]
   );
   return rows.length > 0 ? mapRubric(rows[0]) : null;
 }
@@ -139,6 +152,22 @@ export async function removeChannel(rubricId: number, channelUsername: string): 
   const { rowCount } = await query(
     "UPDATE digest_channels SET is_active = false WHERE rubric_id = $1 AND channel_username = $2",
     [rubricId, clean]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function getChannelById(channelId: number): Promise<DigestChannel | null> {
+  const { rows } = await query<ChannelRow>(
+    "SELECT * FROM digest_channels WHERE id = $1 AND is_active = true",
+    [channelId]
+  );
+  return rows.length > 0 ? mapChannel(rows[0]) : null;
+}
+
+export async function removeChannelById(channelId: number, rubricId: number): Promise<boolean> {
+  const { rowCount } = await query(
+    "UPDATE digest_channels SET is_active = false WHERE id = $1 AND rubric_id = $2",
+    [channelId, rubricId]
   );
   return (rowCount ?? 0) > 0;
 }

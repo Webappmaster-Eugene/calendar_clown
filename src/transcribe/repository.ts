@@ -282,15 +282,6 @@ export async function countAllTranscriptions(): Promise<number> {
 
 // ─── Internal ────────────────────────────────────────────────────────────
 
-/** Get the next sequence number for a user (safe — single event loop in Telegraf). */
-export async function getNextSequenceNumber(userId: number): Promise<number> {
-  const { rows } = await query<{ next_seq: string }>(
-    "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_seq FROM voice_transcriptions WHERE user_id = $1",
-    [userId]
-  );
-  return parseInt(rows[0].next_seq, 10);
-}
-
 /** Get all undelivered transcriptions for a user, ordered by sequence_number ASC. */
 export async function getUndeliveredForUser(userId: number): Promise<VoiceTranscription[]> {
   const { rows } = await query<TranscriptionRow>(

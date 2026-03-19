@@ -23,12 +23,15 @@ import { hasActiveSession, getClientForUser } from "../digest/sessionManager.js"
 import {
   getRubricsByUser,
   getRubricByUserAndName,
+  getRubricByIdAndUser,
   countRubricsByUser,
   createRubric,
   deleteRubric,
   toggleRubric,
   addChannel,
   removeChannel,
+  removeChannelById,
+  getChannelById,
   getChannelsByRubric,
   countChannelsByRubric,
   countTotalChannels,
@@ -52,6 +55,14 @@ interface RubricCreationState {
 }
 
 const rubricCreationStates = new Map<number, RubricCreationState>();
+
+/** State for inline channel-add flow (text input after pressing ➕). */
+const channelAddStates = new Map<number, { rubricId: number }>();
+
+/** Truncate string to maxLen, appending "…" if needed. */
+function truncate(str: string, maxLen: number): string {
+  return str.length > maxLen ? str.slice(0, maxLen - 1) + "…" : str;
+}
 
 function getDigestKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
@@ -160,6 +171,21 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
   }
 }
 
+/** Build inline keyboard for rubrics list. */
+function buildRubricsListKeyboard(rubrics: import("../digest/types.js").DigestRubric[]) {
+  const buttons = rubrics.map((r) => {
+    const status = r.isActive ? "✅" : "⏸";
+    const label = truncate(`${status} ${r.emoji ?? "📰"} ${r.name}`, 40);
+    return [Markup.button.callback(label, `drub_view:${r.id}`)];
+  });
+  return Markup.inlineKeyboard(buttons);
+}
+
+/** Build rubrics list message text. */
+function buildRubricsListText(rubrics: import("../digest/types.js").DigestRubric[]): string {
+  return `📰 Ваши рубрики (${rubrics.length}/${MAX_RUBRICS_PER_USER}):`;
+}
+
 /** Show user's rubrics. */
 async function showRubrics(ctx: Context, telegramId: number): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
@@ -173,34 +199,16 @@ async function showRubrics(ctx: Context, telegramId: number): Promise<void> {
   if (rubrics.length === 0) {
     await ctx.reply(
       "📰 *Режим дайджеста активирован*\n\n" +
-      "У вас пока нет рубрик. Создайте первую:\n" +
-      "`/digest Название рубрики — Описание тематики`\n\n" +
-      "Пример:\n" +
-      "`/digest DevOps и разработка — Новости разработки, DevOps, CI/CD, Kubernetes`",
-      { parse_mode: "Markdown", ...getDigestKeyboard(isBootstrapAdmin(telegramId)) }
+      "У вас пока нет рубрик\\. Создайте первую кнопкой «➕ Создать рубрику» или командой:\n" +
+      "`/digest Название рубрики — Описание тематики`",
+      { parse_mode: "MarkdownV2", ...getDigestKeyboard(isBootstrapAdmin(telegramId)) }
     );
     return;
   }
 
-  const lines = rubrics.map((r) => {
-    const status = r.isActive ? "✅" : "⏸";
-    return `${status} ${r.emoji ?? "📰"} *${escapeMarkdown(r.name)}*`;
-  });
-
   await ctx.reply(
-    "📰 *Ваши рубрики:*\n\n" +
-    lines.join("\n") +
-    `\n\n📝 Рубрик: ${rubrics.length}/${MAX_RUBRICS_PER_USER}\n\n` +
-    "Команды:\n" +
-    "`/digest <название> — <описание>` — создать\n" +
-    "`/digest channels <название>` — каналы\n" +
-    "`/digest add <рубрика> @канал` — добавить\n" +
-    "`/digest remove <рубрика> @канал` — удалить\n" +
-    "`/digest pause <название>` — пауза\n" +
-    "`/digest resume <название>` — возобновить\n" +
-    "`/digest delete <название>` — удалить\n" +
-    "`/digest now` — запустить сейчас",
-    { parse_mode: "Markdown", ...getDigestKeyboard(isBootstrapAdmin(telegramId)) }
+    buildRubricsListText(rubrics),
+    { ...buildRubricsListKeyboard(rubrics), ...getDigestKeyboard(isBootstrapAdmin(telegramId)) }
   );
 }
 
@@ -477,6 +485,326 @@ async function handleDigestNow(ctx: Context, telegramId: number): Promise<void> 
   }
 }
 
+// ─── Inline callback handlers ────────────────────────────────────────────
+
+/** Helper: extract numeric id from callback data like "drub_view:123". */
+function extractId(data: string): number {
+  const idx = data.indexOf(":");
+  return idx >= 0 ? parseInt(data.slice(idx + 1), 10) : NaN;
+}
+
+/** Helper: get rubric with ownership check, answering callback on failure. */
+async function getRubricForCallback(
+  ctx: Context,
+  rubricId: number
+): Promise<{ rubric: import("../digest/types.js").DigestRubric; dbUser: { id: number } } | null> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return null;
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    await ctx.answerCbQuery("Пользователь не найден");
+    return null;
+  }
+
+  if (isNaN(rubricId)) {
+    await ctx.answerCbQuery("Некорректные данные");
+    return null;
+  }
+
+  const rubric = await getRubricByIdAndUser(rubricId, dbUser.id);
+  if (!rubric) {
+    await ctx.answerCbQuery("Рубрика не найдена");
+    try {
+      const rubrics = await getRubricsByUser(dbUser.id);
+      if (rubrics.length > 0) {
+        await ctx.editMessageText(buildRubricsListText(rubrics), buildRubricsListKeyboard(rubrics));
+      } else {
+        await ctx.editMessageText("У вас пока нет рубрик.");
+      }
+    } catch { /* message unchanged */ }
+    return null;
+  }
+
+  return { rubric, dbUser };
+}
+
+/** Build detail view for a rubric. */
+async function buildRubricDetailView(rubric: import("../digest/types.js").DigestRubric) {
+  const channelCount = await countChannelsByRubric(rubric.id);
+  const status = rubric.isActive ? "✅ Активна" : "⏸ На паузе";
+  const emoji = rubric.emoji ?? "📰";
+
+  const text =
+    `${emoji} ${rubric.name}\n` +
+    `Статус: ${status} | Каналов: ${channelCount}/${MAX_CHANNELS_PER_RUBRIC}`;
+
+  const toggleBtn = rubric.isActive
+    ? Markup.button.callback("⏸ Пауза", `drub_pause:${rubric.id}`)
+    : Markup.button.callback("▶️ Возобновить", `drub_resume:${rubric.id}`);
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(`📋 Каналы (${channelCount})`, `drub_ch:${rubric.id}`), toggleBtn],
+    [Markup.button.callback("🗑 Удалить", `drub_del:${rubric.id}`), Markup.button.callback("◀️ Назад", "drub_back")],
+  ]);
+
+  return { text, keyboard };
+}
+
+/** drub_view:{id} — show rubric details. */
+export async function handleRubricViewCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+
+  // Clear any pending channel-add state
+  const telegramId = ctx.from?.id;
+  if (telegramId != null) channelAddStates.delete(telegramId);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  await ctx.answerCbQuery();
+  const { text, keyboard } = await buildRubricDetailView(result.rubric);
+  try {
+    await ctx.editMessageText(text, keyboard);
+  } catch { /* content unchanged */ }
+}
+
+/** drub_pause:{id} / drub_resume:{id} — toggle rubric. */
+export async function handleRubricToggleCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+  const rubricId = extractId(data);
+  const shouldActivate = data.startsWith("drub_resume:");
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  await toggleRubric(result.rubric.id, result.dbUser.id, shouldActivate);
+  await ctx.answerCbQuery(shouldActivate ? "▶️ Возобновлена" : "⏸ Приостановлена");
+
+  // Refresh rubric data and show updated detail view
+  const updated = await getRubricByIdAndUser(rubricId, result.dbUser.id);
+  if (!updated) return;
+
+  const { text, keyboard } = await buildRubricDetailView(updated);
+  try {
+    await ctx.editMessageText(text, keyboard);
+  } catch { /* content unchanged */ }
+}
+
+/** drub_del:{id} — ask for delete confirmation. */
+export async function handleRubricDeleteCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  await ctx.answerCbQuery();
+
+  const name = result.rubric.name;
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.button.callback("✅ Да, удалить", `drub_del_yes:${rubricId}`),
+      Markup.button.callback("❌ Отмена", `drub_view:${rubricId}`),
+    ],
+  ]);
+
+  try {
+    await ctx.editMessageText(
+      `Удалить рубрику «${name}»? Все каналы будут отвязаны.`,
+      keyboard
+    );
+  } catch { /* content unchanged */ }
+}
+
+/** drub_del_yes:{id} — confirm delete, show updated list. */
+export async function handleRubricDeleteConfirmCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  const name = result.rubric.name;
+  await deleteRubric(rubricId, result.dbUser.id);
+  await ctx.answerCbQuery(`Рубрика «${name}» удалена`);
+
+  // Show updated list
+  const rubrics = await getRubricsByUser(result.dbUser.id);
+  try {
+    if (rubrics.length > 0) {
+      await ctx.editMessageText(buildRubricsListText(rubrics), buildRubricsListKeyboard(rubrics));
+    } else {
+      await ctx.editMessageText("У вас пока нет рубрик. Создайте кнопкой «➕ Создать рубрику».");
+    }
+  } catch { /* content unchanged */ }
+}
+
+/** Build channel list view (text + inline keyboard) for a rubric. */
+async function buildChannelListView(rubric: import("../digest/types.js").DigestRubric) {
+  const channels = await getChannelsByRubric(rubric.id);
+  const emoji = rubric.emoji ?? "📰";
+
+  if (channels.length === 0) {
+    return {
+      text: `${emoji} ${rubric.name} — Каналов нет`,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("➕ Добавить канал", `drub_ch_add:${rubric.id}`)],
+        [Markup.button.callback("◀️ Назад", `drub_view:${rubric.id}`)],
+      ]),
+    };
+  }
+
+  const lines = channels.map((c, i) => {
+    const title = c.channelTitle ? ` (${c.channelTitle})` : "";
+    return `${i + 1}. @${c.channelUsername}${title}`;
+  });
+
+  const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+  for (let i = 0; i < channels.length; i += 2) {
+    const row: ReturnType<typeof Markup.button.callback>[] = [];
+    row.push(Markup.button.callback(
+      `🗑 ${truncate(channels[i].channelUsername, 20)}`,
+      `drub_ch_rm:${channels[i].id}`
+    ));
+    if (i + 1 < channels.length) {
+      row.push(Markup.button.callback(
+        `🗑 ${truncate(channels[i + 1].channelUsername, 20)}`,
+        `drub_ch_rm:${channels[i + 1].id}`
+      ));
+    }
+    rows.push(row);
+  }
+
+  rows.push([
+    Markup.button.callback("➕ Добавить канал", `drub_ch_add:${rubric.id}`),
+    Markup.button.callback("◀️ Назад", `drub_view:${rubric.id}`),
+  ]);
+
+  return {
+    text: `${emoji} ${rubric.name} — Каналы (${channels.length}/${MAX_CHANNELS_PER_RUBRIC}):\n\n` + lines.join("\n"),
+    keyboard: Markup.inlineKeyboard(rows),
+  };
+}
+
+/** drub_ch:{id} — show channels list with remove buttons. */
+export async function handleRubricChannelsCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  await ctx.answerCbQuery();
+
+  const { text, keyboard } = await buildChannelListView(result.rubric);
+  try {
+    await ctx.editMessageText(text, keyboard);
+  } catch { /* content unchanged */ }
+}
+
+/** drub_ch_rm:{channelId} — remove a channel, refresh list. */
+export async function handleChannelRemoveCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const channelId = extractId(ctx.callbackQuery.data);
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  if (isNaN(channelId)) {
+    await ctx.answerCbQuery("Некорректные данные");
+    return;
+  }
+
+  // Look up channel directly instead of iterating all rubrics (N+1 fix)
+  const channel = await getChannelById(channelId);
+  if (!channel) {
+    await ctx.answerCbQuery("Канал не найден");
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    await ctx.answerCbQuery("Пользователь не найден");
+    return;
+  }
+
+  // Verify rubric ownership
+  const rubric = await getRubricByIdAndUser(channel.rubricId, dbUser.id);
+  if (!rubric) {
+    await ctx.answerCbQuery("Канал не найден");
+    return;
+  }
+
+  const removed = await removeChannelById(channelId, rubric.id);
+  if (!removed) {
+    await ctx.answerCbQuery("Канал не найден");
+    return;
+  }
+
+  await ctx.answerCbQuery("Канал удалён");
+
+  const { text, keyboard } = await buildChannelListView(rubric);
+  try {
+    await ctx.editMessageText(text, keyboard);
+  } catch { /* content unchanged */ }
+}
+
+/** drub_ch_add:{rubricId} — start text input for adding a channel. */
+export async function handleChannelAddCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  // Check channel limits
+  const channelCount = await countChannelsByRubric(rubricId);
+  if (channelCount >= MAX_CHANNELS_PER_RUBRIC) {
+    await ctx.answerCbQuery(`Лимит каналов (${MAX_CHANNELS_PER_RUBRIC})`);
+    return;
+  }
+
+  const totalChannels = await countTotalChannels();
+  if (totalChannels >= MAX_CHANNELS_TOTAL) {
+    await ctx.answerCbQuery(`Общий лимит каналов (${MAX_CHANNELS_TOTAL})`);
+    return;
+  }
+
+  const telegramId = ctx.from!.id;
+  channelAddStates.set(telegramId, { rubricId });
+  await ctx.answerCbQuery();
+  await ctx.reply(`Отправьте @username канала для рубрики «${result.rubric.name}»:`);
+}
+
+/** drub_back — show rubrics list. */
+export async function handleRubricListCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  // Clear any pending channel-add state
+  channelAddStates.delete(telegramId);
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    await ctx.answerCbQuery("Пользователь не найден");
+    return;
+  }
+
+  await ctx.answerCbQuery();
+
+  const rubrics = await getRubricsByUser(dbUser.id);
+  try {
+    if (rubrics.length > 0) {
+      await ctx.editMessageText(buildRubricsListText(rubrics), buildRubricsListKeyboard(rubrics));
+    } else {
+      await ctx.editMessageText("У вас пока нет рубрик. Создайте кнопкой «➕ Создать рубрику».");
+    }
+  } catch { /* content unchanged */ }
+}
+
 /** Handle "Мои рубрики" keyboard button. */
 export async function handleRubricsButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
@@ -509,10 +837,48 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
   if (telegramId == null) return false;
   if (!ctx.message || !("text" in ctx.message)) return false;
 
+  const text = ctx.message.text.trim();
+
+  // Handle channel-add text input (from ➕ inline button)
+  const channelState = channelAddStates.get(telegramId);
+  if (channelState) {
+    channelAddStates.delete(telegramId);
+
+    const username = text.replace(/^@/, "").toLowerCase();
+    if (!username || username.length < 5) {
+      await ctx.reply("Укажите корректный @username канала (минимум 5 символов).");
+      return true;
+    }
+
+    const dbUser = await getUserByTelegramId(telegramId);
+    if (!dbUser) return true;
+
+    const rubric = await getRubricByIdAndUser(channelState.rubricId, dbUser.id);
+    if (!rubric) {
+      await ctx.reply("Рубрика не найдена.");
+      return true;
+    }
+
+    // Check limits
+    const channelCount = await countChannelsByRubric(rubric.id);
+    if (channelCount >= MAX_CHANNELS_PER_RUBRIC) {
+      await ctx.reply(`Достигнут лимит каналов в рубрике (${MAX_CHANNELS_PER_RUBRIC}).`);
+      return true;
+    }
+
+    const totalChannels = await countTotalChannels();
+    if (totalChannels >= MAX_CHANNELS_TOTAL) {
+      await ctx.reply(`Достигнут общий лимит каналов (${MAX_CHANNELS_TOTAL}).`);
+      return true;
+    }
+
+    const channel = await addChannel(rubric.id, username);
+    await ctx.reply(`✅ Канал @${channel.channelUsername} добавлен в рубрику «${rubric.name}».`);
+    return true;
+  }
+
   const state = rubricCreationStates.get(telegramId);
   if (!state) return false;
-
-  const text = ctx.message.text.trim();
 
   if (state.step === "name") {
     if (!text || text.length > 100) {

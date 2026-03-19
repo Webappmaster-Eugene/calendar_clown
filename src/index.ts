@@ -19,6 +19,7 @@ import { isDigestConfigured, isDigestReady } from "./digest/telegramClient.js";
 import { disconnectAll as disconnectAllMtprotoSessions } from "./digest/sessionManager.js";
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
 import { setDigestBotRef } from "./commands/digestMode.js";
+import { setAuthBotRef } from "./commands/digestAuth.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
 import { createLogger } from "./utils/logger.js";
@@ -96,6 +97,9 @@ async function main(): Promise<void> {
   } else {
     log.info("REDIS_URL not set — transcribe mode disabled.");
   }
+
+  // Set bot reference for MTProto web auth notifications
+  setAuthBotRef(bot);
 
   // Initialize digest scheduler (GramJS + cron)
   if (await isDigestReady()) {
