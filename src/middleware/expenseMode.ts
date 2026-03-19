@@ -4,7 +4,7 @@ import {
 } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 
-export type UserMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes" | "gandalf" | "neuro" | "wishlist";
+export type UserMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "notes" | "gandalf" | "neuro" | "wishlist" | "goals";
 
 /** Get user's current mode from DB. Falls back to 'calendar'. */
 export async function getUserMode(telegramId: number): Promise<UserMode> {
@@ -74,4 +74,10 @@ export async function isNeuroMode(telegramId: number): Promise<boolean> {
 export async function isWishlistMode(telegramId: number): Promise<boolean> {
   const mode = await getUserMode(telegramId);
   return mode === "wishlist";
+}
+
+/** Check if user is in goals mode. */
+export async function isGoalsMode(telegramId: number): Promise<boolean> {
+  const mode = await getUserMode(telegramId);
+  return mode === "goals";
 }

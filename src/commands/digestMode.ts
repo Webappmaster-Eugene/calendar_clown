@@ -19,6 +19,7 @@ import { getUserByTelegramId, ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { setUserMode } from "../middleware/expenseMode.js";
 import { isDigestConfigured, isDigestReady, getUserDialogFolders, getChannelsFromFolder } from "../digest/telegramClient.js";
+import { hasActiveSession, getClientForUser } from "../digest/sessionManager.js";
 import {
   getRubricsByUser,
   getRubricByUserAndName,
@@ -56,6 +57,7 @@ function getDigestKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
     ["📋 Мои рубрики", "▶️ Запустить сейчас"],
     ["➕ Создать рубрику", "📂 Импорт из папки"],
+    ["🔑 Привязать Telegram"],
     ...getModeButtons(isAdmin),
   ]).resize();
 }
@@ -537,24 +539,50 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
 /** State for folder import flow: maps telegramId → rubric name to import into. */
 const folderImportStates = new Map<number, { rubricName: string }>();
 
+/** Maps telegramId → dbUserId when user has own MTProto session for folder import. */
+const folderImportClients = new Map<number, number>();
+
 /** Handle "📂 Импорт из папки" keyboard button. */
 export async function handleFolderImportButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
-  if (!await isDigestReady()) {
-    if (!isDigestConfigured()) {
-      await ctx.reply("Telegram Parser не настроен.");
-    } else {
-      await ctx.reply("Telegram Parser не готов: отсутствует MTProto-сессия. Задайте TELEGRAM_SESSION в env или выполните `npm run tg-auth`.");
-    }
+  if (!isDigestConfigured()) {
+    await ctx.reply("Telegram Parser не настроен.");
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) {
+    await ctx.reply("Пользователь не найден. Отправьте /start.");
+    return;
+  }
+
+  // Determine which client to use: user's own or admin's
+  const userHasSession = await hasActiveSession(dbUser.id);
+  const adminReady = await isDigestReady();
+
+  if (!userHasSession && !adminReady) {
+    await ctx.reply(
+      "Для импорта каналов из ваших папок привяжите Telegram-аккаунт.\n\n" +
+      "Нажмите «🔑 Привязать Telegram»."
+    );
     return;
   }
 
   const statusMsg = await ctx.reply("Загружаю папки Telegram...");
 
   try {
-    const folders = await getUserDialogFolders();
+    let userClient: import("telegram").TelegramClient | undefined;
+    if (userHasSession) {
+      try {
+        userClient = await getClientForUser(dbUser.id);
+      } catch (err) {
+        log.warn(`Failed to get user client for ${dbUser.id}, falling back to admin:`, err);
+      }
+    }
+
+    const folders = await getUserDialogFolders(userClient);
     if (folders.length === 0) {
       await ctx.telegram.editMessageText(
         ctx.chat!.id, statusMsg.message_id, undefined,
@@ -563,13 +591,20 @@ export async function handleFolderImportButton(ctx: Context): Promise<void> {
       return;
     }
 
+    // Store whether we're using user client for subsequent callbacks
+    if (userClient) {
+      folderImportClients.set(telegramId, dbUser.id);
+    } else {
+      folderImportClients.delete(telegramId);
+    }
+
     const buttons = folders.map((f) => [
       Markup.button.callback(`📂 ${f.title}`, `digest_folder:${f.id}`),
     ]);
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id, statusMsg.message_id, undefined,
-      "Выберите папку для импорта каналов:",
+      `Выберите папку для импорта каналов${userClient ? " (ваш аккаунт)" : ""}:`,
       { ...Markup.inlineKeyboard(buttons) }
     );
   } catch (err) {
@@ -578,6 +613,18 @@ export async function handleFolderImportButton(ctx: Context): Promise<void> {
       ctx.chat!.id, statusMsg.message_id, undefined,
       "Ошибка при загрузке папок."
     );
+  }
+}
+
+/** Resolve the user's MTProto client if they have a session, otherwise undefined. */
+async function resolveUserClient(telegramId: number): Promise<import("telegram").TelegramClient | undefined> {
+  const dbUserId = folderImportClients.get(telegramId);
+  if (!dbUserId) return undefined;
+  try {
+    return await getClientForUser(dbUserId);
+  } catch (err) {
+    log.warn(`Failed to get user client for folder import:`, err);
+    return undefined;
   }
 }
 
@@ -594,9 +641,13 @@ export async function handleDigestFolderCallback(ctx: Context): Promise<void> {
   await ctx.answerCbQuery("Загружаю каналы...");
 
   try {
-    const channels = await getChannelsFromFolder(folderId);
+    const userClient = await resolveUserClient(telegramId);
+    const channels = await getChannelsFromFolder(folderId, userClient);
     if (channels.length === 0) {
-      await ctx.editMessageText("В этой папке нет каналов.");
+      await ctx.editMessageText(
+        "В этой папке нет публичных каналов (с @username).\n" +
+        "Приватные каналы пока не поддерживаются."
+      );
       return;
     }
 
@@ -643,7 +694,8 @@ export async function handleDigestFolderToCallback(ctx: Context): Promise<void> 
   await ctx.answerCbQuery("Импортирую...");
 
   try {
-    const channels = await getChannelsFromFolder(folderId);
+    const userClient = await resolveUserClient(telegramId);
+    const channels = await getChannelsFromFolder(folderId, userClient);
     let added = 0;
     let skipped = 0;
 
@@ -651,8 +703,10 @@ export async function handleDigestFolderToCallback(ctx: Context): Promise<void> 
       try {
         await addChannel(rubricId, username);
         added++;
-      } catch {
-        skipped++; // Already exists or error
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn(`Failed to add channel @${username} to rubric ${rubricId}: ${msg}`);
+        skipped++;
       }
     }
 

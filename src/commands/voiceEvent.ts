@@ -8,7 +8,8 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isNotesMode, isGandalfMode, isWishlistMode } from "../middleware/expenseMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isNotesMode, isGandalfMode, isWishlistMode, isGoalsMode } from "../middleware/expenseMode.js";
+import { handleGoalsVoice } from "./goalsMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
 import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
@@ -97,6 +98,12 @@ export async function handleVoice(ctx: Context) {
     // Gandalf mode — extract structured entry from voice
     if (telegramId != null && await isGandalfMode(telegramId)) {
       await handleGandalfVoice(ctx, transcript, statusMsg.message_id);
+      return;
+    }
+
+    // Goals mode — add goal from voice
+    if (telegramId != null && await isGoalsMode(telegramId)) {
+      await handleGoalsVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 

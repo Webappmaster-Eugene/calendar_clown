@@ -8,7 +8,8 @@ import { Queue, Worker } from "bullmq";
 import type { Job, ConnectionOptions } from "bullmq";
 import type { Telegraf } from "telegraf";
 import type { TranscribeJobData } from "./types.js";
-import { markStaleAsFailed, markFailed } from "./repository.js";
+import { markStaleAsFailed, markFailed, getDistinctUsersWithUndelivered } from "./repository.js";
+import { deliverCompletedInOrder } from "./deliveryQueue.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("queue");
@@ -90,10 +91,9 @@ export function startTranscribeWorker(
   transcribeWorker.on("failed", (job, err) => {
     log.error(`Transcription job ${job?.id} failed: ${err.message}`);
     if (job) {
-      const { chatId, statusMessageId, transcriptionId } = job.data;
-      editStatusSafe(bot, chatId, statusMessageId, "Не удалось расшифровать голосовое сообщение. Попробуйте ещё раз.")
-        .catch((e) => log.error(`Failed to notify user about job ${job.id} failure:`, e));
+      const { transcriptionId, userId } = job.data;
       markFailed(transcriptionId, err.message)
+        .then(() => deliverCompletedInOrder(bot, userId))
         .catch((e) => log.error(`Failed to mark transcription ${transcriptionId} as failed:`, e));
     }
   });
@@ -111,15 +111,6 @@ export function startTranscribeWorker(
   });
 
   return transcribeWorker;
-}
-
-/** Edit a Telegram message, swallowing errors if the message was already deleted. */
-async function editStatusSafe(bot: Telegraf, chatId: number, messageId: number, text: string): Promise<void> {
-  try {
-    await bot.telegram.editMessageText(chatId, messageId, undefined, text);
-  } catch {
-    // Message may have been deleted by the user — ignore
-  }
 }
 
 /** Add a transcription job to the queue. */
@@ -244,7 +235,7 @@ export async function clearUserJobs(chatId: number): Promise<number> {
 let staleJobInterval: ReturnType<typeof setInterval> | null = null;
 
 /** Start periodic stale job cleaner (every 5 minutes). */
-export function startStaleJobCleaner(): void {
+export function startStaleJobCleaner(bot: Telegraf): void {
   if (staleJobInterval) return;
   staleJobInterval = setInterval(async () => {
     await cleanStaleJobs().catch((err) => {
@@ -253,6 +244,15 @@ export function startStaleJobCleaner(): void {
     await markStaleAsFailed(120).catch((err) => {
       log.error("Mark stale DB records as failed error:", err);
     });
+    // Trigger delivery for any users with undelivered results after stale cleanup
+    try {
+      const usersToDeliver = await getDistinctUsersWithUndelivered();
+      for (const userId of usersToDeliver) {
+        deliverCompletedInOrder(bot, userId);
+      }
+    } catch (err) {
+      log.error("Stale cleanup delivery trigger error:", err);
+    }
   }, 5 * 60 * 1000);
   log.info("Stale job cleaner started (every 5 min)");
 }

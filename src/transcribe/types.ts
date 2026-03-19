@@ -17,6 +17,10 @@ export interface VoiceTranscription {
   audioFilePath: string | null;
   status: TranscriptionStatus;
   errorMessage: string | null;
+  sequenceNumber: number;
+  isDelivered: boolean;
+  chatId: number | null;
+  statusMessageId: number | null;
   createdAt: Date;
   transcribedAt: Date | null;
 }
@@ -30,6 +34,9 @@ export interface CreateTranscriptionParams {
   forwardedFromName: string | null;
   forwardedDate: Date | null;
   audioFilePath: string;
+  sequenceNumber: number;
+  chatId: number;
+  statusMessageId: number;
 }
 
 export interface TranscribeJobData {
@@ -39,4 +46,6 @@ export interface TranscribeJobData {
   statusMessageId: number;
   /** Audio duration in seconds (from Telegram metadata). Used for timeout calculation. */
   durationSeconds: number;
+  sequenceNumber: number;
+  userId: number;
 }

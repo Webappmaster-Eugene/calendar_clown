@@ -66,12 +66,12 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
 
     // Resolve DB user IDs to telegram IDs
     for (const dbUserId of dbUserIds) {
-      const { rows } = await query<{ telegram_id: number }>(
+      const { rows } = await query<{ telegram_id: string }>(
         "SELECT telegram_id FROM users WHERE id = $1",
         [dbUserId]
       );
       if (rows.length === 0) continue;
-      const telegramId = rows[0].telegram_id;
+      const telegramId = Number(rows[0].telegram_id);
 
       try {
         const count = await runDigestForUser(telegramId, bot);

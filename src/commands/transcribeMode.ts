@@ -14,6 +14,7 @@ import {
   getPendingForUser,
   getAllPending,
 } from "../transcribe/repository.js";
+import { deliverCompletedInOrder, getDeliveryBot } from "../transcribe/deliveryQueue.js";
 import { splitMessage } from "../utils/telegram.js";
 import { createLogger } from "../utils/logger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
@@ -109,6 +110,12 @@ export async function handleClearQueueButton(ctx: Context): Promise<void> {
         `Удалено из очереди: ${queueCleared}\n` +
         `Отменено в БД: ${dbCleared}`
       );
+      // Trigger ordered delivery for any remaining completed results
+      try {
+        deliverCompletedInOrder(getDeliveryBot(), dbUser.id);
+      } catch {
+        // Bot ref not set — ignore
+      }
     }
   } catch (err) {
     log.error("Error clearing queue:", err);

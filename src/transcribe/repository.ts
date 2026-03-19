@@ -12,8 +12,9 @@ export async function createTranscription(
   const { rows } = await query<TranscriptionRow>(
     `INSERT INTO voice_transcriptions
        (user_id, telegram_file_id, telegram_file_unique_id, duration_seconds,
-        file_size_bytes, forwarded_from_name, forwarded_date, audio_file_path, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+        file_size_bytes, forwarded_from_name, forwarded_date, audio_file_path, status,
+        sequence_number, chat_id, status_message_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11)
      RETURNING *`,
     [
       params.userId,
@@ -24,6 +25,9 @@ export async function createTranscription(
       params.forwardedFromName,
       params.forwardedDate,
       params.audioFilePath,
+      params.sequenceNumber,
+      params.chatId,
+      params.statusMessageId,
     ]
   );
   return mapRow(rows[0]);
@@ -278,6 +282,45 @@ export async function countAllTranscriptions(): Promise<number> {
 
 // ─── Internal ────────────────────────────────────────────────────────────
 
+/** Get the next sequence number for a user (safe — single event loop in Telegraf). */
+export async function getNextSequenceNumber(userId: number): Promise<number> {
+  const { rows } = await query<{ next_seq: string }>(
+    "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_seq FROM voice_transcriptions WHERE user_id = $1",
+    [userId]
+  );
+  return parseInt(rows[0].next_seq, 10);
+}
+
+/** Get all undelivered transcriptions for a user, ordered by sequence_number ASC. */
+export async function getUndeliveredForUser(userId: number): Promise<VoiceTranscription[]> {
+  const { rows } = await query<TranscriptionRow>(
+    `SELECT * FROM voice_transcriptions
+     WHERE user_id = $1 AND is_delivered = false
+     ORDER BY sequence_number ASC`,
+    [userId]
+  );
+  return rows.map(mapRow);
+}
+
+/** Mark a transcription as delivered. */
+export async function markDelivered(id: number): Promise<void> {
+  await query(
+    "UPDATE voice_transcriptions SET is_delivered = true WHERE id = $1",
+    [id]
+  );
+}
+
+/** Get distinct user IDs with undelivered completed/failed transcriptions (for recovery). */
+export async function getDistinctUsersWithUndelivered(): Promise<number[]> {
+  const { rows } = await query<{ user_id: number }>(
+    `SELECT DISTINCT user_id FROM voice_transcriptions
+     WHERE is_delivered = false AND status IN ('completed', 'failed')`
+  );
+  return rows.map((r) => r.user_id);
+}
+
+// ─── Internal ────────────────────────────────────────────────────────────
+
 interface TranscriptionRow {
   id: number;
   user_id: number;
@@ -292,6 +335,10 @@ interface TranscriptionRow {
   audio_file_path: string | null;
   status: string;
   error_message: string | null;
+  sequence_number: number;
+  is_delivered: boolean;
+  chat_id: number | null;
+  status_message_id: number | null;
   created_at: Date;
   transcribed_at: Date | null;
 }
@@ -311,6 +358,10 @@ function mapRow(r: TranscriptionRow): VoiceTranscription {
     audioFilePath: r.audio_file_path,
     status: r.status as TranscriptionStatus,
     errorMessage: r.error_message,
+    sequenceNumber: r.sequence_number,
+    isDelivered: r.is_delivered,
+    chatId: r.chat_id,
+    statusMessageId: r.status_message_id,
     createdAt: r.created_at,
     transcribedAt: r.transcribed_at,
   };

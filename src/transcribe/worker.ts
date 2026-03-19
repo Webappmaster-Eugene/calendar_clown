@@ -1,6 +1,6 @@
 /**
  * Transcription worker processor.
- * Handles each job from the BullMQ queue: transcribe audio → update DB → notify user.
+ * Handles each job from the BullMQ queue: transcribe audio → update DB → trigger ordered delivery.
  */
 
 import type { Job } from "bullmq";
@@ -12,14 +12,15 @@ import { isFFmpegAvailable } from "./audioUtils.js";
 import { TRANSCRIBE_MODEL_HQ } from "../constants.js";
 import type { TranscribeJobData } from "./types.js";
 import { createLogger } from "../utils/logger.js";
-import { splitMessage, TELEGRAM_MAX_MESSAGE_LENGTH } from "../utils/telegram.js";
 import { createProgressReporter } from "./progressReporter.js";
+import { editStatusSafe } from "./telegramHelpers.js";
+import { deliverCompletedInOrder } from "./deliveryQueue.js";
 
 const log = createLogger("worker");
 
 /**
  * Create a job processor function bound to the bot instance.
- * The bot reference is needed to send results back to the user via Telegram.
+ * The bot reference is needed to trigger ordered delivery via Telegram.
  */
 export function createTranscribeProcessor(bot: Telegraf) {
   // Check ffmpeg on first load — logs a warning if not available
@@ -28,9 +29,9 @@ export function createTranscribeProcessor(bot: Telegraf) {
   return async function processTranscribeJob(
     job: Job<TranscribeJobData>
   ): Promise<void> {
-    const { transcriptionId, filePath, chatId, statusMessageId, durationSeconds } = job.data;
+    const { transcriptionId, filePath, chatId, statusMessageId, durationSeconds, userId } = job.data;
 
-    log.info(`Processing job ${job.id}: transcriptionId=${transcriptionId}, file=${filePath}, attempt=${job.attemptsMade + 1}/${job.opts.attempts ?? 3}`);
+    log.info(`Processing job ${job.id}: transcriptionId=${transcriptionId}, seq=${job.data.sequenceNumber}, file=${filePath}, attempt=${job.attemptsMade + 1}/${job.opts.attempts ?? 3}`);
     await markProcessing(transcriptionId);
 
     const reporter = createProgressReporter(bot, chatId, statusMessageId);
@@ -54,30 +55,25 @@ export function createTranscribeProcessor(bot: Telegraf) {
       if (!transcript) {
         await reporter.flush();
         await markFailed(transcriptionId, "Empty transcription result");
-        await editStatusSafe(
-          bot,
-          chatId,
-          statusMessageId,
-          "Не удалось распознать речь. Аудио может быть слишком тихим или неразборчивым."
-        );
         await unlink(filePath).catch(() => {});
+        deliverCompletedInOrder(bot, userId);
         return;
       }
 
       log.info(`Transcription ${transcriptionId} completed: ${transcript.length} chars`);
       await markCompleted(transcriptionId, transcript, TRANSCRIBE_MODEL_HQ);
 
-      // Send transcript as a new message (better UX than editing the status)
-      await sendTranscriptSafe(bot, chatId, transcript);
-
-      // Flush any pending progress update before deleting status message
+      // Flush any pending progress update before delivery
       await reporter.flush();
 
-      // Delete the status "processing" message
-      await deleteMessageSafe(bot, chatId, statusMessageId);
+      // Update status message to indicate waiting for ordered delivery
+      await editStatusSafe(bot, chatId, statusMessageId, "✅ Расшифровано, ожидает очереди...");
 
       // Clean up OGG file after successful processing
       await unlink(filePath).catch(() => {});
+
+      // Trigger ordered delivery for this user
+      deliverCompletedInOrder(bot, userId);
     } catch (err) {
       await reporter.flush();
 
@@ -86,65 +82,16 @@ export function createTranscribeProcessor(bot: Telegraf) {
       log.error(`Transcription ${transcriptionId} error: ${errorMsg}`);
       if (errorStack) log.error(`Stack trace: ${errorStack}`);
 
-      // On final attempt — mark as failed and notify user.
+      // On final attempt — mark as failed and trigger delivery.
       // On earlier attempts — leave file for retry.
       const isLastAttempt = (job.attemptsMade + 1) >= (job.opts.attempts ?? 3);
       if (isLastAttempt) {
         await markFailed(transcriptionId, errorMsg);
-        await editStatusSafe(
-          bot,
-          chatId,
-          statusMessageId,
-          "Не удалось расшифровать голосовое сообщение. Попробуйте ещё раз."
-        );
         await unlink(filePath).catch(() => {});
+        deliverCompletedInOrder(bot, userId);
       }
 
       throw err; // Re-throw so BullMQ can retry on non-final attempts
     }
   };
 }
-
-/** Send transcript text, splitting into chunks if it exceeds Telegram's limit. */
-async function sendTranscriptSafe(
-  bot: Telegraf,
-  chatId: number,
-  transcript: string
-): Promise<void> {
-  const chunks = splitMessage(transcript, TELEGRAM_MAX_MESSAGE_LENGTH);
-  for (const chunk of chunks) {
-    try {
-      await bot.telegram.sendMessage(chatId, chunk);
-    } catch (err) {
-      log.error("Failed to send transcript chunk:", err);
-    }
-  }
-}
-
-/** Edit the status message, swallowing errors if the message was already deleted. */
-async function editStatusSafe(
-  bot: Telegraf,
-  chatId: number,
-  messageId: number,
-  text: string
-): Promise<void> {
-  try {
-    await bot.telegram.editMessageText(chatId, messageId, undefined, text);
-  } catch {
-    // Message may have been deleted by the user — ignore
-  }
-}
-
-/** Delete a message, swallowing errors. */
-async function deleteMessageSafe(
-  bot: Telegraf,
-  chatId: number,
-  messageId: number
-): Promise<void> {
-  try {
-    await bot.telegram.deleteMessage(chatId, messageId);
-  } catch {
-    // Message may have been deleted or is too old — ignore
-  }
-}
-

@@ -13,10 +13,14 @@ import { closePool, setDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
 import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, startStaleJobCleaner, stopStaleJobCleaner, startWorkerHealthMonitor, stopWorkerHealthMonitor } from "./transcribe/queue.js";
 import { createTranscribeProcessor } from "./transcribe/worker.js";
+import { getDistinctUsersWithUndelivered } from "./transcribe/repository.js";
+import { deliverCompletedInOrder, setDeliveryBotRef } from "./transcribe/deliveryQueue.js";
 import { isDigestConfigured, isDigestReady } from "./digest/telegramClient.js";
+import { disconnectAll as disconnectAllMtprotoSessions } from "./digest/sessionManager.js";
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
 import { setDigestBotRef } from "./commands/digestMode.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
+import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
 import { createLogger } from "./utils/logger.js";
 
 const log = createLogger("app");
@@ -65,10 +69,25 @@ async function main(): Promise<void> {
   if (redisUrl) {
     try {
       initTranscribeQueue(redisUrl);
+      setDeliveryBotRef(bot);
       const transcribeProcessor = createTranscribeProcessor(bot);
       startTranscribeWorker(redisUrl, transcribeProcessor, bot);
-      startStaleJobCleaner();
+      startStaleJobCleaner(bot);
       startWorkerHealthMonitor(redisUrl, transcribeProcessor, bot);
+
+      // Recovery: deliver any undelivered results from before restart
+      try {
+        const usersToDeliver = await getDistinctUsersWithUndelivered();
+        for (const userId of usersToDeliver) {
+          deliverCompletedInOrder(bot, userId);
+        }
+        if (usersToDeliver.length > 0) {
+          log.info(`Recovery: triggered delivery for ${usersToDeliver.length} user(s).`);
+        }
+      } catch (err) {
+        log.error("Recovery delivery failed:", err instanceof Error ? err.message : err);
+      }
+
       log.info("Transcribe queue initialized (Redis).");
     } catch (err) {
       log.error("Redis initialization failed — transcribe mode disabled.");
@@ -93,6 +112,9 @@ async function main(): Promise<void> {
   if (process.env.DATABASE_URL) {
     startNotableDatesScheduler(bot);
     log.info("Notable dates scheduler enabled.");
+
+    startGoalsScheduler(bot);
+    log.info("Goals scheduler enabled.");
   }
 
   startOAuthServer({
@@ -112,6 +134,7 @@ async function main(): Promise<void> {
     { command: "digest", description: "Дайджест телеграм-каналов" },
     { command: "dates", description: "Знаменательные даты" },
     { command: "notes", description: "Заметки" },
+    { command: "goals", description: "Хранитель целей" },
     { command: "mode", description: "Выбор режима работы" },
     { command: "admin", description: "Управление пользователями" },
   ];
@@ -123,8 +146,10 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     log.info(`${signal} received, shutting down...`);
     bot.stop(signal);
+    disconnectAllMtprotoSessions();
     stopDigestScheduler();
     stopNotableDatesScheduler();
+    stopGoalsScheduler();
     stopWorkerHealthMonitor();
     stopStaleJobCleaner();
     await closeTranscribeQueue();

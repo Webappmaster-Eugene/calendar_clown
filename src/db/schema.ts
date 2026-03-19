@@ -160,6 +160,10 @@ export const voiceTranscriptions = pgTable(
     audioFilePath: varchar("audio_file_path", { length: 500 }),
     status: varchar("status", { length: 20 }).notNull().default("pending"),
     errorMessage: text("error_message"),
+    sequenceNumber: integer("sequence_number").notNull(),
+    isDelivered: boolean("is_delivered").notNull().default(false),
+    chatId: bigint("chat_id", { mode: "number" }),
+    statusMessageId: integer("status_message_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     transcribedAt: timestamp("transcribed_at", { withTimezone: true }),
   },
@@ -167,6 +171,7 @@ export const voiceTranscriptions = pgTable(
     index("idx_voice_transcriptions_user_id").on(table.userId),
     index("idx_voice_transcriptions_status").on(table.status),
     index("idx_voice_transcriptions_created_at").on(table.createdAt),
+    index("idx_vt_delivery").on(table.userId, table.sequenceNumber).where(sql`is_delivered = false`),
   ],
 );
 
@@ -281,6 +286,27 @@ export const digestPosts = pgTable(
       table.channelUsername,
       table.telegramMessageId,
     ),
+  ],
+);
+
+// ─── Telegram MTProto Sessions ───────────────────────────────────────────
+
+export const telegramMtprotoSessions = pgTable(
+  "telegram_mtproto_sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id)
+      .unique(),
+    sessionString: text("session_string").notNull(),
+    phoneHint: varchar("phone_hint", { length: 20 }),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_mtproto_sessions_user").on(table.userId),
   ],
 );
 
@@ -480,6 +506,90 @@ export const gandalfEntryFiles = pgTable(
   },
   (table) => [
     index("idx_gandalf_entry_files_entry").on(table.entryId),
+  ],
+);
+
+// ─── Goal Sets ──────────────────────────────────────────────────────────
+
+export const goalSets = pgTable(
+  "goal_sets",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    name: varchar("name", { length: 100 }).notNull(),
+    emoji: varchar("emoji", { length: 10 }).default("🎯"),
+    period: varchar("period", { length: 20 }).notNull().default("current"),
+    visibility: varchar("visibility", { length: 10 }).notNull().default("private"),
+    deadline: timestamp("deadline", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_goal_sets_user").on(table.userId),
+    unique("goal_sets_user_name_key").on(table.userId, table.name),
+    check("goal_sets_period_check", sql`${table.period} IN ('current', 'month', 'year', '5years')`),
+    check("goal_sets_visibility_check", sql`${table.visibility} IN ('public', 'private')`),
+  ],
+);
+
+// ─── Goals ──────────────────────────────────────────────────────────────
+
+export const goals = pgTable(
+  "goals",
+  {
+    id: serial("id").primaryKey(),
+    goalSetId: integer("goal_set_id")
+      .notNull()
+      .references(() => goalSets.id, { onDelete: "cascade" }),
+    text: varchar("text", { length: 500 }).notNull(),
+    isCompleted: boolean("is_completed").notNull().default(false),
+    inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_goals_goal_set").on(table.goalSetId),
+  ],
+);
+
+// ─── Goal Set Viewers ───────────────────────────────────────────────────
+
+export const goalSetViewers = pgTable(
+  "goal_set_viewers",
+  {
+    id: serial("id").primaryKey(),
+    goalSetId: integer("goal_set_id")
+      .notNull()
+      .references(() => goalSets.id, { onDelete: "cascade" }),
+    viewerUserId: integer("viewer_user_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("goal_set_viewers_unique").on(table.goalSetId, table.viewerUserId),
+  ],
+);
+
+// ─── Goal Reminders ─────────────────────────────────────────────────────
+
+export const goalReminders = pgTable(
+  "goal_reminders",
+  {
+    id: serial("id").primaryKey(),
+    goalSetId: integer("goal_set_id")
+      .notNull()
+      .references(() => goalSets.id, { onDelete: "cascade" }),
+    remindAt: timestamp("remind_at", { withTimezone: true }).notNull(),
+    sent: boolean("sent").notNull().default(false),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_goal_reminders_pending").on(table.remindAt).where(sql`sent = false`),
   ],
 );
 

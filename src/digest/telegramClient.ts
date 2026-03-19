@@ -245,25 +245,29 @@ export async function readMultipleChannels(
  * Get user's dialog folders (Telegram folders).
  * Returns list of folder names with their IDs.
  */
-export async function getUserDialogFolders(): Promise<Array<{ id: number; title: string }>> {
+export async function getUserDialogFolders(
+  client?: TelegramClient
+): Promise<Array<{ id: number; title: string }>> {
   try {
-    const client = await connectGramClient();
-    const result = await client.invoke(new Api.messages.GetDialogFilters());
+    const c = client ?? await connectGramClient();
+    const result = await c.invoke(new Api.messages.GetDialogFilters());
     const folders: Array<{ id: number; title: string }> = [];
     const filters = "filters" in result && Array.isArray(result.filters) ? result.filters : [];
     for (const filter of filters) {
-      if (filter instanceof Api.DialogFilterDefault) continue;
+      if ((filter as { className?: string }).className === "DialogFilterDefault") continue;
+      const cn = (filter as { className?: string }).className;
       if (
-        (filter instanceof Api.DialogFilter || filter instanceof Api.DialogFilterChatlist) &&
-        filter.title
+        (cn === "DialogFilter" || cn === "DialogFilterChatlist") &&
+        (filter as Api.DialogFilter).title
       ) {
-        const titleObj = filter.title;
+        const titleObj = (filter as Api.DialogFilter).title;
         const title = typeof titleObj === "string"
           ? titleObj
           : (titleObj as Api.TextWithEntities).text ?? String(titleObj);
-        folders.push({ id: filter.id, title });
+        folders.push({ id: (filter as Api.DialogFilter).id, title });
       }
     }
+    log.debug(`getUserDialogFolders: found ${folders.length} folders`);
     return folders;
   } catch (err) {
     log.error("Failed to get dialog folders:", err);
@@ -275,32 +279,55 @@ export async function getUserDialogFolders(): Promise<Array<{ id: number; title:
  * Get channels from a specific Telegram folder.
  * Returns list of channel usernames.
  */
-export async function getChannelsFromFolder(folderId: number): Promise<string[]> {
+export async function getChannelsFromFolder(
+  folderId: number,
+  client?: TelegramClient
+): Promise<string[]> {
   try {
-    const client = await connectGramClient();
-    const result = await client.invoke(new Api.messages.GetDialogFilters());
+    const c = client ?? await connectGramClient();
+    const result = await c.invoke(new Api.messages.GetDialogFilters());
     const channels: string[] = [];
 
     const filters = "filters" in result && Array.isArray(result.filters) ? result.filters : [];
-    {
-      const folder = filters.find(
-        (f): f is Api.DialogFilter | Api.DialogFilterChatlist =>
-          (f instanceof Api.DialogFilter || f instanceof Api.DialogFilterChatlist) && f.id === folderId
-      );
-      if (folder?.includePeers) {
-        for (const peer of folder.includePeers) {
-          if (peer instanceof Api.InputPeerChannel) {
-            try {
-              const entity = await client.getEntity(peer);
-              if (entity instanceof Api.Channel && entity.username) {
-                channels.push(entity.username);
-              }
-            } catch {
-              // Skip inaccessible channels
+    const folder = filters.find((f) => {
+      const cn = (f as { className?: string }).className;
+      return (cn === "DialogFilter" || cn === "DialogFilterChatlist") &&
+        (f as Api.DialogFilter).id === folderId;
+    }) as Api.DialogFilter | Api.DialogFilterChatlist | undefined;
+
+    if (folder?.includePeers) {
+      let totalPeers = 0;
+      let channelPeers = 0;
+      let skippedPrivate = 0;
+      let skippedErrors = 0;
+
+      for (const peer of folder.includePeers) {
+        totalPeers++;
+        const peerClassName = (peer as { className?: string }).className;
+        if (peerClassName === "InputPeerChannel") {
+          channelPeers++;
+          try {
+            const entity = await c.getEntity(peer);
+            const entityClassName = (entity as { className?: string }).className;
+            if (entityClassName === "Channel" && (entity as Api.Channel).username) {
+              channels.push((entity as Api.Channel).username!);
+            } else {
+              skippedPrivate++;
+              const title = (entity as Api.Channel).title ?? "unknown";
+              log.debug(`Skipped private channel "${title}" (no username)`);
             }
+          } catch (err) {
+            skippedErrors++;
+            const msg = err instanceof Error ? err.message : String(err);
+            log.warn(`Failed to resolve channel peer in folder ${folderId}: ${msg}`);
           }
         }
       }
+
+      log.info(
+        `Folder ${folderId}: ${totalPeers} peers, ${channelPeers} channel peers, ` +
+        `${channels.length} public channels, ${skippedPrivate} private, ${skippedErrors} errors`
+      );
     }
 
     return channels;

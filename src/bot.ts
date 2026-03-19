@@ -17,6 +17,7 @@ import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueu
 import { handleAdminDataCallback, handleAdminDataTextInput } from "./commands/adminData.js";
 import { handleBulkCallback } from "./utils/bulkSelect.js";
 import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText, handleFolderImportButton, handleDigestFolderCallback, handleDigestFolderToCallback } from "./commands/digestMode.js";
+import { handleMtprotoAuthButton, handleDigestAuthText } from "./commands/digestAuth.js";
 import { handleBroadcastCommand, handleBroadcastText } from "./commands/broadcastMode.js";
 import {
   handleNotableDatesCommand,
@@ -94,7 +95,20 @@ import {
   handleWishlistFileAttachment,
 } from "./commands/wishlistMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isNotesMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode } from "./middleware/expenseMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isNotesMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode } from "./middleware/expenseMode.js";
+import {
+  handleGoalsCommand,
+  handleMyGoalSetsButton,
+  handleNewGoalSetButton,
+  handleSharedGoalsButton,
+  handleGoalSetCallback,
+  handleGoalCallback,
+  handleGoalPeriodCallback,
+  handleGoalViewerCallback,
+  handleGoalsPageCallback,
+  handleGoalsText,
+  handleGoalsVoice,
+} from "./commands/goalsMode.js";
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
@@ -125,6 +139,7 @@ export function createBot(token: string): Telegraf {
   bot.command("notes", handleNotesCommand);
   bot.command("gandalf", handleGandalfCommand);
   bot.command("wishlist", handleWishlistCommand);
+  bot.command("goals", handleGoalsCommand);
   bot.command("neuro", handleNeuroCommand);
 
   // Admin commands
@@ -205,6 +220,22 @@ export function createBot(token: string): Telegraf {
   bot.action(/^wl_reserve:/, handleWlReserveCallback);
   bot.action(/^wl_unreserve:/, handleWlUnreserveCallback);
   bot.action(/^wl_page:/, handleWlPageCallback);
+
+  // Goals callbacks
+  bot.action(/^goal_set:/, handleGoalSetCallback);
+  bot.action(/^goal_set_del:/, handleGoalSetCallback);
+  bot.action(/^goal_set_vis:/, handleGoalSetCallback);
+  bot.action(/^goal_set_add:/, handleGoalSetCallback);
+  bot.action(/^goal_set_done:/, handleGoalSetCallback);
+  bot.action(/^goal_set_viewers:/, handleGoalSetCallback);
+  bot.action(/^goal_set_view:/, handleGoalSetCallback);
+  bot.action(/^goal_done:/, handleGoalCallback);
+  bot.action(/^goal_del:/, handleGoalCallback);
+  bot.action(/^goal_period:/, handleGoalPeriodCallback);
+  bot.action(/^goal_viewer_add:/, handleGoalViewerCallback);
+  bot.action(/^goal_viewer_del:/, handleGoalViewerCallback);
+  bot.action(/^goal_viewer_done:/, handleGoalViewerCallback);
+  bot.action(/^goal_page:/, handleGoalsPageCallback);
 
   // Mode switch inline callbacks
   bot.action("mode:calendar", async (ctx) => {
@@ -289,6 +320,10 @@ export function createBot(token: string): Telegraf {
     await ctx.answerCbQuery("🧠 Нейро");
     await handleNeuroCommand(ctx);
   });
+  bot.action("mode:goals", async (ctx) => {
+    await ctx.answerCbQuery("🎯 Цели");
+    await handleGoalsCommand(ctx);
+  });
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
   // ─── Voice ──────────────────────────────────────────────────────────
@@ -308,6 +343,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("🧙 Гэндальф", handleGandalfCommand);
   bot.hears("🎁 Вишлист", handleWishlistCommand);
   bot.hears("🧠 Нейро", handleNeuroCommand);
+  bot.hears("🎯 Цели", handleGoalsCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
@@ -333,6 +369,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("▶️ Запустить сейчас", handleDigestNowButton);
   bot.hears("➕ Создать рубрику", handleCreateRubricButton);
   bot.hears("📂 Импорт из папки", handleFolderImportButton);
+  bot.hears("🔑 Привязать Telegram", handleMtprotoAuthButton);
 
   // Transcribe mode buttons
   bot.hears("📋 История", async (ctx) => {
@@ -372,6 +409,11 @@ export function createBot(token: string): Telegraf {
   bot.hears("➕ Новая запись", handleGandalfNewEntryButton);
   bot.hears("📊 Статистика", handleGandalfStatsButton);
   bot.hears("📋 Все записи", handleGandalfAllEntriesButton);
+
+  // Goals mode buttons
+  bot.hears("📋 Мои наборы целей", handleMyGoalSetsButton);
+  bot.hears("➕ Новый набор целей", handleNewGoalSetButton);
+  bot.hears("👀 Цели друзей", handleSharedGoalsButton);
 
   // Neuro mode buttons
   bot.hears("🗑 Очистить историю", async (ctx) => {
@@ -442,6 +484,13 @@ export function createBot(token: string): Telegraf {
       return;
     }
 
+    // Goals mode — text input for creating goal sets/goals
+    if (await isGoalsMode(telegramId)) {
+      const handled = await handleGoalsText(ctx);
+      if (handled) return;
+      return next();
+    }
+
     // Wishlist mode — text input for creating wishlists/items
     if (await isWishlistMode(telegramId)) {
       const handled = await handleWishlistText(ctx);
@@ -470,8 +519,10 @@ export function createBot(token: string): Telegraf {
       return next();
     }
 
-    // Digest mode — interactive rubric creation
+    // Digest mode — MTProto auth flow, then interactive rubric creation
     if (await isDigestMode(telegramId)) {
+      const authHandled = await handleDigestAuthText(ctx);
+      if (authHandled) return;
       const handled = await handleDigestText(ctx);
       if (handled) return;
       return next();

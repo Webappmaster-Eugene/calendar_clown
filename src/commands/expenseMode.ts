@@ -75,6 +75,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  goals: [
+    { command: "goals", description: "Хранитель целей (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
 };
 
 /** Update the Telegram hamburger menu commands for the user's current mode. */
@@ -100,7 +105,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["🎙 Транскрибатор", "📝 Заметки"],
         ["📰 Дайджест", "🎉 Даты"],
         ["🧙 Гэндальф", "🎁 Вишлист"],
-        ["🧠 Нейро"],
+        ["🧠 Нейро", "🎯 Цели"],
         ["📢 Царская почта", "👑 Управление"],
       ]).resize();
     }
@@ -110,13 +115,14 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["🎙 Транскрибатор", "📝 Заметки"],
         ["📰 Дайджест", "🎉 Даты"],
         ["🧙 Гэндальф", "🎁 Вишлист"],
-        ["🧠 Нейро"],
+        ["🧠 Нейро", "🎯 Цели"],
       ]).resize();
     }
     // User without tribe — limited modes
     return Markup.keyboard([
       ["📅 Календарь", "🎙 Транскрибатор"],
       ["📝 Заметки", "🧠 Нейро"],
+      ["🎯 Цели"],
     ]).resize();
   }
 
@@ -126,7 +132,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["🎙 Транскрибатор", "📝 Заметки"],
     ["📰 Дайджест", "🎉 Даты"],
     ["🧙 Гэндальф", "🎁 Вишлист"],
-    ["🧠 Нейро"],
+    ["🧠 Нейро", "🎯 Цели"],
   ];
   if (isAdmin) {
     rows.push(["📢 Царская почта", "👑 Управление"]);
@@ -227,7 +233,10 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
       ...(canAccessMode("wishlist", ctx) ? [Markup.button.callback("🎁 Вишлист", "mode:wishlist")] : []),
     ]);
   }
-  rows.push([Markup.button.callback("🧠 Нейро", "mode:neuro")]);
+  rows.push([
+    Markup.button.callback("🧠 Нейро", "mode:neuro"),
+    Markup.button.callback("🎯 Цели", "mode:goals"),
+  ]);
   if (isAdmin) {
     rows.push([
       Markup.button.callback("📢 Царская почта", "mode:broadcast"),

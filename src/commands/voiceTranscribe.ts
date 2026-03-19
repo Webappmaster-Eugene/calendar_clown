@@ -10,7 +10,7 @@ import { mkdir, writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
-import { createTranscription, countPendingForUser, getTranscriptionByFileUniqueId, deleteTranscription } from "../transcribe/repository.js";
+import { createTranscription, countPendingForUser, getTranscriptionByFileUniqueId, deleteTranscription, getNextSequenceNumber } from "../transcribe/repository.js";
 import { addTranscribeJob, isTranscribeAvailable } from "../transcribe/queue.js";
 import { VOICE_DIR } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
@@ -159,6 +159,9 @@ export async function handleVoiceInTranscribeMode(
   const forwardedFromName = getForwardedFromName(ctx);
   const forwardedDate = getForwardedDate(ctx);
 
+  // Get next sequence number for ordered delivery
+  const sequenceNumber = await getNextSequenceNumber(dbUser.id);
+
   // Save to DB
   let transcription;
   try {
@@ -171,6 +174,9 @@ export async function handleVoiceInTranscribeMode(
       forwardedFromName,
       forwardedDate,
       audioFilePath: filePath,
+      sequenceNumber,
+      chatId: ctx.chat!.id,
+      statusMessageId,
     });
   } catch (err) {
     await unlink(filePath).catch(() => {});
@@ -192,6 +198,8 @@ export async function handleVoiceInTranscribeMode(
       chatId: ctx.chat!.id,
       statusMessageId,
       durationSeconds: voice.duration,
+      sequenceNumber,
+      userId: dbUser.id,
     });
   } catch (err) {
     await unlink(filePath).catch(() => {});
