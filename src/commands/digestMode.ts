@@ -28,6 +28,7 @@ import {
   createRubric,
   deleteRubric,
   toggleRubric,
+  updateRubric,
   addChannel,
   removeChannel,
   removeChannelById,
@@ -58,6 +59,9 @@ const rubricCreationStates = new Map<number, RubricCreationState>();
 
 /** State for inline channel-add flow (text input after pressing ➕). */
 const channelAddStates = new Map<number, { rubricId: number }>();
+
+/** State for rubric editing (name/description text input). */
+const rubricEditStates = new Map<number, { rubricId: number; field: "name" | "description" }>();
 
 /** Truncate string to maxLen, appending "…" if needed. */
 function truncate(str: string, maxLen: number): string {
@@ -545,6 +549,7 @@ async function buildRubricDetailView(rubric: import("../digest/types.js").Digest
 
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.callback(`📋 Каналы (${channelCount})`, `drub_ch:${rubric.id}`), toggleBtn],
+    [Markup.button.callback("✏️ Изменить", `drub_edit:${rubric.id}`), Markup.button.callback("📂 Импорт из папки", `drub_import:${rubric.id}`)],
     [Markup.button.callback("🗑 Удалить", `drub_del:${rubric.id}`), Markup.button.callback("◀️ Назад", "drub_back")],
   ]);
 
@@ -839,6 +844,43 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
 
   const text = ctx.message.text.trim();
 
+  // Handle rubric edit text input (name/description)
+  const editState = rubricEditStates.get(telegramId);
+  if (editState) {
+    rubricEditStates.delete(telegramId);
+
+    const dbUser = await getUserByTelegramId(telegramId);
+    if (!dbUser) return true;
+
+    const rubric = await getRubricByIdAndUser(editState.rubricId, dbUser.id);
+    if (!rubric) {
+      await ctx.reply("Рубрика не найдена.");
+      return true;
+    }
+
+    if (editState.field === "name") {
+      if (!text || text.length > 100) {
+        await ctx.reply("Название рубрики: от 1 до 100 символов. Попробуйте ещё раз.");
+        rubricEditStates.set(telegramId, editState);
+        return true;
+      }
+      // Check uniqueness
+      const existing = await getRubricByUserAndName(dbUser.id, text);
+      if (existing && existing.id !== editState.rubricId) {
+        await ctx.reply(`Рубрика «${text}» уже существует. Введите другое название:`);
+        rubricEditStates.set(telegramId, editState);
+        return true;
+      }
+      await updateRubric(editState.rubricId, { name: text });
+      await ctx.reply(`✅ Название изменено на «${text}».`);
+    } else {
+      const desc = text === "—" ? null : text;
+      await updateRubric(editState.rubricId, { description: desc });
+      await ctx.reply(`✅ Описание ${desc ? "обновлено" : "очищено"}.`);
+    }
+    return true;
+  }
+
   // Handle channel-add text input (from ➕ inline button)
   const channelState = channelAddStates.get(telegramId);
   if (channelState) {
@@ -898,6 +940,222 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
   }
 
   return false;
+}
+
+// ─── Rubric editing callbacks ────────────────────────────────────────────
+
+/** drub_edit:{id} — show edit menu for a rubric. */
+export async function handleRubricEditCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  await ctx.answerCbQuery();
+
+  const { rubric } = result;
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback("✏️ Изменить название", `drub_edit_name:${rubricId}`)],
+    [Markup.button.callback("📝 Изменить описание", `drub_edit_desc:${rubricId}`)],
+    [Markup.button.callback("🎨 Перегенерировать эмодзи", `drub_edit_emoji:${rubricId}`)],
+    [Markup.button.callback("◀️ Назад к рубрике", `drub_view:${rubricId}`)],
+  ]);
+
+  try {
+    await ctx.editMessageText(
+      `✏️ Редактирование «${rubric.name}»\n\n` +
+      `Название: ${rubric.name}\n` +
+      `Описание: ${rubric.description ?? "—"}\n` +
+      `Эмодзи: ${rubric.emoji ?? "📰"}`,
+      keyboard
+    );
+  } catch { /* content unchanged */ }
+}
+
+/** drub_edit_name:{id} — start editing rubric name. */
+export async function handleRubricEditNameCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  const telegramId = ctx.from!.id;
+  rubricEditStates.set(telegramId, { rubricId, field: "name" });
+  await ctx.answerCbQuery();
+  await ctx.reply(`Введите новое название рубрики (текущее: «${result.rubric.name}»):`);
+}
+
+/** drub_edit_desc:{id} — start editing rubric description. */
+export async function handleRubricEditDescCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  const telegramId = ctx.from!.id;
+  rubricEditStates.set(telegramId, { rubricId, field: "description" });
+  await ctx.answerCbQuery();
+  await ctx.reply(`Введите новое описание рубрики (или «—» чтобы очистить):`);
+}
+
+/** drub_edit_emoji:{id} — regenerate emoji and keywords via AI. */
+export async function handleRubricEditEmojiCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  const { rubric } = result;
+  await ctx.answerCbQuery("Генерирую...");
+
+  try {
+    const meta = await generateRubricMeta(rubric.name, rubric.description ?? rubric.name);
+    await updateRubric(rubricId, { emoji: meta.emoji, keywords: meta.keywords });
+
+    const updated = await getRubricByIdAndUser(rubricId, result.dbUser.id);
+    if (!updated) return;
+
+    const { text, keyboard } = await buildRubricDetailView(updated);
+    try {
+      await ctx.editMessageText(text, keyboard);
+    } catch { /* content unchanged */ }
+
+    await ctx.reply(`🎨 Эмодзи обновлён: ${meta.emoji}\nКлючевые слова: ${meta.keywords.join(", ") || "—"}`);
+  } catch (err) {
+    log.error("Failed to regenerate emoji:", err);
+    await ctx.reply("❌ Не удалось перегенерировать эмодзи.");
+  }
+}
+
+/** drub_import:{rubricId} — show folder list for import into specific rubric. */
+export async function handleRubricFolderImportCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const rubricId = extractId(ctx.callbackQuery.data);
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  if (!isDigestConfigured()) {
+    await ctx.answerCbQuery("Telegram Parser не настроен");
+    return;
+  }
+
+  const dbUser = result.dbUser;
+  const userHasSession = await hasActiveSession(dbUser.id);
+  const adminReady = await isDigestReady();
+
+  if (!userHasSession && !adminReady) {
+    await ctx.answerCbQuery("Привяжите Telegram-аккаунт");
+    return;
+  }
+
+  await ctx.answerCbQuery("Загружаю папки...");
+
+  try {
+    let userClient: import("telegram").TelegramClient | undefined;
+    if (userHasSession) {
+      try {
+        userClient = await getClientForUser(dbUser.id);
+      } catch (err) {
+        log.warn(`Failed to get user client for ${dbUser.id}, falling back to admin:`, err);
+      }
+    }
+
+    const folders = await getUserDialogFolders(userClient);
+    if (folders.length === 0) {
+      try {
+        await ctx.editMessageText("У вас нет папок в Telegram. Создайте папку с каналами в настройках Telegram.");
+      } catch { /* content unchanged */ }
+      return;
+    }
+
+    // Store client for subsequent callbacks
+    if (userClient) {
+      folderImportClients.set(telegramId, dbUser.id);
+    } else {
+      folderImportClients.delete(telegramId);
+    }
+
+    const buttons = folders.map((f) => [
+      Markup.button.callback(`📂 ${f.title}`, `drub_import_folder:${rubricId}:${f.id}`),
+    ]);
+    buttons.push([Markup.button.callback("◀️ Назад", `drub_view:${rubricId}`)]);
+
+    try {
+      await ctx.editMessageText(
+        `Импорт каналов в «${result.rubric.name}»\nВыберите папку:`,
+        { ...Markup.inlineKeyboard(buttons) }
+      );
+    } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to get folders for rubric import:", err);
+    try {
+      await ctx.editMessageText("Ошибка при загрузке папок.");
+    } catch { /* content unchanged */ }
+  }
+}
+
+/** drub_import_folder:{rubricId}:{folderId} — import channels from folder into rubric. */
+export async function handleRubricFolderImportToCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^drub_import_folder:(\d+):(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const rubricId = parseInt(match[1], 10);
+  const folderId = parseInt(match[2], 10);
+
+  const result = await getRubricForCallback(ctx, rubricId);
+  if (!result) return;
+
+  await ctx.answerCbQuery("Импортирую...");
+
+  try {
+    const userClient = await resolveUserClient(telegramId);
+    const channels = await getChannelsFromFolder(folderId, userClient);
+
+    if (channels.length === 0) {
+      try {
+        await ctx.editMessageText(
+          "В этой папке нет публичных каналов (с @username).\nПриватные каналы пока не поддерживаются."
+        );
+      } catch { /* content unchanged */ }
+      return;
+    }
+
+    let added = 0;
+    let skipped = 0;
+
+    for (const username of channels) {
+      try {
+        await addChannel(rubricId, username);
+        added++;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn(`Failed to add channel @${username} to rubric ${rubricId}: ${msg}`);
+        skipped++;
+      }
+    }
+
+    try {
+      await ctx.editMessageText(
+        `✅ Импорт в «${result.rubric.name}» завершён!\n\nДобавлено: ${added}\nПропущено (уже есть): ${skipped}`
+      );
+    } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to import channels to rubric:", err);
+    try {
+      await ctx.editMessageText("Ошибка при импорте каналов.");
+    } catch { /* content unchanged */ }
+  }
 }
 
 // ─── Folder import ──────────────────────────────────────────────────────

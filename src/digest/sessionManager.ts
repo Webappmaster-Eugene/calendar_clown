@@ -142,12 +142,12 @@ export async function getAdminClient(): Promise<TelegramClient> {
   return connectGramClient();
 }
 
-/** Disconnect a specific user's client. */
+/** Disconnect a specific user's client. Uses destroy() to stop the internal update loop. */
 export function disconnectUser(userId: number): void {
   const entry = userClients.get(userId);
   if (entry) {
     clearTimeout(entry.idleTimer);
-    entry.client.disconnect().catch((err) => {
+    entry.client.destroy().catch((err) => {
       log.warn(`Error disconnecting user ${userId}:`, err);
     });
     userClients.delete(userId);
@@ -155,11 +155,11 @@ export function disconnectUser(userId: number): void {
   }
 }
 
-/** Disconnect all user clients. Called on graceful shutdown. */
+/** Disconnect all user clients. Called on graceful shutdown. Uses destroy() to stop update loops. */
 export function disconnectAll(): void {
   for (const [userId, entry] of userClients) {
     clearTimeout(entry.idleTimer);
-    entry.client.disconnect().catch((err) => {
+    entry.client.destroy().catch((err) => {
       log.warn(`Error disconnecting user ${userId}:`, err);
     });
   }

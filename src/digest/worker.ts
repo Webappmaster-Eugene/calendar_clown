@@ -8,7 +8,7 @@ import { createLogger } from "../utils/logger.js";
 import { readMultipleChannels } from "./telegramClient.js";
 import { selectTopPosts, DEFAULT_DIGEST_SIZE } from "./parser.js";
 import { summarizePosts } from "./summarizer.js";
-import { discoverChannels } from "./discovery.js";
+import { discoverChannels, validateDiscoveredChannels } from "./discovery.js";
 import {
   getActiveRubricsByUser,
   getChannelsByRubric,
@@ -133,19 +133,24 @@ async function runDigestForRubric(
     const message = formatDigestMessage(rubric, topPosts, summaries);
     await sendMessage(bot, telegramId, message);
 
-    // 6. Discovery: suggest new channels (if any mentioned frequently)
+    // 6. Discovery: suggest new validated channels
     const trackedSet = new Set(channels.map((c) => c.channelUsername));
     const discovered = discoverChannels(posts, trackedSet);
     if (discovered.length > 0) {
-      const top3 = discovered.slice(0, 3);
-      const suggestions = top3
-        .map((d) => `@${d.username} (${d.mentionCount} упоминаний)`)
-        .join("\n");
-      await sendMessage(
-        bot,
-        telegramId,
-        `💡 *Рекомендации каналов для "${escapeMarkdown(rubric.name)}":*\n${suggestions}\n\nДобавить: /digest add <рубрика> @канал`
-      );
+      const validated = await validateDiscoveredChannels(discovered, 3, 100);
+      if (validated.length > 0) {
+        const suggestions = validated
+          .map((d) => {
+            const subsStr = formatNumber(d.subscriberCount);
+            return `@${d.username} (${escapeMarkdown(d.title)}, ${subsStr} подписчиков, ${d.mentionCount} упоминаний)`;
+          })
+          .join("\n");
+        await sendMessage(
+          bot,
+          telegramId,
+          `💡 *Рекомендации каналов для "${escapeMarkdown(rubric.name)}":*\n${suggestions}\n\nДобавить: /digest add <рубрика> @канал`
+        );
+      }
     }
 
     log.info(

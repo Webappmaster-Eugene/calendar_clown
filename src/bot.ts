@@ -16,7 +16,7 @@ import { handleStatsCommand } from "./commands/adminStats.js";
 import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleQueueStatusButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback, handleTranscribeDeleteCallback } from "./commands/transcribeMode.js";
 import { handleAdminDataCallback, handleAdminDataTextInput } from "./commands/adminData.js";
 import { handleBulkCallback } from "./utils/bulkSelect.js";
-import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText, handleFolderImportButton, handleDigestFolderCallback, handleDigestFolderToCallback, handleRubricViewCallback, handleRubricToggleCallback, handleRubricDeleteCallback, handleRubricDeleteConfirmCallback, handleRubricChannelsCallback, handleChannelRemoveCallback, handleChannelAddCallback, handleRubricListCallback } from "./commands/digestMode.js";
+import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText, handleFolderImportButton, handleDigestFolderCallback, handleDigestFolderToCallback, handleRubricViewCallback, handleRubricToggleCallback, handleRubricDeleteCallback, handleRubricDeleteConfirmCallback, handleRubricChannelsCallback, handleChannelRemoveCallback, handleChannelAddCallback, handleRubricListCallback, handleRubricEditCallback, handleRubricEditNameCallback, handleRubricEditDescCallback, handleRubricEditEmojiCallback, handleRubricFolderImportCallback, handleRubricFolderImportToCallback } from "./commands/digestMode.js";
 import { handleMtprotoAuthButton, handleDigestAuthText } from "./commands/digestAuth.js";
 import { handleBroadcastCommand, handleBroadcastText } from "./commands/broadcastMode.js";
 import {
@@ -170,6 +170,14 @@ export function createBot(token: string): Telegraf {
   bot.action(/^drub_ch:/, handleRubricChannelsCallback);
   bot.action(/^drub_ch_rm:/, handleChannelRemoveCallback);
   bot.action(/^drub_ch_add:/, handleChannelAddCallback);
+
+  // Digest rubric edit callbacks
+  bot.action(/^drub_edit:\d+$/, handleRubricEditCallback);
+  bot.action(/^drub_edit_name:\d+$/, handleRubricEditNameCallback);
+  bot.action(/^drub_edit_desc:\d+$/, handleRubricEditDescCallback);
+  bot.action(/^drub_edit_emoji:\d+$/, handleRubricEditEmojiCallback);
+  bot.action(/^drub_import:\d+$/, handleRubricFolderImportCallback);
+  bot.action(/^drub_import_folder:\d+:\d+$/, handleRubricFolderImportToCallback);
 
   // Digest folder import callbacks
   bot.action(/^digest_folder:/, handleDigestFolderCallback);

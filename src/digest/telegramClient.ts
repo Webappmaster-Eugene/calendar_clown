@@ -84,6 +84,8 @@ export async function isDigestReady(): Promise<boolean> {
 /** Connect to Telegram via MTProto. Uses saved session. */
 export async function connectGramClient(): Promise<TelegramClient> {
   if (gramClient?.connected) return gramClient;
+  // Clean up stale reference (e.g. after destroy)
+  gramClient = null;
 
   const creds = getCredentials();
   if (!creds) throw new Error("TELEGRAM_PARSER_API_ID / TELEGRAM_PARSER_API_HASH not set");
@@ -114,10 +116,10 @@ export async function connectGramClient(): Promise<TelegramClient> {
   return gramClient;
 }
 
-/** Disconnect GramJS client gracefully. */
+/** Disconnect GramJS client gracefully. Uses destroy() to stop the internal update loop. */
 export async function disconnectGramClient(): Promise<void> {
   if (gramClient) {
-    await gramClient.disconnect();
+    await gramClient.destroy();
     gramClient = null;
     log.info("GramJS disconnected.");
   }

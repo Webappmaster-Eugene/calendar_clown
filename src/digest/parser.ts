@@ -67,5 +67,16 @@ export function selectTopPosts(
 
   scored.sort((a, b) => b.engagementScore - a.engagementScore);
 
-  return scored.slice(0, clampedSize);
+  // Per-channel dedup: max 1 post per channel (best by score, since sorted)
+  const selected: typeof scored = [];
+  const seenChannels = new Set<string>();
+
+  for (const post of scored) {
+    if (seenChannels.has(post.channelUsername)) continue;
+    seenChannels.add(post.channelUsername);
+    selected.push(post);
+    if (selected.length >= clampedSize) break;
+  }
+
+  return selected;
 }

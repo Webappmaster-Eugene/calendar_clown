@@ -191,7 +191,7 @@ async function saveSessionFromWeb(
   const hint = phoneHint(state.phoneNumber);
   await saveUserSession(dbUser.id, sessionString, hint);
 
-  state.client.disconnect().catch(() => {});
+  state.client.destroy().catch(() => {});
   authStates.delete(telegramId);
 
   // Clean up all web tokens for this user
@@ -223,7 +223,7 @@ function getCredentials(): { apiId: number; apiHash: string } | null {
 function clearState(telegramId: number): void {
   const state = authStates.get(telegramId);
   if (state?.client) {
-    state.client.disconnect().catch(() => {});
+    state.client.destroy().catch(() => {});
   }
   authStates.delete(telegramId);
 }
