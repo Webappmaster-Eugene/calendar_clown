@@ -74,6 +74,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  admin: [
+    { command: "admin", description: "Управление пользователями" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
 };
 
 /** Update the Telegram hamburger menu commands for the user's current mode. */
