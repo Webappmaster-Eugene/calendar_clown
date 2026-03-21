@@ -31,6 +31,9 @@ export const MAX_SUBCATEGORY_LENGTH = 200;
 /** Rate limit: max expense entries per user per minute. */
 export const RATE_LIMIT_PER_MINUTE = 10;
 
+/** Maximum active reminders per user. */
+export const MAX_REMINDERS_PER_USER = 10;
+
 /** Directory for temporary voice files. */
 export const VOICE_DIR = "./data/voice";
 

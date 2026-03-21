@@ -218,7 +218,17 @@ async function showRubrics(ctx: Context, telegramId: number): Promise<void> {
   }
 
   await ctx.reply("📰 Дайджест", getDigestKeyboard(isBootstrapAdmin(telegramId)));
-  await ctx.reply(buildRubricsListText(rubrics), buildRubricsListKeyboard(rubrics));
+  try {
+    await ctx.reply(buildRubricsListText(rubrics), buildRubricsListKeyboard(rubrics));
+  } catch (err) {
+    log.error("Failed to render rubrics list with keyboard:", err);
+    try {
+      await ctx.reply(buildRubricsListText(rubrics));
+    } catch (err2) {
+      log.error("Failed to render rubrics list (plain):", err2);
+      await ctx.reply("Ошибка отображения рубрик. Попробуйте позже.");
+    }
+  }
 }
 
 /** Create a new rubric. Format: /digest Name — Description */
@@ -577,7 +587,9 @@ export async function handleRubricViewCallback(ctx: Context): Promise<void> {
   const { text, keyboard } = await buildRubricDetailView(result.rubric);
   try {
     await ctx.editMessageText(text, keyboard);
-  } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
 }
 
 /** drub_pause:{id} / drub_resume:{id} — toggle rubric. */
@@ -600,7 +612,9 @@ export async function handleRubricToggleCallback(ctx: Context): Promise<void> {
   const { text, keyboard } = await buildRubricDetailView(updated);
   try {
     await ctx.editMessageText(text, keyboard);
-  } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
 }
 
 /** drub_del:{id} — ask for delete confirmation. */
@@ -626,7 +640,9 @@ export async function handleRubricDeleteCallback(ctx: Context): Promise<void> {
       `Удалить рубрику «${name}»? Все каналы будут отвязаны.`,
       keyboard
     );
-  } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
 }
 
 /** drub_del_yes:{id} — confirm delete, show updated list. */
@@ -649,7 +665,9 @@ export async function handleRubricDeleteConfirmCallback(ctx: Context): Promise<v
     } else {
       await ctx.editMessageText("У вас пока нет рубрик. Создайте кнопкой «➕ Создать рубрику».");
     }
-  } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
 }
 
 /** Build channel list view (text + inline keyboard) for a rubric. */
@@ -712,7 +730,9 @@ export async function handleRubricChannelsCallback(ctx: Context): Promise<void> 
   const { text, keyboard } = await buildChannelListView(result.rubric);
   try {
     await ctx.editMessageText(text, keyboard);
-  } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
 }
 
 /** drub_ch_rm:{channelId} — remove a channel, refresh list. */
@@ -758,7 +778,9 @@ export async function handleChannelRemoveCallback(ctx: Context): Promise<void> {
   const { text, keyboard } = await buildChannelListView(rubric);
   try {
     await ctx.editMessageText(text, keyboard);
-  } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
 }
 
 /** drub_ch_add:{rubricId} — start text input for adding a channel. */
@@ -812,7 +834,9 @@ export async function handleRubricListCallback(ctx: Context): Promise<void> {
     } else {
       await ctx.editMessageText("У вас пока нет рубрик. Создайте кнопкой «➕ Создать рубрику».");
     }
-  } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
 }
 
 /** Handle "Мои рубрики" keyboard button. */
@@ -975,7 +999,9 @@ export async function handleRubricEditCallback(ctx: Context): Promise<void> {
       `Эмодзи: ${rubric.emoji ?? "📰"}`,
       keyboard
     );
-  } catch { /* content unchanged */ }
+  } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
 }
 
 /** drub_edit_name:{id} — start editing rubric name. */
@@ -1027,7 +1053,9 @@ export async function handleRubricEditEmojiCallback(ctx: Context): Promise<void>
     const { text, keyboard } = await buildRubricDetailView(updated);
     try {
       await ctx.editMessageText(text, keyboard);
-    } catch { /* content unchanged */ }
+    } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
 
     await ctx.reply(`🎨 Эмодзи обновлён: ${meta.emoji}\nКлючевые слова: ${meta.keywords.join(", ") || "—"}`);
   } catch (err) {
@@ -1076,7 +1104,9 @@ export async function handleRubricFolderImportCallback(ctx: Context): Promise<vo
     if (folders.length === 0) {
       try {
         await ctx.editMessageText("У вас нет папок в Telegram. Создайте папку с каналами в настройках Telegram.");
-      } catch { /* content unchanged */ }
+      } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
       return;
     }
 
@@ -1097,12 +1127,16 @@ export async function handleRubricFolderImportCallback(ctx: Context): Promise<vo
         `Импорт каналов в «${result.rubric.name}»\nВыберите папку:`,
         { ...Markup.inlineKeyboard(buttons) }
       );
-    } catch { /* content unchanged */ }
+    } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
   } catch (err) {
     log.error("Failed to get folders for rubric import:", err);
     try {
       await ctx.editMessageText("Ошибка при загрузке папок.");
-    } catch { /* content unchanged */ }
+    } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
   }
 }
 
@@ -1132,7 +1166,9 @@ export async function handleRubricFolderImportToCallback(ctx: Context): Promise<
         await ctx.editMessageText(
           "В этой папке нет публичных каналов (с @username).\nПриватные каналы пока не поддерживаются."
         );
-      } catch { /* content unchanged */ }
+      } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
       return;
     }
 
@@ -1154,12 +1190,16 @@ export async function handleRubricFolderImportToCallback(ctx: Context): Promise<
       await ctx.editMessageText(
         `✅ Импорт в «${result.rubric.name}» завершён!\n\nДобавлено: ${added}\nПропущено (уже есть): ${skipped}`
       );
-    } catch { /* content unchanged */ }
+    } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
   } catch (err) {
     log.error("Failed to import channels to rubric:", err);
     try {
       await ctx.editMessageText("Ошибка при импорте каналов.");
-    } catch { /* content unchanged */ }
+    } catch (err) {
+    log.error("Failed to edit rubrics list message:", err);
+  }
   }
 }
 

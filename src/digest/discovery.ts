@@ -28,7 +28,7 @@ function extractTmeLinks(text: string): string[] {
   while ((match = re.exec(text)) !== null) {
     const username = match[1].toLowerCase();
     // Skip common non-channel paths
-    if (["joinchat", "addstickers", "share", "proxy", "socks"].includes(username)) continue;
+    if (["joinchat", "addstickers", "addlist", "addtheme", "share", "proxy", "socks"].includes(username)) continue;
     links.push(username);
   }
   return links;

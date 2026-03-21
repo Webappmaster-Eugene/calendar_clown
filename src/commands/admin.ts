@@ -74,6 +74,7 @@ export async function handleAdminCommand(ctx: Context): Promise<void> {
       [Markup.button.callback("✏️ Редактировать трайб", "admin:edit_tribe")],
       [Markup.button.callback("🗑 Удалить трайб", "admin:del_tribe")],
       [Markup.button.callback("📊 Управление данными", "admin:data")],
+      [Markup.button.callback("📈 Саммари", "summary:menu")],
     ]),
   });
 }
@@ -356,6 +357,7 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
         [Markup.button.callback("✏️ Редактировать трайб", "admin:edit_tribe")],
         [Markup.button.callback("🗑 Удалить трайб", "admin:del_tribe")],
         [Markup.button.callback("📊 Управление данными", "admin:data")],
+        [Markup.button.callback("📈 Саммари", "summary:menu")],
       ]),
     });
     await ctx.answerCbQuery();

@@ -10,6 +10,7 @@ import {
   real,
   bigint,
   timestamp,
+  jsonb,
   uniqueIndex,
   index,
   unique,
@@ -619,5 +620,54 @@ export const wishlistItemFiles = pgTable(
   },
   (table) => [
     index("idx_wishlist_item_files_item").on(table.itemId),
+  ],
+);
+
+// ─── Reminders ──────────────────────────────────────────────────────────
+
+export const reminders = pgTable(
+  "reminders",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    tribeId: integer("tribe_id")
+      .references(() => tribes.id),
+    text: varchar("text", { length: 500 }).notNull(),
+    schedule: jsonb("schedule").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+    inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_reminders_user").on(table.userId),
+    index("idx_reminders_active").on(table.isActive).where(sql`is_active = true`),
+    check(
+      "reminders_input_method_check",
+      sql`${table.inputMethod} IN ('text', 'voice')`,
+    ),
+  ],
+);
+
+// ─── Reminder Subscribers ───────────────────────────────────────────────
+
+export const reminderSubscribers = pgTable(
+  "reminder_subscribers",
+  {
+    id: serial("id").primaryKey(),
+    reminderId: integer("reminder_id")
+      .notNull()
+      .references(() => reminders.id, { onDelete: "cascade" }),
+    subscriberUserId: integer("subscriber_user_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_reminder_subscribers_reminder").on(table.reminderId),
+    unique("reminder_subscribers_unique").on(table.reminderId, table.subscriberUserId),
   ],
 );

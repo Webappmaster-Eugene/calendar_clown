@@ -8,8 +8,9 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode } from "../middleware/userMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode } from "../middleware/userMode.js";
 import { handleGoalsVoice } from "./goalsMode.js";
+import { handleRemindersVoice } from "./remindersMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
 import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
@@ -26,6 +27,19 @@ import { createLogger } from "../utils/logger.js";
 const log = createLogger("voice");
 
 export async function handleVoice(ctx: Context) {
+  try {
+    await handleVoiceInner(ctx);
+  } catch (err) {
+    log.error("Unhandled error in handleVoice:", err);
+    try {
+      await ctx.reply("Произошла ошибка при обработке голосового сообщения. Попробуйте ещё раз.");
+    } catch {
+      // reply failed — nothing we can do
+    }
+  }
+}
+
+async function handleVoiceInner(ctx: Context): Promise<void> {
   const userId = getUserId(ctx);
   if (!userId) return;
 
@@ -60,7 +74,14 @@ export async function handleVoice(ctx: Context) {
           undefined,
           "Ошибка при обработке голосового. Попробуйте ещё раз."
         );
-      } catch { /* status update failed — ignore */ }
+      } catch (editErr) {
+        log.error("Failed to edit status message after transcribe error:", editErr);
+        try {
+          await ctx.reply("Ошибка при обработке голосового. Попробуйте ещё раз.");
+        } catch (replyErr) {
+          log.error("Failed to send fallback error reply:", replyErr);
+        }
+      }
     }
     return;
   }
@@ -109,6 +130,12 @@ export async function handleVoice(ctx: Context) {
     // Goals mode — add goal from voice
     if (telegramId != null && await isGoalsMode(telegramId)) {
       await handleGoalsVoice(ctx, transcript, statusMsg.message_id);
+      return;
+    }
+
+    // Reminders mode — create/manage reminders from voice
+    if (telegramId != null && await isRemindersMode(telegramId)) {
+      await handleRemindersVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 

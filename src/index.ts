@@ -22,6 +22,7 @@ import { setDigestBotRef } from "./commands/digestMode.js";
 import { setAuthBotRef } from "./commands/digestAuth.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
+import { startRemindersScheduler, stopRemindersScheduler } from "./reminders/scheduler.js";
 import { createLogger } from "./utils/logger.js";
 
 const log = createLogger("app");
@@ -119,6 +120,9 @@ async function main(): Promise<void> {
 
     startGoalsScheduler(bot);
     log.info("Goals scheduler enabled.");
+
+    startRemindersScheduler(bot);
+    log.info("Reminders scheduler enabled.");
   }
 
   startOAuthServer({
@@ -139,6 +143,7 @@ async function main(): Promise<void> {
     { command: "dates", description: "Знаменательные даты" },
     { command: "gandalf", description: "База знаний" },
     { command: "goals", description: "Хранитель целей" },
+    { command: "reminders", description: "Напоминания" },
     { command: "mode", description: "Выбор режима работы" },
     { command: "admin", description: "Управление пользователями" },
   ];
@@ -154,6 +159,7 @@ async function main(): Promise<void> {
     stopDigestScheduler();
     stopNotableDatesScheduler();
     stopGoalsScheduler();
+    stopRemindersScheduler();
     stopWorkerHealthMonitor();
     stopStaleJobCleaner();
     await closeTranscribeQueue();

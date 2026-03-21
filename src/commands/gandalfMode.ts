@@ -408,10 +408,21 @@ export async function handleGandalfEntryActionCallback(ctx: Context): Promise<vo
     }
     const files = await getFilesByEntry(entryId);
     await ctx.answerCbQuery();
-    await ctx.editMessageText(formatSingleEntry(entry, files.length), {
-      parse_mode: "Markdown",
-      ...buildSingleEntryButtons(entry, files.length, scope),
-    });
+    try {
+      await ctx.editMessageText(formatSingleEntry(entry, files.length), {
+        parse_mode: "Markdown",
+        ...buildSingleEntryButtons(entry, files.length, scope),
+      });
+    } catch (err) {
+      log.error("Failed to render entry detail (Markdown):", err);
+      try {
+        await ctx.editMessageText(formatSingleEntry(entry, files.length), {
+          ...buildSingleEntryButtons(entry, files.length, scope),
+        });
+      } catch (err2) {
+        log.error("Failed to render entry detail (plain):", err2);
+      }
+    }
     return;
   }
 
@@ -639,7 +650,16 @@ async function reRenderEntry(ctx: Context, entryId: number, scope: GandalfScope)
       parse_mode: "Markdown",
       ...buildSingleEntryButtons(entry, files.length, scope),
     });
-  } catch { /* ignore */ }
+  } catch (err) {
+    log.error("reRenderEntry Markdown failed:", err);
+    try {
+      await ctx.reply(formatSingleEntry(entry, files.length), {
+        ...buildSingleEntryButtons(entry, files.length, scope),
+      });
+    } catch (err2) {
+      log.error("reRenderEntry plain fallback failed:", err2);
+    }
+  }
 }
 
 export async function handleGandalfEditCallback(ctx: Context): Promise<void> {
@@ -1367,7 +1387,7 @@ function formatEntriesList(entries: GandalfEntry[]): string {
 
 function formatSingleEntry(entry: GandalfEntry, filesCount: number): string {
   const cat = entry.categoryName
-    ? `📦 ${entry.categoryEmoji ?? "📁"} ${entry.categoryName}`
+    ? `📦 ${entry.categoryEmoji ?? "📁"} ${escapeMarkdown(entry.categoryName)}`
     : "📦 Без категории";
   const priceStr = entry.price != null ? `\n💰 ${formatPrice(entry.price)}` : "";
   const dateStr = entry.nextDate

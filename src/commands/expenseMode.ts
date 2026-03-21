@@ -74,6 +74,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  reminders: [
+    { command: "reminders", description: "Напоминания (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
   admin: [
     { command: "admin", description: "Управление пользователями" },
     { command: "mode", description: "Выбор режима работы" },
@@ -104,7 +109,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["🎙 Транскрибатор", "📚 База знаний"],
         ["📰 Дайджест", "🎉 Даты"],
         ["🎁 Вишлист", "🧠 Нейро"],
-        ["🎯 Цели"],
+        ["🎯 Цели", "⏰ Напоминания"],
         ["📢 Царская почта", "👑 Управление"],
       ]).resize();
     }
@@ -114,14 +119,14 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["🎙 Транскрибатор", "📚 База знаний"],
         ["📰 Дайджест", "🎉 Даты"],
         ["🎁 Вишлист", "🧠 Нейро"],
-        ["🎯 Цели"],
+        ["🎯 Цели", "⏰ Напоминания"],
       ]).resize();
     }
     // User without tribe — limited modes
     return Markup.keyboard([
       ["📅 Календарь", "🎙 Транскрибатор"],
       ["📚 База знаний", "🧠 Нейро"],
-      ["🎯 Цели"],
+      ["🎯 Цели", "⏰ Напоминания"],
     ]).resize();
   }
 
@@ -131,7 +136,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["🎙 Транскрибатор", "📚 База знаний"],
     ["📰 Дайджест", "🎉 Даты"],
     ["🎁 Вишлист", "🧠 Нейро"],
-    ["🎯 Цели"],
+    ["🎯 Цели", "⏰ Напоминания"],
   ];
   if (isAdmin) {
     rows.push(["📢 Царская почта", "👑 Управление"]);
@@ -234,6 +239,9 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
   rows.push([
     Markup.button.callback("🧠 Нейро", "mode:neuro"),
     Markup.button.callback("🎯 Цели", "mode:goals"),
+  ]);
+  rows.push([
+    Markup.button.callback("⏰ Напоминания", "mode:reminders"),
   ]);
   if (isAdmin) {
     rows.push([

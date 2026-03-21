@@ -13,6 +13,7 @@ import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.
 import { handleUndoCallback } from "./commands/expenseUndo.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput, handleOnboardRequest } from "./commands/admin.js";
 import { handleStatsCommand } from "./commands/adminStats.js";
+import { handleSummaryCallback } from "./commands/adminSummary.js";
 import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleQueueStatusButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback, handleTranscribeDeleteCallback } from "./commands/transcribeMode.js";
 import { handleAdminDataCallback, handleAdminDataTextInput } from "./commands/adminData.js";
 import { handleBulkCallback } from "./utils/bulkSelect.js";
@@ -85,7 +86,8 @@ import {
   handleWishlistFileAttachment,
 } from "./commands/wishlistMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode } from "./middleware/userMode.js";
+import { createLogger } from "./utils/logger.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode } from "./middleware/userMode.js";
 import {
   handleGoalsCommand,
   handleMyGoalSetsButton,
@@ -99,9 +101,32 @@ import {
   handleGoalsText,
   handleGoalsVoice,
 } from "./commands/goalsMode.js";
+import {
+  handleRemindersCommand,
+  handleMyRemindersButton,
+  handleNewReminderButton,
+  handleTribeRemindersButton,
+  handleReminderViewCallback,
+  handleReminderActionCallback,
+  handleReminderEditCallback,
+  handleReminderTribeCallback,
+  handleRemindersText,
+} from "./commands/remindersMode.js";
 
 export function createBot(token: string): Telegraf {
+  const log = createLogger("bot");
   const bot = new Telegraf(token);
+
+  // Global error handler — prevent unhandled errors from crashing the process
+  bot.catch((err, ctx) => {
+    const userId = ctx.from?.id ?? "unknown";
+    log.error(`Unhandled error for user ${userId}:`, err);
+    try {
+      ctx.reply("Произошла ошибка при обработке запроса. Попробуйте ещё раз.").catch(() => {});
+    } catch {
+      // ctx.reply itself can throw synchronously if context is broken
+    }
+  });
 
   // Access control — restrict to allowed users
   bot.use(accessControlMiddleware());
@@ -129,6 +154,7 @@ export function createBot(token: string): Telegraf {
   bot.command("gandalf", handleGandalfCommand);
   bot.command("wishlist", handleWishlistCommand);
   bot.command("goals", handleGoalsCommand);
+  bot.command("reminders", handleRemindersCommand);
   bot.command("neuro", handleNeuroCommand);
 
   // Admin commands
@@ -156,6 +182,9 @@ export function createBot(token: string): Telegraf {
   bot.action(/^tr_full:/, handleTranscribeFullCallback);
   bot.action(/^tr_del:/, handleTranscribeDeleteCallback);
   bot.action(/^tr_del_yes:/, handleTranscribeDeleteCallback);
+
+  // Admin summary callbacks
+  bot.action(/^summary:/, handleSummaryCallback);
 
   // Admin data management callbacks
   bot.action(/^adm_/, handleAdminDataCallback);
@@ -224,6 +253,22 @@ export function createBot(token: string): Telegraf {
   bot.action(/^wl_reserve:/, handleWlReserveCallback);
   bot.action(/^wl_unreserve:/, handleWlUnreserveCallback);
   bot.action(/^wl_page:/, handleWlPageCallback);
+
+  // Reminders callbacks
+  bot.action(/^rem_view:/, handleReminderViewCallback);
+  bot.action(/^rem_pause:/, handleReminderActionCallback);
+  bot.action(/^rem_del:/, handleReminderActionCallback);
+  bot.action(/^rem_confirm:/, handleReminderActionCallback);
+  bot.action(/^rem_cancel_create:/, handleReminderActionCallback);
+  bot.action(/^rem_edit:/, handleReminderEditCallback);
+  bot.action(/^rem_edit_text:/, handleReminderEditCallback);
+  bot.action(/^rem_edit_times:/, handleReminderEditCallback);
+  bot.action(/^rem_edit_days:/, handleReminderEditCallback);
+  bot.action(/^rem_edit_end:/, handleReminderEditCallback);
+  bot.action(/^rem_tribe_user:/, handleReminderTribeCallback);
+  bot.action(/^rem_tribe_view:/, handleReminderTribeCallback);
+  bot.action(/^rem_sub:/, handleReminderTribeCallback);
+  bot.action(/^rem_unsub:/, handleReminderTribeCallback);
 
   // Goals callbacks
   bot.action(/^goal_set:/, handleGoalSetCallback);
@@ -316,6 +361,10 @@ export function createBot(token: string): Telegraf {
     await ctx.answerCbQuery("🎯 Цели");
     await handleGoalsCommand(ctx);
   });
+  bot.action("mode:reminders", async (ctx) => {
+    await ctx.answerCbQuery("⏰ Напоминания");
+    await handleRemindersCommand(ctx);
+  });
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
   // ─── Voice ──────────────────────────────────────────────────────────
@@ -335,6 +384,7 @@ export function createBot(token: string): Telegraf {
   bot.hears("🎁 Вишлист", handleWishlistCommand);
   bot.hears("🧠 Нейро", handleNeuroCommand);
   bot.hears("🎯 Цели", handleGoalsCommand);
+  bot.hears("⏰ Напоминания", handleRemindersCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
@@ -399,6 +449,11 @@ export function createBot(token: string): Telegraf {
   bot.hears("📋 Мои наборы целей", handleMyGoalSetsButton);
   bot.hears("➕ Новый набор целей", handleNewGoalSetButton);
   bot.hears("👀 Цели друзей", handleSharedGoalsButton);
+
+  // Reminders mode buttons
+  bot.hears("📋 Мои напоминания", handleMyRemindersButton);
+  bot.hears("➕ Новое напоминание", handleNewReminderButton);
+  bot.hears("👀 Напоминания семьи", handleTribeRemindersButton);
 
   // Neuro mode buttons
   bot.hears("🗑 Очистить историю", async (ctx) => {
@@ -472,6 +527,13 @@ export function createBot(token: string): Telegraf {
     // Goals mode — text input for creating goal sets/goals
     if (await isGoalsMode(telegramId)) {
       const handled = await handleGoalsText(ctx);
+      if (handled) return;
+      return next();
+    }
+
+    // Reminders mode — text input for creating/editing reminders
+    if (await isRemindersMode(telegramId)) {
+      const handled = await handleRemindersText(ctx);
       if (handled) return;
       return next();
     }

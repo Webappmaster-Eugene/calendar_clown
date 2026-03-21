@@ -361,8 +361,17 @@ export async function getChannelInfo(
       return { title, subscriberCount };
     }
     return null;
-  } catch (err) {
-    log.error(`Failed to get info for @${channelUsername}:`, err);
+  } catch (err: unknown) {
+    // Known "not found" RPC errors — expected for non-existent or non-channel usernames
+    const rpcMessage = err != null && typeof err === "object" && "errorMessage" in err
+      ? (err as { errorMessage: string }).errorMessage
+      : null;
+    const expectedErrors = ["USERNAME_INVALID", "USERNAME_NOT_OCCUPIED", "CHANNEL_INVALID"];
+    if (rpcMessage && expectedErrors.includes(rpcMessage)) {
+      log.info(`@${channelUsername} is not a valid channel (${rpcMessage})`);
+    } else {
+      log.error(`Failed to get info for @${channelUsername}:`, err);
+    }
     return null;
   }
 }

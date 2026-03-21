@@ -84,6 +84,8 @@ export async function handleVoiceInTranscribeMode(
   voice: Voice,
   statusMessageId: number
 ): Promise<void> {
+  log.info(`Transcribe mode: starting for user ${ctx.from?.id ?? "?"}, file ${voice.file_unique_id}`);
+
   if (!isDatabaseAvailable() || !isTranscribeAvailable()) {
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
@@ -136,6 +138,7 @@ export async function handleVoiceInTranscribeMode(
   }
 
   // Download OGG file
+  log.info(`Transcribe: downloading OGG for file ${voice.file_unique_id}`);
   let filePath: string;
   try {
     const link = await ctx.telegram.getFileLink(voice.file_id);
@@ -145,13 +148,19 @@ export async function handleVoiceInTranscribeMode(
     await mkdir(VOICE_DIR, { recursive: true });
     filePath = join(VOICE_DIR, `tr_${voice.file_unique_id}.ogg`);
     await writeFile(filePath, buffer);
-  } catch {
-    await ctx.telegram.editMessageText(
-      ctx.chat!.id,
-      statusMessageId,
-      undefined,
-      "Не удалось скачать голосовое сообщение."
-    );
+  } catch (dlErr) {
+    log.error("Transcribe: download failed:", dlErr);
+    try {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMessageId,
+        undefined,
+        "Не удалось скачать голосовое сообщение."
+      );
+    } catch (editErr) {
+      log.error("Transcribe: failed to edit status after download error:", editErr);
+      try { await ctx.reply("Не удалось скачать голосовое сообщение."); } catch { /* give up */ }
+    }
     return;
   }
 
@@ -163,6 +172,7 @@ export async function handleVoiceInTranscribeMode(
   const sequenceNumber = ctx.message!.message_id;
 
   // Save to DB
+  log.info(`Transcribe: saving to DB for file ${voice.file_unique_id}`);
   let transcription;
   try {
     transcription = await createTranscription({
@@ -180,17 +190,23 @@ export async function handleVoiceInTranscribeMode(
     });
   } catch (err) {
     await unlink(filePath).catch(() => {});
-    await ctx.telegram.editMessageText(
-      ctx.chat!.id,
-      statusMessageId,
-      undefined,
-      "Ошибка сохранения. Попробуйте ещё раз."
-    );
     log.error("Failed to create transcription record:", err);
+    try {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMessageId,
+        undefined,
+        "Ошибка сохранения. Попробуйте ещё раз."
+      );
+    } catch (editErr) {
+      log.error("Transcribe: failed to edit status after DB error:", editErr);
+      try { await ctx.reply("Ошибка сохранения. Попробуйте ещё раз."); } catch { /* give up */ }
+    }
     return;
   }
 
   // Enqueue BullMQ job
+  log.info(`Transcribe: enqueueing job for transcription ${transcription.id}`);
   try {
     await addTranscribeJob({
       transcriptionId: transcription.id,
@@ -203,13 +219,18 @@ export async function handleVoiceInTranscribeMode(
     });
   } catch (err) {
     await unlink(filePath).catch(() => {});
-    await ctx.telegram.editMessageText(
-      ctx.chat!.id,
-      statusMessageId,
-      undefined,
-      "Не удалось поставить в очередь. Попробуйте ещё раз."
-    );
     log.error("Failed to enqueue transcription job:", err);
+    try {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMessageId,
+        undefined,
+        "Не удалось поставить в очередь. Попробуйте ещё раз."
+      );
+    } catch (editErr) {
+      log.error("Transcribe: failed to edit status after enqueue error:", editErr);
+      try { await ctx.reply("Не удалось поставить в очередь. Попробуйте ещё раз."); } catch { /* give up */ }
+    }
     return;
   }
 
