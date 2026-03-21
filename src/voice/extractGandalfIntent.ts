@@ -3,7 +3,9 @@
  * Used when bot is in gandalf mode.
  */
 
-import { OPENROUTER_URL, DEEPSEEK_MODEL, OPENROUTER_REFERER } from "../constants.js";
+import { DEEPSEEK_MODEL } from "../constants.js";
+import { tryParseJson } from "../utils/parseJson.js";
+import { callOpenRouter } from "../utils/openRouterClient.js";
 
 function buildGandalfSystemPrompt(categoriesList: string): string {
   return `You are a structured information tracker assistant. Extract entry information from the user's voice message.
@@ -72,36 +74,13 @@ export async function extractGandalfIntent(
   transcript: string,
   categoriesList: string
 ): Promise<GandalfIntentResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
-
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": OPENROUTER_REFERER,
-    },
-    body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
-      messages: [
-        { role: "system", content: buildGandalfSystemPrompt(categoriesList) },
-        { role: "user", content: transcript },
-      ],
-    }),
+  const content = await callOpenRouter({
+    model: DEEPSEEK_MODEL,
+    messages: [
+      { role: "system", content: buildGandalfSystemPrompt(categoriesList) },
+      { role: "user", content: transcript },
+    ],
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`OpenRouter request failed: ${res.status} ${errText}`);
-  }
-
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = data?.choices?.[0]?.message?.content?.trim();
   if (!content) return { type: "unknown" };
 
   const json = tryParseJson(content);
@@ -144,14 +123,3 @@ export async function extractGandalfIntent(
   return { type: "unknown" };
 }
 
-function tryParseJson(raw: string): Record<string, unknown> | null {
-  const stripped = raw
-    .replace(/^```json\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  try {
-    return JSON.parse(stripped) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}

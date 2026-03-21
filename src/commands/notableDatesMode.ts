@@ -3,7 +3,7 @@ import { Markup } from "telegraf";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId, ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
-import { setUserMode } from "../middleware/expenseMode.js";
+import { setUserMode } from "../middleware/userMode.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import type { NotableDate } from "../notable-dates/repository.js";
 import {

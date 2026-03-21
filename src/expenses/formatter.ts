@@ -1,6 +1,5 @@
 import type { CategoryTotal, MonthComparison, UserTotal } from "./types.js";
-
-const TIMEZONE = "Europe/Moscow";
+import { TIMEZONE_MSK } from "../constants.js";
 
 const RU_MONTHS = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -149,7 +148,7 @@ export function formatExpenseConfirmation(
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: TIMEZONE,
+    timeZone: TIMEZONE_MSK,
   });
 
   const parts = [
@@ -211,7 +210,7 @@ export function formatExpenseDetailList(
   const lines = expenses.map((e) => {
     const date = e.createdAt.toLocaleDateString("ru-RU", {
       day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-      timeZone: TIMEZONE,
+      timeZone: TIMEZONE_MSK,
     });
     const sub = e.subcategory ? ` — ${e.subcategory}` : "";
     return `${formatMoney(e.amount)}${sub}\n  👤 ${e.firstName} | ${date}`;

@@ -214,15 +214,20 @@ export async function handleVoiceInTranscribeMode(
   }
 
   // Show queue position to the user
-  const pendingCount = await countPendingForUser(dbUser.id);
-  const durationStr = formatDuration(voice.duration);
-  const queueHint = pendingCount > 1 ? ` (в очереди: ${pendingCount})` : "";
-  const forwardHint = forwardedFromName ? `\nОт: ${forwardedFromName}` : "";
+  try {
+    const pendingCount = await countPendingForUser(dbUser.id);
+    const durationStr = formatDuration(voice.duration);
+    const queueHint = pendingCount > 1 ? ` (в очереди: ${pendingCount})` : "";
+    const forwardHint = forwardedFromName ? `\nОт: ${forwardedFromName}` : "";
 
-  await ctx.telegram.editMessageText(
-    ctx.chat!.id,
-    statusMessageId,
-    undefined,
-    `⏳ Голосовое (${durationStr}) поставлено в очередь${queueHint}${forwardHint}`
-  );
+    await ctx.telegram.editMessageText(
+      ctx.chat!.id,
+      statusMessageId,
+      undefined,
+      `⏳ Голосовое (${durationStr}) поставлено в очередь${queueHint}${forwardHint}`
+    );
+  } catch (err) {
+    // Job is already enqueued — status update failure is non-critical
+    log.error("Failed to update status message after enqueue:", err);
+  }
 }

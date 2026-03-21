@@ -36,3 +36,8 @@ export const VOICE_DIR = "./data/voice";
 
 /** HTTP Referer header for OpenRouter requests. */
 export const OPENROUTER_REFERER = "https://github.com/telegram-google-calendar-bot";
+
+/** Message shown when database is unavailable. */
+export const DB_UNAVAILABLE_MSG =
+  "⚠️ Учёт расходов временно недоступен (нет подключения к базе данных).\n" +
+  "Календарь работает в обычном режиме.";

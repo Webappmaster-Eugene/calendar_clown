@@ -17,7 +17,7 @@ import { Markup } from "telegraf";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId, ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
-import { setUserMode } from "../middleware/expenseMode.js";
+import { setUserMode } from "../middleware/userMode.js";
 import { isDigestConfigured, isDigestReady, getUserDialogFolders, getChannelsFromFolder } from "../digest/telegramClient.js";
 import { hasActiveSession, getClientForUser } from "../digest/sessionManager.js";
 import {
@@ -185,9 +185,16 @@ function buildRubricsListKeyboard(rubrics: import("../digest/types.js").DigestRu
   return Markup.inlineKeyboard(buttons);
 }
 
-/** Build rubrics list message text. */
+/** Build rubrics list message text with rubric details. */
 function buildRubricsListText(rubrics: import("../digest/types.js").DigestRubric[]): string {
-  return `📰 Ваши рубрики (${rubrics.length}/${MAX_RUBRICS_PER_USER}):`;
+  const header = `📰 Ваши рубрики (${rubrics.length}/${MAX_RUBRICS_PER_USER}):`;
+  const lines = rubrics.map((r, i) => {
+    const status = r.isActive ? "✅" : "⏸";
+    const emoji = r.emoji ?? "📰";
+    const desc = r.description ? ` — ${truncate(r.description, 50)}` : "";
+    return `${i + 1}. ${status} ${emoji} ${r.name}${desc}`;
+  });
+  return `${header}\n\n${lines.join("\n")}\n\nНажмите на рубрику для настройки:`;
 }
 
 /** Show user's rubrics. */
@@ -210,10 +217,8 @@ async function showRubrics(ctx: Context, telegramId: number): Promise<void> {
     return;
   }
 
-  await ctx.reply(
-    buildRubricsListText(rubrics),
-    { ...buildRubricsListKeyboard(rubrics), ...getDigestKeyboard(isBootstrapAdmin(telegramId)) }
-  );
+  await ctx.reply("📰 Дайджест", getDigestKeyboard(isBootstrapAdmin(telegramId)));
+  await ctx.reply(buildRubricsListText(rubrics), buildRubricsListKeyboard(rubrics));
 }
 
 /** Create a new rubric. Format: /digest Name — Description */

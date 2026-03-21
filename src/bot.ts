@@ -60,6 +60,9 @@ import {
   handleGandalfMoveToCallback,
   handleGandalfText,
   handleGandalfFileAttachment,
+  handleGandalfEditCallback,
+  handleGandalfClearMenuCallback,
+  handleGandalfClearFieldCallback,
 } from "./commands/gandalfMode.js";
 import { handleNeuroCommand, handleNeuroText, handleNeuroClearButton } from "./commands/chatMode.js";
 import {
@@ -82,7 +85,7 @@ import {
   handleWishlistFileAttachment,
 } from "./commands/wishlistMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode } from "./middleware/expenseMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode } from "./middleware/userMode.js";
 import {
   handleGoalsCommand,
   handleMyGoalSetsButton,
@@ -202,6 +205,12 @@ export function createBot(token: string): Telegraf {
   bot.action(/^gandalf_vis:/, handleGandalfVisibilitySelectCallback);
   bot.action(/^gandalf_move:/, handleGandalfMoveCallback);
   bot.action(/^gandalf_move_to:/, handleGandalfMoveToCallback);
+  bot.action(/^gandalf_edit_title:/, handleGandalfEditCallback);
+  bot.action(/^gandalf_edit_price:/, handleGandalfEditCallback);
+  bot.action(/^gandalf_edit_date:/, handleGandalfEditCallback);
+  bot.action(/^gandalf_edit_info:/, handleGandalfEditCallback);
+  bot.action(/^gandalf_clear_menu:/, handleGandalfClearMenuCallback);
+  bot.action(/^gandalf_clear:/, handleGandalfClearFieldCallback);
 
   // Wishlist callbacks
   bot.action(/^wl_my:/, handleWlMyCallback);

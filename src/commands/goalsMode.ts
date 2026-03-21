@@ -5,7 +5,7 @@
 
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
-import { setUserMode } from "../middleware/expenseMode.js";
+import { setUserMode } from "../middleware/userMode.js";
 import { ensureUser, getUserByTelegramId, listTribeUsers } from "../expenses/repository.js";
 import { isBootstrapAdmin, getUserMenuContext } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";

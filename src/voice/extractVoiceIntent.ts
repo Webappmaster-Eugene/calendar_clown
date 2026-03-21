@@ -2,9 +2,9 @@
  * Single OpenRouter call: detect voice intent (calendar/cancel_event/unknown) and extract fields.
  */
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "deepseek/deepseek-chat-v3.1";
-const TIMEZONE_MSK = "Europe/Moscow";
+import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
+import { tryParseJson } from "../utils/parseJson.js";
+import { callOpenRouter } from "../utils/openRouterClient.js";
 
 const WEEKDAY_TO_NUM: Record<string, number> = {
   Sunday: 0,
@@ -122,17 +122,6 @@ export type VoiceIntent =
   | { type: "list_week" }
   | { type: "unknown" };
 
-function tryParseJson(raw: string): Record<string, unknown> | null {
-  const stripped = raw
-    .replace(/^```json\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  try {
-    return JSON.parse(stripped) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
 
 /** Russian words indicating specific date/day was mentioned. */
 const RU_DATE_MENTIONS = [
@@ -176,36 +165,13 @@ function shiftPastTimeToTomorrow(transcript: string, intent: VoiceIntent): Voice
 }
 
 export async function extractVoiceIntent(transcript: string): Promise<VoiceIntent> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
-
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://github.com/telegram-google-calendar-bot",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: buildSystemPrompt() },
-        { role: "user", content: transcript },
-      ],
-    }),
+  const content = await callOpenRouter({
+    model: DEEPSEEK_MODEL,
+    messages: [
+      { role: "system", content: buildSystemPrompt() },
+      { role: "user", content: transcript },
+    ],
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`OpenRouter request failed: ${res.status} ${errText}`);
-  }
-
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = data?.choices?.[0]?.message?.content?.trim();
   if (!content) return { type: "unknown" };
 
   const json = tryParseJson(content);

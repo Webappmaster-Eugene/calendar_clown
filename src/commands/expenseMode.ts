@@ -1,16 +1,15 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
-import { setUserMode } from "../middleware/expenseMode.js";
-import type { UserMode } from "../middleware/expenseMode.js";
+import { setUserMode } from "../middleware/userMode.js";
+import type { UserMode } from "../middleware/userMode.js";
 import { getCategoriesList } from "../expenses/parser.js";
 import { ensureUser } from "../expenses/repository.js";
 import { isBootstrapAdmin, getUserMenuContext, canAccessMode } from "../middleware/auth.js";
 import type { UserMenuContext } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
+import { DB_UNAVAILABLE_MSG } from "../constants.js";
 
-export const DB_UNAVAILABLE_MSG =
-  "⚠️ Учёт расходов временно недоступен (нет подключения к базе данных).\n" +
-  "Календарь работает в обычном режиме.";
+export { DB_UNAVAILABLE_MSG };
 
 /** Single bottom row to return to main menu — used in all mode keyboards. */
 export function getModeButtons(_isAdmin: boolean): string[][] {

@@ -3,9 +3,9 @@
  * Single-task context only: voice → event JSON. No general chat, to keep cost and latency low.
  */
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "deepseek/deepseek-chat-v3.1";
-const TIMEZONE_MSK = "Europe/Moscow";
+import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
+import { tryParseJson } from "../utils/parseJson.js";
+import { callOpenRouter } from "../utils/openRouterClient.js";
 
 /** Build system prompt with current date so the model uses the correct year (no past dates). */
 function buildSystemPrompt(): string {
@@ -35,36 +35,13 @@ export interface ExtractedEvent {
 export async function extractCalendarEvents(
   transcript: string
 ): Promise<ExtractedEvent[]> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set");
-  }
-
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://github.com/telegram-google-calendar-bot",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: buildSystemPrompt() },
-        { role: "user", content: transcript },
-      ],
-    }),
+  const content = await callOpenRouter({
+    model: DEEPSEEK_MODEL,
+    messages: [
+      { role: "system", content: buildSystemPrompt() },
+      { role: "user", content: transcript },
+    ],
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`OpenRouter request failed: ${res.status} ${errText}`);
-  }
-
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = data?.choices?.[0]?.message?.content?.trim();
   if (!content) return [];
 
   const json = tryParseJson(content);
@@ -96,30 +73,4 @@ export async function extractCalendarEvents(
   return results;
 }
 
-/** Extract exactly one calendar event (backwards-compat wrapper). */
-export async function extractCalendarEvent(
-  transcript: string
-): Promise<ExtractedEvent | null> {
-  const events = await extractCalendarEvents(transcript);
-  return events.length > 0 ? events[0] : null;
-}
 
-function tryParseJson(
-  raw: string
-): { title?: string; start?: string; end?: string; recurrence?: unknown; events?: unknown[] } | null {
-  const stripped = raw
-    .replace(/^```json\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  try {
-    return JSON.parse(stripped) as {
-      title?: string;
-      start?: string;
-      end?: string;
-      recurrence?: unknown;
-      events?: unknown[];
-    };
-  } catch {
-    return null;
-  }
-}

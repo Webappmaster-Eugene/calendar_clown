@@ -4,7 +4,7 @@ import { getLastExpense, deleteExpense, getUserByTelegramId } from "../expenses/
 import { formatMoney } from "../expenses/formatter.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { isExpenseMode } from "../middleware/expenseMode.js";
+import { isExpenseMode } from "../middleware/userMode.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { createLogger } from "../utils/logger.js";
 

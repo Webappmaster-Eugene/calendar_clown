@@ -1,8 +1,7 @@
 import ExcelJS from "exceljs";
 import type { CategoryTotal } from "./types.js";
 import { monthName } from "./formatter.js";
-
-const TIMEZONE = "Europe/Moscow";
+import { TIMEZONE_MSK } from "../constants.js";
 
 interface ExcelExpenseRow {
   categoryName: string;
@@ -115,7 +114,7 @@ export async function generateMonthlyExcel(
         year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
-        timeZone: TIMEZONE,
+        timeZone: TIMEZONE_MSK,
       });
       const excelRow = detailSheet.addRow([
         dateStr,

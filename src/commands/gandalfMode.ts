@@ -6,7 +6,7 @@
 
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
-import { setUserMode } from "../middleware/expenseMode.js";
+import { setUserMode } from "../middleware/userMode.js";
 import { ensureUser, getUserByTelegramId } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -62,6 +62,9 @@ const categoryCreationWaiting = new Set<number>();
 
 // Track which entry user wants to add optional fields to
 const optionalFieldStates = new Map<number, { entryId: number; field: "next_date" | "additional_info" }>();
+
+// Track which entry field user is editing
+const editFieldStates = new Map<number, { entryId: number; field: "title" | "price" | "date" | "info" }>();
 
 /** Build scope object for the user. */
 function buildScope(dbUser: { id: number; tribeId: number | null }): GandalfScope {
@@ -624,6 +627,120 @@ export async function handleGandalfMoveToCallback(ctx: Context): Promise<void> {
   }
 }
 
+// ─── Entry Edit ─────────────────────────────────────────────────────────
+
+/** Helper to re-render entry detail after edit. */
+async function reRenderEntry(ctx: Context, entryId: number, scope: GandalfScope): Promise<void> {
+  const entry = await getEntryByIdScoped(entryId, scope);
+  if (!entry) return;
+  const files = await getFilesByEntry(entryId);
+  try {
+    await ctx.reply(formatSingleEntry(entry, files.length), {
+      parse_mode: "Markdown",
+      ...buildSingleEntryButtons(entry, files.length, scope),
+    });
+  } catch { /* ignore */ }
+}
+
+export async function handleGandalfEditCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const data = ctx.callbackQuery.data;
+
+  const titleMatch = data.match(/^gandalf_edit_title:(\d+)$/);
+  if (titleMatch) {
+    editFieldStates.set(telegramId, { entryId: parseInt(titleMatch[1], 10), field: "title" });
+    await ctx.answerCbQuery();
+    await ctx.editMessageText("✏️ Введите новое название:");
+    return;
+  }
+
+  const priceMatch = data.match(/^gandalf_edit_price:(\d+)$/);
+  if (priceMatch) {
+    editFieldStates.set(telegramId, { entryId: parseInt(priceMatch[1], 10), field: "price" });
+    await ctx.answerCbQuery();
+    await ctx.editMessageText("💰 Введите новую цену (или «-» чтобы убрать):");
+    return;
+  }
+
+  const dateMatch = data.match(/^gandalf_edit_date:(\d+)$/);
+  if (dateMatch) {
+    editFieldStates.set(telegramId, { entryId: parseInt(dateMatch[1], 10), field: "date" });
+    await ctx.answerCbQuery();
+    await ctx.editMessageText("📅 Введите новую дату (например: 2026-06-15 или «-» чтобы убрать):");
+    return;
+  }
+
+  const infoMatch = data.match(/^gandalf_edit_info:(\d+)$/);
+  if (infoMatch) {
+    editFieldStates.set(telegramId, { entryId: parseInt(infoMatch[1], 10), field: "info" });
+    await ctx.answerCbQuery();
+    await ctx.editMessageText("ℹ️ Введите новую дополнительную информацию (или «-» чтобы убрать):");
+    return;
+  }
+
+  await ctx.answerCbQuery();
+}
+
+export async function handleGandalfClearMenuCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^gandalf_clear_menu:(\d+)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const entryId = parseInt(match[1], 10);
+  await ctx.answerCbQuery();
+  await ctx.editMessageText("🧹 Какое поле очистить?", {
+    ...Markup.inlineKeyboard([
+      [
+        Markup.button.callback("💰 Цена", `gandalf_clear:${entryId}:price`),
+        Markup.button.callback("📅 Дата", `gandalf_clear:${entryId}:date`),
+      ],
+      [
+        Markup.button.callback("ℹ️ Доп. инфо", `gandalf_clear:${entryId}:info`),
+      ],
+      [Markup.button.callback("◀️ Назад", `gandalf_view:${entryId}`)],
+    ]),
+  });
+}
+
+export async function handleGandalfClearFieldCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  const match = ctx.callbackQuery.data.match(/^gandalf_clear:(\d+):(price|date|info)$/);
+  if (!match) { await ctx.answerCbQuery(); return; }
+
+  const entryId = parseInt(match[1], 10);
+  const field = match[2];
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) { await ctx.answerCbQuery(); return; }
+
+  const scope = buildScope(dbUser);
+  const tribeId = getScopeTribeId(scope);
+
+  const fieldLabels: Record<string, string> = { price: "Цена", date: "Дата", info: "Доп. инфо" };
+  const updates: { price?: null; nextDate?: null; additionalInfo?: null } = {};
+  if (field === "price") updates.price = null;
+  if (field === "date") updates.nextDate = null;
+  if (field === "info") updates.additionalInfo = null;
+
+  try {
+    await updateEntry(entryId, tribeId, updates);
+    await ctx.answerCbQuery(`🧹 ${fieldLabels[field]} очищено`);
+    await reRenderEntry(ctx, entryId, scope);
+  } catch (err) {
+    log.error("Error clearing gandalf entry field:", err);
+    await ctx.answerCbQuery("Ошибка при очистке поля");
+  }
+}
+
 // ─── Entry Files ────────────────────────────────────────────────────────
 
 export async function handleGandalfFilesCallback(ctx: Context): Promise<void> {
@@ -834,6 +951,58 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
     } catch (err) {
       log.error("Error creating gandalf category:", err);
       await ctx.reply("Ошибка при создании категории. Возможно, такая уже существует.");
+    }
+    return true;
+  }
+
+  // Edit field input
+  const editState = editFieldStates.get(telegramId);
+  if (editState) {
+    editFieldStates.delete(telegramId);
+    try {
+      if (editState.field === "title") {
+        await updateEntry(editState.entryId, tribeId, { title: text });
+        await ctx.reply(`✏️ Название обновлено: ${text}`);
+      } else if (editState.field === "price") {
+        if (text === "-") {
+          await updateEntry(editState.entryId, tribeId, { price: null });
+          await ctx.reply("💰 Цена убрана.");
+        } else {
+          const parsed = parseFloat(text.replace(/\s/g, "").replace(",", "."));
+          if (isNaN(parsed) || parsed < 0) {
+            await ctx.reply("Некорректная цена. Изменение отменено.");
+            return true;
+          }
+          await updateEntry(editState.entryId, tribeId, { price: parsed });
+          await ctx.reply(`💰 Цена обновлена: ${formatPrice(parsed)}`);
+        }
+      } else if (editState.field === "date") {
+        if (text === "-") {
+          await updateEntry(editState.entryId, tribeId, { nextDate: null });
+          await ctx.reply("📅 Дата убрана.");
+        } else {
+          const parsed = new Date(text);
+          if (isNaN(parsed.getTime())) {
+            await ctx.reply("Не удалось разобрать дату. Изменение отменено.");
+            return true;
+          }
+          await updateEntry(editState.entryId, tribeId, { nextDate: parsed });
+          await ctx.reply(`📅 Дата обновлена: ${parsed.toLocaleDateString("ru-RU")}`);
+        }
+      } else if (editState.field === "info") {
+        if (text === "-") {
+          await updateEntry(editState.entryId, tribeId, { additionalInfo: null });
+          await ctx.reply("ℹ️ Дополнительная информация убрана.");
+        } else {
+          await updateEntry(editState.entryId, tribeId, { additionalInfo: text });
+          await ctx.reply("ℹ️ Дополнительная информация обновлена.");
+        }
+      }
+      // Show updated entry
+      await reRenderEntry(ctx, editState.entryId, scope);
+    } catch (err) {
+      log.error("Error updating gandalf entry field:", err);
+      await ctx.reply("Ошибка при обновлении записи.");
     }
     return true;
   }
@@ -1268,6 +1437,19 @@ function buildSingleEntryButtons(entry: GandalfEntry, filesCount: number, scope:
       Markup.button.callback("📂 Переместить", `gandalf_move:${entry.id}`),
     ]);
   }
+
+  // Edit buttons
+  buttons.push([
+    Markup.button.callback("✏️ Название", `gandalf_edit_title:${entry.id}`),
+    Markup.button.callback("💰 Цена", `gandalf_edit_price:${entry.id}`),
+  ]);
+  buttons.push([
+    Markup.button.callback("📅 Дата", `gandalf_edit_date:${entry.id}`),
+    Markup.button.callback("ℹ️ Доп. инфо", `gandalf_edit_info:${entry.id}`),
+  ]);
+  buttons.push([
+    Markup.button.callback("🧹 Очистить поле", `gandalf_clear_menu:${entry.id}`),
+  ]);
 
   if (filesCount > 0) {
     buttons.push([

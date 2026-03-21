@@ -3,12 +3,12 @@ import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
 import { Markup } from "telegraf";
 import { createEvent, deleteEvent, deleteRecurringEvent, searchEvents, listEvents, NoCalendarLinkedError } from "../calendar/client.js";
-import { extractCalendarEvent } from "../calendar/extractViaOpenRouter.js";
+import { extractCalendarEvents } from "../calendar/extractViaOpenRouter.js";
 import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode } from "../middleware/expenseMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode } from "../middleware/userMode.js";
 import { handleGoalsVoice } from "./goalsMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
@@ -49,7 +49,19 @@ export async function handleVoice(ctx: Context) {
 
   // Check transcribe mode early — before downloading, to route to the right handler
   if (telegramId != null && await isTranscribeMode(telegramId)) {
-    await handleVoiceInTranscribeMode(ctx, voice, statusMsg.message_id);
+    try {
+      await handleVoiceInTranscribeMode(ctx, voice, statusMsg.message_id);
+    } catch (err) {
+      log.error("Error in transcribe mode handler:", err);
+      try {
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          statusMsg.message_id,
+          undefined,
+          "Ошибка при обработке голосового. Попробуйте ещё раз."
+        );
+      } catch { /* status update failed — ignore */ }
+    }
     return;
   }
 
@@ -390,7 +402,8 @@ async function handleVoiceInCalendarMode(
   }
 
   if (intent.type === "unknown") {
-    const fallback = await extractCalendarEvent(transcript);
+    const fallbackEvents = await extractCalendarEvents(transcript);
+    const fallback = fallbackEvents[0] ?? null;
     if (fallback) {
       const createdLines = await createAndSaveEvents(ctx, [fallback], userId, dbUser);
       await ctx.telegram.editMessageText(

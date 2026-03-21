@@ -1,6 +1,6 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
-import { setUserMode } from "../middleware/expenseMode.js";
+import { setUserMode } from "../middleware/userMode.js";
 import { ensureUser, getUserByTelegramId } from "../expenses/repository.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -17,10 +17,8 @@ import {
 import { deliverCompletedInOrder, getDeliveryBot } from "../transcribe/deliveryQueue.js";
 import { splitMessage } from "../utils/telegram.js";
 import { createLogger } from "../utils/logger.js";
+import { DB_UNAVAILABLE_MSG } from "../constants.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
-
-const DB_UNAVAILABLE_MSG =
-  "Режим транскрибатора недоступен (нет подключения к базе данных).";
 
 const QUEUE_UNAVAILABLE_MSG =
   "Режим транскрибатора недоступен (очередь не инициализирована). Проверьте REDIS_URL.";
