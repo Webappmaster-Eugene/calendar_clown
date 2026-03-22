@@ -1,14 +1,19 @@
 import { TAVILY_API_URL } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
-import type { TavilyResult, TavilySearchResponse } from "./types.js";
+import type { TavilyResult, TavilyImage, TavilySearchResponse } from "./types.js";
 
 const log = createLogger("osint-tavily");
 
-/** Search via Tavily API. Returns results or empty array on failure. */
+export interface TavilySearchResult {
+  results: TavilyResult[];
+  images: TavilyImage[];
+}
+
+/** Search via Tavily API. Returns results and images, or empty on failure. */
 export async function tavilySearch(
   searchQuery: string,
   maxResults: number = 5
-): Promise<TavilyResult[]> {
+): Promise<TavilySearchResult> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) {
     throw new Error("TAVILY_API_KEY is not set");
@@ -26,38 +31,48 @@ export async function tavilySearch(
       max_results: maxResults,
       include_answer: false,
       include_raw_content: false,
+      include_images: true,
     }),
   });
 
   if (!res.ok) {
     const errText = await res.text();
     log.error(`Tavily search failed: ${res.status} ${errText}`);
-    return [];
+    return { results: [], images: [] };
   }
 
   const data = (await res.json()) as TavilySearchResponse;
-  return data.results ?? [];
+  return {
+    results: data.results ?? [],
+    images: data.images ?? [],
+  };
 }
 
-/** Run multiple searches in parallel. Returns all results flattened. */
+/** Run multiple searches in parallel. Returns all results and images flattened. */
 export async function tavilySearchMulti(
   queries: string[],
   maxResultsPerQuery: number = 5
-): Promise<TavilyResult[]> {
-  const results = await Promise.allSettled(
+): Promise<TavilySearchResult> {
+  const settled = await Promise.allSettled(
     queries.map((q) => tavilySearch(q, maxResultsPerQuery))
   );
 
   const allResults: TavilyResult[] = [];
-  for (const result of results) {
+  const allImages: TavilyImage[] = [];
+
+  for (const result of settled) {
     if (result.status === "fulfilled") {
-      allResults.push(...result.value);
+      allResults.push(...result.value.results);
+      allImages.push(...result.value.images);
     } else {
       log.warn("Tavily search query failed:", result.reason);
     }
   }
 
-  return deduplicateResults(allResults);
+  return {
+    results: deduplicateResults(allResults),
+    images: deduplicateImages(allImages),
+  };
 }
 
 /** Remove duplicate URLs, keeping the highest-scoring version. */
@@ -70,4 +85,17 @@ function deduplicateResults(results: TavilyResult[]): TavilyResult[] {
     }
   }
   return Array.from(seen.values()).sort((a, b) => b.score - a.score);
+}
+
+/** Remove duplicate images by URL. */
+function deduplicateImages(images: TavilyImage[]): TavilyImage[] {
+  const seen = new Set<string>();
+  const unique: TavilyImage[] = [];
+  for (const img of images) {
+    if (!seen.has(img.url)) {
+      seen.add(img.url);
+      unique.push(img);
+    }
+  }
+  return unique;
 }

@@ -66,7 +66,20 @@ import {
   handleGandalfClearMenuCallback,
   handleGandalfClearFieldCallback,
 } from "./commands/gandalfMode.js";
-import { handleNeuroCommand, handleNeuroText, handleNeuroClearButton, handleNeuroPhoto, handleNeuroDocument } from "./commands/chatMode.js";
+import {
+  handleNeuroCommand,
+  handleNeuroText,
+  handleNeuroClearButton,
+  handleNeuroPhoto,
+  handleNeuroDocument,
+  handleNeuroDialogsButton,
+  handleNeuroNewDialogButton,
+  handleNeuroDialogSwitch,
+  handleNeuroDialogDeleteMode,
+  handleNeuroDialogDelete,
+} from "./commands/chatMode.js";
+import { cancelBatch } from "./chat/messageBatcher.js";
+import { getUserByTelegramId as getDbUser } from "./expenses/repository.js";
 import {
   handleWishlistCommand,
   handleMyWishlistsButton,
@@ -326,6 +339,11 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   // Blogger callbacks
   bot.action(/^blog_/, handleBlogCallback);
 
+  // Neuro dialog callbacks
+  bot.action(/^neuro_dlg:\d+$/, handleNeuroDialogSwitch);
+  bot.action(/^neuro_dlg_del:\d+$/, handleNeuroDialogDelete);
+  bot.action("neuro_dlg_del_mode", handleNeuroDialogDeleteMode);
+
   // Mode switch inline callbacks
   bot.action("mode:calendar", async (ctx) => {
     await ctx.answerCbQuery("📅 Календарь");
@@ -548,9 +566,27 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("📄 Мои посты", handleMyPostsButton);
 
   // Neuro mode buttons
+  bot.hears("💬 Диалоги", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNeuroMode(tid)) {
+      const dbUser = await getDbUser(tid);
+      if (dbUser) cancelBatch(dbUser.id);
+      await handleNeuroDialogsButton(ctx);
+    }
+  });
+  bot.hears("➕ Новый диалог", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNeuroMode(tid)) {
+      const dbUser = await getDbUser(tid);
+      if (dbUser) cancelBatch(dbUser.id);
+      await handleNeuroNewDialogButton(ctx);
+    }
+  });
   bot.hears("🗑 Очистить историю", async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isNeuroMode(tid)) {
+      const dbUser = await getDbUser(tid);
+      if (dbUser) cancelBatch(dbUser.id);
       await handleNeuroClearButton(ctx);
     }
   });

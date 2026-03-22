@@ -1,5 +1,10 @@
 export interface OsintParsedSubject {
   name: string;
+  lastName?: string;
+  firstName?: string;
+  patronymic?: string;
+  inn?: string;
+  isProfessionalTech?: boolean;
   aliases?: string[];
   phone?: string;
   email?: string;
@@ -35,7 +40,13 @@ export interface TavilyResult {
   score: number;
 }
 
+export interface TavilyImage {
+  url: string;
+  description?: string;
+}
+
 export interface TavilySearchResponse {
   results: TavilyResult[];
+  images?: TavilyImage[];
   query: string;
 }

@@ -14,6 +14,7 @@ export interface BloggerChannel {
   channelUsername: string | null;
   channelTitle: string;
   nicheDescription: string | null;
+  styleSamples: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -52,6 +53,7 @@ interface ChannelRow {
   channel_username: string | null;
   channel_title: string;
   niche_description: string | null;
+  style_samples: string | null;
   is_active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -186,6 +188,19 @@ export async function countChannelsByUser(userId: number): Promise<number> {
     [userId]
   );
   return parseInt(rows[0].count, 10);
+}
+
+export async function updateChannelStyleSamples(
+  channelId: number,
+  userId: number,
+  samples: string[]
+): Promise<void> {
+  const serialized = JSON.stringify(samples);
+  await query(
+    `UPDATE blogger_channels SET style_samples = $1, updated_at = NOW()
+     WHERE id = $2 AND user_id = $3 AND is_active = true`,
+    [serialized, channelId, userId]
+  );
 }
 
 // ─── Posts ───────────────────────────────────────────────────────────────
@@ -355,6 +370,7 @@ function mapChannel(r: ChannelRow): BloggerChannel {
     channelUsername: r.channel_username,
     channelTitle: r.channel_title,
     nicheDescription: r.niche_description,
+    styleSamples: r.style_samples,
     isActive: r.is_active,
     createdAt: r.created_at,
     updatedAt: r.updated_at,

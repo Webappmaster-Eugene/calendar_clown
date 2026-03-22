@@ -77,3 +77,15 @@ export const MAX_POST_LENGTH = 12000;
 
 /** Neuro: vision model for image/document analysis (supports images, PDF, DOCX natively). */
 export const NEURO_VISION_MODEL = process.env.NEURO_VISION_MODEL || "google/gemini-2.0-flash-001";
+
+/** Neuro: debounce delay after last message before flushing batch. */
+export const NEURO_BATCH_DEBOUNCE_MS = 3_000;
+
+/** Neuro: max wait time from first message in batch. */
+export const NEURO_BATCH_MAX_WAIT_MS = 30_000;
+
+/** Neuro: max URLs to fetch from user message. */
+export const NEURO_MAX_URLS = 5;
+
+/** Neuro: max search results from Tavily. */
+export const NEURO_MAX_SEARCH_RESULTS = 8;

@@ -1,8 +1,20 @@
 import { query } from "../db/connection.js";
 
+// ─── Interfaces ─────────────────────────────────────────────────────────────
+
+export interface ChatDialog {
+  id: number;
+  userId: number;
+  title: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface ChatMessage {
   id: number;
   userId: number;
+  dialogId: number;
   role: "user" | "assistant";
   content: string;
   modelUsed: string | null;
@@ -10,9 +22,174 @@ export interface ChatMessage {
   createdAt: Date;
 }
 
-/** Save a chat message to the database. */
+const MAX_DIALOGS = 10;
+
+// ─── Dialog functions ───────────────────────────────────────────────────────
+
+/** Create a new dialog. Throws if user already has MAX_DIALOGS active dialogs. */
+export async function createDialog(
+  userId: number,
+  title: string = "Новый диалог"
+): Promise<ChatDialog> {
+  const count = await countActiveDialogs(userId);
+  if (count >= MAX_DIALOGS) {
+    throw new Error(`Достигнут лимит (${MAX_DIALOGS} диалогов). Удалите ненужные, чтобы создать новый.`);
+  }
+
+  const { rows } = await query<{
+    id: number;
+    user_id: number;
+    title: string;
+    is_active: boolean;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `INSERT INTO chat_dialogs (user_id, title)
+     VALUES ($1, $2)
+     RETURNING id, user_id, title, is_active, created_at, updated_at`,
+    [userId, title]
+  );
+  return mapDialog(rows[0]);
+}
+
+/** Get all active dialogs for a user, ordered by updated_at DESC. */
+export async function getDialogsByUser(userId: number): Promise<ChatDialog[]> {
+  const { rows } = await query<{
+    id: number;
+    user_id: number;
+    title: string;
+    is_active: boolean;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `SELECT id, user_id, title, is_active, created_at, updated_at
+     FROM chat_dialogs
+     WHERE user_id = $1 AND is_active = TRUE
+     ORDER BY updated_at DESC`,
+    [userId]
+  );
+  return rows.map(mapDialog);
+}
+
+/** Get a dialog by ID with ownership check. Returns null if not found or not owned. */
+export async function getDialogById(
+  dialogId: number,
+  userId: number
+): Promise<ChatDialog | null> {
+  const { rows } = await query<{
+    id: number;
+    user_id: number;
+    title: string;
+    is_active: boolean;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `SELECT id, user_id, title, is_active, created_at, updated_at
+     FROM chat_dialogs
+     WHERE id = $1 AND user_id = $2 AND is_active = TRUE`,
+    [dialogId, userId]
+  );
+  return rows.length > 0 ? mapDialog(rows[0]) : null;
+}
+
+/** Update dialog title and updated_at. */
+export async function updateDialogTitle(
+  dialogId: number,
+  title: string
+): Promise<void> {
+  await query(
+    `UPDATE chat_dialogs SET title = $1, updated_at = NOW() WHERE id = $2`,
+    [title, dialogId]
+  );
+}
+
+/** Soft-delete a dialog (is_active=false). If it was active dialog, switch to latest. */
+export async function deleteDialog(
+  dialogId: number,
+  userId: number
+): Promise<void> {
+  // Soft delete
+  await query(
+    `UPDATE chat_dialogs SET is_active = FALSE, updated_at = NOW()
+     WHERE id = $1 AND user_id = $2`,
+    [dialogId, userId]
+  );
+
+  // If this was the active dialog, switch to latest remaining
+  const { rows: userRows } = await query<{ active_dialog_id: number | null }>(
+    `SELECT active_dialog_id FROM users WHERE id = $1`,
+    [userId]
+  );
+
+  if (userRows.length > 0 && userRows[0].active_dialog_id === dialogId) {
+    const { rows: latestRows } = await query<{ id: number }>(
+      `SELECT id FROM chat_dialogs
+       WHERE user_id = $1 AND is_active = TRUE
+       ORDER BY updated_at DESC LIMIT 1`,
+      [userId]
+    );
+    const newActiveId = latestRows.length > 0 ? latestRows[0].id : null;
+    await query(
+      `UPDATE users SET active_dialog_id = $1 WHERE id = $2`,
+      [newActiveId, userId]
+    );
+  }
+}
+
+/** Count active dialogs for a user. */
+export async function countActiveDialogs(userId: number): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM chat_dialogs
+     WHERE user_id = $1 AND is_active = TRUE`,
+    [userId]
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Get active_dialog_id from users. */
+export async function getActiveDialogId(userId: number): Promise<number | null> {
+  const { rows } = await query<{ active_dialog_id: number | null }>(
+    `SELECT active_dialog_id FROM users WHERE id = $1`,
+    [userId]
+  );
+  return rows.length > 0 ? rows[0].active_dialog_id : null;
+}
+
+/** Set active_dialog_id in users. */
+export async function setActiveDialogId(
+  userId: number,
+  dialogId: number | null
+): Promise<void> {
+  await query(
+    `UPDATE users SET active_dialog_id = $1 WHERE id = $2`,
+    [dialogId, userId]
+  );
+}
+
+/**
+ * Key helper: get the active dialog or create the first one.
+ * If active_dialog_id is null or points to a deleted dialog, creates a new one.
+ */
+export async function getOrCreateActiveDialog(userId: number): Promise<ChatDialog> {
+  const activeId = await getActiveDialogId(userId);
+
+  if (activeId != null) {
+    const dialog = await getDialogById(activeId, userId);
+    if (dialog) return dialog;
+  }
+
+  // No active dialog or it was deleted — create a new one
+  const dialog = await createDialog(userId);
+  await setActiveDialogId(userId, dialog.id);
+  return dialog;
+}
+
+// ─── Message functions ──────────────────────────────────────────────────────
+
+/** Save a chat message to the database. Also updates dialog's updated_at. */
 export async function saveMessage(
   userId: number,
+  dialogId: number,
   role: "user" | "assistant",
   content: string,
   modelUsed?: string,
@@ -21,21 +198,30 @@ export async function saveMessage(
   const { rows } = await query<{
     id: number;
     user_id: number;
+    dialog_id: number;
     role: string;
     content: string;
     model_used: string | null;
     tokens_used: number | null;
     created_at: Date;
   }>(
-    `INSERT INTO chat_messages (user_id, role, content, model_used, tokens_used)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, user_id, role, content, model_used, tokens_used, created_at`,
-    [userId, role, content, modelUsed ?? null, tokensUsed ?? null]
+    `INSERT INTO chat_messages (user_id, dialog_id, role, content, model_used, tokens_used)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, user_id, dialog_id, role, content, model_used, tokens_used, created_at`,
+    [userId, dialogId, role, content, modelUsed ?? null, tokensUsed ?? null]
   );
+
+  // Update dialog's updated_at (fire-and-forget)
+  query(
+    `UPDATE chat_dialogs SET updated_at = NOW() WHERE id = $1`,
+    [dialogId]
+  ).catch(() => {});
+
   const r = rows[0];
   return {
     id: r.id,
     userId: r.user_id,
+    dialogId: r.dialog_id,
     role: r.role as "user" | "assistant",
     content: r.content,
     modelUsed: r.model_used,
@@ -44,31 +230,33 @@ export async function saveMessage(
   };
 }
 
-/** Get recent chat messages for a user, ordered oldest-first. */
+/** Get recent chat messages for a dialog, ordered oldest-first. */
 export async function getRecentMessages(
-  userId: number,
-  limit: number = 10
+  dialogId: number,
+  limit: number = 20
 ): Promise<ChatMessage[]> {
   const { rows } = await query<{
     id: number;
     user_id: number;
+    dialog_id: number;
     role: string;
     content: string;
     model_used: string | null;
     tokens_used: number | null;
     created_at: Date;
   }>(
-    `SELECT id, user_id, role, content, model_used, tokens_used, created_at
+    `SELECT id, user_id, dialog_id, role, content, model_used, tokens_used, created_at
      FROM chat_messages
-     WHERE user_id = $1
+     WHERE dialog_id = $1
      ORDER BY created_at DESC
      LIMIT $2`,
-    [userId, limit]
+    [dialogId, limit]
   );
   return rows
     .map((r) => ({
       id: r.id,
       userId: r.user_id,
+      dialogId: r.dialog_id,
       role: r.role as "user" | "assistant",
       content: r.content,
       modelUsed: r.model_used,
@@ -78,20 +266,44 @@ export async function getRecentMessages(
     .reverse();
 }
 
-/** Clear all chat history for a user. Returns number of deleted messages. */
-export async function clearHistory(userId: number): Promise<number> {
+/** Clear all messages in a specific dialog. Returns number of deleted messages. */
+export async function clearDialogHistory(
+  dialogId: number,
+  userId: number
+): Promise<number> {
   const { rowCount } = await query(
-    "DELETE FROM chat_messages WHERE user_id = $1",
-    [userId]
+    `DELETE FROM chat_messages
+     WHERE dialog_id = $1 AND user_id = $2`,
+    [dialogId, userId]
   );
   return rowCount ?? 0;
 }
 
-/** Count total chat messages for a user. */
-export async function countMessages(userId: number): Promise<number> {
+/** Count messages in a specific dialog. */
+export async function countDialogMessages(dialogId: number): Promise<number> {
   const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM chat_messages WHERE user_id = $1",
-    [userId]
+    `SELECT COUNT(*) AS count FROM chat_messages WHERE dialog_id = $1`,
+    [dialogId]
   );
   return parseInt(rows[0].count, 10);
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function mapDialog(r: {
+  id: number;
+  user_id: number;
+  title: string;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}): ChatDialog {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    title: r.title,
+    isActive: r.is_active,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
 }

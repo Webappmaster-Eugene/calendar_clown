@@ -13,6 +13,7 @@ export async function callOpenRouter(options: {
   model: string;
   messages: Array<{ role: string; content: MessageContent }>;
   temperature?: number;
+  max_tokens?: number;
 }): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -30,6 +31,7 @@ export async function callOpenRouter(options: {
       model: options.model,
       messages: options.messages,
       ...(options.temperature != null ? { temperature: options.temperature } : {}),
+      ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
     }),
   });
 
@@ -51,6 +53,7 @@ export async function callOpenRouterWithUsage(options: {
   model: string;
   messages: Array<{ role: string; content: MessageContent }>;
   temperature?: number;
+  max_tokens?: number;
 }): Promise<{ content: string; tokensUsed: number | null }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -68,6 +71,7 @@ export async function callOpenRouterWithUsage(options: {
       model: options.model,
       messages: options.messages,
       ...(options.temperature != null ? { temperature: options.temperature } : {}),
+      ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
     }),
   });
 

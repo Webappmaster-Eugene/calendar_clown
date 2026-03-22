@@ -42,6 +42,7 @@ export const users = pgTable(
     mode: varchar("mode", { length: 20 }).notNull().default("calendar"),
     tribeId: integer("tribe_id")
       .references(() => tribes.id),
+    activeDialogId: integer("active_dialog_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -425,6 +426,25 @@ export const gandalfEntries = pgTable(
   ],
 );
 
+// ─── Chat Dialogs ───────────────────────────────────────────────────────────
+
+export const chatDialogs = pgTable(
+  "chat_dialogs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 200 }).notNull().default("Новый диалог"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_chat_dialogs_user_id").on(table.userId),
+  ],
+);
+
 // ─── Chat Messages ──────────────────────────────────────────────────────────
 
 export const chatMessages = pgTable(
@@ -434,6 +454,9 @@ export const chatMessages = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    dialogId: integer("dialog_id")
+      .notNull()
+      .references(() => chatDialogs.id, { onDelete: "cascade" }),
     role: varchar("role", { length: 20 }).notNull(),
     content: text("content").notNull(),
     modelUsed: varchar("model_used", { length: 100 }),
@@ -442,6 +465,7 @@ export const chatMessages = pgTable(
   },
   (table) => [
     index("idx_chat_messages_user_id").on(table.userId),
+    index("idx_chat_messages_dialog_id").on(table.dialogId),
     index("idx_chat_messages_created_at").on(table.createdAt),
     check("chat_messages_role_check", sql`${table.role} IN ('user', 'assistant')`),
   ],
@@ -745,6 +769,7 @@ export const bloggerChannels = pgTable(
     channelUsername: varchar("channel_username", { length: 255 }),
     channelTitle: varchar("channel_title", { length: 255 }).notNull(),
     nicheDescription: text("niche_description"),
+    styleSamples: text("style_samples"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

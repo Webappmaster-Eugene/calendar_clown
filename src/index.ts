@@ -24,6 +24,7 @@ import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
 import { startRemindersScheduler, stopRemindersScheduler } from "./reminders/scheduler.js";
 import { initProxyAgent } from "./utils/proxyAgent.js";
+import { clearAllBatches } from "./chat/messageBatcher.js";
 import { createLogger } from "./utils/logger.js";
 
 const log = createLogger("app");
@@ -157,6 +158,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     log.info(`${signal} received, shutting down...`);
     bot.stop(signal);
+    clearAllBatches();
     disconnectAllMtprotoSessions();
     stopDigestScheduler();
     stopNotableDatesScheduler();

@@ -27,10 +27,12 @@ import {
   getSourcesByPost,
   deleteSource,
   countSourcesByPost,
+  updateChannelStyleSamples,
 } from "../blogger/repository.js";
 import type { BloggerChannel, BloggerPost } from "../blogger/repository.js";
 import { generatePost, splitIntoMessages, searchForTopic } from "../blogger/postGenerator.js";
 import { fetchUrlContent } from "../blogger/contentFetcher.js";
+import { fetchStyleSamples } from "../blogger/styleFetcher.js";
 import { BLOGGER_MODEL, MAX_POST_SOURCES } from "../constants.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
@@ -343,6 +345,40 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
         `✏️ Введите новое описание ниши для канала «${escapeMarkdown(channel.channelTitle)}»:`,
         { parse_mode: "Markdown" }
       );
+      return;
+    }
+
+    // blog_fetch_style:<id> — fetch style samples from channel
+    if (data.startsWith("blog_fetch_style:")) {
+      const channelId = parseInt(data.split(":")[1], 10);
+      const channel = await getChannelById(channelId, dbUser.id);
+      if (!channel) {
+        await ctx.editMessageText("Канал не найден.");
+        return;
+      }
+
+      const username = channel.channelUsername?.replace("@", "");
+      if (!username) {
+        await ctx.editMessageText("Укажите @username канала для загрузки стиля.");
+        return;
+      }
+
+      await ctx.editMessageText("📖 Загружаю примеры постов из канала…");
+
+      try {
+        const samples = await fetchStyleSamples(username);
+        if (samples.length === 0) {
+          await ctx.reply("Не удалось загрузить посты. Проверьте @username и доступность канала.");
+          return;
+        }
+
+        await updateChannelStyleSamples(channelId, dbUser.id, samples);
+        await ctx.reply(`📖 Загружено ${samples.length} примеров стиля.`);
+        await showChannelDetails(ctx, channelId, dbUser.id);
+      } catch (err) {
+        log.error("Failed to fetch style samples:", err);
+        await ctx.reply("Ошибка при загрузке стиля. Попробуйте позже.");
+      }
       return;
     }
 
@@ -704,15 +740,29 @@ async function showChannelDetails(ctx: Context, channelId: number, userId: numbe
     ? `Username: ${escapeMarkdown(channel.channelUsername)}\n`
     : "";
 
+  let styleText: string;
+  if (channel.styleSamples) {
+    try {
+      const count = (JSON.parse(channel.styleSamples) as string[]).length;
+      styleText = `📖 Стиль: загружено ${count} примеров`;
+    } catch {
+      styleText = "📖 Стиль: загружен";
+    }
+  } else {
+    styleText = "📖 Стиль: не загружен";
+  }
+
   const text =
     `📺 *${escapeMarkdown(channel.channelTitle)}*\n` +
     usernameText +
-    `Ниша: ${nicheText}`;
+    `Ниша: ${nicheText}\n` +
+    styleText;
 
   const buttons = [
     [Markup.button.callback("✍️ Новый пост", `blog_new_post:${channelId}`)],
     [Markup.button.callback("📄 Посты канала", `blog_ch_posts:${channelId}:0`)],
     [Markup.button.callback("✏️ Изменить описание", `blog_edit_niche:${channelId}`)],
+    [Markup.button.callback("📖 Загрузить стиль из канала", `blog_fetch_style:${channelId}`)],
     [Markup.button.callback("🗑 Удалить", `blog_ch_del:${channelId}`)],
   ];
 

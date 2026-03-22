@@ -7,7 +7,7 @@ import { tavilySearchMulti } from "./searchClient.js";
 import { createSearch, updateSearchStatus, countTodaySearches } from "./repository.js";
 import { formatReport } from "./reportFormatter.js";
 import { splitMessage } from "../utils/telegram.js";
-import type { OsintParsedSubject, OsintSearch, TavilyResult } from "./types.js";
+import type { OsintParsedSubject, OsintSearch, TavilyResult, TavilyImage } from "./types.js";
 
 const log = createLogger("osint-orchestrator");
 
@@ -70,7 +70,7 @@ export async function runOsintSearch(
     });
 
     // 5. Execute searches
-    await editStatus(ctx, chatId, statusMsgId, `🔍 Поиск в интернете (${queries.length} запросов)...`);
+    await editStatus(ctx, chatId, statusMsgId, `🔍 Поиск: веб + госреестры + соцсети (${queries.length} запросов)...`);
 
     if (!process.env.TAVILY_API_KEY) {
       await updateSearchStatus(search.id, "failed", {
@@ -82,13 +82,15 @@ export async function runOsintSearch(
       };
     }
 
-    const rawResults = await tavilySearchMulti(queries, 5);
+    const searchResult = await tavilySearchMulti(queries, 5);
+    let rawResults = searchResult.results;
+    const images = searchResult.images;
 
     if (rawResults.length === 0) {
       // Try with simpler queries
       const simpleQuery = parseResult.subject.name || queryText;
-      const fallbackResults = await tavilySearchMulti([simpleQuery], 10);
-      if (fallbackResults.length === 0) {
+      const fallbackResult = await tavilySearchMulti([simpleQuery], 10);
+      if (fallbackResult.results.length === 0) {
         await updateSearchStatus(search.id, "completed", {
           rawResults: [],
           report: "Информация не найдена по данному запросу.",
@@ -99,7 +101,8 @@ export async function runOsintSearch(
           search: { ...search, status: "completed", report: "Информация не найдена по данному запросу.", sourcesCount: 0 },
         };
       }
-      rawResults.push(...fallbackResults);
+      rawResults = fallbackResult.results;
+      images.push(...fallbackResult.images);
     }
 
     await updateSearchStatus(search.id, "analyzing", {
@@ -109,7 +112,7 @@ export async function runOsintSearch(
 
     // 6. Analyze with AI
     await editStatus(ctx, chatId, statusMsgId, `🧠 Анализирую ${rawResults.length} источников...`);
-    const report = await analyzeResults(parseResult.subject, rawResults, queryText);
+    const report = await analyzeResults(parseResult.subject, rawResults, images, queryText);
 
     // 7. Save completed
     await updateSearchStatus(search.id, "completed", {
@@ -180,46 +183,60 @@ async function editStatus(ctx: Context, chatId: number, msgId: number, text: str
   }
 }
 
-const ANALYSIS_PROMPT = `Ты — профессиональный OSINT-аналитик. Проанализируй найденные данные и составь структурированный отчёт.
+const ANALYSIS_PROMPT = `Ты — профессиональный OSINT-аналитик с опытом работы в конкурентной разведке. Проанализируй найденные данные и составь максимально подробный структурированный отчёт.
 
 Отчёт должен быть на русском языке, в формате Markdown (Telegram V1: *bold*, _italic_, \`code\`).
-Используй следующие разделы (пропускай пустые):
+Используй следующие разделы (пропускай только если данных совсем нет):
 
-*Краткое резюме* — 2-3 предложения о найденной информации.
+*Краткое резюме* — 2-3 предложения с ключевыми выводами о найденной информации.
 
-*Идентификация* — ФИО, возраст, город, ключевые идентификаторы.
+*Идентификация* — ФИО (полное), предполагаемый возраст/год рождения, город проживания, ИНН/ОГРН если найдены.
 
-*Онлайн-присутствие* — профили в соцсетях, сайты, форумы.
+*Государственные реестры* — данные из ЕГРЮЛ/ЕГРИП (компании, ИП), ФССП (исполнительные производства), судебные решения (sudact.ru), банкротство (fedresurs). Если ничего не найдено — укажи это явно.
 
-*Профессиональная деятельность* — место работы, должности, компании.
+*Онлайн-присутствие* — профили в соцсетях (VK, OK, Instagram, Facebook, LinkedIn) со ссылками. Форумы, блоги, комментарии. Если найдены фотографии — перечисли их URL.
 
-*Контактная информация* — телефоны, email, адреса (только публично доступные).
+*Профессиональная деятельность* — должности, компании, роли (учредитель, директор, сотрудник). Карьерный путь если прослеживается.
 
-*Упоминания в СМИ/интернете* — статьи, новости, обсуждения.
+*Контактная информация* — телефоны, email, адреса (только публично доступные данные).
 
-*Связи и окружение* — связанные лица, организации.
+*Упоминания в СМИ* — статьи, новости, обсуждения, публикации. Укажи источник и краткое содержание.
 
-*Оценка достоверности* — насколько достоверна найденная информация, есть ли противоречия.
+*Характеристика личности* — стиль общения (на основе постов/комментариев), интересы, хобби, активность в сети. Только на основе фактических данных.
 
-Будь объективен. Не придумывай информацию — только то, что подтверждено источниками.
-Если информации мало — так и напиши.
+*Семья и окружение* — члены семьи из публичных источников (соцсети, реестры), деловые партнёры, связанные лица.
+
+*Связи и сеть контактов* — организационные связи, перекрёстные упоминания, совместные проекты/компании.
+
+*Оценка достоверности* — уровень уверенности в собранных данных (высокий/средний/низкий), найденные противоречия, пробелы в информации, рекомендации по дополнительной проверке.
+
+Если найдены URL фотографий — выдели их отдельным списком в разделе "Онлайн-присутствие" с пометкой 📷.
+
+Будь максимально подробен. Извлекай всю возможную информацию из источников.
+Не придумывай информацию — только то, что подтверждено источниками.
+Если информации мало — так и напиши, но укажи что именно не удалось найти.
 Не используй MarkdownV2 символы (не экранируй точки, скобки и т.п.).`;
 
 async function analyzeResults(
   subject: OsintParsedSubject,
   results: TavilyResult[],
+  images: TavilyImage[],
   originalQuery: string
 ): Promise<string> {
   const sourcesText = results
-    .slice(0, 30) // Cap at 30 results for context window
+    .slice(0, 40)
     .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content}`)
     .join("\n\n---\n\n");
+
+  const imagesText = images.length > 0
+    ? `\n\nНайденные изображения:\n${images.map((img, i) => `[Фото ${i + 1}] ${img.url}${img.description ? ` — ${img.description}` : ""}`).join("\n")}`
+    : "";
 
   const userMessage = `Запрос пользователя: "${originalQuery}"
 Данные об объекте: ${JSON.stringify(subject)}
 
 Найденные источники:
-${sourcesText}`;
+${sourcesText}${imagesText}`;
 
   const report = await callOpenRouter({
     model: OSINT_ANALYSIS_MODEL,
@@ -228,6 +245,7 @@ ${sourcesText}`;
       { role: "user", content: userMessage },
     ],
     temperature: 0.3,
+    max_tokens: 8000,
   });
 
   return report || "Не удалось сформировать отчёт.";
