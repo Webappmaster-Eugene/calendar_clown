@@ -78,6 +78,7 @@ export async function handleAdminCommand(ctx: Context): Promise<void> {
       [Markup.button.callback("✏️ Редактировать трайб", "admin:edit_tribe")],
       [Markup.button.callback("🗑 Удалить трайб", "admin:del_tribe")],
       [Markup.button.callback("📊 Управление данными", "admin:data")],
+      [Markup.button.callback("🏗 Версия сборки", "admin:version")],
       [Markup.button.callback("📈 Саммари", "summary:menu")],
     ]),
   });
@@ -347,6 +348,30 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  if (data === "admin:version") {
+    const uptime = process.uptime();
+    const hours = Math.floor(uptime / 3600);
+    const minutes = Math.floor((uptime % 3600) / 60);
+    const uptimeStr = `${hours}ч ${minutes}м`;
+
+    const text =
+      `🏗 *Версия сборки*\n\n` +
+      `📦 Коммит: \`${BUILD_COMMIT}\`\n` +
+      `🔨 Собрано: ${BUILD_DATE}\n` +
+      `📝 Коммит от: ${COMMIT_DATE || "—"}\n` +
+      `⏱ Аптайм: ${uptimeStr}\n` +
+      `🟢 Node: ${process.version}`;
+
+    await ctx.editMessageText(text, {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("◀️ Назад", "admin:back")],
+      ]),
+    });
+    await ctx.answerCbQuery();
+    return;
+  }
+
   if (data === "admin:back") {
     await ctx.editMessageText("🔧 *Панель администратора*", {
       parse_mode: "Markdown",
@@ -361,6 +386,7 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
         [Markup.button.callback("✏️ Редактировать трайб", "admin:edit_tribe")],
         [Markup.button.callback("🗑 Удалить трайб", "admin:del_tribe")],
         [Markup.button.callback("📊 Управление данными", "admin:data")],
+        [Markup.button.callback("🏗 Версия сборки", "admin:version")],
         [Markup.button.callback("📈 Саммари", "summary:menu")],
       ]),
     });

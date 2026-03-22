@@ -288,6 +288,56 @@ export async function countDialogMessages(dialogId: number): Promise<number> {
   return parseInt(rows[0].count, 10);
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────────
+
+/** Admin: get all dialogs paginated (all users, with user info). */
+export async function getAllDialogsPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<ChatDialog & { firstName: string }>> {
+  const { rows } = await query<{
+    id: number;
+    user_id: number;
+    title: string;
+    is_active: boolean;
+    created_at: Date;
+    updated_at: Date;
+    first_name: string;
+  }>(
+    `SELECT d.*, u.first_name
+     FROM chat_dialogs d
+     JOIN users u ON u.id = d.user_id
+     ORDER BY d.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({ ...mapDialog(r), firstName: r.first_name }));
+}
+
+/** Admin: count all dialogs. */
+export async function countAllDialogs(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM chat_dialogs"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Admin: bulk delete dialogs by IDs. */
+export async function bulkDeleteDialogs(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM chat_dialogs WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete ALL dialogs. */
+export async function deleteAllDialogs(): Promise<number> {
+  const { rowCount } = await query("DELETE FROM chat_dialogs");
+  return rowCount ?? 0;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function mapDialog(r: {

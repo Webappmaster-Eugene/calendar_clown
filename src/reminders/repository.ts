@@ -200,6 +200,48 @@ export async function isSubscribed(reminderId: number, subscriberUserId: number)
   return parseInt(rows[0].count, 10) > 0;
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: get all reminders paginated (all users, with user info). */
+export async function getAllRemindersPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<Reminder & { firstName: string }>> {
+  const { rows } = await query<ReminderRow & { first_name: string }>(
+    `SELECT r.*, u.first_name
+     FROM reminders r
+     JOIN users u ON u.id = r.user_id
+     ORDER BY r.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({ ...mapReminder(r), firstName: r.first_name }));
+}
+
+/** Admin: count all reminders. */
+export async function countAllReminders(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM reminders"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Admin: bulk delete reminders by IDs. */
+export async function bulkDeleteReminders(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM reminders WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete ALL reminders. */
+export async function deleteAllReminders(): Promise<number> {
+  const { rowCount } = await query("DELETE FROM reminders");
+  return rowCount ?? 0;
+}
+
 // ─── Tribe queries ──────────────────────────────────────────────────────
 
 export async function getTribeReminders(tribeId: number, excludeUserId: number): Promise<(Reminder & { ownerName: string })[]> {

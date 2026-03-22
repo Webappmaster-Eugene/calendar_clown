@@ -169,6 +169,66 @@ export async function getSearchById(
   return mapRow(rows[0]);
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: get all OSINT searches paginated (all users, with user info). */
+export async function getAllSearchesPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<OsintSearch & { firstName: string }>> {
+  const { rows } = await query<{
+    id: number;
+    user_id: number;
+    query: string;
+    parsed_subject: OsintParsedSubject | null;
+    status: OsintStatus;
+    search_queries: string[] | null;
+    raw_results: TavilyResult[] | null;
+    report: string | null;
+    sources_count: number;
+    input_method: "text" | "voice";
+    error_message: string | null;
+    started_at: Date | null;
+    completed_at: Date | null;
+    created_at: Date;
+    first_name: string;
+  }>(
+    `SELECT s.*, u.first_name
+     FROM osint_searches s
+     JOIN users u ON u.id = s.user_id
+     ORDER BY s.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({ ...mapRow(r), firstName: r.first_name }));
+}
+
+/** Admin: count all OSINT searches. */
+export async function countAllSearches(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM osint_searches"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Admin: bulk delete searches by IDs. */
+export async function bulkDeleteSearches(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM osint_searches WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete ALL searches. */
+export async function deleteAllSearches(): Promise<number> {
+  const { rowCount } = await query("DELETE FROM osint_searches");
+  return rowCount ?? 0;
+}
+
+// ─── Internal ───────────────────────────────────────────────────────────
+
 function mapRow(r: {
   id: number;
   user_id: number;

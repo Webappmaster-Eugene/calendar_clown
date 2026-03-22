@@ -364,6 +364,57 @@ export async function markReminderSent(reminderId: number): Promise<void> {
   );
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: get all goal sets paginated (all users, with user info and progress). */
+export async function getAllGoalSetsPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<GoalSet & { firstName: string; completedCount: number; totalCount: number }>> {
+  const { rows } = await query<GoalSetRow & { first_name: string; completed_count: string; total_count: string }>(
+    `SELECT gs.*, u.first_name,
+       COUNT(g.id) AS total_count,
+       COUNT(g.id) FILTER (WHERE g.is_completed = true) AS completed_count
+     FROM goal_sets gs
+     JOIN users u ON u.id = gs.user_id
+     LEFT JOIN goals g ON g.goal_set_id = gs.id
+     GROUP BY gs.id, u.first_name
+     ORDER BY gs.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({
+    ...mapGoalSet(r),
+    firstName: r.first_name,
+    completedCount: parseInt(r.completed_count, 10),
+    totalCount: parseInt(r.total_count, 10),
+  }));
+}
+
+/** Admin: count all goal sets. */
+export async function countAllGoalSets(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM goal_sets"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Admin: bulk delete goal sets by IDs. */
+export async function bulkDeleteGoalSets(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM goal_sets WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete ALL goal sets. */
+export async function deleteAllGoalSets(): Promise<number> {
+  const { rowCount } = await query("DELETE FROM goal_sets");
+  return rowCount ?? 0;
+}
+
 // ─── Mappers ────────────────────────────────────────────────────────────
 
 function mapGoalSet(r: GoalSetRow): GoalSet {

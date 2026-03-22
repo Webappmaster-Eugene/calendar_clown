@@ -226,6 +226,48 @@ export async function getAllAchievementsForSummary(
   return rows.map(mapAchievement);
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: get all workplaces paginated (all users, with user info). */
+export async function getAllWorkplacesPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<Workplace & { firstName: string }>> {
+  const { rows } = await query<WorkplaceRow & { first_name: string }>(
+    `SELECT w.*, u.first_name
+     FROM workplaces w
+     JOIN users u ON u.id = w.user_id
+     ORDER BY w.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({ ...mapWorkplace(r), firstName: r.first_name }));
+}
+
+/** Admin: count all workplaces. */
+export async function countAllWorkplaces(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM workplaces"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Admin: bulk delete workplaces by IDs. */
+export async function bulkDeleteWorkplaces(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM workplaces WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete ALL workplaces. */
+export async function deleteAllWorkplaces(): Promise<number> {
+  const { rowCount } = await query("DELETE FROM workplaces");
+  return rowCount ?? 0;
+}
+
 // ─── Mappers ────────────────────────────────────────────────────────────
 
 function mapWorkplace(r: WorkplaceRow): Workplace {

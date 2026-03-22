@@ -361,6 +361,54 @@ export async function countSourcesByPost(postId: number): Promise<number> {
   return parseInt(rows[0].count, 10);
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: get all channels paginated (all users, with user info and post counts). */
+export async function getAllChannelsPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<BloggerChannel & { firstName: string; postCount: number }>> {
+  const { rows } = await query<ChannelRow & { first_name: string; post_count: string }>(
+    `SELECT bc.*, u.first_name, COUNT(bp.id) AS post_count
+     FROM blogger_channels bc
+     JOIN users u ON u.id = bc.user_id
+     LEFT JOIN blogger_posts bp ON bp.channel_id = bc.id
+     GROUP BY bc.id, u.first_name
+     ORDER BY bc.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({
+    ...mapChannel(r),
+    firstName: r.first_name,
+    postCount: parseInt(r.post_count, 10),
+  }));
+}
+
+/** Admin: count all channels. */
+export async function countAllChannels(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM blogger_channels"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Admin: bulk delete channels by IDs. */
+export async function bulkDeleteChannels(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM blogger_channels WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete ALL channels. */
+export async function deleteAllChannels(): Promise<number> {
+  const { rowCount } = await query("DELETE FROM blogger_channels");
+  return rowCount ?? 0;
+}
+
 // ─── Mappers ────────────────────────────────────────────────────────────
 
 function mapChannel(r: ChannelRow): BloggerChannel {

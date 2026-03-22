@@ -38,6 +38,24 @@ export interface TavilyResult {
   url: string;
   content: string;
   score: number;
+  raw_content?: string;
+}
+
+export interface TavilyExtractResult {
+  url: string;
+  raw_content: string;
+}
+
+export interface TavilyExtractResponse {
+  results: TavilyExtractResult[];
+  failed_results?: Array<{ url: string; error: string }>;
+}
+
+export interface IntermediateAnalysis {
+  followUpQueries: string[];
+  profileUrls: string[];
+  discoveredEntities: string[];
+  keyFindings: string;
 }
 
 export interface TavilyImage {

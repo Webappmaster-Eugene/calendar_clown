@@ -373,6 +373,54 @@ export async function getTribeMembersWithWishlists(tribeId: number): Promise<Arr
   }));
 }
 
+// ─── Admin functions ────────────────────────────────────────────────────
+
+/** Admin: get all wishlists paginated (all users, with user info and item counts). */
+export async function getAllWishlistsPaginated(
+  limit: number,
+  offset: number
+): Promise<Array<Wishlist & { firstName: string; itemCount: number }>> {
+  const { rows } = await query<WishlistRow & { first_name: string; item_count: string }>(
+    `SELECT w.*, u.first_name, COUNT(wi.id) AS item_count
+     FROM wishlists w
+     JOIN users u ON u.id = w.user_id
+     LEFT JOIN wishlist_items wi ON wi.wishlist_id = w.id
+     GROUP BY w.id, u.first_name
+     ORDER BY w.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  return rows.map((r) => ({
+    ...mapWishlist(r),
+    firstName: r.first_name,
+    itemCount: parseInt(r.item_count, 10),
+  }));
+}
+
+/** Admin: count all wishlists. */
+export async function countAllWishlists(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM wishlists"
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+/** Admin: bulk delete wishlists by IDs. */
+export async function bulkDeleteWishlists(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await query(
+    "DELETE FROM wishlists WHERE id = ANY($1)",
+    [ids]
+  );
+  return rowCount ?? 0;
+}
+
+/** Admin: delete ALL wishlists. */
+export async function deleteAllWishlists(): Promise<number> {
+  const { rowCount } = await query("DELETE FROM wishlists");
+  return rowCount ?? 0;
+}
+
 // ─── Internal ───────────────────────────────────────────────────────────
 
 interface WishlistRow {

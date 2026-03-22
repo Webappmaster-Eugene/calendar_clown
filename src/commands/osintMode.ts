@@ -122,7 +122,7 @@ export async function handleOsintVoice(
   }
 
   if (result.search?.report) {
-    await sendReport(ctx, chatId, statusMsgId, result.search.report, result.search.sourcesCount);
+    await sendReport(ctx, chatId, statusMsgId, result.search.report, result.search.sourcesCount, result.extractedCount);
   }
 }
 
@@ -288,6 +288,6 @@ async function executeOsintSearch(
   }
 
   if (result.search?.report) {
-    await sendReport(ctx, chatId, statusMsg.message_id, result.search.report, result.search.sourcesCount);
+    await sendReport(ctx, chatId, statusMsg.message_id, result.search.report, result.search.sourcesCount, result.extractedCount);
   }
 }

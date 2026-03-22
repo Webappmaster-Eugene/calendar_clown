@@ -60,6 +60,55 @@ import {
   deleteAllEvents,
 } from "../calendar/repository.js";
 
+import {
+  getAllDialogsPaginated,
+  countAllDialogs,
+  bulkDeleteDialogs,
+  deleteAllDialogs,
+} from "../chat/repository.js";
+
+import {
+  getAllWishlistsPaginated,
+  countAllWishlists,
+  bulkDeleteWishlists,
+  deleteAllWishlists,
+} from "../wishlist/repository.js";
+
+import {
+  getAllGoalSetsPaginated,
+  countAllGoalSets,
+  bulkDeleteGoalSets,
+  deleteAllGoalSets,
+} from "../goals/repository.js";
+
+import {
+  getAllRemindersPaginated,
+  countAllReminders,
+  bulkDeleteReminders,
+  deleteAllReminders,
+} from "../reminders/repository.js";
+
+import {
+  getAllSearchesPaginated,
+  countAllSearches,
+  bulkDeleteSearches,
+  deleteAllSearches,
+} from "../osint/repository.js";
+
+import {
+  getAllWorkplacesPaginated,
+  countAllWorkplaces,
+  bulkDeleteWorkplaces,
+  deleteAllWorkplaces,
+} from "../summarizer/repository.js";
+
+import {
+  getAllChannelsPaginated,
+  countAllChannels,
+  bulkDeleteChannels,
+  deleteAllChannels,
+} from "../blogger/repository.js";
+
 const log = createLogger("admin-data");
 
 const PAGE_SIZE = 5;
@@ -94,6 +143,13 @@ export async function showDataManagementMenu(ctx: Context): Promise<void> {
       [Markup.button.callback("📚 База знаний", "adm_gand:menu")],
       [Markup.button.callback("🎉 Даты", "adm_date:menu")],
       [Markup.button.callback("📅 Календарь", "adm_cal:menu")],
+      [Markup.button.callback("🧠 Нейро-диалоги", "adm_chat:menu")],
+      [Markup.button.callback("🎁 Вишлисты", "adm_wish:menu")],
+      [Markup.button.callback("🎯 Цели", "adm_goal:menu")],
+      [Markup.button.callback("⏰ Напоминания", "adm_rem:menu")],
+      [Markup.button.callback("🔍 OSINT", "adm_osint:menu")],
+      [Markup.button.callback("📝 Саммаризатор", "adm_sum:menu")],
+      [Markup.button.callback("✍️ Блогер", "adm_blog:menu")],
       [Markup.button.callback("◀️ Назад", "admin:back")],
     ]),
   });
@@ -131,6 +187,20 @@ export async function handleAdminDataCallback(ctx: Context): Promise<void> {
       await handleDates(ctx, data, telegramId);
     } else if (data.startsWith("adm_cal:")) {
       await handleCalendar(ctx, data, telegramId);
+    } else if (data.startsWith("adm_chat:")) {
+      await handleChatDialogs(ctx, data, telegramId);
+    } else if (data.startsWith("adm_wish:")) {
+      await handleWishlists(ctx, data, telegramId);
+    } else if (data.startsWith("adm_goal:")) {
+      await handleGoalSets(ctx, data, telegramId);
+    } else if (data.startsWith("adm_rem:")) {
+      await handleRemindersAdmin(ctx, data, telegramId);
+    } else if (data.startsWith("adm_osint:")) {
+      await handleOsintSearches(ctx, data, telegramId);
+    } else if (data.startsWith("adm_sum:")) {
+      await handleWorkplaces(ctx, data, telegramId);
+    } else if (data.startsWith("adm_blog:")) {
+      await handleBlogChannels(ctx, data, telegramId);
     }
     await ctx.answerCbQuery();
   } catch (err) {
@@ -616,6 +686,449 @@ async function handleCalendar(ctx: Context, data: string, telegramId: number): P
   if (data === "adm_cal:delall_yes") {
     const deleted = await deleteAllEvents();
     await ctx.editMessageText(`✅ Помечено удалёнными: ${deleted}`);
+    return;
+  }
+}
+
+// ─── Chat Dialogs ─────────────────────────────────────────────────────
+
+async function handleChatDialogs(ctx: Context, data: string, telegramId: number): Promise<void> {
+  if (data === "adm_chat:menu") {
+    await showModeMenu(ctx, "🧠 Нейро-диалоги", "adm_chat");
+    return;
+  }
+
+  const listMatch = data.match(/^adm_chat:list:(\d+)$/);
+  if (listMatch) {
+    const offset = parseInt(listMatch[1], 10);
+    const total = await countAllDialogs();
+    const items = await getAllDialogsPaginated(PAGE_SIZE, offset);
+    const lines = items.map((d, i) => {
+      const num = offset + i + 1;
+      const date = d.createdAt.toLocaleDateString("ru-RU");
+      const title = d.title || "Без названия";
+      return `*${num}.* ${d.firstName} · ${title} · ${date}`;
+    });
+    await showPaginatedList(ctx, "🧠 Нейро-диалоги", lines, total, offset, "adm_chat", items.map((d) => d.id));
+    return;
+  }
+
+  const delMatch = data.match(/^adm_chat:del:(\d+)$/);
+  if (delMatch) {
+    const id = parseInt(delMatch[1], 10);
+    await showDeleteConfirm(ctx, "диалог", id, "adm_chat");
+    return;
+  }
+
+  const delYesMatch = data.match(/^adm_chat:del_yes:(\d+)$/);
+  if (delYesMatch) {
+    const id = parseInt(delYesMatch[1], 10);
+    await bulkDeleteDialogs([id]);
+    await ctx.editMessageText(`✅ Диалог #${id} удалён.`);
+    return;
+  }
+
+  if (data === "adm_chat:bulk") {
+    const items = await getAllDialogsPaginated(100, 0);
+    await initBulkSelect(
+      ctx, telegramId, "chat_dialogs",
+      items.map((d) => ({
+        id: d.id,
+        label: `${d.firstName}: ${d.title || "Без названия"}`,
+      })),
+      bulkDeleteDialogs
+    );
+    return;
+  }
+
+  if (data === "adm_chat:delall") {
+    const count = await countAllDialogs();
+    await showDeleteAllConfirm(ctx, "нейро-диалоги", count, "adm_chat");
+    return;
+  }
+
+  if (data === "adm_chat:delall_yes") {
+    const deleted = await deleteAllDialogs();
+    await ctx.editMessageText(`✅ Удалено диалогов: ${deleted}`);
+    return;
+  }
+}
+
+// ─── Wishlists ────────────────────────────────────────────────────────
+
+async function handleWishlists(ctx: Context, data: string, telegramId: number): Promise<void> {
+  if (data === "adm_wish:menu") {
+    await showModeMenu(ctx, "🎁 Вишлисты", "adm_wish");
+    return;
+  }
+
+  const listMatch = data.match(/^adm_wish:list:(\d+)$/);
+  if (listMatch) {
+    const offset = parseInt(listMatch[1], 10);
+    const total = await countAllWishlists();
+    const items = await getAllWishlistsPaginated(PAGE_SIZE, offset);
+    const lines = items.map((w, i) => {
+      const num = offset + i + 1;
+      const date = w.createdAt.toLocaleDateString("ru-RU");
+      return `*${num}.* ${w.name} (${w.itemCount} предм.) · ${w.firstName} · ${date}`;
+    });
+    await showPaginatedList(ctx, "🎁 Вишлисты", lines, total, offset, "adm_wish", items.map((w) => w.id));
+    return;
+  }
+
+  const delMatch = data.match(/^adm_wish:del:(\d+)$/);
+  if (delMatch) {
+    const id = parseInt(delMatch[1], 10);
+    await showDeleteConfirm(ctx, "вишлист", id, "adm_wish");
+    return;
+  }
+
+  const delYesMatch = data.match(/^adm_wish:del_yes:(\d+)$/);
+  if (delYesMatch) {
+    const id = parseInt(delYesMatch[1], 10);
+    await bulkDeleteWishlists([id]);
+    await ctx.editMessageText(`✅ Вишлист #${id} удалён.`);
+    return;
+  }
+
+  if (data === "adm_wish:bulk") {
+    const items = await getAllWishlistsPaginated(100, 0);
+    await initBulkSelect(
+      ctx, telegramId, "wishlists",
+      items.map((w) => ({
+        id: w.id,
+        label: `${w.name} (${w.firstName})`,
+      })),
+      bulkDeleteWishlists
+    );
+    return;
+  }
+
+  if (data === "adm_wish:delall") {
+    const count = await countAllWishlists();
+    await showDeleteAllConfirm(ctx, "вишлисты", count, "adm_wish");
+    return;
+  }
+
+  if (data === "adm_wish:delall_yes") {
+    const deleted = await deleteAllWishlists();
+    await ctx.editMessageText(`✅ Удалено вишлистов: ${deleted}`);
+    return;
+  }
+}
+
+// ─── Goal Sets ──────────────────────────────────────────────────────────
+
+async function handleGoalSets(ctx: Context, data: string, telegramId: number): Promise<void> {
+  if (data === "adm_goal:menu") {
+    await showModeMenu(ctx, "🎯 Цели", "adm_goal");
+    return;
+  }
+
+  const listMatch = data.match(/^adm_goal:list:(\d+)$/);
+  if (listMatch) {
+    const offset = parseInt(listMatch[1], 10);
+    const total = await countAllGoalSets();
+    const items = await getAllGoalSetsPaginated(PAGE_SIZE, offset);
+    const lines = items.map((g, i) => {
+      const num = offset + i + 1;
+      const date = g.createdAt.toLocaleDateString("ru-RU");
+      return `*${num}.* ${g.name} (${g.completedCount}/${g.totalCount}) · ${g.firstName} · ${date}`;
+    });
+    await showPaginatedList(ctx, "🎯 Цели", lines, total, offset, "adm_goal", items.map((g) => g.id));
+    return;
+  }
+
+  const delMatch = data.match(/^adm_goal:del:(\d+)$/);
+  if (delMatch) {
+    const id = parseInt(delMatch[1], 10);
+    await showDeleteConfirm(ctx, "набор целей", id, "adm_goal");
+    return;
+  }
+
+  const delYesMatch = data.match(/^adm_goal:del_yes:(\d+)$/);
+  if (delYesMatch) {
+    const id = parseInt(delYesMatch[1], 10);
+    await bulkDeleteGoalSets([id]);
+    await ctx.editMessageText(`✅ Набор целей #${id} удалён.`);
+    return;
+  }
+
+  if (data === "adm_goal:bulk") {
+    const items = await getAllGoalSetsPaginated(100, 0);
+    await initBulkSelect(
+      ctx, telegramId, "goal_sets",
+      items.map((g) => ({
+        id: g.id,
+        label: `${g.name} (${g.firstName})`,
+      })),
+      bulkDeleteGoalSets
+    );
+    return;
+  }
+
+  if (data === "adm_goal:delall") {
+    const count = await countAllGoalSets();
+    await showDeleteAllConfirm(ctx, "наборы целей", count, "adm_goal");
+    return;
+  }
+
+  if (data === "adm_goal:delall_yes") {
+    const deleted = await deleteAllGoalSets();
+    await ctx.editMessageText(`✅ Удалено наборов целей: ${deleted}`);
+    return;
+  }
+}
+
+// ─── Reminders (Admin) ──────────────────────────────────────────────────
+
+async function handleRemindersAdmin(ctx: Context, data: string, telegramId: number): Promise<void> {
+  if (data === "adm_rem:menu") {
+    await showModeMenu(ctx, "⏰ Напоминания", "adm_rem");
+    return;
+  }
+
+  const listMatch = data.match(/^adm_rem:list:(\d+)$/);
+  if (listMatch) {
+    const offset = parseInt(listMatch[1], 10);
+    const total = await countAllReminders();
+    const items = await getAllRemindersPaginated(PAGE_SIZE, offset);
+    const lines = items.map((r, i) => {
+      const num = offset + i + 1;
+      const timeStr = r.schedule.times?.join(", ") ?? "—";
+      const status = r.isActive ? "✅" : "⏸";
+      return `*${num}.* ${r.text.slice(0, 40)} · ${timeStr} · ${r.firstName} · ${status}`;
+    });
+    await showPaginatedList(ctx, "⏰ Напоминания", lines, total, offset, "adm_rem", items.map((r) => r.id));
+    return;
+  }
+
+  const delMatch = data.match(/^adm_rem:del:(\d+)$/);
+  if (delMatch) {
+    const id = parseInt(delMatch[1], 10);
+    await showDeleteConfirm(ctx, "напоминание", id, "adm_rem");
+    return;
+  }
+
+  const delYesMatch = data.match(/^adm_rem:del_yes:(\d+)$/);
+  if (delYesMatch) {
+    const id = parseInt(delYesMatch[1], 10);
+    await bulkDeleteReminders([id]);
+    await ctx.editMessageText(`✅ Напоминание #${id} удалено.`);
+    return;
+  }
+
+  if (data === "adm_rem:bulk") {
+    const items = await getAllRemindersPaginated(100, 0);
+    await initBulkSelect(
+      ctx, telegramId, "reminders",
+      items.map((r) => ({
+        id: r.id,
+        label: `${r.text.slice(0, 30)} (${r.firstName})`,
+      })),
+      bulkDeleteReminders
+    );
+    return;
+  }
+
+  if (data === "adm_rem:delall") {
+    const count = await countAllReminders();
+    await showDeleteAllConfirm(ctx, "напоминания", count, "adm_rem");
+    return;
+  }
+
+  if (data === "adm_rem:delall_yes") {
+    const deleted = await deleteAllReminders();
+    await ctx.editMessageText(`✅ Удалено напоминаний: ${deleted}`);
+    return;
+  }
+}
+
+// ─── OSINT Searches ─────────────────────────────────────────────────────
+
+async function handleOsintSearches(ctx: Context, data: string, telegramId: number): Promise<void> {
+  if (data === "adm_osint:menu") {
+    await showModeMenu(ctx, "🔍 OSINT", "adm_osint");
+    return;
+  }
+
+  const listMatch = data.match(/^adm_osint:list:(\d+)$/);
+  if (listMatch) {
+    const offset = parseInt(listMatch[1], 10);
+    const total = await countAllSearches();
+    const items = await getAllSearchesPaginated(PAGE_SIZE, offset);
+    const lines = items.map((s, i) => {
+      const num = offset + i + 1;
+      const date = s.createdAt.toLocaleDateString("ru-RU");
+      return `*${num}.* ${s.query.slice(0, 40)} · ${s.status} · ${s.firstName} · ${date}`;
+    });
+    await showPaginatedList(ctx, "🔍 OSINT", lines, total, offset, "adm_osint", items.map((s) => s.id));
+    return;
+  }
+
+  const delMatch = data.match(/^adm_osint:del:(\d+)$/);
+  if (delMatch) {
+    const id = parseInt(delMatch[1], 10);
+    await showDeleteConfirm(ctx, "поиск", id, "adm_osint");
+    return;
+  }
+
+  const delYesMatch = data.match(/^adm_osint:del_yes:(\d+)$/);
+  if (delYesMatch) {
+    const id = parseInt(delYesMatch[1], 10);
+    await bulkDeleteSearches([id]);
+    await ctx.editMessageText(`✅ Поиск #${id} удалён.`);
+    return;
+  }
+
+  if (data === "adm_osint:bulk") {
+    const items = await getAllSearchesPaginated(100, 0);
+    await initBulkSelect(
+      ctx, telegramId, "osint_searches",
+      items.map((s) => ({
+        id: s.id,
+        label: `${s.query.slice(0, 30)} (${s.firstName})`,
+      })),
+      bulkDeleteSearches
+    );
+    return;
+  }
+
+  if (data === "adm_osint:delall") {
+    const count = await countAllSearches();
+    await showDeleteAllConfirm(ctx, "OSINT-поиски", count, "adm_osint");
+    return;
+  }
+
+  if (data === "adm_osint:delall_yes") {
+    const deleted = await deleteAllSearches();
+    await ctx.editMessageText(`✅ Удалено поисков: ${deleted}`);
+    return;
+  }
+}
+
+// ─── Workplaces (Summarizer) ────────────────────────────────────────────
+
+async function handleWorkplaces(ctx: Context, data: string, telegramId: number): Promise<void> {
+  if (data === "adm_sum:menu") {
+    await showModeMenu(ctx, "📝 Саммаризатор", "adm_sum");
+    return;
+  }
+
+  const listMatch = data.match(/^adm_sum:list:(\d+)$/);
+  if (listMatch) {
+    const offset = parseInt(listMatch[1], 10);
+    const total = await countAllWorkplaces();
+    const items = await getAllWorkplacesPaginated(PAGE_SIZE, offset);
+    const lines = items.map((w, i) => {
+      const num = offset + i + 1;
+      const company = w.company ? ` · ${w.company}` : "";
+      return `*${num}.* ${w.title}${company} · ${w.firstName}`;
+    });
+    await showPaginatedList(ctx, "📝 Саммаризатор", lines, total, offset, "adm_sum", items.map((w) => w.id));
+    return;
+  }
+
+  const delMatch = data.match(/^adm_sum:del:(\d+)$/);
+  if (delMatch) {
+    const id = parseInt(delMatch[1], 10);
+    await showDeleteConfirm(ctx, "место работы", id, "adm_sum");
+    return;
+  }
+
+  const delYesMatch = data.match(/^adm_sum:del_yes:(\d+)$/);
+  if (delYesMatch) {
+    const id = parseInt(delYesMatch[1], 10);
+    await bulkDeleteWorkplaces([id]);
+    await ctx.editMessageText(`✅ Место работы #${id} удалено.`);
+    return;
+  }
+
+  if (data === "adm_sum:bulk") {
+    const items = await getAllWorkplacesPaginated(100, 0);
+    await initBulkSelect(
+      ctx, telegramId, "workplaces",
+      items.map((w) => ({
+        id: w.id,
+        label: `${w.title} (${w.firstName})`,
+      })),
+      bulkDeleteWorkplaces
+    );
+    return;
+  }
+
+  if (data === "adm_sum:delall") {
+    const count = await countAllWorkplaces();
+    await showDeleteAllConfirm(ctx, "места работы", count, "adm_sum");
+    return;
+  }
+
+  if (data === "adm_sum:delall_yes") {
+    const deleted = await deleteAllWorkplaces();
+    await ctx.editMessageText(`✅ Удалено мест работы: ${deleted}`);
+    return;
+  }
+}
+
+// ─── Blog Channels (Blogger) ────────────────────────────────────────────
+
+async function handleBlogChannels(ctx: Context, data: string, telegramId: number): Promise<void> {
+  if (data === "adm_blog:menu") {
+    await showModeMenu(ctx, "✍️ Блогер", "adm_blog");
+    return;
+  }
+
+  const listMatch = data.match(/^adm_blog:list:(\d+)$/);
+  if (listMatch) {
+    const offset = parseInt(listMatch[1], 10);
+    const total = await countAllChannels();
+    const items = await getAllChannelsPaginated(PAGE_SIZE, offset);
+    const lines = items.map((c, i) => {
+      const num = offset + i + 1;
+      const date = c.createdAt.toLocaleDateString("ru-RU");
+      return `*${num}.* ${c.channelTitle} (${c.postCount} постов) · ${c.firstName} · ${date}`;
+    });
+    await showPaginatedList(ctx, "✍️ Блогер", lines, total, offset, "adm_blog", items.map((c) => c.id));
+    return;
+  }
+
+  const delMatch = data.match(/^adm_blog:del:(\d+)$/);
+  if (delMatch) {
+    const id = parseInt(delMatch[1], 10);
+    await showDeleteConfirm(ctx, "канал", id, "adm_blog");
+    return;
+  }
+
+  const delYesMatch = data.match(/^adm_blog:del_yes:(\d+)$/);
+  if (delYesMatch) {
+    const id = parseInt(delYesMatch[1], 10);
+    await bulkDeleteChannels([id]);
+    await ctx.editMessageText(`✅ Канал #${id} удалён.`);
+    return;
+  }
+
+  if (data === "adm_blog:bulk") {
+    const items = await getAllChannelsPaginated(100, 0);
+    await initBulkSelect(
+      ctx, telegramId, "blogger_channels",
+      items.map((c) => ({
+        id: c.id,
+        label: `${c.channelTitle} (${c.firstName})`,
+      })),
+      bulkDeleteChannels
+    );
+    return;
+  }
+
+  if (data === "adm_blog:delall") {
+    const count = await countAllChannels();
+    await showDeleteAllConfirm(ctx, "каналы блогера", count, "adm_blog");
+    return;
+  }
+
+  if (data === "adm_blog:delall_yes") {
+    const deleted = await deleteAllChannels();
+    await ctx.editMessageText(`✅ Удалено каналов: ${deleted}`);
     return;
   }
 }
