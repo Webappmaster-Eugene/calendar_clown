@@ -4,6 +4,7 @@ export interface OsintParsedSubject {
   firstName?: string;
   patronymic?: string;
   inn?: string;
+  snils?: string;
   isProfessionalTech?: boolean;
   aliases?: string[];
   phone?: string;
