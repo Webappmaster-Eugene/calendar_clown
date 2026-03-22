@@ -13,6 +13,7 @@ import { handleGoalsVoice } from "./goalsMode.js";
 import { handleRemindersVoice } from "./remindersMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
+import { telegramFetch } from "../utils/proxyAgent.js";
 import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
@@ -89,7 +90,7 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
   let filePath: string | null = null;
   try {
     const link = await ctx.telegram.getFileLink(voice.file_id);
-    const res = await fetch(link.toString());
+    const res = await telegramFetch(link.toString());
     if (!res.ok) throw new Error(`Download failed: ${res.status}`);
     const buffer = Buffer.from(await res.arrayBuffer());
     await mkdir(VOICE_DIR, { recursive: true });

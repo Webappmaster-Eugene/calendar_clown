@@ -13,6 +13,7 @@ import { getUserByTelegramId } from "../expenses/repository.js";
 import { createTranscription, countPendingForUser, getTranscriptionByFileUniqueId, deleteTranscription } from "../transcribe/repository.js";
 import { addTranscribeJob, isTranscribeAvailable } from "../transcribe/queue.js";
 import { VOICE_DIR } from "../constants.js";
+import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("transcribe");
@@ -142,7 +143,7 @@ export async function handleVoiceInTranscribeMode(
   let filePath: string;
   try {
     const link = await ctx.telegram.getFileLink(voice.file_id);
-    const res = await fetch(link.toString());
+    const res = await telegramFetch(link.toString());
     if (!res.ok) throw new Error(`Download failed: ${res.status}`);
     const buffer = Buffer.from(await res.arrayBuffer());
     await mkdir(VOICE_DIR, { recursive: true });

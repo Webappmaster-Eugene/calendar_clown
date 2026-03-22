@@ -1,3 +1,4 @@
+import type http from "node:http";
 import { Telegraf, type Context } from "telegraf";
 import { handleStart, handleHelp } from "./commands/start.js";
 import { handleAuth } from "./commands/auth.js";
@@ -113,9 +114,11 @@ import {
   handleRemindersText,
 } from "./commands/remindersMode.js";
 
-export function createBot(token: string): Telegraf {
+export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   const log = createLogger("bot");
-  const bot = new Telegraf(token);
+  const bot = new Telegraf(token, {
+    telegram: telegramAgent ? { agent: telegramAgent } : undefined,
+  });
 
   // Global error handler — prevent unhandled errors from crashing the process
   bot.catch((err, ctx) => {

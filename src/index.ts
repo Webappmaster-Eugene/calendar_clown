@@ -23,6 +23,7 @@ import { setAuthBotRef } from "./commands/digestAuth.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
 import { startRemindersScheduler, stopRemindersScheduler } from "./reminders/scheduler.js";
+import { initProxyAgent } from "./utils/proxyAgent.js";
 import { createLogger } from "./utils/logger.js";
 
 const log = createLogger("app");
@@ -64,7 +65,8 @@ async function main(): Promise<void> {
     log.info("DATABASE_URL not set — expense tracking disabled.");
   }
 
-  const bot = createBot(token!);
+  const telegramAgent = await initProxyAgent();
+  const bot = createBot(token!, telegramAgent);
 
   // Initialize Redis + BullMQ for voice transcription queue
   const redisUrl = process.env.REDIS_URL?.trim();

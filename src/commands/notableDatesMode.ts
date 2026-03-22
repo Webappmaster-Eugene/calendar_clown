@@ -18,6 +18,7 @@ import {
   listNotableDatesPaginated,
 } from "../notable-dates/repository.js";
 import { parseNotableDateInput, formatNotableDateReminder } from "../notable-dates/service.js";
+import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("notable-dates");
@@ -753,7 +754,7 @@ export async function handleNotableDatesDocument(ctx: Context): Promise<void> {
 
   try {
     const fileLink = await ctx.telegram.getFileLink(doc.file_id);
-    const response = await fetch(fileLink.href);
+    const response = await telegramFetch(fileLink.href);
     if (!response.ok) {
       await ctx.reply("Не удалось скачать файл.");
       return;
