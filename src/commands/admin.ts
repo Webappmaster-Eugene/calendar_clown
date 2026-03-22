@@ -23,6 +23,7 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { createLogger } from "../utils/logger.js";
 import { showDataManagementMenu } from "./adminData.js";
+import { BUILD_COMMIT, BUILD_DATE, COMMIT_DATE } from "../buildInfo.js";
 import {
   updateTribe,
   deleteTribe,
@@ -61,7 +62,10 @@ export async function handleAdminCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  await ctx.reply("🔧 *Панель администратора*", {
+  const versionLine = `🏗 *Сборка:* \`${BUILD_COMMIT}\` от ${BUILD_DATE}` +
+    (COMMIT_DATE ? ` (коммит: ${COMMIT_DATE})` : "");
+
+  await ctx.reply(`🔧 *Панель администратора*\n${versionLine}`, {
     parse_mode: "Markdown",
     ...Markup.inlineKeyboard([
       [Markup.button.callback("👥 Список пользователей", "admin:list")],

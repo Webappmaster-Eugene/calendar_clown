@@ -79,6 +79,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  osint: [
+    { command: "osint", description: "OSINT-поиск (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
   admin: [
     { command: "admin", description: "Управление пользователями" },
     { command: "mode", description: "Выбор режима работы" },
@@ -110,7 +115,8 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📰 Дайджест", "🎉 Даты"],
         ["🎁 Вишлист", "🧠 Нейро"],
         ["🎯 Цели", "⏰ Напоминания"],
-        ["📢 Царская почта", "👑 Управление"],
+        ["🔍 OSINT", "📢 Царская почта"],
+        ["👑 Управление"],
       ]).resize();
     }
     if (context.hasTribe) {
@@ -120,6 +126,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📰 Дайджест", "🎉 Даты"],
         ["🎁 Вишлист", "🧠 Нейро"],
         ["🎯 Цели", "⏰ Напоминания"],
+        ["🔍 OSINT"],
       ]).resize();
     }
     // User without tribe — limited modes
@@ -137,6 +144,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["📰 Дайджест", "🎉 Даты"],
     ["🎁 Вишлист", "🧠 Нейро"],
     ["🎯 Цели", "⏰ Напоминания"],
+    ["🔍 OSINT"],
   ];
   if (isAdmin) {
     rows.push(["📢 Царская почта", "👑 Управление"]);
@@ -243,6 +251,11 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
   rows.push([
     Markup.button.callback("⏰ Напоминания", "mode:reminders"),
   ]);
+  if (canAccessMode("osint", ctx)) {
+    rows.push([
+      Markup.button.callback("🔍 OSINT", "mode:osint"),
+    ]);
+  }
   if (isAdmin) {
     rows.push([
       Markup.button.callback("📢 Царская почта", "mode:broadcast"),

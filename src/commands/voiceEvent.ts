@@ -8,7 +8,7 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode } from "../middleware/userMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode } from "../middleware/userMode.js";
 import { handleGoalsVoice } from "./goalsMode.js";
 import { handleRemindersVoice } from "./remindersMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
@@ -19,6 +19,7 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
 import { handleGandalfVoice } from "./gandalfMode.js";
+import { handleOsintVoice } from "./osintMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
@@ -125,6 +126,12 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
     // Gandalf (База знаний) mode — extract structured entry from voice
     if (telegramId != null && await isGandalfMode(telegramId)) {
       await handleGandalfVoice(ctx, transcript, statusMsg.message_id);
+      return;
+    }
+
+    // OSINT mode — search from voice transcript
+    if (telegramId != null && await isOsintMode(telegramId)) {
+      await handleOsintVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 

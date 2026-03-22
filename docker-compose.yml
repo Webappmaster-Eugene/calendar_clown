@@ -58,6 +58,7 @@ services:
       - DIGEST_CRON=${DIGEST_CRON:-0 6 * * *}
       - PORT=${PORT:-18790}
       - HOST=${HOST:-0.0.0.0}
+      - TELEGRAM_PROXY=${TELEGRAM_PROXY:-}
     volumes:
       - tokens:/app/data/tokens
       - voice:/app/data/voice

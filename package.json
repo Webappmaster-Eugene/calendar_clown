@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "prebuild": "tsx scripts/generateBuildInfo.ts",
     "build": "tsup src/index.ts --format esm",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",

@@ -44,3 +44,12 @@ export const OPENROUTER_REFERER = "https://github.com/telegram-google-calendar-b
 export const DB_UNAVAILABLE_MSG =
   "⚠️ Учёт расходов временно недоступен (нет подключения к базе данных).\n" +
   "Календарь работает в обычном режиме.";
+
+/** OSINT: daily search limit per user. */
+export const OSINT_DAILY_LIMIT = 10;
+
+/** OSINT: AI model for report analysis (via OpenRouter). */
+export const OSINT_ANALYSIS_MODEL = process.env.OSINT_MODEL || "anthropic/claude-sonnet-4";
+
+/** OSINT: Tavily API base URL. */
+export const TAVILY_API_URL = "https://api.tavily.com";

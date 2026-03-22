@@ -14,6 +14,7 @@ let cachedAgent: http.Agent | undefined;
 export async function initProxyAgent(): Promise<http.Agent | undefined> {
   const proxyUrl = process.env.TELEGRAM_PROXY?.trim();
   if (!proxyUrl) {
+    log.warn("TELEGRAM_PROXY not set — direct connection to Telegram API");
     return undefined;
   }
 
@@ -42,25 +43,21 @@ export function getTelegramAgent(): http.Agent | undefined {
   return cachedAgent;
 }
 
-/**
- * Fetch a URL using the Telegram proxy agent (if configured).
- * Uses native node:https to avoid CJS/ESM bundling issues with node-fetch.
- *
- * @param url       — URL to fetch
- * @param options   — optional settings
- * @param options.timeoutMs — overall request timeout in ms (default: 120 000 = 2 min)
- */
-export async function telegramFetch(
-  url: string,
-  options?: { timeoutMs?: number },
-): Promise<{
+type TelegramFetchResult = {
   ok: boolean;
   status: number;
   arrayBuffer: () => Promise<ArrayBuffer>;
   text: () => Promise<string>;
-}> {
-  const timeoutMs = options?.timeoutMs ?? 120_000;
+};
 
+/**
+ * Single-attempt fetch using the Telegram proxy agent (if configured).
+ * Uses native node:https to avoid CJS/ESM bundling issues with node-fetch.
+ */
+function telegramFetchOnce(
+  url: string,
+  timeoutMs: number,
+): Promise<TelegramFetchResult> {
   return new Promise((resolve, reject) => {
     let settled = false;
 
@@ -106,4 +103,35 @@ export async function telegramFetch(
       reject(err);
     });
   });
+}
+
+/**
+ * Fetch a URL using the Telegram proxy agent (if configured).
+ * Retries once after a 2-second delay on failure.
+ *
+ * @param url       — URL to fetch
+ * @param options   — optional settings
+ * @param options.timeoutMs — overall request timeout per attempt in ms (default: 120 000 = 2 min)
+ * @param options.retries   — number of retry attempts on failure (default: 1)
+ */
+export async function telegramFetch(
+  url: string,
+  options?: { timeoutMs?: number; retries?: number },
+): Promise<TelegramFetchResult> {
+  const timeoutMs = options?.timeoutMs ?? 120_000;
+  const retries = options?.retries ?? 1;
+
+  log.debug(`telegramFetch: ${url.substring(0, 80)}… proxy=${cachedAgent ? "yes" : "no"}, timeout=${timeoutMs}ms`);
+
+  try {
+    return await telegramFetchOnce(url, timeoutMs);
+  } catch (err) {
+    if (retries <= 0) throw err;
+
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn(`telegramFetch failed (${message}), retrying in 2s… (${retries} retries left)`);
+
+    await new Promise((r) => setTimeout(r, 2_000));
+    return telegramFetch(url, { timeoutMs, retries: retries - 1 });
+  }
 }

@@ -16,7 +16,7 @@ export interface UserMenuContext {
 export const INDIVIDUAL_MODES = new Set(["calendar", "transcribe", "gandalf", "neuro", "goals", "reminders"]);
 
 /** Modes that require tribe membership. */
-export const TRIBE_MODES = new Set(["expenses", "digest", "notable_dates", "wishlist"]);
+export const TRIBE_MODES = new Set(["expenses", "digest", "notable_dates", "wishlist", "osint"]);
 
 /** Modes that require admin role. */
 export const ADMIN_MODES = new Set(["broadcast", "admin"]);

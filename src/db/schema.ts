@@ -652,6 +652,42 @@ export const reminders = pgTable(
   ],
 );
 
+// ─── OSINT Searches ─────────────────────────────────────────────────────
+
+export const osintSearches = pgTable(
+  "osint_searches",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    query: text("query").notNull(),
+    parsedSubject: jsonb("parsed_subject"),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    searchQueries: jsonb("search_queries"),
+    rawResults: jsonb("raw_results"),
+    report: text("report"),
+    sourcesCount: integer("sources_count").notNull().default(0),
+    inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_osint_searches_user_created").on(table.userId, table.createdAt),
+    index("idx_osint_searches_status").on(table.status),
+    check(
+      "osint_searches_status_check",
+      sql`${table.status} IN ('pending', 'searching', 'analyzing', 'completed', 'failed')`,
+    ),
+    check(
+      "osint_searches_input_method_check",
+      sql`${table.inputMethod} IN ('text', 'voice')`,
+    ),
+  ],
+);
+
 // ─── Reminder Subscribers ───────────────────────────────────────────────
 
 export const reminderSubscribers = pgTable(

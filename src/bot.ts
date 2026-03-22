@@ -86,9 +86,17 @@ import {
   handleWishlistText,
   handleWishlistFileAttachment,
 } from "./commands/wishlistMode.js";
+import {
+  handleOsintCommand,
+  handleOsintText,
+  handleNewSearchButton,
+  handleHistoryButton,
+  handleHistoryPageCallback,
+  handleViewSearchCallback,
+} from "./commands/osintMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
 import { createLogger } from "./utils/logger.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode } from "./middleware/userMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode } from "./middleware/userMode.js";
 import {
   handleGoalsCommand,
   handleMyGoalSetsButton,
@@ -159,6 +167,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.command("wishlist", handleWishlistCommand);
   bot.command("goals", handleGoalsCommand);
   bot.command("reminders", handleRemindersCommand);
+  bot.command("osint", handleOsintCommand);
   bot.command("neuro", handleNeuroCommand);
 
   // Admin commands
@@ -290,6 +299,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^goal_viewer_done:/, handleGoalViewerCallback);
   bot.action(/^goal_page:/, handleGoalsPageCallback);
 
+  // OSINT callbacks
+  bot.action(/^osint_hist:/, handleHistoryPageCallback);
+  bot.action(/^osint_view:/, handleViewSearchCallback);
+
   // Mode switch inline callbacks
   bot.action("mode:calendar", async (ctx) => {
     await ctx.answerCbQuery("📅 Календарь");
@@ -369,6 +382,18 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     await ctx.answerCbQuery("⏰ Напоминания");
     await handleRemindersCommand(ctx);
   });
+  bot.action("mode:osint", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid) {
+      const mc = await getUserMenuContext(tid);
+      if (mc && !canAccessMode("osint", mc)) {
+        await ctx.answerCbQuery("Требуется трайб");
+        return;
+      }
+    }
+    await ctx.answerCbQuery("🔍 OSINT");
+    await handleOsintCommand(ctx);
+  });
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
   // ─── Voice ──────────────────────────────────────────────────────────
@@ -389,6 +414,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("🧠 Нейро", handleNeuroCommand);
   bot.hears("🎯 Цели", handleGoalsCommand);
   bot.hears("⏰ Напоминания", handleRemindersCommand);
+  bot.hears("🔍 OSINT", handleOsintCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
@@ -458,6 +484,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("📋 Мои напоминания", handleMyRemindersButton);
   bot.hears("➕ Новое напоминание", handleNewReminderButton);
   bot.hears("👀 Напоминания семьи", handleTribeRemindersButton);
+
+  // OSINT mode buttons
+  bot.hears("🔍 Новый поиск", handleNewSearchButton);
+  bot.hears("📋 История поисков", handleHistoryButton);
 
   // Neuro mode buttons
   bot.hears("🗑 Очистить историю", async (ctx) => {
@@ -568,6 +598,13 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
       const authHandled = await handleDigestAuthText(ctx);
       if (authHandled) return;
       const handled = await handleDigestText(ctx);
+      if (handled) return;
+      return next();
+    }
+
+    // OSINT mode — search from text
+    if (await isOsintMode(telegramId)) {
+      const handled = await handleOsintText(ctx);
       if (handled) return;
       return next();
     }

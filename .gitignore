@@ -25,6 +25,9 @@ GB.conf
 *.key
 *.crt
 
+# Auto-generated build info
+src/buildInfo.ts
+
 # Test coverage
 coverage/
 
