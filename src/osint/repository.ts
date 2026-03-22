@@ -141,6 +141,66 @@ export async function getSearchHistory(
   };
 }
 
+/** Get filtered search history for a user, paginated. */
+export async function getFilteredSearchHistory(
+  userId: number,
+  limit: number,
+  offset: number,
+  filter?: { status?: OsintStatus; searchText?: string }
+): Promise<{ searches: OsintSearch[]; total: number }> {
+  const conditions: string[] = ["user_id = $1"];
+  const params: unknown[] = [userId];
+  let idx = 2;
+
+  if (filter?.status) {
+    conditions.push(`status = $${idx}`);
+    params.push(filter.status);
+    idx++;
+  }
+
+  if (filter?.searchText) {
+    conditions.push(`query ILIKE $${idx}`);
+    params.push(`%${filter.searchText}%`);
+    idx++;
+  }
+
+  const where = conditions.join(" AND ");
+
+  const [dataResult, countResult] = await Promise.all([
+    query<{
+      id: number;
+      user_id: number;
+      query: string;
+      parsed_subject: OsintParsedSubject | null;
+      status: OsintStatus;
+      search_queries: string[] | null;
+      raw_results: TavilyResult[] | null;
+      report: string | null;
+      sources_count: number;
+      input_method: "text" | "voice";
+      error_message: string | null;
+      started_at: Date | null;
+      completed_at: Date | null;
+      created_at: Date;
+    }>(
+      `SELECT * FROM osint_searches
+       WHERE ${where}
+       ORDER BY created_at DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
+    ),
+    query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM osint_searches WHERE ${where}`,
+      params
+    ),
+  ]);
+
+  return {
+    searches: dataResult.rows.map(mapRow),
+    total: parseInt(countResult.rows[0].count, 10),
+  };
+}
+
 /** Get a single search by ID (only if owned by the user). */
 export async function getSearchById(
   searchId: number,

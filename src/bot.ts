@@ -105,7 +105,12 @@ import {
   handleNewSearchButton,
   handleHistoryButton,
   handleHistoryPageCallback,
+  handleHistoryFilterCallback,
+  handleHistorySearchCallback,
   handleViewSearchCallback,
+  handleOsintConfirmCallback,
+  handleOsintReenterCallback,
+  handleOsintCancelCallback,
 } from "./commands/osintMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
 import { createLogger } from "./utils/logger.js";
@@ -330,7 +335,12 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^goal_page:/, handleGoalsPageCallback);
 
   // OSINT callbacks
+  bot.action(/^osint_confirm$/, handleOsintConfirmCallback);
+  bot.action(/^osint_reenter$/, handleOsintReenterCallback);
+  bot.action(/^osint_cancel$/, handleOsintCancelCallback);
   bot.action(/^osint_hist:/, handleHistoryPageCallback);
+  bot.action(/^osint_hist_filter:/, handleHistoryFilterCallback);
+  bot.action(/^osint_hist_search$/, handleHistorySearchCallback);
   bot.action(/^osint_view:/, handleViewSearchCallback);
 
   // Summarizer callbacks
