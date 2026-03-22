@@ -128,6 +128,20 @@ function getPeriodRange(period: SummaryPeriod): PeriodRange {
 async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData> {
   const p = [range.from.toISOString(), range.to.toISOString()];
 
+  // Helper: run query with graceful fallback on error (e.g. missing table, connection reset)
+  async function safeQuery<T extends Record<string, unknown>>(
+    sql: string,
+    params: string[],
+    label: string,
+  ): Promise<{ rows: T[] }> {
+    try {
+      return await query<T>(sql, params);
+    } catch (err) {
+      log.error(`Summary query failed [${label}]`, err);
+      return { rows: [] };
+    }
+  }
+
   const [
     expenseStats,
     expenseCategories,
@@ -146,7 +160,7 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
     notableCount,
   ] = await Promise.all([
     // 1. expenses: count, sum, text/voice split
-    query<{ count: string; total: string; text_count: string; voice_count: string }>(
+    safeQuery<{ count: string; total: string; text_count: string; voice_count: string }>(
       `SELECT
          COUNT(*)::text AS count,
          COALESCE(SUM(amount), 0)::text AS total,
@@ -155,9 +169,10 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
        FROM expenses
        WHERE created_at >= $1 AND created_at < $2`,
       p,
+      "expenses",
     ),
     // 2. expenses + categories: top-10
-    query<{ name: string; emoji: string; cnt: string; amt: string }>(
+    safeQuery<{ name: string; emoji: string; cnt: string; amt: string }>(
       `SELECT c.name, c.emoji, COUNT(*)::text AS cnt, SUM(e.amount)::text AS amt
        FROM expenses e
        JOIN categories c ON c.id = e.category_id
@@ -166,9 +181,10 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
        ORDER BY SUM(e.amount) DESC
        LIMIT 10`,
       p,
+      "expense_categories",
     ),
     // 3. expenses + users: per-user breakdown
-    query<{ first_name: string; cnt: string; amt: string }>(
+    safeQuery<{ first_name: string; cnt: string; amt: string }>(
       `SELECT u.first_name, COUNT(*)::text AS cnt, SUM(e.amount)::text AS amt
        FROM expenses e
        JOIN users u ON u.id = e.user_id
@@ -176,9 +192,10 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
        GROUP BY u.id, u.first_name
        ORDER BY SUM(e.amount) DESC`,
       p,
+      "expense_users",
     ),
     // 4. calendar_events: created/deleted, text/voice
-    query<{ created: string; deleted: string; text_count: string; voice_count: string }>(
+    safeQuery<{ created: string; deleted: string; text_count: string; voice_count: string }>(
       `SELECT
          COUNT(*) FILTER (WHERE status = 'created')::text AS created,
          COUNT(*) FILTER (WHERE status = 'deleted')::text AS deleted,
@@ -187,9 +204,10 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
        FROM calendar_events
        WHERE created_at >= $1 AND created_at < $2`,
       p,
+      "calendar_events",
     ),
     // 5. calendar_events + users: per-user
-    query<{ first_name: string; created: string; deleted: string }>(
+    safeQuery<{ first_name: string; created: string; deleted: string }>(
       `SELECT u.first_name,
          COUNT(*) FILTER (WHERE ce.status = 'created')::text AS created,
          COUNT(*) FILTER (WHERE ce.status = 'deleted')::text AS deleted
@@ -199,18 +217,20 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
        GROUP BY u.id, u.first_name
        ORDER BY COUNT(*) DESC`,
       p,
+      "calendar_users",
     ),
     // 6. voice_transcriptions: total, errors
-    query<{ total: string; errors: string }>(
+    safeQuery<{ total: string; errors: string }>(
       `SELECT
          COUNT(*)::text AS total,
          COUNT(*) FILTER (WHERE status = 'error')::text AS errors
        FROM voice_transcriptions
        WHERE created_at >= $1 AND created_at < $2`,
       p,
+      "transcriptions",
     ),
     // 7. voice_transcriptions + users: per-user
-    query<{ first_name: string; cnt: string }>(
+    safeQuery<{ first_name: string; cnt: string }>(
       `SELECT u.first_name, COUNT(*)::text AS cnt
        FROM voice_transcriptions vt
        JOIN users u ON u.id = vt.user_id
@@ -218,9 +238,10 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
        GROUP BY u.id, u.first_name
        ORDER BY COUNT(*) DESC`,
       p,
+      "transcription_users",
     ),
     // 8. action_logs: action types + counts (top 20)
-    query<{ action: string; cnt: string }>(
+    safeQuery<{ action: string; cnt: string }>(
       `SELECT action, COUNT(*)::text AS cnt
        FROM action_logs
        WHERE created_at >= $1 AND created_at < $2
@@ -228,9 +249,10 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
        ORDER BY COUNT(*) DESC
        LIMIT 20`,
       p,
+      "action_logs",
     ),
     // 9. gandalf_entries + categories: entries per category
-    query<{ name: string; cnt: string }>(
+    safeQuery<{ name: string; cnt: string }>(
       `SELECT gc.name, COUNT(*)::text AS cnt
        FROM gandalf_entries ge
        JOIN gandalf_categories gc ON gc.id = ge.category_id
@@ -238,16 +260,18 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
        GROUP BY gc.id, gc.name
        ORDER BY COUNT(*) DESC`,
       p,
+      "gandalf",
     ),
     // 10. chat_messages: count
-    query<{ count: string }>(
+    safeQuery<{ count: string }>(
       `SELECT COUNT(*)::text AS count
        FROM chat_messages
        WHERE created_at >= $1 AND created_at < $2`,
       p,
+      "chat_count",
     ),
     // 11. chat_messages + users: per-user
-    query<{ first_name: string; cnt: string }>(
+    safeQuery<{ first_name: string; cnt: string }>(
       `SELECT u.first_name, COUNT(*)::text AS cnt
        FROM chat_messages cm
        JOIN users u ON u.id = cm.user_id
@@ -255,46 +279,51 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
        GROUP BY u.id, u.first_name
        ORDER BY COUNT(*) DESC`,
       p,
+      "chat_users",
     ),
     // 12. digest_runs: count, posts_found
-    query<{ count: string; posts_found: string }>(
+    safeQuery<{ count: string; posts_found: string }>(
       `SELECT COUNT(*)::text AS count, COALESCE(SUM(posts_found), 0)::text AS posts_found
        FROM digest_runs
        WHERE created_at >= $1 AND created_at < $2`,
       p,
+      "digest_runs",
     ),
     // 13. wishlist_items: count
-    query<{ count: string }>(
+    safeQuery<{ count: string }>(
       `SELECT COUNT(*)::text AS count
        FROM wishlist_items
        WHERE created_at >= $1 AND created_at < $2`,
       p,
+      "wishlist",
     ),
     // 14. goals: created + completed
-    query<{ created: string; completed: string }>(
+    safeQuery<{ created: string; completed: string }>(
       `SELECT
          COUNT(*)::text AS created,
          COUNT(*) FILTER (WHERE is_completed = true)::text AS completed
        FROM goals
        WHERE created_at >= $1 AND created_at < $2`,
       p,
+      "goals",
     ),
     // 15. notable_dates: count
-    query<{ count: string }>(
+    safeQuery<{ count: string }>(
       `SELECT COUNT(*)::text AS count
        FROM notable_dates
        WHERE created_at >= $1 AND created_at < $2`,
       p,
+      "notable_dates",
     ),
   ]);
 
   return {
     period: range,
     expenses: {
-      count: parseInt(expenseStats.rows[0].count, 10),
-      totalAmount: parseFloat(expenseStats.rows[0].total),
-      textCount: parseInt(expenseStats.rows[0].text_count, 10),
-      voiceCount: parseInt(expenseStats.rows[0].voice_count, 10),
+      count: parseInt(expenseStats.rows[0]?.count ?? "0", 10),
+      totalAmount: parseFloat(expenseStats.rows[0]?.total ?? "0"),
+      textCount: parseInt(expenseStats.rows[0]?.text_count ?? "0", 10),
+      voiceCount: parseInt(expenseStats.rows[0]?.voice_count ?? "0", 10),
       categories: expenseCategories.rows.map((r) => ({
         name: r.name,
         emoji: r.emoji,
@@ -308,10 +337,10 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
       })),
     },
     calendarEvents: {
-      created: parseInt(calendarStats.rows[0].created, 10),
-      deleted: parseInt(calendarStats.rows[0].deleted, 10),
-      textCount: parseInt(calendarStats.rows[0].text_count, 10),
-      voiceCount: parseInt(calendarStats.rows[0].voice_count, 10),
+      created: parseInt(calendarStats.rows[0]?.created ?? "0", 10),
+      deleted: parseInt(calendarStats.rows[0]?.deleted ?? "0", 10),
+      textCount: parseInt(calendarStats.rows[0]?.text_count ?? "0", 10),
+      voiceCount: parseInt(calendarStats.rows[0]?.voice_count ?? "0", 10),
       perUser: calendarUsers.rows.map((r) => ({
         firstName: r.first_name,
         created: parseInt(r.created, 10),
@@ -319,8 +348,8 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
       })),
     },
     transcriptions: {
-      total: parseInt(transcriptionStats.rows[0].total, 10),
-      errors: parseInt(transcriptionStats.rows[0].errors, 10),
+      total: parseInt(transcriptionStats.rows[0]?.total ?? "0", 10),
+      errors: parseInt(transcriptionStats.rows[0]?.errors ?? "0", 10),
       perUser: transcriptionUsers.rows.map((r) => ({
         firstName: r.first_name,
         count: parseInt(r.cnt, 10),
@@ -338,22 +367,22 @@ async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData>
       })),
     },
     chatMessages: {
-      count: parseInt(chatCount.rows[0].count, 10),
+      count: parseInt(chatCount.rows[0]?.count ?? "0", 10),
       perUser: chatUsers.rows.map((r) => ({
         firstName: r.first_name,
         count: parseInt(r.cnt, 10),
       })),
     },
     digestRuns: {
-      count: parseInt(digestStats.rows[0].count, 10),
-      postsFound: parseInt(digestStats.rows[0].posts_found, 10),
+      count: parseInt(digestStats.rows[0]?.count ?? "0", 10),
+      postsFound: parseInt(digestStats.rows[0]?.posts_found ?? "0", 10),
     },
-    wishlistItems: { count: parseInt(wishlistCount.rows[0].count, 10) },
+    wishlistItems: { count: parseInt(wishlistCount.rows[0]?.count ?? "0", 10) },
     goals: {
-      created: parseInt(goalStats.rows[0].created, 10),
-      completed: parseInt(goalStats.rows[0].completed, 10),
+      created: parseInt(goalStats.rows[0]?.created ?? "0", 10),
+      completed: parseInt(goalStats.rows[0]?.completed ?? "0", 10),
     },
-    notableDates: { count: parseInt(notableCount.rows[0].count, 10) },
+    notableDates: { count: parseInt(notableCount.rows[0]?.count ?? "0", 10) },
   };
 }
 
