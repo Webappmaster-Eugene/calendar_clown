@@ -77,13 +77,13 @@ function delay(ms: number): Promise<void> {
  */
 export async function validateDiscoveredChannels(
   candidates: Array<{ username: string; mentionCount: number }>,
-  maxResults: number = 3,
+  maxResults: number = 5,
   minSubscribers: number = 100
 ): Promise<Array<{ username: string; mentionCount: number; title: string; subscriberCount: number }>> {
   const validated: Array<{ username: string; mentionCount: number; title: string; subscriberCount: number }> = [];
 
-  // Check top-15 candidates at most
-  const toCheck = candidates.slice(0, 15);
+  // Check top-25 candidates at most
+  const toCheck = candidates.slice(0, 25);
 
   for (let i = 0; i < toCheck.length; i++) {
     const candidate = toCheck[i];

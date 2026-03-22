@@ -1,6 +1,6 @@
 /**
  * Cron scheduler for daily digest.
- * Runs at configured time (default 6:00 MSK) and triggers digest for all users.
+ * Runs at configured time (default 13:00 MSK) and triggers digest for all users.
  */
 
 import { Cron } from "croner";
@@ -19,10 +19,10 @@ let digestCron: Cron | null = null;
 /**
  * Start the daily digest scheduler.
  * @param bot Telegraf instance for sending messages.
- * @param cronExpr Cron expression (default: "0 6 * * *" = 6:00 daily).
+ * @param cronExpr Cron expression (default: "0 13 * * *" = 13:00 daily).
  */
 export function startDigestScheduler(bot: Telegraf, cronExpr?: string): void {
-  const expr = cronExpr ?? process.env.DIGEST_CRON ?? "0 6 * * *";
+  const expr = cronExpr ?? process.env.DIGEST_CRON ?? "0 13 * * *";
 
   digestCron = new Cron(expr, { timezone: "Europe/Moscow" }, async () => {
     log.info("Digest cron triggered");

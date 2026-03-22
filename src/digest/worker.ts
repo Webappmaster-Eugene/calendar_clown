@@ -129,15 +129,20 @@ async function runDigestForRubric(
     await insertDigestPosts(dbPosts);
     await completeRun(run.id, channelsParsed, posts.length, topPosts.length);
 
-    // 5. Format and send digest
-    const message = formatDigestMessage(rubric, topPosts, summaries);
-    await sendMessage(bot, telegramId, message);
+    // 5. Format and send digest (may be split into multiple messages)
+    const messages = formatDigestMessage(rubric, topPosts, summaries);
+    for (let mi = 0; mi < messages.length; mi++) {
+      await sendMessage(bot, telegramId, messages[mi]);
+      if (mi < messages.length - 1) {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
 
     // 6. Discovery: suggest new validated channels
     const trackedSet = new Set(channels.map((c) => c.channelUsername));
     const discovered = discoverChannels(posts, trackedSet);
     if (discovered.length > 0) {
-      const validated = await validateDiscoveredChannels(discovered, 3, 100);
+      const validated = await validateDiscoveredChannels(discovered, 5, 100);
       if (validated.length > 0) {
         const suggestions = validated
           .map((d) => {
@@ -163,12 +168,12 @@ async function runDigestForRubric(
   }
 }
 
-/** Format the digest message for Telegram. */
+/** Format the digest message for Telegram, split into chunks ≤ 4096 chars. */
 function formatDigestMessage(
   rubric: DigestRubric,
   posts: Array<RawChannelPost & { engagementScore: number }>,
   summaries: Array<string | null>
-): string {
+): string[] {
   const now = new Date();
   const dateStr = now.toLocaleDateString("ru-RU", {
     day: "numeric",
@@ -177,9 +182,9 @@ function formatDigestMessage(
     timeZone: TIMEZONE_MSK,
   });
 
-  let header = `${rubric.emoji ?? "📰"} *Дайджест: ${escapeMarkdown(rubric.name)}*\n`;
-  header += `${dateStr} | ${posts.length} публикаций\n`;
-  header += "━━━━━━━━━━━━━━━━━━━━━━\n\n";
+  const header = `${rubric.emoji ?? "📰"} *Дайджест: ${escapeMarkdown(rubric.name)}*\n` +
+    `${dateStr} | ${posts.length} публикаций\n` +
+    "━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
   const items: string[] = [];
   for (let i = 0; i < posts.length; i++) {
@@ -204,14 +209,26 @@ function formatDigestMessage(
     );
   }
 
-  const body = items.join("\n\n");
-  const full = header + body;
+  // Split items into messages that fit within TG_MAX_LENGTH
+  const messages: string[] = [];
+  let current = header;
 
-  // Truncate if too long for Telegram
-  if (full.length > TG_MAX_LENGTH) {
-    return full.slice(0, TG_MAX_LENGTH - 20) + "\n\n...";
+  for (const item of items) {
+    const addition = (current === header ? "" : "\n\n") + item;
+    if (current.length + addition.length > TG_MAX_LENGTH) {
+      // Current message is full, push it and start a new one
+      messages.push(current);
+      current = item;
+    } else {
+      current += addition;
+    }
   }
-  return full;
+
+  if (current.length > 0) {
+    messages.push(current);
+  }
+
+  return messages;
 }
 
 /** Format large numbers: 12500 → "12.5K". */

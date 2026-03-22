@@ -132,7 +132,7 @@ export async function disconnectGramClient(): Promise<void> {
 export async function readChannelMessages(
   channelUsername: string,
   hoursBack: number = 24,
-  limit: number = 50
+  limit: number = 100
 ): Promise<RawChannelPost[]> {
   const client = await connectGramClient();
 

@@ -12,10 +12,10 @@ const WEIGHT_REACTIONS = 1.5;
 const WEIGHT_COMMENTS = 1.0;
 
 /** Default number of posts in a digest. */
-export const DEFAULT_DIGEST_SIZE = 10;
+export const DEFAULT_DIGEST_SIZE = 20;
 
 /** Max posts in a digest. */
-export const MAX_DIGEST_SIZE = 20;
+export const MAX_DIGEST_SIZE = 50;
 
 /** Min posts in a digest (if available). */
 export const MIN_DIGEST_SIZE = 1;
@@ -67,13 +67,14 @@ export function selectTopPosts(
 
   scored.sort((a, b) => b.engagementScore - a.engagementScore);
 
-  // Per-channel dedup: max 1 post per channel (best by score, since sorted)
+  // Per-channel dedup: max 3 posts per channel (best by score, since sorted)
   const selected: typeof scored = [];
-  const seenChannels = new Set<string>();
+  const channelCounts = new Map<string, number>();
 
   for (const post of scored) {
-    if (seenChannels.has(post.channelUsername)) continue;
-    seenChannels.add(post.channelUsername);
+    const count = channelCounts.get(post.channelUsername) ?? 0;
+    if (count >= 3) continue;
+    channelCounts.set(post.channelUsername, count + 1);
     selected.push(post);
     if (selected.length >= clampedSize) break;
   }

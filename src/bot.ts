@@ -118,6 +118,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   const log = createLogger("bot");
   const bot = new Telegraf(token, {
     telegram: telegramAgent ? { agent: telegramAgent } : undefined,
+    handlerTimeout: 300_000, // 5 min — default 90s is too short for slow proxy downloads
   });
 
   // Global error handler — prevent unhandled errors from crashing the process

@@ -143,7 +143,7 @@ export async function handleVoiceInTranscribeMode(
   let filePath: string;
   try {
     const link = await ctx.telegram.getFileLink(voice.file_id);
-    const res = await telegramFetch(link.toString());
+    const res = await telegramFetch(link.toString(), { timeoutMs: 180_000 });
     if (!res.ok) throw new Error(`Download failed: ${res.status}`);
     const buffer = Buffer.from(await res.arrayBuffer());
     await mkdir(VOICE_DIR, { recursive: true });
