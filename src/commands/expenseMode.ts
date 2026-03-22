@@ -84,6 +84,16 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  summarizer: [
+    { command: "summarizer", description: "Саммаризатор работы (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
+  blogger: [
+    { command: "blogger", description: "Блогер (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
   admin: [
     { command: "admin", description: "Управление пользователями" },
     { command: "mode", description: "Выбор режима работы" },
@@ -115,7 +125,8 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📰 Дайджест", "🎉 Даты"],
         ["🎁 Вишлист", "🧠 Нейро"],
         ["🎯 Цели", "⏰ Напоминания"],
-        ["🔍 OSINT", "📢 Царская почта"],
+        ["🔍 OSINT", "📝 Саммаризатор"],
+        ["✍️ Блогер", "📢 Царская почта"],
         ["👑 Управление"],
       ]).resize();
     }
@@ -126,7 +137,8 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["📰 Дайджест", "🎉 Даты"],
         ["🎁 Вишлист", "🧠 Нейро"],
         ["🎯 Цели", "⏰ Напоминания"],
-        ["🔍 OSINT"],
+        ["🔍 OSINT", "📝 Саммаризатор"],
+        ["✍️ Блогер"],
       ]).resize();
     }
     // User without tribe — limited modes
@@ -144,7 +156,8 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["📰 Дайджест", "🎉 Даты"],
     ["🎁 Вишлист", "🧠 Нейро"],
     ["🎯 Цели", "⏰ Напоминания"],
-    ["🔍 OSINT"],
+    ["🔍 OSINT", "📝 Саммаризатор"],
+    ["✍️ Блогер"],
   ];
   if (isAdmin) {
     rows.push(["📢 Царская почта", "👑 Управление"]);
@@ -254,6 +267,12 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
   if (canAccessMode("osint", ctx)) {
     rows.push([
       Markup.button.callback("🔍 OSINT", "mode:osint"),
+    ]);
+  }
+  if (canAccessMode("summarizer", ctx)) {
+    rows.push([
+      Markup.button.callback("📝 Саммаризатор", "mode:summarizer"),
+      Markup.button.callback("✍️ Блогер", "mode:blogger"),
     ]);
   }
   if (isAdmin) {

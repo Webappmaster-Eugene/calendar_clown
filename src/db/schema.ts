@@ -690,6 +690,124 @@ export const osintSearches = pgTable(
 
 // ─── Reminder Subscribers ───────────────────────────────────────────────
 
+// ─── Workplaces (Summarizer) ─────────────────────────────────────────────
+
+export const workplaces = pgTable(
+  "workplaces",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    title: varchar("title", { length: 255 }).notNull(),
+    company: varchar("company", { length: 255 }),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_workplaces_user").on(table.userId),
+  ],
+);
+
+// ─── Work Achievements (Summarizer) ─────────────────────────────────────
+
+export const workAchievements = pgTable(
+  "work_achievements",
+  {
+    id: serial("id").primaryKey(),
+    workplaceId: integer("workplace_id")
+      .notNull()
+      .references(() => workplaces.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_work_achievements_workplace").on(table.workplaceId),
+    check(
+      "work_achievements_input_method_check",
+      sql`${table.inputMethod} IN ('text', 'voice')`,
+    ),
+  ],
+);
+
+// ─── Blogger Channels ───────────────────────────────────────────────────
+
+export const bloggerChannels = pgTable(
+  "blogger_channels",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    channelUsername: varchar("channel_username", { length: 255 }),
+    channelTitle: varchar("channel_title", { length: 255 }).notNull(),
+    nicheDescription: text("niche_description"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_blogger_channels_user").on(table.userId),
+  ],
+);
+
+// ─── Blogger Posts ──────────────────────────────────────────────────────
+
+export const bloggerPosts = pgTable(
+  "blogger_posts",
+  {
+    id: serial("id").primaryKey(),
+    channelId: integer("channel_id")
+      .notNull()
+      .references(() => bloggerChannels.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    topic: varchar("topic", { length: 500 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("draft"),
+    generatedText: text("generated_text"),
+    modelUsed: varchar("model_used", { length: 100 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_blogger_posts_channel").on(table.channelId),
+    index("idx_blogger_posts_user").on(table.userId, table.createdAt),
+    check(
+      "blogger_posts_status_check",
+      sql`${table.status} IN ('draft', 'collecting', 'generating', 'generated', 'published')`,
+    ),
+  ],
+);
+
+// ─── Blogger Sources ────────────────────────────────────────────────────
+
+export const bloggerSources = pgTable(
+  "blogger_sources",
+  {
+    id: serial("id").primaryKey(),
+    postId: integer("post_id")
+      .notNull()
+      .references(() => bloggerPosts.id, { onDelete: "cascade" }),
+    sourceType: varchar("source_type", { length: 20 }).notNull(),
+    content: text("content").notNull(),
+    title: varchar("title", { length: 500 }),
+    parsedContent: text("parsed_content"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_blogger_sources_post").on(table.postId),
+    check(
+      "blogger_sources_type_check",
+      sql`${table.sourceType} IN ('text', 'voice', 'link', 'forward', 'web_search')`,
+    ),
+  ],
+);
+
 export const reminderSubscribers = pgTable(
   "reminder_subscribers",
   {

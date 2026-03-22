@@ -53,3 +53,24 @@ export const OSINT_ANALYSIS_MODEL = process.env.OSINT_MODEL || "anthropic/claude
 
 /** OSINT: Tavily API base URL. */
 export const TAVILY_API_URL = "https://api.tavily.com";
+
+/** Summarizer: AI model for summary generation (via OpenRouter). */
+export const SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "anthropic/claude-sonnet-4";
+
+/** Blogger: AI model for post generation (via OpenRouter). */
+export const BLOGGER_MODEL = process.env.BLOGGER_MODEL || "anthropic/claude-sonnet-4";
+
+/** Summarizer: max workplaces per user. */
+export const MAX_WORKPLACES_PER_USER = 10;
+
+/** Blogger: max channels per user. */
+export const MAX_BLOGGER_CHANNELS = 5;
+
+/** Blogger: max sources per post. */
+export const MAX_POST_SOURCES = 20;
+
+/** Summarizer: max achievement text length. */
+export const MAX_ACHIEVEMENT_LENGTH = 2000;
+
+/** Blogger: max generated post length. */
+export const MAX_POST_LENGTH = 12000;

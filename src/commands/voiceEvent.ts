@@ -8,9 +8,11 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode } from "../middleware/userMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode } from "../middleware/userMode.js";
 import { handleGoalsVoice } from "./goalsMode.js";
 import { handleRemindersVoice } from "./remindersMode.js";
+import { handleSummarizerVoice } from "./summarizerMode.js";
+import { handleBloggerVoice } from "./bloggerMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
@@ -144,6 +146,18 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
     // Reminders mode — create/manage reminders from voice
     if (telegramId != null && await isRemindersMode(telegramId)) {
       await handleRemindersVoice(ctx, transcript, statusMsg.message_id);
+      return;
+    }
+
+    // Summarizer mode — add achievement from voice
+    if (telegramId != null && await isSummarizerMode(telegramId)) {
+      await handleSummarizerVoice(ctx, transcript, statusMsg.message_id);
+      return;
+    }
+
+    // Blogger mode — add source from voice
+    if (telegramId != null && await isBloggerMode(telegramId)) {
+      await handleBloggerVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 

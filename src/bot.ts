@@ -96,7 +96,7 @@ import {
 } from "./commands/osintMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
 import { createLogger } from "./utils/logger.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode } from "./middleware/userMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode } from "./middleware/userMode.js";
 import {
   handleGoalsCommand,
   handleMyGoalSetsButton,
@@ -121,6 +121,21 @@ import {
   handleReminderTribeCallback,
   handleRemindersText,
 } from "./commands/remindersMode.js";
+import {
+  handleSummarizerCommand,
+  handleMyWorkplacesButton,
+  handleNewWorkplaceButton,
+  handleSumCallback,
+  handleSummarizerText,
+} from "./commands/summarizerMode.js";
+import {
+  handleBloggerCommand,
+  handleMyChannelsButton,
+  handleNewChannelButton,
+  handleMyPostsButton,
+  handleBlogCallback,
+  handleBloggerText,
+} from "./commands/bloggerMode.js";
 
 export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   const log = createLogger("bot");
@@ -168,6 +183,8 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.command("goals", handleGoalsCommand);
   bot.command("reminders", handleRemindersCommand);
   bot.command("osint", handleOsintCommand);
+  bot.command("summarizer", handleSummarizerCommand);
+  bot.command("blogger", handleBloggerCommand);
   bot.command("neuro", handleNeuroCommand);
 
   // Admin commands
@@ -303,6 +320,12 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^osint_hist:/, handleHistoryPageCallback);
   bot.action(/^osint_view:/, handleViewSearchCallback);
 
+  // Summarizer callbacks
+  bot.action(/^sum_/, handleSumCallback);
+
+  // Blogger callbacks
+  bot.action(/^blog_/, handleBlogCallback);
+
   // Mode switch inline callbacks
   bot.action("mode:calendar", async (ctx) => {
     await ctx.answerCbQuery("📅 Календарь");
@@ -394,6 +417,30 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     await ctx.answerCbQuery("🔍 OSINT");
     await handleOsintCommand(ctx);
   });
+  bot.action("mode:summarizer", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid) {
+      const mc = await getUserMenuContext(tid);
+      if (mc && !canAccessMode("summarizer", mc)) {
+        await ctx.answerCbQuery("Требуется трайб");
+        return;
+      }
+    }
+    await ctx.answerCbQuery("📝 Саммаризатор");
+    await handleSummarizerCommand(ctx);
+  });
+  bot.action("mode:blogger", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid) {
+      const mc = await getUserMenuContext(tid);
+      if (mc && !canAccessMode("blogger", mc)) {
+        await ctx.answerCbQuery("Требуется трайб");
+        return;
+      }
+    }
+    await ctx.answerCbQuery("✍️ Блогер");
+    await handleBloggerCommand(ctx);
+  });
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
   // ─── Voice ──────────────────────────────────────────────────────────
@@ -415,6 +462,8 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("🎯 Цели", handleGoalsCommand);
   bot.hears("⏰ Напоминания", handleRemindersCommand);
   bot.hears("🔍 OSINT", handleOsintCommand);
+  bot.hears("📝 Саммаризатор", handleSummarizerCommand);
+  bot.hears("✍️ Блогер", handleBloggerCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
@@ -488,6 +537,15 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   // OSINT mode buttons
   bot.hears("🔍 Новый поиск", handleNewSearchButton);
   bot.hears("📋 История поисков", handleHistoryButton);
+
+  // Summarizer mode buttons
+  bot.hears("📋 Мои места работы", handleMyWorkplacesButton);
+  bot.hears("➕ Новое место", handleNewWorkplaceButton);
+
+  // Blogger mode buttons
+  bot.hears("📝 Мои каналы", handleMyChannelsButton);
+  bot.hears("➕ Новый канал", handleNewChannelButton);
+  bot.hears("📄 Мои посты", handleMyPostsButton);
 
   // Neuro mode buttons
   bot.hears("🗑 Очистить историю", async (ctx) => {
@@ -605,6 +663,20 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     // OSINT mode — search from text
     if (await isOsintMode(telegramId)) {
       const handled = await handleOsintText(ctx);
+      if (handled) return;
+      return next();
+    }
+
+    // Summarizer mode — text input for workplaces/achievements
+    if (await isSummarizerMode(telegramId)) {
+      const handled = await handleSummarizerText(ctx);
+      if (handled) return;
+      return next();
+    }
+
+    // Blogger mode — text input for channels/posts/sources
+    if (await isBloggerMode(telegramId)) {
+      const handled = await handleBloggerText(ctx);
       if (handled) return;
       return next();
     }

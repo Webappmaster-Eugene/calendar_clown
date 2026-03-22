@@ -4,7 +4,7 @@ import {
 } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 
-export type UserMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "gandalf" | "neuro" | "wishlist" | "goals" | "reminders" | "osint" | "admin";
+export type UserMode = "calendar" | "expenses" | "transcribe" | "digest" | "broadcast" | "notable_dates" | "gandalf" | "neuro" | "wishlist" | "goals" | "reminders" | "osint" | "summarizer" | "blogger" | "admin";
 
 /** Get user's current mode from DB. Falls back to 'calendar'. */
 export async function getUserMode(telegramId: number): Promise<UserMode> {
@@ -86,4 +86,16 @@ export async function isRemindersMode(telegramId: number): Promise<boolean> {
 export async function isOsintMode(telegramId: number): Promise<boolean> {
   const mode = await getUserMode(telegramId);
   return mode === "osint";
+}
+
+/** Check if user is in summarizer mode. */
+export async function isSummarizerMode(telegramId: number): Promise<boolean> {
+  const mode = await getUserMode(telegramId);
+  return mode === "summarizer";
+}
+
+/** Check if user is in blogger mode. */
+export async function isBloggerMode(telegramId: number): Promise<boolean> {
+  const mode = await getUserMode(telegramId);
+  return mode === "blogger";
 }

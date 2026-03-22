@@ -16,7 +16,7 @@ export interface UserMenuContext {
 export const INDIVIDUAL_MODES = new Set(["calendar", "transcribe", "gandalf", "neuro", "goals", "reminders"]);
 
 /** Modes that require tribe membership. */
-export const TRIBE_MODES = new Set(["expenses", "digest", "notable_dates", "wishlist", "osint"]);
+export const TRIBE_MODES = new Set(["expenses", "digest", "notable_dates", "wishlist", "osint", "summarizer", "blogger"]);
 
 /** Modes that require admin role. */
 export const ADMIN_MODES = new Set(["broadcast", "admin"]);
@@ -56,6 +56,8 @@ const ONBOARD_WELCOME = `👋 *Добро пожаловать!*
 🎉 Знаменательные даты — напоминания о днях рождения
 📚 База знаний — структурированные записи
 🎁 Вишлист — списки желаний для семьи
+📝 Саммаризатор — портфолио достижений с AI-саммари
+✍️ Блогер — генерация постов для Telegram-каналов
 
 Для получения доступа подайте заявку администратору.`;
 
