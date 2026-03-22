@@ -55,7 +55,7 @@ export const OSINT_ANALYSIS_MODEL = process.env.OSINT_MODEL || "anthropic/claude
 export const TAVILY_API_URL = "https://api.tavily.com";
 
 /** OSINT: max search queries for Phase 1. */
-export const OSINT_QUERIES_LIMIT = 35;
+export const OSINT_QUERIES_LIMIT = 45;
 
 /** OSINT: results per query. */
 export const OSINT_RESULTS_PER_QUERY = 10;
@@ -73,7 +73,7 @@ export const OSINT_PHASE2_QUERIES_LIMIT = 15;
 export const OSINT_EXTRACT_URLS_LIMIT = 20;
 
 /** OSINT: max tokens for final analysis. */
-export const OSINT_ANALYSIS_MAX_TOKENS = 16000;
+export const OSINT_ANALYSIS_MAX_TOKENS = 20000;
 
 /** Summarizer: AI model for summary generation (via OpenRouter). */
 export const SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "anthropic/claude-sonnet-4";
