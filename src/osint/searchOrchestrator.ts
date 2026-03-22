@@ -7,7 +7,7 @@ import { tavilySearchMulti } from "./searchClient.js";
 import { createSearch, updateSearchStatus, countTodaySearches } from "./repository.js";
 import { formatReport } from "./reportFormatter.js";
 import { splitMessage } from "../utils/telegram.js";
-import type { OsintSearch, TavilyResult } from "./types.js";
+import type { OsintParsedSubject, OsintSearch, TavilyResult } from "./types.js";
 
 const log = createLogger("osint-orchestrator");
 
@@ -206,7 +206,7 @@ const ANALYSIS_PROMPT = `Ты — профессиональный OSINT-ана�
 Не используй MarkdownV2 символы (не экранируй точки, скобки и т.п.).`;
 
 async function analyzeResults(
-  subject: { name: string; [key: string]: unknown },
+  subject: OsintParsedSubject,
   results: TavilyResult[],
   originalQuery: string
 ): Promise<string> {
