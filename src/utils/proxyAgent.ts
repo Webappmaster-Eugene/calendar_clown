@@ -44,7 +44,7 @@ export function getTelegramAgent(): http.Agent | undefined {
 
 /**
  * Fetch a URL using the Telegram proxy agent (if configured).
- * Uses node-fetch@2 which supports the `agent` option, unlike native fetch.
+ * Uses native node:https to avoid CJS/ESM bundling issues with node-fetch.
  */
 export async function telegramFetch(url: string): Promise<{
   ok: boolean;
@@ -52,17 +52,22 @@ export async function telegramFetch(url: string): Promise<{
   arrayBuffer: () => Promise<ArrayBuffer>;
   text: () => Promise<string>;
 }> {
-  const nodeFetch = (await import("node-fetch")).default;
-  const agent = cachedAgent;
-
-  const response = await nodeFetch(url, {
-    agent: agent as https.Agent | undefined,
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { agent: cachedAgent as https.Agent | undefined }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        const buffer = Buffer.concat(chunks);
+        const status = res.statusCode ?? 0;
+        resolve({
+          ok: status >= 200 && status < 300,
+          status,
+          arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+          text: async () => buffer.toString("utf-8"),
+        });
+      });
+      res.on("error", reject);
+    });
+    req.on("error", reject);
   });
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    arrayBuffer: () => response.arrayBuffer(),
-    text: () => response.text(),
-  };
 }
