@@ -74,3 +74,6 @@ export const MAX_ACHIEVEMENT_LENGTH = 2000;
 
 /** Blogger: max generated post length. */
 export const MAX_POST_LENGTH = 12000;
+
+/** Neuro: vision model for image/document analysis (supports images, PDF, DOCX natively). */
+export const NEURO_VISION_MODEL = process.env.NEURO_VISION_MODEL || "google/gemini-2.0-flash-001";

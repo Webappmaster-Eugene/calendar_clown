@@ -1,9 +1,17 @@
 import { OPENROUTER_URL, OPENROUTER_REFERER } from "../constants.js";
 
+/** Content part for multimodal messages (text + images). */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+/** Message content: plain string or multimodal array. */
+export type MessageContent = string | ContentPart[];
+
 /** Send a chat completion request to OpenRouter and return the text content, or null. */
 export async function callOpenRouter(options: {
   model: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{ role: string; content: MessageContent }>;
   temperature?: number;
 }): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -41,7 +49,7 @@ export async function callOpenRouter(options: {
 /** Variant that also returns usage info (for chat client). */
 export async function callOpenRouterWithUsage(options: {
   model: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{ role: string; content: MessageContent }>;
   temperature?: number;
 }): Promise<{ content: string; tokensUsed: number | null }> {
   const apiKey = process.env.OPENROUTER_API_KEY;

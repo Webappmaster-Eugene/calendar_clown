@@ -66,7 +66,7 @@ import {
   handleGandalfClearMenuCallback,
   handleGandalfClearFieldCallback,
 } from "./commands/gandalfMode.js";
-import { handleNeuroCommand, handleNeuroText, handleNeuroClearButton } from "./commands/chatMode.js";
+import { handleNeuroCommand, handleNeuroText, handleNeuroClearButton, handleNeuroPhoto, handleNeuroDocument } from "./commands/chatMode.js";
 import {
   handleWishlistCommand,
   handleMyWishlistsButton,
@@ -568,6 +568,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.on("photo", async (ctx) => {
     const telegramId = ctx.from?.id;
     if (telegramId == null) return;
+    if (await isNeuroMode(telegramId)) {
+      await handleNeuroPhoto(ctx);
+      return;
+    }
     if (await isGandalfMode(telegramId)) {
       await handleGandalfFileAttachment(ctx);
       return;
@@ -580,6 +584,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.on("document", async (ctx) => {
     const telegramId = ctx.from?.id;
     if (telegramId == null) return;
+    if (await isNeuroMode(telegramId)) {
+      await handleNeuroDocument(ctx);
+      return;
+    }
     if (await isGandalfMode(telegramId)) {
       await handleGandalfFileAttachment(ctx);
       return;

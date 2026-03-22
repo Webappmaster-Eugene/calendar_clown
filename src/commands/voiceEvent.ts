@@ -8,7 +8,7 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode } from "../middleware/userMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isNeuroMode } from "../middleware/userMode.js";
 import { handleGoalsVoice } from "./goalsMode.js";
 import { handleRemindersVoice } from "./remindersMode.js";
 import { handleSummarizerVoice } from "./summarizerMode.js";
@@ -22,6 +22,7 @@ import { isBootstrapAdmin } from "../middleware/auth.js";
 import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
 import { handleGandalfVoice } from "./gandalfMode.js";
 import { handleOsintVoice } from "./osintMode.js";
+import { handleNeuroVoice } from "./chatMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
@@ -122,6 +123,12 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
         undefined,
         "Не удалось распознать речь."
       );
+      return;
+    }
+
+    // Neuro (AI chat) mode — send transcript to AI
+    if (telegramId != null && await isNeuroMode(telegramId)) {
+      await handleNeuroVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
