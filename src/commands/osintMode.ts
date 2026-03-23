@@ -9,7 +9,7 @@ import { DB_UNAVAILABLE_MSG, OSINT_DAILY_LIMIT } from "../constants.js";
 import { runOsintSearch, sendReport } from "../osint/searchOrchestrator.js";
 import { getSearchById, getFilteredSearchHistory, countTodaySearches } from "../osint/repository.js";
 import { parseSearchSubject } from "../osint/queryParser.js";
-import { escapeMarkdown } from "../utils/markdown.js";
+import { escapeMarkdown, escapeMarkdownV2 } from "../utils/markdown.js";
 import { createLogger } from "../utils/logger.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import type { OsintParsedSubject, OsintStatus } from "../osint/types.js";
@@ -229,12 +229,12 @@ async function showConfirmationCard(
 
   const text =
     `🔍 *Распознанные данные для поиска:*\n\n` +
-    `👤 ФИО: ${escapeMarkdown(name)}\n` +
-    `🏙 Город: ${escapeMarkdown(city)}\n` +
-    `🏢 Компания: ${escapeMarkdown(company)}\n` +
-    `📱 Телефон: ${escapeMarkdown(phone)}\n` +
-    `📧 Email: ${escapeMarkdown(email)}\n` +
-    `🔖 Тип: ${escapeMarkdown(typeLabel)}\n\n` +
+    `👤 ФИО: ${escapeMarkdownV2(name)}\n` +
+    `🏙 Город: ${escapeMarkdownV2(city)}\n` +
+    `🏢 Компания: ${escapeMarkdownV2(company)}\n` +
+    `📱 Телефон: ${escapeMarkdownV2(phone)}\n` +
+    `📧 Email: ${escapeMarkdownV2(email)}\n` +
+    `🔖 Тип: ${escapeMarkdownV2(typeLabel)}\n\n` +
     `Если нужно дополнить — отправьте текстом\\.\n` +
     `Например: "телефон \\+79161234567" или "работает в Сбербанке"`;
 
@@ -467,9 +467,9 @@ async function showHistory(
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const filterSuffix = filter?.status
-    ? ` \\| ${escapeMarkdown(getStatusFilterLabel(filter.status))}`
+    ? ` \\| ${escapeMarkdownV2(getStatusFilterLabel(filter.status))}`
     : filter?.searchText
-      ? ` \\| 🔎 "${escapeMarkdown(filter.searchText)}"`
+      ? ` \\| 🔎 "${escapeMarkdownV2(filter.searchText)}"`
       : "";
 
   let text = `📋 *История OSINT\\-поисков* \\(стр\\. ${page + 1}/${totalPages}${filterSuffix}\\)\n\n`;
@@ -518,7 +518,7 @@ async function showHistory(
       ? ` \\(${s.sourcesCount} ист\\.\\)`
       : "";
 
-    text += `${offset + i + 1}\\. ${statusEmoji} ${escapeMarkdown(namePreview)}${sourcesInfo} — ${date}\n`;
+    text += `${offset + i + 1}\\. ${statusEmoji} ${escapeMarkdownV2(namePreview)}${sourcesInfo} — ${date}\n`;
 
     const buttonLabel = s.status === "completed" && s.sourcesCount > 0
       ? `${statusEmoji} ${namePreview} (${s.sourcesCount} ист.)`

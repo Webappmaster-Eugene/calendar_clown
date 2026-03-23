@@ -2,6 +2,11 @@ import { query } from "../db/connection.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import type { OsintSearch, OsintParsedSubject, OsintStatus, TavilyResult } from "./types.js";
 
+/** Strip PostgreSQL-incompatible null characters from strings. */
+function stripNullChars(value: string): string {
+  return value.replace(/\u0000/g, "");
+}
+
 /** Create a new OSINT search record. */
 export async function createSearch(
   userId: number,
@@ -61,12 +66,12 @@ export async function updateSearchStatus(
   }
   if (extra?.rawResults !== undefined) {
     sets.push(`raw_results = $${idx}`);
-    params.push(JSON.stringify(extra.rawResults));
+    params.push(stripNullChars(JSON.stringify(extra.rawResults)));
     idx++;
   }
   if (extra?.report !== undefined) {
     sets.push(`report = $${idx}`);
-    params.push(extra.report);
+    params.push(stripNullChars(extra.report));
     idx++;
   }
   if (extra?.sourcesCount !== undefined) {
@@ -76,7 +81,7 @@ export async function updateSearchStatus(
   }
   if (extra?.errorMessage !== undefined) {
     sets.push(`error_message = $${idx}`);
-    params.push(extra.errorMessage);
+    params.push(stripNullChars(extra.errorMessage));
     idx++;
   }
   if (status === "completed" || status === "failed") {
