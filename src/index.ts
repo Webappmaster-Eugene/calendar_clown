@@ -9,7 +9,7 @@ import { shutdownTelemetry } from "./telemetry.js";
 import { createBot } from "./bot.js";
 import { startOAuthServer } from "./oauthServer.js";
 import { runMigrations, runDrizzleMigrations } from "./db/migrate.js";
-import { closePool, setDatabaseAvailable } from "./db/connection.js";
+import { closePool, setDatabaseAvailable, isDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
 import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, startStaleJobCleaner, stopStaleJobCleaner, startWorkerHealthMonitor, stopWorkerHealthMonitor } from "./transcribe/queue.js";
 import { createTranscribeProcessor } from "./transcribe/worker.js";
@@ -116,8 +116,8 @@ async function main(): Promise<void> {
     log.info("TELEGRAM_PARSER_API_ID not set — digest mode disabled.");
   }
 
-  // Initialize notable dates scheduler (birthdays, holidays)
-  if (process.env.DATABASE_URL) {
+  // Initialize DB-dependent schedulers only if connection actually succeeded
+  if (isDatabaseAvailable()) {
     startNotableDatesScheduler(bot);
     log.info("Notable dates scheduler enabled.");
 
@@ -126,6 +126,8 @@ async function main(): Promise<void> {
 
     startRemindersScheduler(bot);
     log.info("Reminders scheduler enabled.");
+  } else if (process.env.DATABASE_URL) {
+    log.warn("DATABASE_URL is set but DB is unavailable — schedulers not started.");
   }
 
   startOAuthServer({
