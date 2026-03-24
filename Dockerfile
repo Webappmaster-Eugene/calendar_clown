@@ -1,4 +1,5 @@
-FROM node:20-slim AS builder
+# Stage 1: Build backend
+FROM node:20-slim AS backend-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
@@ -12,6 +13,18 @@ COPY src ./src
 
 RUN npm run build
 
+# Stage 2: Build webapp (Mini App)
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /app/webapp
+COPY webapp/package.json webapp/package-lock.json ./
+RUN npm ci
+COPY webapp/ ./
+# Shared types needed for build
+COPY voice-meet-planner/src/shared /app/voice-meet-planner/src/shared
+RUN npm run build
+
+# Stage 3: Runtime
 FROM node:20-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
@@ -19,8 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/src/db/migrations ./migrations
+COPY --from=backend-builder /app/dist ./dist
+COPY --from=backend-builder /app/src/db/migrations ./migrations
+COPY --from=frontend-builder /app/webapp/dist ./webapp-dist
 COPY drizzle ./drizzle
 
 RUN mkdir -p data/tokens data/voice

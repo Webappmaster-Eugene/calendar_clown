@@ -1,10 +1,72 @@
 import http from "http";
+import fs from "fs";
+import path from "path";
 import { saveTokenFromCode } from "./calendar/auth.js";
 import { getAuthStateByToken, submitCodeViaWeb, submit2faViaWeb } from "./commands/digestAuth.js";
 import type { WebAuthResult } from "./commands/digestAuth.js";
 import { createLogger } from "./utils/logger.js";
+import { createApiApp } from "./api/router.js";
 
 const log = createLogger("oauth");
+
+// ── Hono API app (lazy-initialized) ──────────────────────────
+let honoFetch: ((req: Request) => Response | Promise<Response>) | null = null;
+
+function getHonoFetch(): (req: Request) => Response | Promise<Response> {
+  if (!honoFetch) {
+    const app = createApiApp();
+    honoFetch = (req: Request) => app.fetch(req);
+  }
+  return honoFetch;
+}
+
+// ── Static file serving for Mini App ─────────────────────────
+const WEBAPP_DIST = path.resolve("webapp-dist");
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+};
+
+function serveStaticFile(pathname: string, res: http.ServerResponse): boolean {
+  if (!fs.existsSync(WEBAPP_DIST)) return false;
+
+  // Sanitize path to prevent directory traversal
+  const safePath = path.normalize(pathname).replace(/^(\.\.[/\\])+/, "");
+  let filePath = path.join(WEBAPP_DIST, safePath);
+
+  // Try exact file first, then add index.html for directories
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const ext = path.extname(filePath);
+    const contentType = MIME_TYPES[ext] || "application/octet-stream";
+    const cacheControl = ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", cacheControl);
+    res.writeHead(200);
+    fs.createReadStream(filePath).pipe(res);
+    return true;
+  }
+
+  // SPA fallback: serve index.html for any non-file path
+  const indexPath = path.join(WEBAPP_DIST, "index.html");
+  if (fs.existsSync(indexPath)) {
+    res.setHeader("Content-Type", "text/html");
+    res.setHeader("Cache-Control", "no-cache");
+    res.writeHead(200);
+    fs.createReadStream(indexPath).pipe(res);
+    return true;
+  }
+
+  return false;
+}
 
 const DEFAULT_PORT = 18790;
 
@@ -66,6 +128,81 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
   const server = http.createServer(async (req, res) => {
     const { pathname, searchParams } = parsePathAndQuery(req.url ?? "/");
 
+    // ── API routes (/api/*) → Hono ──────────────────────────
+    if (pathname.startsWith("/api/")) {
+      try {
+        const fetch = getHonoFetch();
+        const protocol = req.headers["x-forwarded-proto"] || "http";
+        const hostHeader = req.headers.host || `${host}:${port}`;
+        const url = `${protocol}://${hostHeader}${req.url}`;
+
+        // Collect request body for non-GET methods
+        let body: Buffer | undefined;
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          body = await new Promise<Buffer>((resolve, reject) => {
+            const chunks: Buffer[] = [];
+            let size = 0;
+            req.on("data", (chunk: Buffer) => {
+              size += chunk.length;
+              if (size > 50 * 1024 * 1024) { // 50MB limit for voice uploads
+                req.destroy();
+                reject(new Error("Body too large"));
+                return;
+              }
+              chunks.push(chunk);
+            });
+            req.on("end", () => resolve(Buffer.concat(chunks)));
+            req.on("error", reject);
+          });
+        }
+
+        const headers = new Headers();
+        for (const [key, value] of Object.entries(req.headers)) {
+          if (value) headers.set(key, Array.isArray(value) ? value[0] : value);
+        }
+
+        const request = new Request(url, {
+          method: req.method,
+          headers,
+          body: body ?? null,
+        });
+
+        const response = await fetch(request);
+
+        // Copy response headers
+        response.headers.forEach((value, key) => {
+          res.setHeader(key, value);
+        });
+        res.writeHead(response.status);
+
+        if (response.body) {
+          // Stream the response
+          const reader = response.body.getReader();
+          const pump = async (): Promise<void> => {
+            const { done, value } = await reader.read();
+            if (done) { res.end(); return; }
+            res.write(value);
+            return pump();
+          };
+          await pump();
+        } else {
+          const buf = await response.arrayBuffer();
+          res.end(Buffer.from(buf));
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "API error";
+        log.error(`API error: ${message}`);
+        sendJson(res, 500, { ok: false, error: "Internal server error" });
+      }
+      return;
+    }
+
+    // ── Health check ────────────────────────────────────────
+    if (req.method === "GET" && pathname === "/health") {
+      sendJson(res, 200, { ok: true, uptime: process.uptime() });
+      return;
+    }
+
     if (req.method === "GET" && pathname === oauthCallbackPath) {
       const code = searchParams.get("code");
       const state = searchParams.get("state");
@@ -107,11 +244,19 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
       return;
     }
 
+    // ── Static files for Mini App (production) ───────────
+    if (req.method === "GET" && serveStaticFile(pathname, res)) {
+      return;
+    }
+
     sendJson(res, 404, { error: "Not Found" });
   });
 
   server.listen(port, host, () => {
-    log.info(`HTTP server listening on http://${host}:${port} (GET ${oauthCallbackPath})`);
+    const hasWebapp = fs.existsSync(WEBAPP_DIST);
+    log.info(
+      `HTTP server listening on http://${host}:${port} (OAuth: ${oauthCallbackPath}, API: /api/*, Webapp: ${hasWebapp ? "yes" : "no"})`
+    );
   });
 
   return server;

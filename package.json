@@ -27,6 +27,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.11",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.71.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
@@ -40,6 +41,7 @@
     "exceljs": "^4.4.0",
     "google-auth-library": "^9.14.1",
     "googleapis": "^144.0.0",
+    "hono": "^4.12.9",
     "https-proxy-agent": "^8.0.0",
     "ioredis": "^5.4.0",
     "pg": "^8.20.0",
