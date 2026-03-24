@@ -9,7 +9,17 @@ import { callStt } from "./sttClient.js";
 import { TRANSCRIBE_MODEL } from "../constants.js";
 import { MAX_SINGLE_FILE_BYTES } from "../transcribe/audioUtils.js";
 
-const TRANSCRIBE_PROMPT = "Transcribe this audio to text. Output only the transcribed text in the same language, nothing else.";
+const TRANSCRIBE_PROMPT = `Расшифруй это аудиосообщение в текст на русском языке.
+
+Контекст: пользователь диктует события для календаря — встречи, записи, мероприятия с указанием дат, времени и имён.
+
+Правила:
+- Выводи ТОЛЬКО расшифрованный текст, без пояснений
+- Расставляй знаки препинания: точки, запятые
+- Числа записывай цифрами
+- Имена собственные пиши с большой буквы
+- Слова-паразиты ("эээ", "ммм") — убирай
+- Если часть аудио неразборчива — пропусти, не додумывай`;
 
 /** Calculate dynamic timeout based on file size in bytes. */
 function getTimeoutMs(fileSizeBytes: number): number {

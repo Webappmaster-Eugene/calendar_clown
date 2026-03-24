@@ -12,6 +12,8 @@
     "authorize": "tsx scripts/authorize.ts",
     "tg-auth": "tsx scripts/tg-auth.ts",
     "test": "tsx --test tests/*.test.ts",
+    "test:unit": "tsx --test tests/markdown.test.ts tests/splitMessage.test.ts tests/parseJson.test.ts tests/authMiddleware.test.ts tests/calendarParse.test.ts tests/sharedTypes.test.ts",
+    "test:smoke": "tsx --test tests/smoke-api.test.ts tests/smoke-build.test.ts",
     "test:parser": "tsx --test tests/parser.test.ts",
     "test:repo": "tsx --test tests/repository.test.ts",
     "import-birthdays": "tsx src/notable-dates/importCsv.ts",

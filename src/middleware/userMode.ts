@@ -22,6 +22,12 @@ export async function setUserMode(telegramId: number, mode: UserMode): Promise<v
   await setDbUserMode(telegramId, mode);
 }
 
+/** Check if user is in calendar mode. */
+export async function isCalendarMode(telegramId: number): Promise<boolean> {
+  const mode = await getUserMode(telegramId);
+  return mode === "calendar";
+}
+
 /** Check if user is in expense mode. */
 export async function isExpenseMode(telegramId: number): Promise<boolean> {
   const mode = await getUserMode(telegramId);

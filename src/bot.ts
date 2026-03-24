@@ -2,7 +2,7 @@ import type http from "node:http";
 import { Telegraf, type Context } from "telegraf";
 import { handleStart, handleHelp } from "./commands/start.js";
 import { handleAuth } from "./commands/auth.js";
-import { handleNew } from "./commands/createEvent.js";
+import { handleNew, handleCalendarText } from "./commands/createEvent.js";
 import { handleToday, handleWeek } from "./commands/listEvents.js";
 import { handleVoice } from "./commands/voiceEvent.js";
 import { handleStatus } from "./commands/status.js";
@@ -114,7 +114,7 @@ import {
 } from "./commands/osintMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
 import { createLogger } from "./utils/logger.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode } from "./middleware/userMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isCalendarMode } from "./middleware/userMode.js";
 import {
   handleGoalsCommand,
   handleMyGoalSetsButton,
@@ -738,6 +738,12 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     // Broadcast mode — send text to all tribe members
     if (await isBroadcastMode(telegramId)) {
       await handleBroadcastText(ctx);
+      return;
+    }
+
+    // Calendar mode — text input for creating events without /new prefix
+    if (await isCalendarMode(telegramId)) {
+      await handleCalendarText(ctx);
       return;
     }
 

@@ -85,12 +85,16 @@ Options:
    Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. ${year}-03-09T10:00:00+03:00).
    Today is ${dateStr} (${weekday}). Use year ${year}. No date → today. No time → 10:00. Default duration 1 hour.
    Weekday-to-date (all in ${TIMEZONE_MSK}): вторник (Tuesday) = ${tueStr}, завтра (tomorrow) = ${tomorrowStr}.
-   Recurring events: if the user says "каждую пятницу", "каждую неделю", "еженедельно", "по понедельникам" etc., add "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=XX"] where XX is MO,TU,WE,TH,FR,SA,SU (one or comma-separated). Set start/end to the first occurrence (e.g. next Friday 17:30).
+   Recurring events:
+   - Weekly (specific days): "каждую пятницу", "каждую неделю", "еженедельно", "по понедельникам" → "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=XX"] where XX is MO,TU,WE,TH,FR,SA,SU. Set start/end to the first occurrence.
+   - Daily: "каждый день", "ежедневно" → "recurrence": ["RRULE:FREQ=DAILY"]. Set start/end to today (or tomorrow if time already past).
+   - Monthly: "каждый месяц", "ежемесячно" → "recurrence": ["RRULE:FREQ=MONTHLY"]. Set start/end to the mentioned date.
    Examples:
    - "Запиши меня к Роману на ремонт автомобиля во вторник в 10 утра" → {"type":"calendar","title":"Ремонт автомобиля у Романа","start":"${tueStr}T10:00:00+03:00","end":"${tueStr}T11:00:00+03:00"}
    - "Встреча завтра, ремонт Романа автомобиль в 10 утра" → {"type":"calendar","title":"Ремонт автомобиля у Романа","start":"${tomorrowStr}T10:00:00+03:00","end":"${tomorrowStr}T11:00:00+03:00"}
    - "Встреча завтра в 15:00" → {"type":"calendar","title":"Встреча","start":"${tomorrowStr}T15:00:00+03:00","end":"${tomorrowStr}T16:00:00+03:00"}
    - "запиши что каждую пятницу в 17:30 мы ходим на массаж" → {"type":"calendar","title":"Массаж всей семьёй","start":"<next Friday>T17:30:00+03:00","end":"<next Friday>T18:30:00+03:00","recurrence":["RRULE:FREQ=WEEKLY;BYDAY=FR"]}
+   - "каждый день в 10:30 Daily польза" → {"type":"calendar","title":"Daily, польза","start":"${dateStr}T10:30:00+03:00","end":"${dateStr}T11:30:00+03:00","recurrence":["RRULE:FREQ=DAILY"]}
 
 2) Cancelling/deleting a calendar event (e.g. "отмени встречу с Романом завтра", "удали встречу в 15:00", "отмени запись к врачу на вторник", "убери встречу завтра"):
    {"type":"cancel_event","query":"search keywords","date":"YYYY-MM-DD or null"}

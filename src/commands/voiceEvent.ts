@@ -491,6 +491,16 @@ async function handleVoiceInCalendarMode(
   );
 }
 
+/** Parse RRULE recurrence array and return a human-readable Russian label. */
+function formatRecurrenceLabel(recurrence: string[]): string {
+  const rule = recurrence[0] ?? "";
+  if (rule.includes("FREQ=DAILY")) return "ежедневно";
+  if (rule.includes("FREQ=MONTHLY")) return "ежемесячно";
+  if (rule.includes("FREQ=YEARLY")) return "ежегодно";
+  // FREQ=WEEKLY is the default/most common
+  return "еженедельно";
+}
+
 /** Create events in Google Calendar and save to DB. Returns formatted text. */
 async function createAndSaveEvents(
   ctx: Context,
@@ -516,7 +526,7 @@ async function createAndSaveEvents(
       const end = new Date(event.end);
       const timeStr = start.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone });
       const endStr = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
-      const recurringHint = evData.recurrence?.length ? " (еженедельно)" : "";
+      const recurringHint = evData.recurrence?.length ? ` (${formatRecurrenceLabel(evData.recurrence)})` : "";
       const safeSummary = escapeMarkdown(event.summary);
       let line = `Создано: *${safeSummary}*${recurringHint}\n${timeStr} – ${endStr}`;
       if (event.htmlLink) line += `\n[Открыть в календаре](${event.htmlLink})`;
