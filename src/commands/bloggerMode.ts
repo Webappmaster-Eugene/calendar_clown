@@ -410,6 +410,13 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
       return;
     }
 
+    // blog_preview:<id> — preview published post
+    if (data.startsWith("blog_preview:")) {
+      const postId = parseInt(data.split(":")[1], 10);
+      await handlePreviewPost(ctx, postId, dbUser.id);
+      return;
+    }
+
     // blog_regen:<id> — regenerate post
     if (data.startsWith("blog_regen:")) {
       const postId = parseInt(data.split(":")[1], 10);
@@ -884,6 +891,12 @@ async function showPostDetails(ctx: Context, postId: number, userId: number): Pr
       [Markup.button.callback("📢 Опубликовать", `blog_publish:${postId}`)],
       [Markup.button.callback("✅ Готово", `blog_post_done:${postId}`)]
     );
+  } else if (post.status === "published") {
+    buttons.push(
+      [Markup.button.callback("👁 Просмотреть пост", `blog_preview:${postId}`)],
+      [Markup.button.callback("🔄 Перегенерировать", `blog_regen:${postId}`)],
+      [Markup.button.callback("🗑 Удалить", `blog_post_del:${postId}`)]
+    );
   }
 
   try {
@@ -1055,6 +1068,32 @@ async function handleGeneratePost(ctx: Context, postId: number, userId: number):
     await updatePostStatus(postId, userId, "collecting");
     await ctx.reply("❌ Ошибка при генерации поста. Попробуйте ещё раз.");
   }
+}
+
+async function handlePreviewPost(ctx: Context, postId: number, userId: number): Promise<void> {
+  const post = await getPostById(postId, userId);
+  if (!post) {
+    await ctx.reply("Пост не найден.");
+    return;
+  }
+
+  if (!post.generatedText) {
+    await ctx.reply("⚠️ У поста нет сгенерированного текста.");
+    return;
+  }
+
+  const messages = splitIntoMessages(post.generatedText);
+  for (const msgText of messages) {
+    await ctx.reply(msgText, { parse_mode: "HTML" });
+  }
+
+  await ctx.reply("👁 Просмотр поста.", {
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback("🔄 Перегенерировать", `blog_regen:${postId}`)],
+      [Markup.button.callback("📢 Опубликовать повторно", `blog_publish:${postId}`)],
+      [Markup.button.callback("✅ Готово", `blog_post_done:${postId}`)],
+    ]),
+  });
 }
 
 async function handlePublishPost(ctx: Context, postId: number, userId: number): Promise<void> {
