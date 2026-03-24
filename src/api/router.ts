@@ -29,7 +29,7 @@ import voiceRoutes from "./routes/voice.js";
 const log = createLogger("api");
 
 export function createApiApp(): Hono<ApiEnv> {
-  const api = new Hono<ApiEnv>();
+  const api = new Hono<ApiEnv>().basePath("/api");
 
   // ── Global middleware ───────────────────────────────────────
   api.use("*", cors({

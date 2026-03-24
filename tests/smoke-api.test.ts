@@ -19,7 +19,7 @@ before(async () => {
 
 describe("API smoke tests", () => {
   it("returns 401 without Authorization header", async () => {
-    const res = await app.fetch(new Request("http://localhost/user/me"));
+    const res = await app.fetch(new Request("http://localhost/api/user/me"));
     assert.equal(res.status, 401);
     const body = await res.json();
     assert.equal(body.ok, false);
@@ -28,7 +28,7 @@ describe("API smoke tests", () => {
 
   it("returns 401 with invalid Authorization format", async () => {
     const res = await app.fetch(
-      new Request("http://localhost/user/me", {
+      new Request("http://localhost/api/user/me", {
         headers: { Authorization: "Bearer invalid" },
       })
     );
@@ -39,7 +39,7 @@ describe("API smoke tests", () => {
 
   it("returns 401 with invalid initData", async () => {
     const res = await app.fetch(
-      new Request("http://localhost/user/me", {
+      new Request("http://localhost/api/user/me", {
         headers: { Authorization: "tma invalid_init_data" },
       })
     );
@@ -51,7 +51,7 @@ describe("API smoke tests", () => {
 
   it("returns 404 for unknown API routes", async () => {
     const res = await app.fetch(
-      new Request("http://localhost/nonexistent/endpoint", {
+      new Request("http://localhost/api/nonexistent/endpoint", {
         headers: { Authorization: "tma fake" },
       })
     );
@@ -61,7 +61,7 @@ describe("API smoke tests", () => {
 
   it("handles CORS preflight (OPTIONS)", async () => {
     const res = await app.fetch(
-      new Request("http://localhost/user/me", {
+      new Request("http://localhost/api/user/me", {
         method: "OPTIONS",
         headers: { Origin: "http://example.com" },
       })
