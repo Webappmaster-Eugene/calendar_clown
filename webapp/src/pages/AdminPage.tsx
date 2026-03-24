@@ -1,0 +1,206 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "../api/client";
+import type { AdminUserDto, TribeDto, AdminStatsDto } from "@shared/types";
+
+type AdminTab = "stats" | "users" | "pending" | "tribes";
+
+export function AdminPage() {
+  const [tab, setTab] = useState<AdminTab>("stats");
+
+  return (
+    <div className="page">
+      <h1 className="page-title">Админ</h1>
+
+      <div className="tabs">
+        {(["stats", "users", "pending", "tribes"] as const).map((t) => {
+          const labels: Record<AdminTab, string> = {
+            stats: "Статистика",
+            users: "Пользователи",
+            pending: "Ожидание",
+            tribes: "Трайбы",
+          };
+          return (
+          <button
+            key={t}
+            className={`tab ${tab === t ? "active" : ""}`}
+            onClick={() => setTab(t)}
+          >
+            {labels[t]}
+          </button>
+          );
+        })}
+      </div>
+
+      {tab === "stats" && <StatsTab />}
+      {tab === "users" && <UsersTab />}
+      {tab === "pending" && <PendingTab />}
+      {tab === "tribes" && <TribesTab />}
+    </div>
+  );
+}
+
+function StatsTab() {
+  const { data: stats, isLoading, error } = useQuery({
+    queryKey: ["admin", "stats"],
+    queryFn: () => api.get<AdminStatsDto>("/api/admin/stats"),
+  });
+
+  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (error) return <div className="error-msg">{(error as Error).message}</div>;
+  if (!stats) return null;
+
+  return (
+    <>
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-value">{stats.totalUsers}</div>
+          <div className="stat-label">Всего пользователей</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{stats.approvedUsers}</div>
+          <div className="stat-label">Одобрено</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{stats.pendingUsers}</div>
+          <div className="stat-label">Ожидают</div>
+        </div>
+      </div>
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-value">{stats.totalTribes}</div>
+          <div className="stat-label">Трайбы</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{stats.totalExpenses}</div>
+          <div className="stat-label">Расходы</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{stats.totalCalendarEvents}</div>
+          <div className="stat-label">События</div>
+        </div>
+      </div>
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-value">{stats.totalTranscriptions}</div>
+          <div className="stat-label">Транскрипции</div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function UsersTab() {
+  const { data: users, isLoading, error } = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: () => api.get<AdminUserDto[]>("/api/admin/users"),
+  });
+
+  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (error) return <div className="error-msg">{(error as Error).message}</div>;
+
+  return (
+    <div className="list">
+      {users?.map((u) => (
+        <div key={u.id} className="list-item">
+          <div className="list-item-content">
+            <div className="list-item-title">
+              {u.firstName} {u.lastName ?? ""}
+              {u.username ? ` (@${u.username})` : ""}
+            </div>
+            <div className="list-item-hint">
+              {u.role} / {u.status} / {u.mode}
+              {u.tribeName ? ` / ${u.tribeName}` : ""}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PendingTab() {
+  const queryClient = useQueryClient();
+
+  const { data: users, isLoading, error } = useQuery({
+    queryKey: ["admin", "pending"],
+    queryFn: () => api.get<AdminUserDto[]>("/api/admin/users/pending"),
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (userId: number) =>
+      api.put<void>(`/api/admin/users/${userId}/approve`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin"] });
+    },
+  });
+
+  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (error) return <div className="error-msg">{(error as Error).message}</div>;
+
+  if (!users || users.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-text">Нет ожидающих подтверждения</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="list">
+      {users.map((u) => (
+        <div key={u.id} className="list-item">
+          <div className="list-item-content">
+            <div className="list-item-title">
+              {u.firstName} {u.lastName ?? ""}
+              {u.username ? ` (@${u.username})` : ""}
+            </div>
+            <div className="list-item-hint">ID: {u.telegramId}</div>
+          </div>
+          <div className="list-item-actions">
+            <button
+              className="btn btn-primary btn-small"
+              onClick={() => approveMutation.mutate(u.id)}
+              disabled={approveMutation.isPending}
+            >
+              Одобрить
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TribesTab() {
+  const { data: tribes, isLoading, error } = useQuery({
+    queryKey: ["admin", "tribes"],
+    queryFn: () => api.get<TribeDto[]>("/api/admin/tribes"),
+  });
+
+  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (error) return <div className="error-msg">{(error as Error).message}</div>;
+
+  if (!tribes || tribes.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-text">Нет трайбов</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="list">
+      {tribes.map((t) => (
+        <div key={t.id} className="list-item">
+          <div className="list-item-content">
+            <div className="list-item-title">{t.name}</div>
+            <div className="list-item-hint">
+              {t.memberCount} участников &middot; лимит {t.monthlyLimit.toLocaleString("ru-RU")}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

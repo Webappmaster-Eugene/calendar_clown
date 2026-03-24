@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const WEBAPP_ROOT = resolve(ROOT, "..", "webapp");
+const WEBAPP_ROOT = resolve(ROOT, "webapp");
 
 describe("Build artifacts smoke test", () => {
   it("dist/index.js exists (backend build)", () => {

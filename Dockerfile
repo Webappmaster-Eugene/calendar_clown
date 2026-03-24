@@ -20,8 +20,8 @@ WORKDIR /app/webapp
 COPY webapp/package.json webapp/package-lock.json ./
 RUN npm ci
 COPY webapp/ ./
-# Shared types needed for build
-COPY voice-meet-planner/src/shared /app/voice-meet-planner/src/shared
+# Shared types needed for webapp build (path alias @shared → ../src/shared)
+COPY src/shared /app/src/shared
 RUN npm run build
 
 # Stage 3: Runtime
