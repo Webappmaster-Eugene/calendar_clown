@@ -602,3 +602,23 @@ export interface AdminStatsDto {
   totalCalendarEvents: number;
   totalTranscriptions: number;
 }
+
+// ─── Paginated Response Types ────────────────────────────────
+
+/** Response from GET /api/wishlist — own + tribe wishlists */
+export interface WishlistsListResponse {
+  own: WishlistDto[];
+  tribe: WishlistDto[];
+}
+
+/** Response from GET /api/osint — paginated search history */
+export interface OsintSearchHistoryResponse {
+  searches: OsintSearchDto[];
+  total: number;
+}
+
+/** Response from GET /api/transcribe — paginated transcription history */
+export interface TranscribeHistoryResponse {
+  transcriptions: TranscriptionDto[];
+  total: number;
+}

@@ -13,7 +13,7 @@ import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { OSINT_DAILY_LIMIT } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
-import type { OsintSearchDto, OsintStatus } from "../shared/types.js";
+import type { OsintSearchDto, OsintSearchHistoryResponse, OsintStatus } from "../shared/types.js";
 
 const log = createLogger("osint-service");
 
@@ -41,7 +41,7 @@ export async function getSearchHistory(
   limit: number = 10,
   offset: number = 0,
   filter?: { status?: OsintStatus; searchText?: string }
-): Promise<{ searches: OsintSearchDto[]; total: number }> {
+): Promise<OsintSearchHistoryResponse> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 

@@ -209,7 +209,7 @@ app.put("/tribes/:id", async (c) => {
   }
 
   try {
-    const updated = await editTribe(telegramId, tribeId, body.name, body.monthlyLimit);
+    const updated = await editTribe(telegramId, tribeId, { name: body.name, monthlyLimit: body.monthlyLimit });
     return c.json({ ok: true, data: { updated } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to edit tribe";

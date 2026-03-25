@@ -1,6 +1,6 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
-import { getLastExpense, deleteExpense, getUserByTelegramId } from "../expenses/repository.js";
+import { getUndoInfo, undoExpense } from "../services/expenseService.js";
 import { formatMoney } from "../expenses/formatter.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -9,9 +9,6 @@ import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("undo");
-
-/** Max age of expense that can be undone (24 hours in ms). */
-const UNDO_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Handle undo button — show last expense and ask for confirmation.
@@ -30,26 +27,13 @@ export async function handleUndoButton(ctx: Context): Promise<void> {
     return;
   }
 
-  const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser) {
-    await ctx.reply("Пользователь не найден. Отправьте /expenses.");
+  const info = await getUndoInfo(telegramId);
+  if (!info) {
+    await ctx.reply("Нет записей для отмены (или запись старше 24 часов).");
     return;
   }
 
-  const last = await getLastExpense(dbUser.id);
-  if (!last) {
-    await ctx.reply("Нет записей для отмены.");
-    return;
-  }
-
-  // Check age limit
-  const ageMs = Date.now() - last.createdAt.getTime();
-  if (ageMs > UNDO_MAX_AGE_MS) {
-    await ctx.reply("Можно отменить только записи за последние 24 часа.");
-    return;
-  }
-
-  const dateStr = last.createdAt.toLocaleString("ru-RU", {
+  const dateStr = info.createdAt.toLocaleString("ru-RU", {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -59,12 +43,12 @@ export async function handleUndoButton(ctx: Context): Promise<void> {
 
   await ctx.reply(
     `↩️ *Отменить последнюю запись?*\n\n` +
-    `${last.categoryEmoji} ${last.categoryName}${last.subcategory ? ` — ${last.subcategory}` : ""} — ${formatMoney(last.amount)}\n` +
+    `${info.categoryEmoji} ${info.categoryName}${info.subcategory ? ` — ${info.subcategory}` : ""} — ${formatMoney(info.amount)}\n` +
     `📅 ${dateStr}`,
     {
       parse_mode: "Markdown",
       ...Markup.inlineKeyboard([
-        Markup.button.callback("✅ Да, отменить", `undo:confirm:${last.id}`),
+        Markup.button.callback("✅ Да, отменить", `undo:confirm:${info.id}`),
         Markup.button.callback("❌ Нет", "undo:cancel"),
       ]),
     }
@@ -101,14 +85,8 @@ export async function handleUndoCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  const dbUser = await getUserByTelegramId(telegramId);
-  if (!dbUser) {
-    await ctx.editMessageText("Пользователь не найден.");
-    return;
-  }
-
   try {
-    const deleted = await deleteExpense(expenseId, dbUser.id);
+    const deleted = await undoExpense(telegramId, expenseId);
     if (!deleted) {
       await ctx.editMessageText("Запись уже удалена или не найдена.");
       return;

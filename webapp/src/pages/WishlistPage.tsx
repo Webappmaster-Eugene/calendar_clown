@@ -4,16 +4,12 @@ import { api } from "../api/client";
 import type {
   WishlistDto,
   WishlistItemDto,
+  WishlistsListResponse,
   CreateWishlistRequest,
   CreateWishlistItemRequest,
 } from "@shared/types";
 
 type WishlistTab = "own" | "tribe";
-
-interface WishlistsResponse {
-  own: WishlistDto[];
-  tribe: WishlistDto[];
-}
 
 export function WishlistPage() {
   const [tab, setTab] = useState<WishlistTab>("own");
@@ -24,7 +20,7 @@ export function WishlistPage() {
 
   const { data: wishlistData, isLoading, error } = useQuery({
     queryKey: ["wishlists"],
-    queryFn: () => api.get<WishlistsResponse>("/api/wishlist"),
+    queryFn: () => api.get<WishlistsListResponse>("/api/wishlist"),
   });
 
   const createMutation = useMutation({

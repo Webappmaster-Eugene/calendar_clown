@@ -15,6 +15,7 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { createLogger } from "../utils/logger.js";
 import type {
   TranscriptionDto,
+  TranscribeHistoryResponse,
   TranscribeQueueStatusDto,
 } from "../shared/types.js";
 
@@ -67,7 +68,7 @@ export async function getHistory(
   telegramId: number,
   limit: number = 5,
   offset: number = 0
-): Promise<{ transcriptions: TranscriptionDto[]; total: number }> {
+): Promise<TranscribeHistoryResponse> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 

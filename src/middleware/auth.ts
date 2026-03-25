@@ -4,29 +4,10 @@ import { isUserInDb, getUserByTelegramId, getUserStatus } from "../expenses/repo
 import { isDatabaseAvailable } from "../db/connection.js";
 import { query } from "../db/connection.js";
 
-export interface UserMenuContext {
-  role: "admin" | "user";
-  status: string;
-  hasTribe: boolean;
-  tribeId: number | null;
-  tribeName: string | null;
-}
-
-/** Modes available to any approved user (even without a tribe). */
-export const INDIVIDUAL_MODES = new Set(["calendar", "transcribe", "gandalf", "neuro", "goals", "reminders"]);
-
-/** Modes that require tribe membership. */
-export const TRIBE_MODES = new Set(["expenses", "digest", "notable_dates", "wishlist", "osint", "summarizer", "blogger"]);
-
-/** Modes that require admin role. */
-export const ADMIN_MODES = new Set(["broadcast", "admin"]);
-
-/** Check if a user can access a given mode based on their context. */
-export function canAccessMode(mode: string, context: UserMenuContext): boolean {
-  if (ADMIN_MODES.has(mode)) return context.role === "admin";
-  if (TRIBE_MODES.has(mode)) return context.hasTribe;
-  return true; // INDIVIDUAL_MODES or unknown modes — allow
-}
+// Re-export from shared for backward compatibility — all consumers
+// can keep importing from middleware/auth without changes.
+export { canAccessMode } from "../shared/auth.js";
+export type { UserMenuContext } from "../shared/auth.js";
 
 /**
  * Check if a telegram user is the bootstrap admin (from env).

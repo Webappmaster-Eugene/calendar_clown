@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
-import type { TranscriptionDto } from "@shared/types";
+import type { TranscribeHistoryResponse } from "@shared/types";
 
 const PAGE_SIZE = 10;
 
@@ -23,7 +23,7 @@ export function TranscribePage() {
 
   const { data: historyData, isLoading, error } = useQuery({
     queryKey: ["transcriptions", offset],
-    queryFn: () => api.get<{ transcriptions: TranscriptionDto[]; total: number }>(
+    queryFn: () => api.get<TranscribeHistoryResponse>(
       `/api/transcribe?limit=${PAGE_SIZE}&offset=${offset}`
     ),
   });

@@ -1,5 +1,20 @@
-/** Moscow timezone identifier used across the app. */
-export const TIMEZONE_MSK = "Europe/Moscow";
+// ─── Re-exported from shared (single source of truth) ─────────────
+export {
+  TIMEZONE_MSK,
+  DEFAULT_MONTHLY_LIMIT,
+  MAX_EXPENSE_AMOUNT,
+  MIN_EXPENSE_AMOUNT,
+  MAX_SUBCATEGORY_LENGTH,
+  MAX_REMINDERS_PER_USER,
+  OSINT_DAILY_LIMIT,
+  MAX_WORKPLACES_PER_USER,
+  MAX_ACHIEVEMENT_LENGTH,
+  MAX_BLOGGER_CHANNELS,
+  MAX_POST_SOURCES,
+  MAX_POST_LENGTH,
+} from "./shared/constants.js";
+
+// ─── Backend-only constants ───────────────────────────────────────
 
 /** OpenRouter API base URL. */
 export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -16,23 +31,8 @@ export const TRANSCRIBE_MODEL_HQ = process.env.STT_MODEL_HQ || "google/gemini-2.
 /** Fallback model for STT when primary model is geo-blocked. */
 export const TRANSCRIBE_MODEL_FALLBACK = process.env.STT_MODEL_FALLBACK || "openai/gpt-4o-mini-audio-preview";
 
-/** Default monthly expense limit in rubles. */
-export const DEFAULT_MONTHLY_LIMIT = 350_000;
-
-/** Maximum allowed single expense amount (anti-abuse). */
-export const MAX_EXPENSE_AMOUNT = 10_000_000;
-
-/** Minimum allowed single expense amount. */
-export const MIN_EXPENSE_AMOUNT = 1;
-
-/** Maximum subcategory text length. */
-export const MAX_SUBCATEGORY_LENGTH = 200;
-
 /** Rate limit: max expense entries per user per minute. */
 export const RATE_LIMIT_PER_MINUTE = 10;
-
-/** Maximum active reminders per user. */
-export const MAX_REMINDERS_PER_USER = 10;
 
 /** Directory for temporary voice files. */
 export const VOICE_DIR = "./data/voice";
@@ -44,9 +44,6 @@ export const OPENROUTER_REFERER = "https://github.com/telegram-google-calendar-b
 export const DB_UNAVAILABLE_MSG =
   "⚠️ Учёт расходов временно недоступен (нет подключения к базе данных).\n" +
   "Календарь работает в обычном режиме.";
-
-/** OSINT: daily search limit per user. */
-export const OSINT_DAILY_LIMIT = 10;
 
 /** OSINT: AI model for report analysis (via OpenRouter). */
 export const OSINT_ANALYSIS_MODEL = process.env.OSINT_MODEL || "anthropic/claude-sonnet-4";
@@ -80,21 +77,6 @@ export const SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "anthropic/claud
 
 /** Blogger: AI model for post generation (via OpenRouter). */
 export const BLOGGER_MODEL = process.env.BLOGGER_MODEL || "anthropic/claude-sonnet-4";
-
-/** Summarizer: max workplaces per user. */
-export const MAX_WORKPLACES_PER_USER = 10;
-
-/** Blogger: max channels per user. */
-export const MAX_BLOGGER_CHANNELS = 5;
-
-/** Blogger: max sources per post. */
-export const MAX_POST_SOURCES = 20;
-
-/** Summarizer: max achievement text length. */
-export const MAX_ACHIEVEMENT_LENGTH = 2000;
-
-/** Blogger: max generated post length. */
-export const MAX_POST_LENGTH = 12000;
 
 /** Neuro: vision model for image/document analysis (supports images, PDF, DOCX natively). */
 export const NEURO_VISION_MODEL = process.env.NEURO_VISION_MODEL || "google/gemini-2.0-flash-001";

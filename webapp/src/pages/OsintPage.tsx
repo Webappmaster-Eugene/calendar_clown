@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
-import type { OsintSearchDto, StartOsintSearchRequest } from "@shared/types";
+import type { OsintSearchDto, OsintSearchHistoryResponse, StartOsintSearchRequest } from "@shared/types";
 
 export function OsintPage() {
   const queryClient = useQueryClient();
@@ -14,7 +14,7 @@ export function OsintPage() {
 
   const { data: searchData, isLoading, error } = useQuery({
     queryKey: ["osint", "searches", offset],
-    queryFn: () => api.get<{ searches: OsintSearchDto[]; total: number }>(
+    queryFn: () => api.get<OsintSearchHistoryResponse>(
       `/api/osint?limit=${PAGE_SIZE}&offset=${offset}`
     ),
   });
