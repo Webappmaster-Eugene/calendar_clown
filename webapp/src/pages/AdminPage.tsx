@@ -92,6 +92,8 @@ function StatsTab() {
 
 function UsersTab() {
   const queryClient = useQueryClient();
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newTelegramId, setNewTelegramId] = useState("");
 
   const { data: users, isLoading, error } = useQuery({
     queryKey: ["admin", "users"],
@@ -111,44 +113,147 @@ function UsersTab() {
     },
   });
 
+  const removeTribeMutation = useMutation({
+    mutationFn: (userId: number) =>
+      api.del<void>(`/api/admin/users/${userId}/tribe`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin"] });
+    },
+  });
+
+  const removeUserMutation = useMutation({
+    mutationFn: (userId: number) =>
+      api.del<void>(`/api/admin/users/${userId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin"] });
+    },
+  });
+
+  const addUserMutation = useMutation({
+    mutationFn: (telegramId: number) =>
+      api.post<void>("/api/admin/users", { telegramId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin"] });
+      setShowAddForm(false);
+      setNewTelegramId("");
+    },
+  });
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="error-msg">{(error as Error).message}</div>;
 
   return (
-    <div className="list">
-      {users?.map((u) => (
-        <div key={u.id} className="list-item" style={{ flexWrap: "wrap" }}>
-          <div className="list-item-content">
-            <div className="list-item-title">
-              {u.firstName} {u.lastName ?? ""}
-              {u.username ? ` (@${u.username})` : ""}
+    <>
+      {showAddForm && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            const tid = parseInt(newTelegramId, 10);
+            if (tid) addUserMutation.mutate(tid);
+          }}>
+            <div className="form-group">
+              <label className="form-label">Telegram ID пользователя</label>
+              <input
+                className="input"
+                type="number"
+                value={newTelegramId}
+                onChange={(e) => setNewTelegramId(e.target.value)}
+                placeholder="123456789"
+              />
             </div>
-            <div className="list-item-hint">
-              {u.role} / {u.status} / {u.mode}
-              {u.tribeName ? ` / ${u.tribeName}` : " / без трайба"}
+            {addUserMutation.error && <div className="error-msg">{(addUserMutation.error as Error).message}</div>}
+            <div className="form-row">
+              <button type="button" className="btn" onClick={() => setShowAddForm(false)}>Отмена</button>
+              <button type="submit" className="btn btn-primary" disabled={addUserMutation.isPending || !newTelegramId.trim()}>Добавить</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {!showAddForm && (
+        <button
+          className="btn btn-primary btn-block"
+          style={{ marginBottom: 12 }}
+          onClick={() => setShowAddForm(true)}
+        >
+          + Добавить пользователя
+        </button>
+      )}
+
+      <div className="list">
+        {users?.map((u) => (
+          <div key={u.id} className="list-item" style={{ flexWrap: "wrap" }}>
+            <div className="list-item-content">
+              <div className="list-item-title">
+                {u.firstName} {u.lastName ?? ""}
+                {u.username ? ` (@${u.username})` : ""}
+              </div>
+              <div className="list-item-hint">
+                {u.role} / {u.status} / {u.mode}
+                {u.tribeName ? ` / ${u.tribeName}` : " / без трайба"}
+              </div>
+            </div>
+            <div style={{ marginTop: 6, width: "100%", display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {/* Tribe management */}
+              {u.tribeName ? (
+                <button
+                  className="btn btn-small"
+                  onClick={() => removeTribeMutation.mutate(u.id)}
+                  disabled={removeTribeMutation.isPending}
+                >
+                  Убрать из трайба
+                </button>
+              ) : tribes && tribes.length > 0 ? (
+                <select
+                  className="input"
+                  style={{ fontSize: 13, padding: "6px 10px", flex: 1, minWidth: 0 }}
+                  defaultValue=""
+                  onChange={(e) => {
+                    const tribeId = Number(e.target.value);
+                    if (tribeId) assignTribeMutation.mutate({ userId: u.id, tribeId });
+                  }}
+                >
+                  <option value="">Назначить трайб...</option>
+                  {tribes.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              ) : null}
+
+              {/* Change tribe for users already in a tribe */}
+              {u.tribeName && tribes && tribes.length > 1 && (
+                <select
+                  className="input"
+                  style={{ fontSize: 13, padding: "6px 10px", flex: 1, minWidth: 0 }}
+                  defaultValue=""
+                  onChange={(e) => {
+                    const tribeId = Number(e.target.value);
+                    if (tribeId) assignTribeMutation.mutate({ userId: u.id, tribeId });
+                  }}
+                >
+                  <option value="">Сменить трайб...</option>
+                  {tribes.filter((t) => t.name !== u.tribeName).map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              )}
+
+              <button
+                className="btn btn-danger btn-small"
+                onClick={() => {
+                  if (confirm(`Удалить пользователя ${u.firstName}?`)) {
+                    removeUserMutation.mutate(u.id);
+                  }
+                }}
+                disabled={removeUserMutation.isPending}
+              >
+                Удалить
+              </button>
             </div>
           </div>
-          {!u.tribeName && tribes && tribes.length > 0 && (
-            <div style={{ marginTop: 6, width: "100%" }}>
-              <select
-                className="input"
-                style={{ fontSize: 13, padding: "6px 10px" }}
-                defaultValue=""
-                onChange={(e) => {
-                  const tribeId = Number(e.target.value);
-                  if (tribeId) assignTribeMutation.mutate({ userId: u.id, tribeId });
-                }}
-              >
-                <option value="">Назначить трайб...</option>
-                {tribes.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -163,6 +268,14 @@ function PendingTab() {
   const approveMutation = useMutation({
     mutationFn: (userId: number) =>
       api.put<void>(`/api/admin/users/${userId}/approve`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin"] });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (userId: number) =>
+      api.put<void>(`/api/admin/users/${userId}/reject`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin"] });
     },
@@ -198,6 +311,13 @@ function PendingTab() {
             >
               Одобрить
             </button>
+            <button
+              className="btn btn-danger btn-small"
+              onClick={() => rejectMutation.mutate(u.id)}
+              disabled={rejectMutation.isPending}
+            >
+              Отклонить
+            </button>
           </div>
         </div>
       ))}
@@ -210,6 +330,9 @@ function TribesTab() {
   const [showForm, setShowForm] = useState(false);
   const [tribeName, setTribeName] = useState("");
   const [monthlyLimit, setMonthlyLimit] = useState("350000");
+  const [editingTribeId, setEditingTribeId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editLimit, setEditLimit] = useState("");
 
   const { data: tribes, isLoading, error } = useQuery({
     queryKey: ["admin", "tribes"],
@@ -227,6 +350,22 @@ function TribesTab() {
     },
   });
 
+  const editMutation = useMutation({
+    mutationFn: ({ id, name, monthlyLimit: ml }: { id: number; name?: string; monthlyLimit?: number }) =>
+      api.put<void>(`/api/admin/tribes/${id}`, { name, monthlyLimit: ml }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "tribes"] });
+      setEditingTribeId(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.del<void>(`/api/admin/tribes/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "tribes"] });
+    },
+  });
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="error-msg">{(error as Error).message}</div>;
 
@@ -241,13 +380,63 @@ function TribesTab() {
       {tribes && tribes.length > 0 && (
         <div className="list">
           {tribes.map((t) => (
-            <div key={t.id} className="list-item">
+            <div key={t.id} className="list-item" style={{ flexWrap: "wrap" }}>
               <div className="list-item-content">
                 <div className="list-item-title">{t.name}</div>
                 <div className="list-item-hint">
-                  {t.memberCount} участников &middot; лимит {t.monthlyLimit.toLocaleString("ru-RU")}
+                  {t.memberCount} участников · лимит {t.monthlyLimit.toLocaleString("ru-RU")}
                 </div>
               </div>
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-small"
+                  onClick={() => {
+                    setEditingTribeId(t.id);
+                    setEditName(t.name);
+                    setEditLimit(String(t.monthlyLimit));
+                  }}
+                >
+                  Ред.
+                </button>
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={() => {
+                    if (confirm(`Удалить трайб "${t.name}"?`)) {
+                      deleteMutation.mutate(t.id);
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                >
+                  Уд.
+                </button>
+              </div>
+
+              {editingTribeId === t.id && (
+                <div className="card" style={{ marginTop: 8, width: "100%" }}>
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    editMutation.mutate({
+                      id: t.id,
+                      name: editName.trim() || undefined,
+                      monthlyLimit: parseInt(editLimit, 10) || undefined,
+                    });
+                  }}>
+                    <div className="form-group">
+                      <label className="form-label">Название</label>
+                      <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Месячный лимит</label>
+                      <input className="input" type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} />
+                    </div>
+                    {editMutation.error && <div className="error-msg">{(editMutation.error as Error).message}</div>}
+                    <div className="form-row">
+                      <button type="button" className="btn" onClick={() => setEditingTribeId(null)}>Отмена</button>
+                      <button type="submit" className="btn btn-primary" disabled={editMutation.isPending}>Сохранить</button>
+                    </div>
+                  </form>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -372,7 +372,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     await handleExpensesCommand(ctx);
   });
   bot.action("mode:transcribe", async (ctx) => {
-    await ctx.answerCbQuery("🎙 Транскрибатор");
+    await ctx.answerCbQuery("🎙️ Транскрибация");
     await handleTranscribeCommand(ctx);
   });
   bot.action("mode:digest", async (ctx) => {
@@ -391,7 +391,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     await handleBroadcastCommand(ctx);
   });
   bot.action("mode:admin", async (ctx) => {
-    await ctx.answerCbQuery("👑 Управление");
+    await ctx.answerCbQuery("⚙️ Админка");
     await handleAdminCommand(ctx);
   });
   bot.action("mode:notable_dates", async (ctx) => {
@@ -406,7 +406,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     await handleNotableDatesCommand(ctx);
   });
   bot.action("mode:gandalf", async (ctx) => {
-    await ctx.answerCbQuery("📚 База знаний");
+    await ctx.answerCbQuery("🧙 База знаний");
     await handleGandalfCommand(ctx);
   });
   bot.action("mode:wishlist", async (ctx) => {
@@ -454,7 +454,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
         return;
       }
     }
-    await ctx.answerCbQuery("📝 Саммаризатор");
+    await ctx.answerCbQuery("📋 Резюме");
     await handleSummarizerCommand(ctx);
   });
   bot.action("mode:blogger", async (ctx) => {
@@ -479,20 +479,28 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
 
   bot.hears("💰 Расходы", handleExpensesCommand);
   bot.hears("📅 Календарь", handleCalendarCommand);
-  bot.hears("🎙 Транскрибатор", handleTranscribeCommand);
+  bot.hears("🎙️ Транскрибация", handleTranscribeCommand);
   bot.hears("📰 Дайджест", handleDigestCommand);
-  bot.hears("📢 Царская почта", handleBroadcastCommand);
-  bot.hears("👑 Управление", handleAdminCommand);
-  bot.hears("🎉 Даты", handleNotableDatesCommand);
-  bot.hears("📚 База знаний", handleGandalfCommand);
+  bot.hears("📢 Рассылка", handleBroadcastCommand);
+  bot.hears("⚙️ Админка", handleAdminCommand);
+  bot.hears("🎂 Даты", handleNotableDatesCommand);
+  bot.hears("🧙 База знаний", handleGandalfCommand);
   bot.hears("🎁 Вишлист", handleWishlistCommand);
   bot.hears("🧠 Нейро", handleNeuroCommand);
   bot.hears("🎯 Цели", handleGoalsCommand);
   bot.hears("⏰ Напоминания", handleRemindersCommand);
   bot.hears("🔍 OSINT", handleOsintCommand);
-  bot.hears("📝 Саммаризатор", handleSummarizerCommand);
+  bot.hears("📋 Резюме", handleSummarizerCommand);
   bot.hears("✍️ Блогер", handleBloggerCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
+
+  // Backward compatibility — old keyboard labels (for users with cached keyboards)
+  bot.hears("🎙 Транскрибатор", handleTranscribeCommand);
+  bot.hears("📢 Царская почта", handleBroadcastCommand);
+  bot.hears("👑 Управление", handleAdminCommand);
+  bot.hears("🎉 Даты", handleNotableDatesCommand);
+  bot.hears("📚 База знаний", handleGandalfCommand);
+  bot.hears("📝 Саммаризатор", handleSummarizerCommand);
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
 

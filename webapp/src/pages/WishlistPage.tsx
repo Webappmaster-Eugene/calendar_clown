@@ -8,15 +8,23 @@ import type {
   CreateWishlistItemRequest,
 } from "@shared/types";
 
+type WishlistTab = "own" | "tribe";
+
+interface WishlistsResponse {
+  own: WishlistDto[];
+  tribe: WishlistDto[];
+}
+
 export function WishlistPage() {
+  const [tab, setTab] = useState<WishlistTab>("own");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const queryClient = useQueryClient();
 
-  const { data: wishlists, isLoading, error } = useQuery({
+  const { data: wishlistData, isLoading, error } = useQuery({
     queryKey: ["wishlists"],
-    queryFn: () => api.get<WishlistDto[]>("/api/wishlist"),
+    queryFn: () => api.get<WishlistsResponse>("/api/wishlist"),
   });
 
   const createMutation = useMutation({
@@ -29,6 +37,13 @@ export function WishlistPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.del<void>(`/api/wishlist/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["wishlists"] });
+    },
+  });
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
@@ -36,34 +51,64 @@ export function WishlistPage() {
     return <WishlistItems wishlistId={selectedId} onBack={() => setSelectedId(null)} />;
   }
 
+  const wishlists = tab === "own"
+    ? (wishlistData?.own ?? [])
+    : (wishlistData?.tribe ?? []);
+
   return (
     <div className="page">
       <h1 className="page-title">Списки желаний</h1>
 
-      {wishlists && wishlists.length === 0 && !showForm && (
+      <div className="tabs">
+        <button
+          className={`tab ${tab === "own" ? "active" : ""}`}
+          onClick={() => setTab("own")}
+        >
+          Мои списки
+        </button>
+        <button
+          className={`tab ${tab === "tribe" ? "active" : ""}`}
+          onClick={() => setTab("tribe")}
+        >
+          Семейные
+        </button>
+      </div>
+
+      {wishlists.length === 0 && !showForm && (
         <div className="empty-state">
           <div className="empty-state-emoji">🎁</div>
-          <div className="empty-state-text">Нет списков желаний</div>
+          <div className="empty-state-text">
+            {tab === "own" ? "Нет ваших списков желаний" : "Нет семейных списков"}
+          </div>
         </div>
       )}
 
-      {wishlists && wishlists.length > 0 && (
+      {wishlists.length > 0 && (
         <div className="list">
           {wishlists.map((w) => (
-            <button
-              key={w.id}
-              className="list-item"
-              style={{ cursor: "pointer", border: "none", width: "100%", textAlign: "left" }}
-              onClick={() => setSelectedId(w.id)}
-            >
-              <span className="list-item-emoji">{w.emoji || "🎁"}</span>
-              <div className="list-item-content">
-                <div className="list-item-title">{w.name}</div>
-                <div className="list-item-hint">
-                  {w.ownerName} &middot; {w.itemCount} элементов
+            <div key={w.id} className="list-item" style={{ display: "flex", alignItems: "center" }}>
+              <button
+                style={{ cursor: "pointer", border: "none", background: "none", flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 8, padding: 0 }}
+                onClick={() => setSelectedId(w.id)}
+              >
+                <span className="list-item-emoji">{w.emoji || "🎁"}</span>
+                <div className="list-item-content">
+                  <div className="list-item-title">{w.name}</div>
+                  <div className="list-item-hint">
+                    {w.ownerName} · {w.itemCount} элементов
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+              {w.isOwn && (
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={() => deleteMutation.mutate(w.id)}
+                  disabled={deleteMutation.isPending}
+                >
+                  Уд.
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -84,7 +129,7 @@ export function WishlistPage() {
         </div>
       )}
 
-      {!showForm && <button className="fab" onClick={() => setShowForm(true)}>+</button>}
+      {!showForm && tab === "own" && <button className="fab" onClick={() => setShowForm(true)}>+</button>}
     </div>
   );
 }

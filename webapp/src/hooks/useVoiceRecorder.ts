@@ -1,6 +1,9 @@
 /**
  * Browser voice recording hook using MediaRecorder API.
  * Records WebM/Opus on Android, MP4/AAC on iOS.
+ *
+ * Caches the microphone stream to avoid repeated permission prompts.
+ * Call releaseStream() on unmount to free the microphone.
  */
 import { useState, useRef, useCallback } from "react";
 
@@ -10,6 +13,7 @@ interface UseVoiceRecorderResult {
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<Blob | null>;
   cancelRecording: () => void;
+  releaseStream: () => void;
   duration: number;
 }
 
@@ -27,35 +31,64 @@ function getPreferredMimeType(): string {
   return "";
 }
 
+/** Check if a MediaStream is still active (has at least one live track). */
+function isStreamActive(stream: MediaStream | null): boolean {
+  if (!stream) return false;
+  return stream.getAudioTracks().some((t) => t.readyState === "live");
+}
+
 export function useVoiceRecorder(): UseVoiceRecorderResult {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const resolveRef = useRef<((blob: Blob | null) => void) | null>(null);
 
   const isSupported = typeof MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
-  const cleanup = useCallback(() => {
+  const clearTimer = useCallback(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+  }, []);
+
+  /** Release the cached microphone stream. Call on component unmount. */
+  const releaseStream = useCallback(() => {
+    clearTimer();
     if (mediaRecorderRef.current) {
-      const tracks = mediaRecorderRef.current.stream?.getTracks();
-      tracks?.forEach((t) => t.stop());
+      if (mediaRecorderRef.current.state === "recording") {
+        try { mediaRecorderRef.current.stop(); } catch { /* ignore */ }
+      }
       mediaRecorderRef.current = null;
     }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
     chunksRef.current = [];
+    resolveRef.current = null;
     setIsRecording(false);
     setDuration(0);
+  }, [clearTimer]);
+
+  /** Get or reuse the microphone stream. */
+  const getStream = useCallback(async (): Promise<MediaStream> => {
+    if (isStreamActive(streamRef.current)) {
+      return streamRef.current!;
+    }
+    // Request new stream — this prompts for permission only if not already granted
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    streamRef.current = stream;
+    return stream;
   }, []);
 
   const startRecording = useCallback(async () => {
     if (!isSupported) throw new Error("MediaRecorder not supported");
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await getStream();
     const mimeType = getPreferredMimeType();
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
@@ -77,7 +110,9 @@ export function useVoiceRecorder(): UseVoiceRecorderResult {
     recorder.onerror = () => {
       resolveRef.current?.(null);
       resolveRef.current = null;
-      cleanup();
+      clearTimer();
+      setIsRecording(false);
+      setDuration(0);
     };
 
     recorder.start(250); // Collect data every 250ms
@@ -88,7 +123,7 @@ export function useVoiceRecorder(): UseVoiceRecorderResult {
     timerRef.current = setInterval(() => {
       setDuration(Math.floor((Date.now() - startTime) / 1000));
     }, 1000);
-  }, [isSupported, cleanup]);
+  }, [isSupported, getStream, clearTimer]);
 
   const stopRecording = useCallback((): Promise<Blob | null> => {
     return new Promise((resolve) => {
@@ -98,20 +133,23 @@ export function useVoiceRecorder(): UseVoiceRecorderResult {
       }
       resolveRef.current = resolve;
       mediaRecorderRef.current.stop();
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      // Stop mic access
-      mediaRecorderRef.current.stream?.getTracks().forEach((t) => t.stop());
+      clearTimer();
+      // Do NOT stop stream tracks — keep them alive for next recording
       setIsRecording(false);
     });
-  }, []);
+  }, [clearTimer]);
 
   const cancelRecording = useCallback(() => {
     resolveRef.current = null;
-    cleanup();
-  }, [cleanup]);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      try { mediaRecorderRef.current.stop(); } catch { /* ignore */ }
+    }
+    mediaRecorderRef.current = null;
+    clearTimer();
+    chunksRef.current = [];
+    setIsRecording(false);
+    setDuration(0);
+  }, [clearTimer]);
 
   return {
     isRecording,
@@ -119,6 +157,7 @@ export function useVoiceRecorder(): UseVoiceRecorderResult {
     startRecording,
     stopRecording,
     cancelRecording,
+    releaseStream,
     duration,
   };
 }

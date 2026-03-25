@@ -12,9 +12,11 @@ const app = new Hono<ApiEnv>();
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100);
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
 
   try {
-    const result = await getSearchHistory(telegramId);
+    const result = await getSearchHistory(telegramId, limit, offset);
     return c.json({ ok: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get search history";

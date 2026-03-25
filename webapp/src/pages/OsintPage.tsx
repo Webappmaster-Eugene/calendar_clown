@@ -9,23 +9,32 @@ export function OsintPage() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  const { data: searches, isLoading, error } = useQuery({
-    queryKey: ["osint", "searches"],
-    queryFn: () => api.get<OsintSearchDto[]>("/api/osint"),
+  const [offset, setOffset] = useState(0);
+  const PAGE_SIZE = 20;
+
+  const { data: searchData, isLoading, error } = useQuery({
+    queryKey: ["osint", "searches", offset],
+    queryFn: () => api.get<{ searches: OsintSearchDto[]; total: number }>(
+      `/api/osint?limit=${PAGE_SIZE}&offset=${offset}`
+    ),
   });
+
+  const searches = searchData?.searches ?? [];
+  const total = searchData?.total ?? 0;
 
   const searchMutation = useMutation({
     mutationFn: (data: StartOsintSearchRequest) =>
       api.post<OsintSearchDto>("/api/osint", data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["osint", "searches"] });
+      setOffset(0);
+      queryClient.invalidateQueries({ queryKey: ["osint"] });
       setQuery("");
       setSelectedId(result.id);
     },
   });
 
   const selectedSearch = selectedId !== null
-    ? searches?.find((s) => s.id === selectedId) ?? null
+    ? searches.find((s) => s.id === selectedId) ?? null
     : null;
 
   if (isLoading) return <div className="loading">Загрузка...</div>;
@@ -75,11 +84,11 @@ export function OsintPage() {
 
       <div className="section-title">История</div>
 
-      {searches && searches.length === 0 && (
+      {searches.length === 0 && !isLoading && (
         <div className="empty-state"><div className="empty-state-text">Нет поисковых запросов</div></div>
       )}
 
-      {searches && searches.length > 0 && (
+      {searches.length > 0 && (
         <div className="list">
           {searches.map((s) => (
             <button
@@ -92,11 +101,33 @@ export function OsintPage() {
                 <div className="list-item-title">{s.query}</div>
                 <div className="list-item-hint">
                   {s.status} &middot; {s.sourcesCount} источников
-                  {s.completedAt ? ` &middot; ${new Date(s.completedAt).toLocaleDateString("ru-RU")}` : ""}
+                  {s.completedAt ? ` · ${new Date(s.completedAt).toLocaleDateString("ru-RU")}` : ""}
                 </div>
               </div>
             </button>
           ))}
+        </div>
+      )}
+
+      {total > PAGE_SIZE && (
+        <div className="form-row" style={{ marginTop: 12, justifyContent: "center" }}>
+          <button
+            className="btn btn-small"
+            disabled={offset === 0}
+            onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+          >
+            ←
+          </button>
+          <span className="card-hint" style={{ padding: "0 8px" }}>
+            {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} из {total}
+          </span>
+          <button
+            className="btn btn-small"
+            disabled={offset + PAGE_SIZE >= total}
+            onClick={() => setOffset((o) => o + PAGE_SIZE)}
+          >
+            →
+          </button>
         </div>
       )}
     </div>

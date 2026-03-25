@@ -32,6 +32,13 @@ export function GandalfPage() {
     },
   });
 
+  const deleteCatMutation = useMutation({
+    mutationFn: (id: number) => api.del<void>(`/api/gandalf/categories/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gandalf", "categories"] });
+    },
+  });
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
@@ -56,21 +63,32 @@ export function GandalfPage() {
       ) : (
         <div className="list">
           {categories?.map((cat) => (
-            <button
-              key={cat.id}
-              className="list-item"
-              style={{ cursor: "pointer", border: "none", width: "100%", textAlign: "left" }}
-              onClick={() => setSelectedCategoryId(cat.id)}
-            >
-              <span className="list-item-emoji">{cat.emoji}</span>
-              <div className="list-item-content">
-                <div className="list-item-title">{cat.name}</div>
-                <div className="list-item-hint">
-                  {cat.totalEntries ?? 0} записей
-                  {cat.totalPrice != null ? ` / ${cat.totalPrice.toLocaleString("ru-RU")}` : ""}
+            <div key={cat.id} className="list-item" style={{ display: "flex", alignItems: "center" }}>
+              <button
+                style={{ cursor: "pointer", border: "none", background: "none", flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 8, padding: 0 }}
+                onClick={() => setSelectedCategoryId(cat.id)}
+              >
+                <span className="list-item-emoji">{cat.emoji}</span>
+                <div className="list-item-content">
+                  <div className="list-item-title">{cat.name}</div>
+                  <div className="list-item-hint">
+                    {cat.totalEntries ?? 0} записей
+                    {cat.totalPrice != null ? ` / ${cat.totalPrice.toLocaleString("ru-RU")}` : ""}
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+              <button
+                className="btn btn-danger btn-small"
+                onClick={() => {
+                  if (confirm(`Удалить категорию "${cat.name}"?`)) {
+                    deleteCatMutation.mutate(cat.id);
+                  }
+                }}
+                disabled={deleteCatMutation.isPending}
+              >
+                Уд.
+              </button>
+            </div>
           ))}
         </div>
       )}

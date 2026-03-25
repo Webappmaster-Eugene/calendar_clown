@@ -121,30 +121,30 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     if (context.role === "admin") {
       return Markup.keyboard([
         ["📅 Календарь", "💰 Расходы"],
-        ["🎙 Транскрибатор", "📚 База знаний"],
-        ["📰 Дайджест", "🎉 Даты"],
+        ["🎙️ Транскрибация", "🧙 База знаний"],
+        ["📰 Дайджест", "🎂 Даты"],
         ["🎁 Вишлист", "🧠 Нейро"],
         ["🎯 Цели", "⏰ Напоминания"],
-        ["🔍 OSINT", "📝 Саммаризатор"],
-        ["✍️ Блогер", "📢 Царская почта"],
-        ["👑 Управление"],
+        ["🔍 OSINT", "📋 Резюме"],
+        ["✍️ Блогер", "📢 Рассылка"],
+        ["⚙️ Админка"],
       ]).resize();
     }
     if (context.hasTribe) {
       return Markup.keyboard([
         ["📅 Календарь", "💰 Расходы"],
-        ["🎙 Транскрибатор", "📚 База знаний"],
-        ["📰 Дайджест", "🎉 Даты"],
+        ["🎙️ Транскрибация", "🧙 База знаний"],
+        ["📰 Дайджест", "🎂 Даты"],
         ["🎁 Вишлист", "🧠 Нейро"],
         ["🎯 Цели", "⏰ Напоминания"],
-        ["🔍 OSINT", "📝 Саммаризатор"],
+        ["🔍 OSINT", "📋 Резюме"],
         ["✍️ Блогер"],
       ]).resize();
     }
     // User without tribe — limited modes
     return Markup.keyboard([
-      ["📅 Календарь", "🎙 Транскрибатор"],
-      ["📚 База знаний", "🧠 Нейро"],
+      ["📅 Календарь", "🎙️ Транскрибация"],
+      ["🧙 База знаний", "🧠 Нейро"],
       ["🎯 Цели", "⏰ Напоминания"],
     ]).resize();
   }
@@ -152,15 +152,15 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
   // Fallback: simple admin check
   const rows = [
     ["📅 Календарь", "💰 Расходы"],
-    ["🎙 Транскрибатор", "📚 База знаний"],
-    ["📰 Дайджест", "🎉 Даты"],
+    ["🎙️ Транскрибация", "🧙 База знаний"],
+    ["📰 Дайджест", "🎂 Даты"],
     ["🎁 Вишлист", "🧠 Нейро"],
     ["🎯 Цели", "⏰ Напоминания"],
-    ["🔍 OSINT", "📝 Саммаризатор"],
+    ["🔍 OSINT", "📋 Резюме"],
     ["✍️ Блогер"],
   ];
   if (isAdmin) {
-    rows.push(["📢 Царская почта", "👑 Управление"]);
+    rows.push(["📢 Рассылка", "⚙️ Админка"]);
   }
   return Markup.keyboard(rows).resize();
 }
@@ -242,14 +242,14 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
       ...(canAccessMode("expenses", ctx) ? [Markup.button.callback("💰 Расходы", "mode:expenses")] : []),
     ],
     [
-      Markup.button.callback("🎙 Транскрибатор", "mode:transcribe"),
-      Markup.button.callback("📚 База знаний", "mode:gandalf"),
+      Markup.button.callback("🎙️ Транскрибация", "mode:transcribe"),
+      Markup.button.callback("🧙 База знаний", "mode:gandalf"),
     ],
   ];
   if (canAccessMode("digest", ctx) || canAccessMode("notable_dates", ctx)) {
     rows.push([
       ...(canAccessMode("digest", ctx) ? [Markup.button.callback("📰 Дайджест", "mode:digest")] : []),
-      ...(canAccessMode("notable_dates", ctx) ? [Markup.button.callback("🎉 Даты", "mode:notable_dates")] : []),
+      ...(canAccessMode("notable_dates", ctx) ? [Markup.button.callback("🎂 Даты", "mode:notable_dates")] : []),
     ]);
   }
   if (canAccessMode("wishlist", ctx)) {
@@ -271,14 +271,14 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
   }
   if (canAccessMode("summarizer", ctx)) {
     rows.push([
-      Markup.button.callback("📝 Саммаризатор", "mode:summarizer"),
+      Markup.button.callback("📋 Резюме", "mode:summarizer"),
       Markup.button.callback("✍️ Блогер", "mode:blogger"),
     ]);
   }
   if (isAdmin) {
     rows.push([
-      Markup.button.callback("📢 Царская почта", "mode:broadcast"),
-      Markup.button.callback("👑 Управление", "mode:admin"),
+      Markup.button.callback("📢 Рассылка", "mode:broadcast"),
+      Markup.button.callback("⚙️ Админка", "mode:admin"),
     ]);
   }
   return Markup.inlineKeyboard(rows);

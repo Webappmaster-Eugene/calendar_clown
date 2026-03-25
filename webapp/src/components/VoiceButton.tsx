@@ -2,7 +2,7 @@
  * Hold-to-record voice button.
  * Records audio via MediaRecorder and sends to backend for transcription.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import { api } from "../api/client";
 
@@ -13,8 +13,13 @@ interface VoiceButtonProps {
 }
 
 export function VoiceButton({ onResult, onError, mode }: VoiceButtonProps) {
-  const { isRecording, isSupported, startRecording, stopRecording, cancelRecording, duration } = useVoiceRecorder();
+  const { isRecording, isSupported, startRecording, stopRecording, cancelRecording, releaseStream, duration } = useVoiceRecorder();
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Release microphone stream when component unmounts
+  useEffect(() => {
+    return () => { releaseStream(); };
+  }, [releaseStream]);
 
   if (!isSupported) return null;
 

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import {
   getCategories,
   addCategory,
+  removeCategory,
   getEntriesForCategory,
   getAllEntries,
   addEntry,
@@ -41,6 +42,46 @@ app.post("/categories", async (c) => {
     return c.json({ ok: true, data: category });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create category";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/gandalf/categories/:id — delete category */
+app.delete("/categories/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const categoryId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(categoryId)) {
+    return c.json({ ok: false, error: "Invalid category ID" }, 400);
+  }
+
+  try {
+    const deleted = await removeCategory(telegramId, categoryId);
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete category";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/gandalf/categories/:id/entries — list entries by category (convenience route) */
+app.get("/categories/:id/entries", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const categoryId = parseInt(c.req.param("id"), 10);
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10) || 50, 100);
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
+
+  if (isNaN(categoryId)) {
+    return c.json({ ok: false, error: "Invalid category ID" }, 400);
+  }
+
+  try {
+    const result = await getEntriesForCategory(telegramId, categoryId, limit, offset);
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get entries";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

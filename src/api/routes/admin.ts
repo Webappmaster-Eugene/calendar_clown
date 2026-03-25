@@ -3,9 +3,15 @@ import {
   listUsers,
   getPendingUsers,
   approveUserById,
+  rejectUserById,
+  addUser,
+  removeUser,
   assignUserToTribe,
+  removeUserTribe,
   getTribes,
   createNewTribe,
+  editTribe,
+  removeTribe,
   getGlobalStats,
 } from "../../services/adminService.js";
 import type { ApiEnv } from "../authMiddleware.js";
@@ -40,6 +46,25 @@ app.get("/users/pending", async (c) => {
   }
 });
 
+/** POST /api/admin/users — add user by Telegram ID */
+app.post("/users", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const body = await c.req.json<{ telegramId: number }>();
+
+  if (!body.telegramId || isNaN(body.telegramId)) {
+    return c.json({ ok: false, error: "Valid telegramId is required" }, 400);
+  }
+
+  try {
+    const added = await addUser(telegramId, body.telegramId);
+    return c.json({ ok: true, data: { added } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to add user";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
 /** PUT /api/admin/users/:id/approve — approve user */
 app.put("/users/:id/approve", async (c) => {
   const initData = c.get("initData");
@@ -55,6 +80,44 @@ app.put("/users/:id/approve", async (c) => {
     return c.json({ ok: true, data: { approved } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to approve user";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/admin/users/:id/reject — reject user */
+app.put("/users/:id/reject", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const targetTelegramId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(targetTelegramId)) {
+    return c.json({ ok: false, error: "Invalid user ID" }, 400);
+  }
+
+  try {
+    const rejected = await rejectUserById(telegramId, targetTelegramId);
+    return c.json({ ok: true, data: { rejected } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to reject user";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/admin/users/:id — remove user */
+app.delete("/users/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const targetTelegramId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(targetTelegramId)) {
+    return c.json({ ok: false, error: "Invalid user ID" }, 400);
+  }
+
+  try {
+    const removed = await removeUser(telegramId, targetTelegramId);
+    return c.json({ ok: true, data: { removed } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to remove user";
     return c.json({ ok: false, error: msg }, 500);
   }
 });
@@ -82,6 +145,25 @@ app.put("/users/:id/tribe", async (c) => {
   }
 });
 
+/** DELETE /api/admin/users/:id/tribe — remove from tribe */
+app.delete("/users/:id/tribe", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const targetTelegramId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(targetTelegramId)) {
+    return c.json({ ok: false, error: "Invalid user ID" }, 400);
+  }
+
+  try {
+    const removed = await removeUserTribe(telegramId, targetTelegramId);
+    return c.json({ ok: true, data: { removed } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to remove from tribe";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
 /** GET /api/admin/tribes — list tribes */
 app.get("/tribes", async (c) => {
   const initData = c.get("initData");
@@ -100,7 +182,7 @@ app.get("/tribes", async (c) => {
 app.post("/tribes", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
-  const body = await c.req.json<{ name: string }>();
+  const body = await c.req.json<{ name: string; monthlyLimit?: number }>();
 
   if (!body.name?.trim()) {
     return c.json({ ok: false, error: "name is required" }, 400);
@@ -111,6 +193,45 @@ app.post("/tribes", async (c) => {
     return c.json({ ok: true, data: tribe });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create tribe";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/admin/tribes/:id — edit tribe */
+app.put("/tribes/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const tribeId = parseInt(c.req.param("id"), 10);
+  const body = await c.req.json<{ name?: string; monthlyLimit?: number }>();
+
+  if (isNaN(tribeId)) {
+    return c.json({ ok: false, error: "Invalid tribe ID" }, 400);
+  }
+
+  try {
+    const updated = await editTribe(telegramId, tribeId, body.name, body.monthlyLimit);
+    return c.json({ ok: true, data: { updated } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to edit tribe";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/admin/tribes/:id — delete tribe */
+app.delete("/tribes/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const tribeId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(tribeId)) {
+    return c.json({ ok: false, error: "Invalid tribe ID" }, 400);
+  }
+
+  try {
+    const removed = await removeTribe(telegramId, tribeId);
+    return c.json({ ok: true, data: { removed } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete tribe";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

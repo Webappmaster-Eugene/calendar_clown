@@ -1,27 +1,61 @@
 import { Hono } from "hono";
 import {
   getUserWishlists,
+  getTribeWishlists,
   createNewWishlist,
   getWishlistItems,
   addWishlistItem,
   reserveWishlistItem,
   unreserveWishlistItem,
   removeWishlistItem,
+  removeWishlist,
 } from "../../services/wishlistService.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
 
-/** GET /api/wishlist — list wishlists */
+/** GET /api/wishlist — list wishlists (own + tribe) */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
+  const scope = c.req.query("scope") ?? "all"; // "own" | "tribe" | "all"
 
   try {
-    const wishlists = await getUserWishlists(telegramId);
-    return c.json({ ok: true, data: wishlists });
+    if (scope === "own") {
+      const own = await getUserWishlists(telegramId);
+      return c.json({ ok: true, data: { own, tribe: [] } });
+    }
+    if (scope === "tribe") {
+      const tribe = await getTribeWishlists(telegramId);
+      return c.json({ ok: true, data: { own: [], tribe } });
+    }
+    // scope === "all"
+    const [own, tribe] = await Promise.all([
+      getUserWishlists(telegramId),
+      getTribeWishlists(telegramId),
+    ]);
+    return c.json({ ok: true, data: { own, tribe } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get wishlists";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/wishlist/:id — delete wishlist */
+app.delete("/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const wishlistId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(wishlistId)) {
+    return c.json({ ok: false, error: "Invalid wishlist ID" }, 400);
+  }
+
+  try {
+    const deleted = await removeWishlist(telegramId, wishlistId);
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete wishlist";
     return c.json({ ok: false, error: msg }, 500);
   }
 });
