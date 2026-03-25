@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { VoiceButton } from "../components/VoiceButton";
 import type {
   CategoryDto,
   ExpenseReportDto,
@@ -12,6 +13,7 @@ export function ExpensesPage() {
   const [showForm, setShowForm] = useState(false);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
+  const [voiceText, setVoiceText] = useState("");
 
   const { data: report, isLoading: reportLoading, error: reportError } = useQuery({
     queryKey: ["expenses", "report"],
@@ -31,6 +33,16 @@ export function ExpensesPage() {
       setShowForm(false);
       setAmount("");
       setCategoryId(null);
+    },
+  });
+
+  /** Add expense from natural language text (voice or typed) */
+  const addTextMutation = useMutation({
+    mutationFn: (text: string) =>
+      api.post<void>("/api/expenses", { text }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      setVoiceText("");
     },
   });
 
@@ -54,7 +66,17 @@ export function ExpensesPage() {
       <h1 className="page-title">Расходы</h1>
 
       <div className="card">
-        <div className="card-hint">{report?.month ?? "Текущий месяц"}</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="card-hint">{report?.month ?? "Текущий месяц"}</div>
+          <button
+            className="btn btn-small"
+            onClick={() => {
+              window.open("/api/expenses/excel", "_blank");
+            }}
+          >
+            Excel
+          </button>
+        </div>
         <div style={{ fontSize: 28, fontWeight: 700 }}>
           {total.toLocaleString("ru-RU")} / {limit.toLocaleString("ru-RU")}
         </div>
@@ -82,6 +104,36 @@ export function ExpensesPage() {
         <div className="empty-state">
           <div className="empty-state-text">Нет расходов за этот месяц</div>
         </div>
+      )}
+
+      <div className="section-title">Быстрый ввод</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
+        <input
+          className="input"
+          value={voiceText}
+          onChange={(e) => setVoiceText(e.target.value)}
+          placeholder="кофе 300 или скажите голосом"
+          style={{ flex: 1 }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && voiceText.trim()) {
+              addTextMutation.mutate(voiceText.trim());
+            }
+          }}
+        />
+        <VoiceButton
+          mode="expenses"
+          onResult={(transcript) => {
+            if (transcript.trim()) {
+              addTextMutation.mutate(transcript.trim());
+            }
+          }}
+        />
+      </div>
+      {addTextMutation.error && (
+        <div className="error-msg">{(addTextMutation.error as Error).message}</div>
+      )}
+      {addTextMutation.isPending && (
+        <div className="card-hint" style={{ marginBottom: 8 }}>Добавление...</div>
       )}
 
       {!showForm ? (

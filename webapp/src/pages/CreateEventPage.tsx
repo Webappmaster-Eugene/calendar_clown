@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
+import { VoiceButton } from "../components/VoiceButton";
 import type { CreateEventRequest, CreateEventResponse } from "@shared/types";
 
 export function CreateEventPage() {
@@ -33,13 +34,20 @@ export function CreateEventPage() {
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label className="form-label">Опишите событие</label>
-          <textarea
-            className="input"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Встреча с командой завтра в 15:00"
-            rows={3}
-          />
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <textarea
+              className="input"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Встреча с командой завтра в 15:00"
+              rows={3}
+              style={{ flex: 1 }}
+            />
+            <VoiceButton
+              mode="calendar"
+              onResult={(transcript) => setText((prev) => prev ? `${prev} ${transcript}` : transcript)}
+            />
+          </div>
         </div>
 
         {mutation.error && (

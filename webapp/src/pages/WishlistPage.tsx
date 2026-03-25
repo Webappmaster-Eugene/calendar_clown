@@ -16,12 +16,12 @@ export function WishlistPage() {
 
   const { data: wishlists, isLoading, error } = useQuery({
     queryKey: ["wishlists"],
-    queryFn: () => api.get<WishlistDto[]>("/api/wishlists"),
+    queryFn: () => api.get<WishlistDto[]>("/api/wishlist"),
   });
 
   const createMutation = useMutation({
     mutationFn: (data: CreateWishlistRequest) =>
-      api.post<WishlistDto>("/api/wishlists", data),
+      api.post<WishlistDto>("/api/wishlist", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["wishlists"] });
       setShowForm(false);
@@ -97,12 +97,12 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
 
   const { data: items, isLoading } = useQuery({
     queryKey: ["wishlist", "items", wishlistId],
-    queryFn: () => api.get<WishlistItemDto[]>(`/api/wishlists/${wishlistId}/items`),
+    queryFn: () => api.get<WishlistItemDto[]>(`/api/wishlist/${wishlistId}/items`),
   });
 
   const addMutation = useMutation({
     mutationFn: (data: CreateWishlistItemRequest) =>
-      api.post<WishlistItemDto>("/api/wishlists/items", data),
+      api.post<WishlistItemDto>(`/api/wishlist/${wishlistId}/items`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["wishlist", "items", wishlistId] });
       setShowForm(false);
@@ -113,7 +113,15 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
 
   const reserveMutation = useMutation({
     mutationFn: (itemId: number) =>
-      api.put<WishlistItemDto>(`/api/wishlists/items/${itemId}/reserve`),
+      api.put<WishlistItemDto>(`/api/wishlist/items/${itemId}/reserve`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["wishlist", "items", wishlistId] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (itemId: number) =>
+      api.del<void>(`/api/wishlist/items/${itemId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["wishlist", "items", wishlistId] });
     },
@@ -146,9 +154,15 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
                     className={`btn btn-small ${item.isReserved ? "" : "btn-primary"}`}
                     onClick={() => reserveMutation.mutate(item.id)}
                   >
-                    {item.isReserved ? "Снять бронь" : "Забронировать"}
+                    {item.isReserved ? "Снять" : "Бронь"}
                   </button>
                 )}
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={() => deleteMutation.mutate(item.id)}
+                >
+                  Уд.
+                </button>
               </div>
             </div>
           ))}

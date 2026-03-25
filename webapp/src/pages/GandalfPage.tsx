@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { VoiceButton } from "../components/VoiceButton";
+import { useTelegram } from "../hooks/useTelegram";
 import type {
   GandalfCategoryDto,
   GandalfEntryDto,
@@ -9,10 +11,25 @@ import type {
 
 export function GandalfPage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [showCatForm, setShowCatForm] = useState(false);
+  const [catName, setCatName] = useState("");
+  const [catEmoji, setCatEmoji] = useState("");
+  const queryClient = useQueryClient();
 
   const { data: categories, isLoading, error } = useQuery({
     queryKey: ["gandalf", "categories"],
     queryFn: () => api.get<GandalfCategoryDto[]>("/api/gandalf/categories"),
+  });
+
+  const createCatMutation = useMutation({
+    mutationFn: (data: { name: string; emoji?: string }) =>
+      api.post<GandalfCategoryDto>("/api/gandalf/categories", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gandalf", "categories"] });
+      setShowCatForm(false);
+      setCatName("");
+      setCatEmoji("");
+    },
   });
 
   if (isLoading) return <div className="loading">Загрузка...</div>;
@@ -31,7 +48,7 @@ export function GandalfPage() {
     <div className="page">
       <h1 className="page-title">База знаний</h1>
 
-      {categories && categories.length === 0 ? (
+      {categories && categories.length === 0 && !showCatForm ? (
         <div className="empty-state">
           <div className="empty-state-emoji">🧙</div>
           <div className="empty-state-text">Нет категорий</div>
@@ -57,6 +74,31 @@ export function GandalfPage() {
           ))}
         </div>
       )}
+
+      {showCatForm && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (catName.trim()) createCatMutation.mutate({ name: catName.trim(), emoji: catEmoji.trim() || undefined });
+          }}>
+            <div className="form-group">
+              <label className="form-label">Название категории</label>
+              <input className="input" value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="Название" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Эмодзи (необязательно)</label>
+              <input className="input" value={catEmoji} onChange={(e) => setCatEmoji(e.target.value)} placeholder="📁" style={{ width: 80 }} />
+            </div>
+            {createCatMutation.error && <div className="error-msg">{(createCatMutation.error as Error).message}</div>}
+            <div className="form-row">
+              <button type="button" className="btn" onClick={() => setShowCatForm(false)}>Отмена</button>
+              <button type="submit" className="btn btn-primary" disabled={createCatMutation.isPending || !catName.trim()}>Создать</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {!showCatForm && <button className="fab" onClick={() => setShowCatForm(true)}>+</button>}
     </div>
   );
 }
@@ -69,6 +111,7 @@ function GandalfEntries({
   onBack: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { webApp } = useTelegram();
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
@@ -91,6 +134,23 @@ function GandalfEntries({
       setInfo("");
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (entryId: number) => api.del<void>(`/api/gandalf/entries/${entryId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gandalf"] });
+    },
+  });
+
+  const handleDelete = (entryId: number, entryTitle: string) => {
+    if (webApp) {
+      webApp.showConfirm(`Удалить "${entryTitle}"?`, (confirmed: boolean) => {
+        if (confirmed) deleteMutation.mutate(entryId);
+      });
+    } else {
+      if (confirm(`Удалить "${entryTitle}"?`)) deleteMutation.mutate(entryId);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,13 +184,22 @@ function GandalfEntries({
             <div key={entry.id} className="list-item">
               <div className="list-item-content">
                 <div className="list-item-title">
-                  {entry.isImportant ? "! " : ""}
+                  {entry.isImportant ? "⭐ " : ""}
+                  {entry.isUrgent ? "🔥 " : ""}
                   {entry.title}
                 </div>
                 <div className="list-item-hint">
-                  {entry.price != null ? `${entry.price.toLocaleString("ru-RU")} ` : ""}
+                  {entry.price != null ? `${entry.price.toLocaleString("ru-RU")} ₽ ` : ""}
                   {entry.additionalInfo ?? ""}
                 </div>
+              </div>
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={() => handleDelete(entry.id, entry.title)}
+                >
+                  Уд.
+                </button>
               </div>
             </div>
           ))}
@@ -144,12 +213,19 @@ function GandalfEntries({
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label">Название</label>
-              <input
-                className="input"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Название записи"
-              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  className="input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Название записи"
+                  style={{ flex: 1 }}
+                />
+                <VoiceButton
+                  mode="gandalf"
+                  onResult={(transcript) => setTitle((prev) => prev ? `${prev} ${transcript}` : transcript)}
+                />
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Цена (необязательно)</label>

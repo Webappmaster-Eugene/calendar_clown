@@ -7,6 +7,7 @@ dotenv.config({ path: ".env.local", override: true });
 import { shutdownTelemetry } from "./telemetry.js";
 
 import { createBot } from "./bot.js";
+import { setBotSendMessage } from "./botInstance.js";
 import { startOAuthServer } from "./oauthServer.js";
 import { runMigrations, runDrizzleMigrations } from "./db/migrate.js";
 import { closePool, setDatabaseAvailable, isDatabaseAvailable } from "./db/connection.js";
@@ -68,6 +69,9 @@ async function main(): Promise<void> {
 
   const telegramAgent = await initProxyAgent();
   const bot = createBot(token!, telegramAgent);
+
+  // Register bot's sendMessage for API broadcast route
+  setBotSendMessage((chatId, text) => bot.telegram.sendMessage(chatId, text));
 
   // Initialize Redis + BullMQ for voice transcription queue
   const redisUrl = process.env.REDIS_URL?.trim();

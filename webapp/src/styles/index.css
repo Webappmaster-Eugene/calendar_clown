@@ -584,6 +584,53 @@ select.input {
   50% { opacity: 0.3; }
 }
 
+/* ─── Mode Indicator ─────────────────────────────────────── */
+
+.mode-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.mode-indicator-emoji {
+  font-size: 18px;
+}
+
+.mode-indicator-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tg-theme-text-color, #000);
+}
+
+/* ─── Copy button ────────────────────────────────────────── */
+
+.copy-btn {
+  background: none;
+  border: 1px solid var(--tg-theme-hint-color, #ccc);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--tg-theme-hint-color, #999);
+  cursor: pointer;
+}
+
+.copy-btn:active {
+  opacity: 0.5;
+}
+
+/* ─── Admin improvements ─────────────────────────────────── */
+
+.list-item {
+  flex-wrap: wrap;
+}
+
+.list-item-actions {
+  gap: 4px;
+}
+
 /* ─── App Shell ──────────────────────────────────────────── */
 
 .app-shell {

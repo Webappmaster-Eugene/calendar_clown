@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { VoiceButton } from "../components/VoiceButton";
+import { useTelegram } from "../hooks/useTelegram";
 import type {
   ChatDialogDto,
   ChatMessageDto,
@@ -9,12 +11,31 @@ import type {
 } from "@shared/types";
 
 export function ChatPage() {
+  const queryClient = useQueryClient();
+  const { webApp } = useTelegram();
   const [selectedDialogId, setSelectedDialogId] = useState<number | null>(null);
 
   const { data: dialogs, isLoading, error } = useQuery({
     queryKey: ["chat", "dialogs"],
     queryFn: () => api.get<ChatDialogDto[]>("/api/chat/dialogs"),
   });
+
+  const deleteDialogMutation = useMutation({
+    mutationFn: (id: number) => api.del<void>(`/api/chat/dialogs/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
+    },
+  });
+
+  const handleDeleteDialog = (id: number, title: string) => {
+    if (webApp) {
+      webApp.showConfirm(`Удалить диалог "${title}"?`, (confirmed: boolean) => {
+        if (confirmed) deleteDialogMutation.mutate(id);
+      });
+    } else {
+      if (confirm(`Удалить диалог "${title}"?`)) deleteDialogMutation.mutate(id);
+    }
+  };
 
   if (selectedDialogId !== null) {
     return (
@@ -50,19 +71,26 @@ export function ChatPage() {
       {dialogs && dialogs.length > 0 && (
         <div className="list">
           {dialogs.map((d) => (
-            <button
-              key={d.id}
-              className="list-item"
-              style={{ cursor: "pointer", border: "none", width: "100%", textAlign: "left" }}
-              onClick={() => setSelectedDialogId(d.id)}
-            >
-              <div className="list-item-content">
+            <div key={d.id} className="list-item">
+              <div
+                className="list-item-content"
+                style={{ cursor: "pointer" }}
+                onClick={() => setSelectedDialogId(d.id)}
+              >
                 <div className="list-item-title">{d.title}</div>
                 <div className="list-item-hint">
                   {d.messageCount ?? 0} сообщений &middot; {new Date(d.updatedAt).toLocaleDateString("ru-RU")}
                 </div>
               </div>
-            </button>
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={() => handleDeleteDialog(d.id, d.title)}
+                >
+                  Уд.
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -142,6 +170,10 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Введите сообщение..."
+        />
+        <VoiceButton
+          mode="neuro"
+          onResult={(transcript) => setInput((prev) => prev ? `${prev} ${transcript}` : transcript)}
         />
         <button
           type="submit"

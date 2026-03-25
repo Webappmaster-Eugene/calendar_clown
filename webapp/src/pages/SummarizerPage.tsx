@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { VoiceButton } from "../components/VoiceButton";
 import type {
   WorkplaceDto,
   WorkAchievementDto,
@@ -171,7 +172,13 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
       >
         <div className="form-group">
           <label className="form-label">Добавить достижение</label>
-          <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Что вы сделали?" rows={3} />
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Что вы сделали?" rows={3} style={{ flex: 1 }} />
+            <VoiceButton
+              mode="summarizer"
+              onResult={(transcript) => setText((prev) => prev ? `${prev} ${transcript}` : transcript)}
+            />
+          </div>
         </div>
         {addMutation.error && <div className="error-msg">{(addMutation.error as Error).message}</div>}
         <button type="submit" className="btn btn-primary btn-block" disabled={addMutation.isPending || !text.trim()}>

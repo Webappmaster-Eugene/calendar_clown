@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { VoiceButton } from "../components/VoiceButton";
 import type { OsintSearchDto, StartOsintSearchRequest } from "@shared/types";
 
 export function OsintPage() {
@@ -10,12 +11,12 @@ export function OsintPage() {
 
   const { data: searches, isLoading, error } = useQuery({
     queryKey: ["osint", "searches"],
-    queryFn: () => api.get<OsintSearchDto[]>("/api/osint/searches"),
+    queryFn: () => api.get<OsintSearchDto[]>("/api/osint"),
   });
 
   const searchMutation = useMutation({
     mutationFn: (data: StartOsintSearchRequest) =>
-      api.post<OsintSearchDto>("/api/osint/searches", data),
+      api.post<OsintSearchDto>("/api/osint", data),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["osint", "searches"] });
       setQuery("");
@@ -48,12 +49,19 @@ export function OsintPage() {
         style={{ marginBottom: 16 }}
       >
         <div className="form-group">
-          <input
-            className="input"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Поисковый запрос (человек, компания...)"
-          />
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              className="input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Поисковый запрос (человек, компания...)"
+              style={{ flex: 1 }}
+            />
+            <VoiceButton
+              mode="osint"
+              onResult={(transcript) => setQuery((prev) => prev ? `${prev} ${transcript}` : transcript)}
+            />
+          </div>
         </div>
         {searchMutation.error && <div className="error-msg">{(searchMutation.error as Error).message}</div>}
         <button
@@ -98,7 +106,7 @@ export function OsintPage() {
 function OsintReport({ searchId, onBack }: { searchId: number; onBack: () => void }) {
   const { data: search, isLoading } = useQuery({
     queryKey: ["osint", "search", searchId],
-    queryFn: () => api.get<OsintSearchDto>(`/api/osint/searches/${searchId}`),
+    queryFn: () => api.get<OsintSearchDto>(`/api/osint/${searchId}`),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       if (status === "completed" || status === "failed") return false;

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { VoiceButton } from "../components/VoiceButton";
 import type {
   GoalSetDto,
   GoalDto,
@@ -17,17 +18,24 @@ export function GoalsPage() {
   const queryClient = useQueryClient();
 
   const { data: sets, isLoading, error } = useQuery({
-    queryKey: ["goals", "sets"],
-    queryFn: () => api.get<GoalSetDto[]>("/api/goals/sets"),
+    queryKey: ["goals"],
+    queryFn: () => api.get<GoalSetDto[]>("/api/goals"),
   });
 
   const createSetMutation = useMutation({
     mutationFn: (data: CreateGoalSetRequest) =>
-      api.post<GoalSetDto>("/api/goals/sets", data),
+      api.post<GoalSetDto>("/api/goals", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["goals", "sets"] });
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
       setShowForm(false);
       setName("");
+    },
+  });
+
+  const deleteSetMutation = useMutation({
+    mutationFn: (id: number) => api.del<void>(`/api/goals/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
     },
   });
 
@@ -57,20 +65,27 @@ export function GoalsPage() {
       {sets && sets.length > 0 && (
         <div className="list">
           {sets.map((s) => (
-            <button
-              key={s.id}
-              className="list-item"
-              style={{ cursor: "pointer", border: "none", width: "100%", textAlign: "left" }}
-              onClick={() => setSelectedSetId(s.id)}
-            >
+            <div key={s.id} className="list-item">
               <span className="list-item-emoji">{s.emoji || "🎯"}</span>
-              <div className="list-item-content">
+              <div
+                className="list-item-content"
+                style={{ cursor: "pointer" }}
+                onClick={() => setSelectedSetId(s.id)}
+              >
                 <div className="list-item-title">{s.name}</div>
                 <div className="list-item-hint">
                   {s.completedCount}/{s.totalCount} выполнено &middot; {s.period}
                 </div>
               </div>
-            </button>
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={() => deleteSetMutation.mutate(s.id)}
+                >
+                  Уд.
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -113,14 +128,16 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
 
-  const { data: goals, isLoading } = useQuery({
+  const { data: goalSetData, isLoading } = useQuery({
     queryKey: ["goals", "list", goalSetId],
-    queryFn: () => api.get<GoalDto[]>(`/api/goals/sets/${goalSetId}/goals`),
+    queryFn: () => api.get<{ goalSet: GoalSetDto; goals: GoalDto[] }>(`/api/goals/${goalSetId}`),
   });
+
+  const goals = goalSetData?.goals;
 
   const addMutation = useMutation({
     mutationFn: (data: CreateGoalRequest) =>
-      api.post<GoalDto>("/api/goals", data),
+      api.post<GoalDto>(`/api/goals/${goalSetId}/goals`, { text: data.text }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["goals"] });
       setText("");
@@ -129,7 +146,7 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
 
   const toggleMutation = useMutation({
     mutationFn: (goalId: number) =>
-      api.put<GoalDto>(`/api/goals/${goalId}/toggle`),
+      api.put<GoalDto>(`/api/goals/goals/${goalId}/toggle`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["goals"] });
     },
@@ -180,6 +197,10 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Новая цель"
+          />
+          <VoiceButton
+            mode="goals"
+            onResult={(transcript) => setText((prev) => prev ? `${prev} ${transcript}` : transcript)}
           />
           <button
             type="submit"

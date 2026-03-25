@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { sendBroadcast } from "../../services/broadcastService.js";
+import { getBotSendMessage } from "../../botInstance.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
@@ -14,14 +15,14 @@ app.post("/", async (c) => {
     return c.json({ ok: false, error: "text is required" }, 400);
   }
 
+  const botSend = getBotSendMessage();
+  if (!botSend) {
+    return c.json({ ok: false, error: "Bot not initialized. Try again later." }, 503);
+  }
+
   try {
-    // Note: sendBroadcast requires a sendMessage callback for delivering messages.
-    // In API context (Mini App), we cannot send Telegram messages directly.
-    // This route provides a stub that returns an error — broadcast should be triggered
-    // via the bot command or a server-side mechanism that has Telegraf context.
-    // If a bot instance is available globally, inject it here.
-    const sendMessage = async (_recipientId: string, _text: string): Promise<void> => {
-      throw new Error("Broadcast via API is not supported. Use the bot command.");
+    const sendMessage = async (recipientId: string, text: string): Promise<void> => {
+      await botSend(recipientId, text);
     };
 
     const result = await sendBroadcast(sendMessage, telegramId, body.text.trim());
