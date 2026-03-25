@@ -4,8 +4,8 @@ import { isUserInDb, getUserByTelegramId, getUserStatus } from "../expenses/repo
 import { isDatabaseAvailable } from "../db/connection.js";
 import { query } from "../db/connection.js";
 
-// Re-export from shared for backward compatibility — all consumers
-// can keep importing from middleware/auth without changes.
+// Import from shared for internal use + re-export for backward compatibility.
+import type { UserMenuContext } from "../shared/auth.js";
 export { canAccessMode } from "../shared/auth.js";
 export type { UserMenuContext } from "../shared/auth.js";
 
