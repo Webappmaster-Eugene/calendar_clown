@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { AdminUserDto, TribeDto, AdminStatsDto } from "@shared/types";
 
-type AdminTab = "stats" | "users" | "pending" | "tribes";
+type AdminTab = "stats" | "users" | "pending" | "tribes" | "data";
 
 export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("stats");
@@ -13,12 +13,13 @@ export function AdminPage() {
       <h1 className="page-title">Админ-панель</h1>
 
       <div className="tabs">
-        {(["stats", "users", "pending", "tribes"] as const).map((t) => {
+        {(["stats", "users", "pending", "tribes", "data"] as const).map((t) => {
           const labels: Record<AdminTab, string> = {
             stats: "Статистика",
             users: "Пользователи",
             pending: "Заявки",
             tribes: "Трайбы",
+            data: "Данные",
           };
           return (
           <button
@@ -36,6 +37,7 @@ export function AdminPage() {
       {tab === "users" && <UsersTab />}
       {tab === "pending" && <PendingTab />}
       {tab === "tribes" && <TribesTab />}
+      {tab === "data" && <DataTab />}
     </div>
   );
 }
@@ -486,6 +488,146 @@ function TribesTab() {
           onClick={() => setShowForm(true)}
         >
           Создать трайб
+        </button>
+      )}
+    </>
+  );
+}
+
+interface EntityMeta {
+  key: string;
+  emoji: string;
+  label: string;
+}
+
+interface EntityListItem {
+  id: number;
+  label: string;
+  hint: string;
+}
+
+function DataTab() {
+  const queryClient = useQueryClient();
+  const [selectedEntity, setSelectedEntity] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const LIMIT = 10;
+
+  const { data: entities } = useQuery({
+    queryKey: ["admin", "data", "entities"],
+    queryFn: () => api.get<EntityMeta[]>("/api/admin/data/entities"),
+  });
+
+  const { data: listData, isLoading } = useQuery({
+    queryKey: ["admin", "data", selectedEntity, page],
+    queryFn: () =>
+      api.get<{ items: EntityListItem[]; total: number }>(
+        `/api/admin/data/${selectedEntity}?page=${page}&limit=${LIMIT}`
+      ),
+    enabled: !!selectedEntity,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ entity, id }: { entity: string; id: number }) =>
+      api.del<void>(`/api/admin/data/${entity}/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "data", selectedEntity] });
+    },
+  });
+
+  const deleteAllMutation = useMutation({
+    mutationFn: (entity: string) =>
+      api.del<{ deletedCount: number }>(`/api/admin/data/${entity}?confirm=yes`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "data"] });
+    },
+  });
+
+  const items = listData?.items ?? [];
+  const total = listData?.total ?? 0;
+  const totalPages = Math.ceil(total / LIMIT);
+
+  return (
+    <>
+      <div className="form-group" style={{ marginBottom: 16 }}>
+        <label className="form-label">Раздел данных</label>
+        <select
+          className="input"
+          value={selectedEntity}
+          onChange={(e) => {
+            setSelectedEntity(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Выберите раздел...</option>
+          {entities?.map((e) => (
+            <option key={e.key} value={e.key}>
+              {e.emoji} {e.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {!selectedEntity && (
+        <div className="empty-state">
+          <div className="empty-state-text">Выберите раздел для управления данными</div>
+        </div>
+      )}
+
+      {selectedEntity && isLoading && <div className="loading">Загрузка...</div>}
+
+      {selectedEntity && !isLoading && items.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-state-text">Нет данных</div>
+        </div>
+      )}
+
+      {selectedEntity && items.length > 0 && (
+        <>
+          <div style={{ marginBottom: 8, fontSize: 13, opacity: 0.7 }}>
+            Всего: {total} · Стр. {page}/{totalPages}
+          </div>
+          <div className="list">
+            {items.map((item) => (
+              <div key={item.id} className="list-item">
+                <div className="list-item-content">
+                  <div className="list-item-title">{item.label}</div>
+                  <div className="list-item-hint">{item.hint}</div>
+                </div>
+                <div className="list-item-actions">
+                  <button
+                    className="btn btn-danger btn-small"
+                    onClick={() => deleteMutation.mutate({ entity: selectedEntity, id: item.id })}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Уд.
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12 }}>
+            {page > 1 && (
+              <button className="btn btn-small" onClick={() => setPage((p) => p - 1)}>Назад</button>
+            )}
+            {page < totalPages && (
+              <button className="btn btn-small btn-primary" onClick={() => setPage((p) => p + 1)}>Далее</button>
+            )}
+          </div>
+        </>
+      )}
+
+      {selectedEntity && total > 0 && (
+        <button
+          className="btn btn-danger btn-block"
+          style={{ marginTop: 16 }}
+          onClick={() => {
+            if (confirm(`Удалить ВСЕ записи раздела "${selectedEntity}" (${total} шт.)? Это действие необратимо!`)) {
+              deleteAllMutation.mutate(selectedEntity);
+            }
+          }}
+          disabled={deleteAllMutation.isPending}
+        >
+          {deleteAllMutation.isPending ? "Удаление..." : `Удалить все (${total})`}
         </button>
       )}
     </>

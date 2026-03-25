@@ -29,6 +29,7 @@ export function ExpensesPage() {
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const [voiceText, setVoiceText] = useState("");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [drilldownCategoryId, setDrilldownCategoryId] = useState<number | null>(null);
 
   const { data: report, isLoading: reportLoading, error: reportError } = useQuery({
@@ -153,13 +154,25 @@ export function ExpensesPage() {
         />
         <VoiceButton
           mode="expenses"
-          onResult={(transcript) => {
-            if (transcript.trim()) {
-              addTextMutation.mutate(transcript.trim());
+          endpoint="/api/voice/expense"
+          onResult={(_transcript, data) => {
+            setVoiceError(null);
+            queryClient.invalidateQueries({ queryKey: ["expenses"] });
+            // data contains { transcript, expense: { category, amount, ... } }
+            const d = data as Record<string, unknown> | undefined;
+            if (d?.confirmation && typeof d.confirmation === "string") {
+              setVoiceText(d.confirmation as string);
+              setTimeout(() => setVoiceText(""), 3000);
             }
+          }}
+          onError={(err) => {
+            setVoiceError(err);
           }}
         />
       </div>
+      {voiceError && (
+        <div className="error-msg" style={{ marginBottom: 8 }}>{voiceError}</div>
+      )}
       {addTextMutation.error && (
         <div className="error-msg">{(addTextMutation.error as Error).message}</div>
       )}

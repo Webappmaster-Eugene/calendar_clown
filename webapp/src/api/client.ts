@@ -29,7 +29,8 @@ class ApiError extends Error {
 async function request<T>(
   method: string,
   path: string,
-  body?: unknown
+  body?: unknown,
+  timeoutMs = 30_000,
 ): Promise<T> {
   const headers: Record<string, string> = {};
 
@@ -42,7 +43,7 @@ async function request<T>(
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let res: Response;
   try {
@@ -55,7 +56,8 @@ async function request<T>(
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new ApiError(0, "TIMEOUT", "Request timed out after 30 seconds");
+      const timeoutSec = Math.round(timeoutMs / 1000);
+      throw new ApiError(0, "TIMEOUT", `Request timed out after ${timeoutSec} seconds`);
     }
     throw err;
   }
@@ -76,7 +78,7 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
-  upload: <T>(path: string, formData: FormData) => request<T>("POST", path, formData),
+  upload: <T>(path: string, formData: FormData) => request<T>("POST", path, formData, 120_000),
 };
 
 export { ApiError };

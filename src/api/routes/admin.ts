@@ -250,6 +250,77 @@ app.get("/stats", async (c) => {
   }
 });
 
+/** GET /api/admin/data/entities — list available entity types */
+app.get("/data/entities", async (c) => {
+  const { ENTITY_LABELS } = await import("../../services/adminDataService.js");
+  const entities = Object.entries(ENTITY_LABELS).map(([key, val]) => ({
+    key,
+    ...val,
+  }));
+  return c.json({ ok: true, data: entities });
+});
+
+/** GET /api/admin/data/:entity — paginated entity list */
+app.get("/data/:entity", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const entity = c.req.param("entity");
+  const page = parseInt(c.req.query("page") ?? "1", 10);
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "10", 10), 50);
+  const offset = (page - 1) * limit;
+
+  try {
+    const { getEntityList } = await import("../../services/adminDataService.js");
+    const result = await getEntityList(telegramId, entity as never, limit, offset);
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get data";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/admin/data/:entity/:id — delete single entity */
+app.delete("/data/:entity/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const entity = c.req.param("entity");
+  const entityId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(entityId)) {
+    return c.json({ ok: false, error: "Invalid entity ID" }, 400);
+  }
+
+  try {
+    const { deleteEntity } = await import("../../services/adminDataService.js");
+    const deleted = await deleteEntity(telegramId, entity as never, entityId);
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/admin/data/:entity — delete all entities of type */
+app.delete("/data/:entity", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const entity = c.req.param("entity");
+  const confirm = c.req.query("confirm");
+
+  if (confirm !== "yes") {
+    return c.json({ ok: false, error: "Add ?confirm=yes to confirm deletion of all items" }, 400);
+  }
+
+  try {
+    const { deleteAllEntitiesOfType } = await import("../../services/adminDataService.js");
+    const count = await deleteAllEntitiesOfType(telegramId, entity as never);
+    return c.json({ ok: true, data: { deletedCount: count } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete all";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
 /** GET /api/admin/build-info — build version */
 app.get("/build-info", async (c) => {
   const commitHash = process.env.COMMIT_HASH ?? process.env.SOURCE_COMMIT ?? "unknown";

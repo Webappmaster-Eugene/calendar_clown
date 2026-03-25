@@ -1,13 +1,14 @@
 /**
  * Transcribe audio file to text using the shared STT client.
  * Used for calendar/expenses voice mode (short messages).
+ * Non-OGG files (e.g. WebM from Mini App) are compressed to OGG Opus before STT.
  * Large files are delegated to the HQ transcriber which supports chunking.
  */
 
-import { stat } from "fs/promises";
+import { stat, unlink } from "fs/promises";
 import { callStt } from "./sttClient.js";
 import { TRANSCRIBE_MODEL } from "../constants.js";
-import { MAX_SINGLE_FILE_BYTES } from "../transcribe/audioUtils.js";
+import { MAX_SINGLE_FILE_BYTES, compressToOggIfNeeded } from "../transcribe/audioUtils.js";
 
 const TRANSCRIBE_PROMPT = `Расшифруй это аудиосообщение в текст на русском языке.
 
@@ -30,26 +31,38 @@ function getTimeoutMs(fileSizeBytes: number): number {
 }
 
 export async function transcribeVoice(filePath: string): Promise<string> {
-  let fileSizeBytes = 0;
+  // Compress non-OGG files (WebM from Mini App, MP4 from iOS) to OGG Opus.
+  // For .ogg files (bot path) this is a no-op with zero overhead.
+  // If ffmpeg is unavailable, returns the original file unchanged (graceful degradation).
+  const { path: effectivePath, converted } = await compressToOggIfNeeded(filePath);
+
   try {
-    const s = await stat(filePath);
-    fileSizeBytes = s.size;
-  } catch {
-    // If stat fails, use default timeout
+    let fileSizeBytes = 0;
+    try {
+      const s = await stat(effectivePath);
+      fileSizeBytes = s.size;
+    } catch {
+      // If stat fails, use default timeout
+    }
+
+    // Large files would hang as a single base64 payload — delegate to HQ path with chunking
+    if (fileSizeBytes > MAX_SINGLE_FILE_BYTES) {
+      const { transcribeVoiceHQ } = await import("../transcribe/transcribeHQ.js");
+      return transcribeVoiceHQ(effectivePath);
+    }
+
+    const timeoutMs = getTimeoutMs(fileSizeBytes);
+
+    return callStt({
+      filePath: effectivePath,
+      prompt: TRANSCRIBE_PROMPT,
+      timeoutMs,
+      model: TRANSCRIBE_MODEL,
+    });
+  } finally {
+    // Clean up the compressed file if conversion occurred
+    if (converted && effectivePath !== filePath) {
+      await unlink(effectivePath).catch(() => {});
+    }
   }
-
-  // Large files would hang as a single base64 payload — delegate to HQ path with chunking
-  if (fileSizeBytes > MAX_SINGLE_FILE_BYTES) {
-    const { transcribeVoiceHQ } = await import("../transcribe/transcribeHQ.js");
-    return transcribeVoiceHQ(filePath);
-  }
-
-  const timeoutMs = getTimeoutMs(fileSizeBytes);
-
-  return callStt({
-    filePath,
-    prompt: TRANSCRIBE_PROMPT,
-    timeoutMs,
-    model: TRANSCRIBE_MODEL,
-  });
 }

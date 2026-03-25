@@ -6,13 +6,29 @@ import { useState, useEffect } from "react";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import { api } from "../api/client";
 
-interface VoiceButtonProps {
-  onResult: (transcript: string, intent?: unknown) => void;
-  onError?: (error: string) => void;
-  mode?: string;
+/** Derive correct file extension from the actual MIME type of the recording. */
+function getExtFromMime(mimeType: string): string {
+  if (mimeType.includes("mp4") || mimeType.includes("aac")) return "mp4";
+  if (mimeType.includes("ogg")) return "ogg";
+  if (mimeType.includes("wav")) return "wav";
+  return "webm";
 }
 
-export function VoiceButton({ onResult, onError, mode }: VoiceButtonProps) {
+interface VoiceButtonProps {
+  /** Called with the transcript (and optional intent/extra data) when processing succeeds. */
+  onResult: (transcript: string, data?: unknown) => void;
+  onError?: (error: string) => void;
+  /** Mode hint sent to the backend (e.g. "expenses", "goals"). */
+  mode?: string;
+  /**
+   * Override the API endpoint that receives the audio FormData.
+   * Default: "/api/voice/transcribe"
+   * The endpoint must return `{ ok: true, data: { transcript: string, ... } }`.
+   */
+  endpoint?: string;
+}
+
+export function VoiceButton({ onResult, onError, mode, endpoint }: VoiceButtonProps) {
   const { isRecording, isSupported, startRecording, stopRecording, cancelRecording, releaseStream, duration } = useVoiceRecorder();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -40,15 +56,17 @@ export function VoiceButton({ onResult, onError, mode }: VoiceButtonProps) {
 
     setIsProcessing(true);
     try {
+      const ext = getExtFromMime(blob.type);
       const formData = new FormData();
-      formData.append("audio", blob, "voice.webm");
+      formData.append("audio", blob, `voice.${ext}`);
       if (mode) formData.append("mode", mode);
 
-      const result = await api.upload<{ transcript: string; intent?: unknown }>(
-        "/api/voice/transcribe",
+      const url = endpoint ?? "/api/voice/transcribe";
+      const result = await api.upload<{ transcript: string; [key: string]: unknown }>(
+        url,
         formData
       );
-      onResult(result.transcript, result.intent);
+      onResult(result.transcript, result);
     } catch (err) {
       onError?.((err as Error).message || "Ошибка транскрибации");
     } finally {
