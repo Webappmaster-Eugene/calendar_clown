@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import {
   getUserRubrics,
   createNewRubric,
+  removeRubric,
+  toggleRubricActive,
   getRubricChannels,
   addChannelToRubric,
   removeChannelFromRubric,
@@ -117,6 +119,44 @@ app.delete("/channels/:channelId", async (c) => {
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to remove channel";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/digest/rubrics/:id — delete rubric */
+app.delete("/rubrics/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const rubricId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(rubricId)) {
+    return c.json({ ok: false, error: "Invalid rubric ID" }, 400);
+  }
+
+  try {
+    const deleted = await removeRubric(telegramId, rubricId);
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete rubric";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/digest/rubrics/:id/toggle — toggle rubric active/inactive */
+app.put("/rubrics/:id/toggle", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const rubricId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(rubricId)) {
+    return c.json({ ok: false, error: "Invalid rubric ID" }, 400);
+  }
+
+  try {
+    const rubric = await toggleRubricActive(telegramId, rubricId);
+    return c.json({ ok: true, data: rubric });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to toggle rubric";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

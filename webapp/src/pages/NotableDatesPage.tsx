@@ -16,6 +16,7 @@ export function NotableDatesPage() {
   const { webApp } = useTelegram();
   const [tab, setTab] = useState<DateTab>("upcoming");
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [day, setDay] = useState(1);
@@ -49,6 +50,15 @@ export function NotableDatesPage() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name?: string; dateMonth?: number; dateDay?: number; description?: string | null }) =>
+      api.put<NotableDateDto>(`/api/notable-dates/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notable-dates"] });
+      resetForm();
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.del<void>(`/api/notable-dates/${id}`),
     onSuccess: () => {
@@ -66,16 +76,45 @@ export function NotableDatesPage() {
     }
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setName("");
+    setDay(1);
+    setDescription("");
+    setEventType("birthday");
+  };
+
+  const startEdit = (d: NotableDateDto) => {
+    setEditingId(d.id);
+    setName(d.name);
+    setMonth(d.dateMonth);
+    setDay(d.dateDay);
+    setEventType(d.eventType);
+    setDescription(d.description ?? "");
+    setShowForm(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    createMutation.mutate({
-      name: name.trim(),
-      dateMonth: month,
-      dateDay: day,
-      eventType,
-      description: description.trim() || undefined,
-    });
+    if (editingId) {
+      updateMutation.mutate({
+        id: editingId,
+        name: name.trim(),
+        dateMonth: month,
+        dateDay: day,
+        description: description.trim() || null,
+      });
+    } else {
+      createMutation.mutate({
+        name: name.trim(),
+        dateMonth: month,
+        dateDay: day,
+        eventType,
+        description: description.trim() || undefined,
+      });
+    }
   };
 
   return (
@@ -118,6 +157,7 @@ export function NotableDatesPage() {
                 )}
               </div>
               <div className="list-item-actions">
+                <button className="btn btn-small" onClick={() => startEdit(d)}>Ред.</button>
                 <button
                   className="btn btn-danger btn-small"
                   onClick={() => handleDelete(d.id, d.name)}
@@ -132,7 +172,7 @@ export function NotableDatesPage() {
 
       {showForm && (
         <div className="card" style={{ marginTop: 16 }}>
-          <form onSubmit={handleCreate}>
+          <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label">Название</label>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя человека или событие" />
@@ -168,10 +208,14 @@ export function NotableDatesPage() {
                 rows={2}
               />
             </div>
-            {createMutation.error && <div className="error-msg">{(createMutation.error as Error).message}</div>}
+            {(createMutation.error || updateMutation.error) && (
+              <div className="error-msg">{((createMutation.error || updateMutation.error) as Error).message}</div>
+            )}
             <div className="form-row">
-              <button type="button" className="btn" onClick={() => setShowForm(false)}>Отмена</button>
-              <button type="submit" className="btn btn-primary" disabled={createMutation.isPending || !name.trim()}>Создать</button>
+              <button type="button" className="btn" onClick={resetForm}>Отмена</button>
+              <button type="submit" className="btn btn-primary" disabled={(createMutation.isPending || updateMutation.isPending) || !name.trim()}>
+                {editingId ? "Сохранить" : "Создать"}
+              </button>
             </div>
           </form>
         </div>

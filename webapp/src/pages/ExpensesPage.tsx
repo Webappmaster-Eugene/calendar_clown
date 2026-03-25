@@ -8,12 +8,28 @@ import type {
   AddExpenseRequest,
 } from "@shared/types";
 
+interface DrilldownExpense {
+  id: number;
+  subcategory: string | null;
+  amount: number;
+  firstName: string;
+  createdAt: string;
+}
+
+interface DrilldownResponse {
+  expenses: DrilldownExpense[];
+  total: number;
+  categoryName: string;
+  categoryEmoji: string;
+}
+
 export function ExpensesPage() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const [voiceText, setVoiceText] = useState("");
+  const [drilldownCategoryId, setDrilldownCategoryId] = useState<number | null>(null);
 
   const { data: report, isLoading: reportLoading, error: reportError } = useQuery({
     queryKey: ["expenses", "report"],
@@ -54,6 +70,15 @@ export function ExpensesPage() {
     addMutation.mutate({ categoryId, amount: parsed });
   };
 
+  if (drilldownCategoryId !== null) {
+    return (
+      <ExpenseDrilldown
+        categoryId={drilldownCategoryId}
+        onBack={() => setDrilldownCategoryId(null)}
+      />
+    );
+  }
+
   if (reportLoading) return <div className="loading">Загрузка...</div>;
   if (reportError) return <div className="page"><div className="error-msg">{(reportError as Error).message}</div></div>;
 
@@ -89,10 +114,16 @@ export function ExpensesPage() {
       {report?.byCategory && report.byCategory.length > 0 ? (
         <div className="list">
           {report.byCategory.map((cat) => (
-            <div key={cat.categoryId} className="list-item">
+            <div
+              key={cat.categoryId}
+              className="list-item"
+              style={{ cursor: "pointer" }}
+              onClick={() => setDrilldownCategoryId(cat.categoryId)}
+            >
               <span className="list-item-emoji">{cat.categoryEmoji}</span>
               <div className="list-item-content">
                 <div className="list-item-title">{cat.categoryName}</div>
+                <div className="list-item-hint">Детали &rarr;</div>
               </div>
               <div style={{ fontWeight: 600 }}>
                 {cat.total.toLocaleString("ru-RU")}
@@ -193,6 +224,92 @@ export function ExpensesPage() {
             </div>
           </form>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ExpenseDrilldown({ categoryId, onBack }: { categoryId: number; onBack: () => void }) {
+  const queryClient = useQueryClient();
+  const [page, setPage] = useState(1);
+  const LIMIT = 20;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["expenses", "drilldown", categoryId, page],
+    queryFn: () =>
+      api.get<DrilldownResponse>(
+        `/api/expenses/drilldown?categoryId=${categoryId}&page=${page}&limit=${LIMIT}`
+      ),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.del<void>(`/api/expenses/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    },
+  });
+
+  const expenses = data?.expenses ?? [];
+  const total = data?.total ?? 0;
+  const hasMore = page * LIMIT < total;
+
+  return (
+    <div className="page">
+      <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>
+        Назад
+      </button>
+
+      {data && (
+        <h2 className="page-title" style={{ fontSize: 18 }}>
+          {data.categoryEmoji} {data.categoryName}
+        </h2>
+      )}
+
+      {isLoading && <div className="loading">Загрузка...</div>}
+
+      {expenses.length === 0 && !isLoading && (
+        <div className="empty-state">
+          <div className="empty-state-text">Нет расходов в этой категории</div>
+        </div>
+      )}
+
+      {expenses.length > 0 && (
+        <>
+          <div className="list">
+            {expenses.map((exp) => (
+              <div key={exp.id} className="list-item">
+                <div className="list-item-content">
+                  <div className="list-item-title">
+                    {exp.amount.toLocaleString("ru-RU")} ₽
+                    {exp.subcategory ? ` — ${exp.subcategory}` : ""}
+                  </div>
+                  <div className="list-item-hint">
+                    {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU")}
+                  </div>
+                </div>
+                <div className="list-item-actions">
+                  <button
+                    className="btn btn-danger btn-small"
+                    onClick={() => deleteMutation.mutate(exp.id)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Уд.
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12 }}>
+            {page > 1 && (
+              <button className="btn btn-small" onClick={() => setPage((p) => p - 1)}>Назад</button>
+            )}
+            {hasMore && (
+              <button className="btn btn-small btn-primary" onClick={() => setPage((p) => p + 1)}>
+                Далее
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

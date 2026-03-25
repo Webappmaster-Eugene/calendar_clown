@@ -250,4 +250,14 @@ app.get("/stats", async (c) => {
   }
 });
 
+/** GET /api/admin/build-info — build version */
+app.get("/build-info", async (c) => {
+  const commitHash = process.env.COMMIT_HASH ?? process.env.SOURCE_COMMIT ?? "unknown";
+  const buildDate = process.env.BUILD_DATE ?? new Date().toISOString();
+  return c.json({
+    ok: true,
+    data: { commitHash, buildDate },
+  });
+});
+
 export default app;

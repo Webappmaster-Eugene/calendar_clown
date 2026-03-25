@@ -2,8 +2,10 @@ import { Hono } from "hono";
 import {
   getUserWorkplaces,
   createNewWorkplace,
+  removeWorkplace,
   getWorkplaceAchievements,
   addAchievement,
+  removeAchievement,
   generateSummary,
 } from "../../services/summarizerService.js";
 import type { ApiEnv } from "../authMiddleware.js";
@@ -96,6 +98,44 @@ app.post("/workplaces/:id/summary", async (c) => {
     return c.json({ ok: true, data: summary });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to generate summary";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/summarizer/workplaces/:id — delete workplace */
+app.delete("/workplaces/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const workplaceId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(workplaceId)) {
+    return c.json({ ok: false, error: "Invalid workplace ID" }, 400);
+  }
+
+  try {
+    const deleted = await removeWorkplace(telegramId, workplaceId);
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete workplace";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/summarizer/achievements/:id — delete achievement */
+app.delete("/achievements/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const achievementId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(achievementId)) {
+    return c.json({ ok: false, error: "Invalid achievement ID" }, 400);
+  }
+
+  try {
+    const deleted = await removeAchievement(telegramId, achievementId);
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete achievement";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

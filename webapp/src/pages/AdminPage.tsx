@@ -46,6 +46,11 @@ function StatsTab() {
     queryFn: () => api.get<AdminStatsDto>("/api/admin/stats"),
   });
 
+  const { data: buildInfo } = useQuery({
+    queryKey: ["admin", "build-info"],
+    queryFn: () => api.get<{ commitHash: string; buildDate: string }>("/api/admin/build-info"),
+  });
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="error-msg">{(error as Error).message}</div>;
   if (!stats) return null;
@@ -86,6 +91,11 @@ function StatsTab() {
           <div className="stat-label">Транскрипции</div>
         </div>
       </div>
+      {buildInfo && (
+        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.6, textAlign: "center" }}>
+          Сборка: {buildInfo.commitHash.substring(0, 8)} &middot; {new Date(buildInfo.buildDate).toLocaleDateString("ru-RU")}
+        </div>
+      )}
     </>
   );
 }

@@ -33,6 +33,14 @@ export function SummarizerPage() {
     },
   });
 
+  const deleteWorkplaceMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.del<void>(`/api/summarizer/workplaces/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["summarizer", "workplaces"] });
+    },
+  });
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
@@ -54,19 +62,33 @@ export function SummarizerPage() {
       {workplaces && workplaces.length > 0 && (
         <div className="list">
           {workplaces.map((w) => (
-            <button
-              key={w.id}
-              className="list-item"
-              style={{ cursor: "pointer", border: "none", width: "100%", textAlign: "left" }}
-              onClick={() => setSelectedId(w.id)}
-            >
-              <div className="list-item-content">
-                <div className="list-item-title">{w.title}</div>
-                <div className="list-item-hint">
-                  {w.company ?? "Без компании"} &middot; {w.achievementCount} достижений
+            <div key={w.id} className="list-item" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                className="list-item"
+                style={{ cursor: "pointer", border: "none", flex: 1, textAlign: "left", background: "none", padding: 0 }}
+                onClick={() => setSelectedId(w.id)}
+              >
+                <div className="list-item-content">
+                  <div className="list-item-title">{w.title}</div>
+                  <div className="list-item-hint">
+                    {w.company ?? "Без компании"} &middot; {w.achievementCount} достижений
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+              <button
+                className="btn btn-small"
+                style={{ color: "red", flexShrink: 0 }}
+                disabled={deleteWorkplaceMutation.isPending}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm("Удалить место работы?")) {
+                    deleteWorkplaceMutation.mutate(w.id);
+                  }
+                }}
+              >
+                Удалить
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -118,6 +140,14 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
     },
   });
 
+  const deleteAchievementMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.del<void>(`/api/summarizer/achievements/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["summarizer", "achievements", workplaceId] });
+    },
+  });
+
   const generateMutation = useMutation({
     mutationFn: () =>
       api.post<SummaryDto>(`/api/summarizer/workplaces/${workplaceId}/summary`),
@@ -157,9 +187,25 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
         <div className="list">
           {achievements.map((a) => (
             <div key={a.id} className="card">
-              <div style={{ fontSize: 14 }}>{a.text}</div>
-              <div className="card-hint" style={{ marginTop: 4 }}>
-                {new Date(a.createdAt).toLocaleDateString("ru-RU")}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14 }}>{a.text}</div>
+                  <div className="card-hint" style={{ marginTop: 4 }}>
+                    {new Date(a.createdAt).toLocaleDateString("ru-RU")}
+                  </div>
+                </div>
+                <button
+                  className="btn btn-small"
+                  style={{ color: "red", flexShrink: 0 }}
+                  disabled={deleteAchievementMutation.isPending}
+                  onClick={() => {
+                    if (confirm("Удалить достижение?")) {
+                      deleteAchievementMutation.mutate(a.id);
+                    }
+                  }}
+                >
+                  Удалить
+                </button>
               </div>
             </div>
           ))}

@@ -10,6 +10,13 @@ import type {
   GoalPeriod,
 } from "@shared/types";
 
+const PERIOD_LABELS: Record<GoalPeriod, string> = {
+  current: "Текущий",
+  month: "Месяц",
+  year: "Год",
+  "5years": "5 лет",
+};
+
 export function GoalsPage() {
   const [selectedSetId, setSelectedSetId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -74,13 +81,18 @@ export function GoalsPage() {
               >
                 <div className="list-item-title">{s.name}</div>
                 <div className="list-item-hint">
-                  {s.completedCount}/{s.totalCount} выполнено &middot; {s.period}
+                  {s.completedCount}/{s.totalCount} выполнено &middot; {PERIOD_LABELS[s.period] ?? s.period}
+                  {s.deadline ? ` &middot; до ${new Date(s.deadline).toLocaleDateString("ru-RU")}` : ""}
                 </div>
               </div>
               <div className="list-item-actions">
                 <button
                   className="btn btn-danger btn-small"
-                  onClick={() => deleteSetMutation.mutate(s.id)}
+                  onClick={() => {
+                    if (confirm(`Удалить набор "${s.name}" и все его цели?`)) {
+                      deleteSetMutation.mutate(s.id);
+                    }
+                  }}
                 >
                   Уд.
                 </button>
@@ -133,6 +145,7 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
     queryFn: () => api.get<{ goalSet: GoalSetDto; goals: GoalDto[] }>(`/api/goals/${goalSetId}`),
   });
 
+  const goalSet = goalSetData?.goalSet;
   const goals = goalSetData?.goals;
 
   const addMutation = useMutation({
@@ -152,11 +165,26 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
     },
   });
 
+  const deleteGoalMutation = useMutation({
+    mutationFn: (goalId: number) =>
+      api.del<void>(`/api/goals/goals/${goalId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+    },
+  });
+
   return (
     <div className="page">
       <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>
         К наборам
       </button>
+
+      {goalSet && (
+        <div style={{ marginBottom: 12, fontSize: 13, opacity: 0.7 }}>
+          {goalSet.completedCount}/{goalSet.totalCount} выполнено
+          {goalSet.deadline ? ` &middot; до ${new Date(goalSet.deadline).toLocaleDateString("ru-RU")}` : ""}
+        </div>
+      )}
 
       {isLoading && <div className="loading">Загрузка целей...</div>}
 
@@ -181,6 +209,20 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
                 >
                   {goal.text}
                 </div>
+                {goal.completedAt && (
+                  <div className="list-item-hint">
+                    Выполнено {new Date(goal.completedAt).toLocaleDateString("ru-RU")}
+                  </div>
+                )}
+              </div>
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={() => deleteGoalMutation.mutate(goal.id)}
+                  disabled={deleteGoalMutation.isPending}
+                >
+                  Уд.
+                </button>
               </div>
             </div>
           ))}

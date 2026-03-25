@@ -30,6 +30,22 @@ export function DigestPage() {
     },
   });
 
+  const deleteRubricMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.del<void>(`/api/digest/rubrics/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["digest", "rubrics"] });
+    },
+  });
+
+  const toggleRubricMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.put<DigestRubricDto>(`/api/digest/rubrics/${id}/toggle`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["digest", "rubrics"] });
+    },
+  });
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
@@ -51,20 +67,45 @@ export function DigestPage() {
       {rubrics && rubrics.length > 0 && (
         <div className="list">
           {rubrics.map((r) => (
-            <button
+            <div
               key={r.id}
               className="list-item"
-              style={{ cursor: "pointer", border: "none", width: "100%", textAlign: "left" }}
-              onClick={() => setSelectedRubricId(r.id)}
+              style={{ opacity: r.isActive ? 1 : 0.5 }}
             >
-              <span className="list-item-emoji">{r.emoji || "📰"}</span>
-              <div className="list-item-content">
-                <div className="list-item-title">{r.name}</div>
-                <div className="list-item-hint">
-                  {r.channelCount ?? 0} каналов &middot; {r.keywords.join(", ")}
+              <button
+                style={{ cursor: "pointer", border: "none", background: "none", display: "flex", alignItems: "center", flex: 1, textAlign: "left", padding: 0 }}
+                onClick={() => setSelectedRubricId(r.id)}
+              >
+                <span className="list-item-emoji">{r.emoji || "📰"}</span>
+                <div className="list-item-content">
+                  <div className="list-item-title">
+                    {r.name}
+                    {!r.isActive && <span style={{ marginLeft: 8, fontSize: 12, color: "#999" }}>(на паузе)</span>}
+                  </div>
+                  <div className="list-item-hint">
+                    {r.channelCount ?? 0} каналов &middot; {r.keywords.join(", ")}
+                  </div>
                 </div>
+              </button>
+              <div className="list-item-actions" style={{ display: "flex", gap: 4 }}>
+                <button
+                  className="btn btn-small"
+                  onClick={(e) => { e.stopPropagation(); toggleRubricMutation.mutate(r.id); }}
+                  disabled={toggleRubricMutation.isPending}
+                  title={r.isActive ? "Поставить на паузу" : "Возобновить"}
+                >
+                  {r.isActive ? "⏸" : "▶️"}
+                </button>
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={(e) => { e.stopPropagation(); deleteRubricMutation.mutate(r.id); }}
+                  disabled={deleteRubricMutation.isPending}
+                  title="Удалить рубрику"
+                >
+                  Уд.
+                </button>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}

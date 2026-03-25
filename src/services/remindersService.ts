@@ -179,6 +179,24 @@ export async function editReminderText(
 }
 
 /**
+ * Edit reminder schedule.
+ */
+export async function editReminderSchedule(
+  telegramId: number,
+  reminderId: number,
+  schedule: ReminderScheduleDto
+): Promise<boolean> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  const validated = validateSchedule({
+    times: schedule.times,
+    weekdays: schedule.weekdays,
+    endDate: schedule.endDate ?? null,
+  });
+  return updateReminderSchedule(reminderId, dbUser.id, validated);
+}
+
+/**
  * Get tribe reminders (excluding own).
  */
 export async function getTribeRemindersList(telegramId: number): Promise<Array<ReminderDto & { ownerName: string }>> {

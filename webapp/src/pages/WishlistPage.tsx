@@ -136,10 +136,15 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
 
-  const { data: items, isLoading } = useQuery({
+  const { data: itemsData, isLoading } = useQuery({
     queryKey: ["wishlist", "items", wishlistId],
-    queryFn: () => api.get<WishlistItemDto[]>(`/api/wishlist/${wishlistId}/items`),
+    queryFn: () =>
+      api.get<{ items: WishlistItemDto[]; total: number; wishlistName: string }>(
+        `/api/wishlist/${wishlistId}/items`
+      ),
   });
+  const items = itemsData?.items;
+  const wishlistName = itemsData?.wishlistName;
 
   const addMutation = useMutation({
     mutationFn: (data: CreateWishlistItemRequest) =>
@@ -171,6 +176,7 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
   return (
     <div className="page">
       <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>Назад</button>
+      {wishlistName && <h2 className="page-title" style={{ fontSize: 18, marginBottom: 12 }}>{wishlistName}</h2>}
 
       {isLoading && <div className="loading">Загрузка элементов...</div>}
 

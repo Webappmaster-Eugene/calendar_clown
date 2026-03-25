@@ -5,6 +5,7 @@ import {
   getCategoryDtos,
   undoExpense,
   addExpenseFromText,
+  getCategoryDrilldown,
 } from "../../services/expenseService.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
@@ -108,6 +109,31 @@ app.get("/excel", async (c) => {
     return c.body(result.buffer as unknown as ArrayBuffer);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to generate Excel";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/expenses/drilldown — individual expenses by category */
+app.get("/drilldown", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  const categoryId = parseInt(c.req.query("categoryId") ?? "0", 10);
+  const month = parseInt(c.req.query("month") ?? String(new Date().getMonth() + 1), 10);
+  const year = parseInt(c.req.query("year") ?? String(new Date().getFullYear()), 10);
+  const page = parseInt(c.req.query("page") ?? "1", 10);
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10), 50);
+  const offset = (page - 1) * limit;
+
+  if (!categoryId) {
+    return c.json({ ok: false, error: "categoryId is required" }, 400);
+  }
+
+  try {
+    const result = await getCategoryDrilldown(telegramId, categoryId, year, month, limit, offset);
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get expenses";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

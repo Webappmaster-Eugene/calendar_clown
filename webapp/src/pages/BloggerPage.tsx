@@ -33,6 +33,14 @@ export function BloggerPage() {
     },
   });
 
+  const deleteChannelMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.del<void>(`/api/blogger/channels/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blogger", "channels"] });
+    },
+  });
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
@@ -54,19 +62,36 @@ export function BloggerPage() {
       {channels && channels.length > 0 && (
         <div className="list">
           {channels.map((ch) => (
-            <button
+            <div
               key={ch.id}
               className="list-item"
-              style={{ cursor: "pointer", border: "none", width: "100%", textAlign: "left" }}
-              onClick={() => setSelectedChannelId(ch.id)}
+              style={{ display: "flex", alignItems: "center", gap: 8 }}
             >
-              <div className="list-item-content">
-                <div className="list-item-title">{ch.channelTitle}</div>
-                <div className="list-item-hint">
-                  {ch.channelUsername ? `@${ch.channelUsername} / ` : ""}{ch.postCount} постов
+              <button
+                style={{ cursor: "pointer", border: "none", flex: 1, textAlign: "left", background: "none", padding: 0 }}
+                onClick={() => setSelectedChannelId(ch.id)}
+              >
+                <div className="list-item-content">
+                  <div className="list-item-title">{ch.channelTitle}</div>
+                  <div className="list-item-hint">
+                    {ch.channelUsername ? `@${ch.channelUsername} / ` : ""}{ch.postCount} постов
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+              <button
+                className="btn btn-small"
+                style={{ color: "red", flexShrink: 0 }}
+                disabled={deleteChannelMutation.isPending}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm("Удалить канал?")) {
+                    deleteChannelMutation.mutate(ch.id);
+                  }
+                }}
+              >
+                Удалить
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -126,6 +151,14 @@ function ChannelPosts({ channelId, onBack }: { channelId: number; onBack: () => 
     },
   });
 
+  const deletePostMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.del<void>(`/api/blogger/posts/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blogger", "posts", channelId] });
+    },
+  });
+
   return (
     <div className="page">
       <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>Назад</button>
@@ -154,10 +187,25 @@ function ChannelPosts({ channelId, onBack }: { channelId: number; onBack: () => 
         <div className="list">
           {posts.map((p) => (
             <div key={p.id} className="card">
-              <div className="card-title">{p.topic}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div className="card-title">{p.topic}</div>
+                <button
+                  className="btn btn-small"
+                  style={{ color: "red", flexShrink: 0 }}
+                  disabled={deletePostMutation.isPending}
+                  onClick={() => {
+                    if (confirm("Удалить пост?")) {
+                      deletePostMutation.mutate(p.id);
+                    }
+                  }}
+                >
+                  Удалить
+                </button>
+              </div>
               <div className="card-hint" style={{ marginBottom: 6 }}>
-                {p.status} &middot; {p.sourceCount} источников
-                {p.generatedAt ? ` &middot; ${new Date(p.generatedAt).toLocaleDateString("ru-RU")}` : ""}
+                {p.status && <span className="badge">{p.status}</span>}
+                {p.status && " \u00b7 "}{p.sourceCount} источников
+                {p.generatedAt ? ` \u00b7 ${new Date(p.generatedAt).toLocaleDateString("ru-RU")}` : ""}
               </div>
               {p.generatedText && (
                 <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>

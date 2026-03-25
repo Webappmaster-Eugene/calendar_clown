@@ -2,10 +2,13 @@ import { Hono } from "hono";
 import {
   getUserChannels,
   createNewChannel,
+  removeChannel,
   getChannelPosts,
   createNewPost,
   getPost,
+  removePost,
   getPostSources,
+  addTextSource,
   generatePostText,
 } from "../../services/bloggerService.js";
 import type { ApiEnv } from "../authMiddleware.js";
@@ -130,6 +133,67 @@ app.post("/posts/:id/generate", async (c) => {
     return c.json({ ok: true, data: post });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to generate post";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/blogger/channels/:id — delete channel */
+app.delete("/channels/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const channelId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(channelId)) {
+    return c.json({ ok: false, error: "Invalid channel ID" }, 400);
+  }
+
+  try {
+    const deleted = await removeChannel(telegramId, channelId);
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete channel";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/blogger/posts/:id — delete post */
+app.delete("/posts/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const postId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(postId)) {
+    return c.json({ ok: false, error: "Invalid post ID" }, 400);
+  }
+
+  try {
+    const deleted = await removePost(telegramId, postId);
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete post";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** POST /api/blogger/posts/:id/sources — add text source */
+app.post("/posts/:id/sources", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const postId = parseInt(c.req.param("id"), 10);
+  const body = await c.req.json<{ content: string; title?: string }>();
+
+  if (isNaN(postId)) {
+    return c.json({ ok: false, error: "Invalid post ID" }, 400);
+  }
+  if (!body.content?.trim()) {
+    return c.json({ ok: false, error: "content is required" }, 400);
+  }
+
+  try {
+    const source = await addTextSource(telegramId, postId, body.content.trim(), body.title);
+    return c.json({ ok: true, data: source });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to add source";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

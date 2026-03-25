@@ -6,6 +6,7 @@ import {
   addGoal,
   toggleGoal,
   removeGoalSet,
+  removeGoal,
 } from "../../services/goalsService.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
@@ -112,6 +113,25 @@ app.put("/goals/:goalId/toggle", async (c) => {
     return c.json({ ok: true, data: goal });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to toggle goal";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/goals/goals/:goalId — delete individual goal */
+app.delete("/goals/:goalId", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const goalId = parseInt(c.req.param("goalId"), 10);
+
+  if (isNaN(goalId)) {
+    return c.json({ ok: false, error: "Invalid goal ID" }, 400);
+  }
+
+  try {
+    const deleted = await removeGoal(telegramId, goalId);
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete goal";
     return c.json({ ok: false, error: msg }, 500);
   }
 });
