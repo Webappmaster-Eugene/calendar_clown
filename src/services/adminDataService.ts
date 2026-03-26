@@ -6,6 +6,7 @@
 
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
+import { getUserByTelegramId } from "../expenses/repository.js";
 import { createLogger } from "../utils/logger.js";
 
 // Repository imports — same as adminData.ts bot handler
@@ -150,6 +151,12 @@ function requireDb(): void {
   }
 }
 
+async function requireTribeId(telegramId: number): Promise<number> {
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser?.tribeId) throw new Error("Tribe not found for admin user.");
+  return dbUser.tribeId;
+}
+
 function formatDate(d: Date | string | null): string {
   if (!d) return "";
   const date = typeof d === "string" ? new Date(d) : d;
@@ -166,6 +173,8 @@ export async function getEntityList(
 ): Promise<EntityListResult> {
   requireAdmin(telegramId);
   requireDb();
+
+  const tribeId = await requireTribeId(telegramId);
 
   switch (entity) {
     case "transcriptions": {
@@ -184,8 +193,8 @@ export async function getEntityList(
     }
     case "expenses": {
       const [items, total] = await Promise.all([
-        getExpensesPaginated(limit, offset),
-        countExpenses(),
+        getExpensesPaginated(tribeId, limit, offset),
+        countExpenses(tribeId),
       ]);
       return {
         total,
@@ -199,7 +208,7 @@ export async function getEntityList(
     case "gandalf": {
       const [items, total] = await Promise.all([
         getAllEntriesPaginated(limit, offset),
-        countAllEntries(),
+        countAllEntries(tribeId),
       ]);
       return {
         total,
@@ -220,14 +229,14 @@ export async function getEntityList(
         items: items.map((r) => ({
           id: r.id,
           label: r.name,
-          hint: `${r.isActive ? "Активна" : "На паузе"} · ${r.channelCount ?? 0} каналов`,
+          hint: `${r.isActive ? "Активна" : "На паузе"} · ${(r.keywords?.length ?? 0)} ключевых слов`,
         })),
       };
     }
     case "dates": {
       const [items, total] = await Promise.all([
         getAllDatesPaginated(limit, offset),
-        countAllDates(),
+        countAllDates(tribeId),
       ]);
       return {
         total,
@@ -262,7 +271,7 @@ export async function getEntityList(
         items: items.map((d) => ({
           id: d.id,
           label: d.title ?? "(без названия)",
-          hint: `${d.firstName ?? ""} · ${d.messageCount ?? 0} сообщений`,
+          hint: `${d.firstName ?? ""}`,
         })),
       };
     }
@@ -290,7 +299,7 @@ export async function getEntityList(
         items: items.map((g) => ({
           id: g.id,
           label: g.name,
-          hint: `${g.firstName ?? ""} · ${g.period ?? ""} · ${g.goalCount ?? 0} целей`,
+          hint: `${g.firstName ?? ""} · ${g.period ?? ""} · ${g.totalCount ?? 0} целей`,
         })),
       };
     }
@@ -363,15 +372,18 @@ export async function deleteEntity(
   requireAdmin(telegramId);
   requireDb();
 
+  const tribeId = await requireTribeId(telegramId);
+
   switch (entity) {
     case "transcriptions":
-      return deleteTranscription(entityId);
+      await deleteTranscription(entityId);
+      return true;
     case "expenses": {
       const deleted = await bulkDeleteExpenses([entityId]);
       return deleted > 0;
     }
     case "dates":
-      return removeNotableDate(entityId);
+      return removeNotableDate(entityId, tribeId);
     default: {
       // For entities without individual delete, use bulk with single ID
       const bulkFn = getBulkDeleteFn(entity);
@@ -392,13 +404,14 @@ export async function deleteAllEntitiesOfType(
   requireDb();
 
   log.info("Admin %d deleting all %s", telegramId, entity);
+  const tribeId = await requireTribeId(telegramId);
 
   switch (entity) {
     case "transcriptions": return deleteAllTranscriptions();
-    case "expenses": return deleteAllExpenses();
-    case "gandalf": return deleteAllEntries();
+    case "expenses": return deleteAllExpenses(tribeId);
+    case "gandalf": return deleteAllEntries(tribeId);
     case "digest": return deleteAllRubrics();
-    case "dates": return deleteAllDates();
+    case "dates": return deleteAllDates(tribeId);
     case "calendar": return deleteAllEvents();
     case "dialogs": return deleteAllDialogs();
     case "wishlists": return deleteAllWishlists();

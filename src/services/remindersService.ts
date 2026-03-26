@@ -188,12 +188,14 @@ export async function editReminderSchedule(
 ): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
-  const validated = validateSchedule({
+  const scheduleData: ReminderSchedule = {
     times: schedule.times,
     weekdays: schedule.weekdays,
     endDate: schedule.endDate ?? null,
-  });
-  return updateReminderSchedule(reminderId, dbUser.id, validated);
+  };
+  const validationError = validateSchedule(scheduleData);
+  if (validationError) throw new Error(validationError);
+  return updateReminderSchedule(reminderId, dbUser.id, scheduleData);
 }
 
 /**

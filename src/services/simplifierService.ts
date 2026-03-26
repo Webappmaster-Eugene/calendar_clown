@@ -121,7 +121,6 @@ export async function simplifyFromApi(
     return toDto({
       ...record,
       simplifiedText: result,
-      modelUsed: model,
       status: "completed",
       simplifiedAt: new Date(),
     });

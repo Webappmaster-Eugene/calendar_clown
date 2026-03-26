@@ -113,13 +113,13 @@ app.post("/expense", async (c) => {
     return c.json({
       ok: true,
       data: {
+        ...result,
         transcript,
         expense: {
           category: intent.category,
           subcategory: intent.subcategory,
           amount: intent.amount,
         },
-        ...result,
       },
     });
   } catch (err) {
