@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import {
   getUserRubrics,
   createNewRubric,
+  editRubric,
   removeRubric,
   toggleRubricActive,
   getRubricChannels,
@@ -51,6 +52,56 @@ app.post("/rubrics", async (c) => {
     return c.json({ ok: true, data: rubric });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create rubric";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/digest/rubrics/:id — edit rubric */
+app.put("/rubrics/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const rubricId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(rubricId)) {
+    return c.json({ ok: false, error: "Invalid rubric ID" }, 400);
+  }
+
+  const body = await c.req.json<{
+    name?: string;
+    description?: string | null;
+    emoji?: string | null;
+    keywords?: string[];
+  }>();
+
+  // At least one field must be provided
+  const hasField =
+    body.name !== undefined ||
+    body.description !== undefined ||
+    body.emoji !== undefined ||
+    body.keywords !== undefined;
+
+  if (!hasField) {
+    return c.json({ ok: false, error: "At least one field is required" }, 400);
+  }
+
+  // If name is provided, it must be non-empty
+  if (body.name !== undefined && !body.name.trim()) {
+    return c.json({ ok: false, error: "name cannot be empty" }, 400);
+  }
+
+  try {
+    const rubric = await editRubric(telegramId, rubricId, {
+      name: body.name?.trim(),
+      description: body.description,
+      emoji: body.emoji,
+      keywords: body.keywords,
+    });
+    if (!rubric) {
+      return c.json({ ok: false, error: "Rubric not found" }, 404);
+    }
+    return c.json({ ok: true, data: rubric });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to edit rubric";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

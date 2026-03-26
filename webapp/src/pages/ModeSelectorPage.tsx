@@ -20,6 +20,7 @@ const MODE_ROUTES: Record<string, string> = {
   osint: "/osint",
   neuro: "/neuro",
   transcribe: "/transcribe",
+  simplifier: "/simplifier",
   summarizer: "/summarizer",
   blogger: "/blogger",
   broadcast: "/broadcast",

@@ -12,6 +12,7 @@ export {
   MAX_BLOGGER_CHANNELS,
   MAX_POST_SOURCES,
   MAX_POST_LENGTH,
+  MAX_SIMPLIFIER_INPUT_LENGTH,
 } from "./shared/constants.js";
 
 // ─── Backend-only constants ───────────────────────────────────────
@@ -77,6 +78,9 @@ export const SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "anthropic/claud
 
 /** Blogger: AI model for post generation (via OpenRouter). */
 export const BLOGGER_MODEL = process.env.BLOGGER_MODEL || "anthropic/claude-sonnet-4";
+
+/** Simplifier: AI model for text simplification (via OpenRouter). */
+export const SIMPLIFIER_MODEL = process.env.SIMPLIFIER_MODEL || "deepseek/deepseek-chat-v3.1";
 
 /** Neuro: vision model for image/document analysis (supports images, PDF, DOCX natively). */
 export const NEURO_VISION_MODEL = process.env.NEURO_VISION_MODEL || "google/gemini-2.0-flash-001";

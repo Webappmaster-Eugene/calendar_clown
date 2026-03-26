@@ -190,6 +190,28 @@ export async function addAchievement(
 }
 
 /**
+ * Update achievement text.
+ */
+export async function editAchievement(
+  telegramId: number,
+  achievementId: number,
+  text: string
+): Promise<WorkAchievementDto | null> {
+  requireDb();
+  await requireDbUser(telegramId);
+  const a = await updateAchievement(achievementId, text);
+  if (!a) return null;
+
+  return {
+    id: a.id,
+    workplaceId: a.workplaceId,
+    text: a.text,
+    inputMethod: a.inputMethod,
+    createdAt: a.createdAt.toISOString(),
+  };
+}
+
+/**
  * Delete an achievement.
  */
 export async function removeAchievement(telegramId: number, achievementId: number): Promise<boolean> {

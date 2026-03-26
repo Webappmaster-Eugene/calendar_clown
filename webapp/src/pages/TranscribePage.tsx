@@ -114,11 +114,12 @@ export function TranscribePage() {
                   {new Date(t.createdAt).toLocaleString("ru-RU")}
                 </span>
                 <button
-                  className="btn btn-danger btn-small"
+                  className="btn btn-icon btn-danger"
                   onClick={() => deleteMutation.mutate(t.id)}
                   disabled={deleteMutation.isPending}
+                  title="Удалить"
                 >
-                  Уд.
+                  🗑️
                 </button>
               </div>
             </div>

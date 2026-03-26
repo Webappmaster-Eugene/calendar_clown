@@ -7,12 +7,14 @@ import type {
   WorkAchievementDto,
   CreateWorkplaceRequest,
   AddAchievementRequest,
+  UpdateWorkplaceRequest,
   SummaryDto,
 } from "@shared/types";
 
 export function SummarizerPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
   const queryClient = useQueryClient();
@@ -27,9 +29,16 @@ export function SummarizerPage() {
       api.post<WorkplaceDto>("/api/summarizer/workplaces", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["summarizer", "workplaces"] });
-      setShowForm(false);
-      setTitle("");
-      setCompany("");
+      resetForm();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...data }: UpdateWorkplaceRequest & { id: number }) =>
+      api.put<WorkplaceDto>(`/api/summarizer/workplaces/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["summarizer", "workplaces"] });
+      resetForm();
     },
   });
 
@@ -41,12 +50,40 @@ export function SummarizerPage() {
     },
   });
 
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setTitle("");
+    setCompany("");
+  };
+
+  const startEdit = (w: WorkplaceDto) => {
+    setEditingId(w.id);
+    setTitle(w.title);
+    setCompany(w.company ?? "");
+    setShowForm(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, title: title.trim(), company: company.trim() || null });
+    } else {
+      createMutation.mutate({ title: title.trim(), company: company.trim() || undefined });
+    }
+  };
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedId !== null) {
     return <WorkplaceDetail workplaceId={selectedId} onBack={() => setSelectedId(null)} />;
   }
+
+  const mutationPending = createMutation.isPending || updateMutation.isPending;
+  const mutationError = createMutation.error || updateMutation.error;
 
   return (
     <div className="page">
@@ -75,19 +112,28 @@ export function SummarizerPage() {
                   </div>
                 </div>
               </button>
-              <button
-                className="btn btn-small"
-                style={{ color: "red", flexShrink: 0 }}
-                disabled={deleteWorkplaceMutation.isPending}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (confirm("Удалить место работы?")) {
-                    deleteWorkplaceMutation.mutate(w.id);
-                  }
-                }}
-              >
-                Удалить
-              </button>
+              <div className="list-item-actions" style={{ display: "flex", gap: 4 }}>
+                <button
+                  className="btn btn-icon"
+                  onClick={(e) => { e.stopPropagation(); startEdit(w); }}
+                  title="Редактировать"
+                >
+                  ✏️
+                </button>
+                <button
+                  className="btn btn-icon btn-danger"
+                  disabled={deleteWorkplaceMutation.isPending}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm("Удалить место работы?")) {
+                      deleteWorkplaceMutation.mutate(w.id);
+                    }
+                  }}
+                  title="Удалить"
+                >
+                  🗑️
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -95,10 +141,7 @@ export function SummarizerPage() {
 
       {showForm && (
         <div className="card" style={{ marginTop: 16 }}>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            if (title.trim()) createMutation.mutate({ title: title.trim(), company: company.trim() || undefined });
-          }}>
+          <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label">Должность</label>
               <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Разработчик" />
@@ -107,10 +150,12 @@ export function SummarizerPage() {
               <label className="form-label">Компания (необязательно)</label>
               <input className="input" value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Название компании" />
             </div>
-            {createMutation.error && <div className="error-msg">{(createMutation.error as Error).message}</div>}
+            {mutationError && <div className="error-msg">{(mutationError as Error).message}</div>}
             <div className="form-row">
-              <button type="button" className="btn" onClick={() => setShowForm(false)}>Отмена</button>
-              <button type="submit" className="btn btn-primary" disabled={createMutation.isPending || !title.trim()}>Создать</button>
+              <button type="button" className="btn" onClick={resetForm}>Отмена</button>
+              <button type="submit" className="btn btn-primary" disabled={mutationPending || !title.trim()}>
+                {editingId ? "Сохранить" : "Создать"}
+              </button>
             </div>
           </form>
         </div>
@@ -125,6 +170,8 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [summary, setSummary] = useState<string | null>(null);
+  const [editingAchId, setEditingAchId] = useState<number | null>(null);
+  const [editAchText, setEditAchText] = useState("");
 
   const { data: achievements, isLoading } = useQuery({
     queryKey: ["summarizer", "achievements", workplaceId],
@@ -137,6 +184,16 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["summarizer", "achievements", workplaceId] });
       setText("");
+    },
+  });
+
+  const updateAchMutation = useMutation({
+    mutationFn: ({ id, text: newText }: { id: number; text: string }) =>
+      api.put<WorkAchievementDto>(`/api/summarizer/achievements/${id}`, { text: newText }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["summarizer", "achievements", workplaceId] });
+      setEditingAchId(null);
+      setEditAchText("");
     },
   });
 
@@ -155,6 +212,11 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
       setSummary(result.summary);
     },
   });
+
+  const startEditAch = (a: WorkAchievementDto) => {
+    setEditingAchId(a.id);
+    setEditAchText(a.text);
+  };
 
   return (
     <div className="page">
@@ -189,23 +251,54 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
             <div key={a.id} className="card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14 }}>{a.text}</div>
-                  <div className="card-hint" style={{ marginTop: 4 }}>
-                    {new Date(a.createdAt).toLocaleDateString("ru-RU")}
-                  </div>
+                  {editingAchId === a.id ? (
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); if (editAchText.trim()) updateAchMutation.mutate({ id: a.id, text: editAchText.trim() }); }}
+                      style={{ display: "flex", gap: 6, alignItems: "flex-start" }}
+                    >
+                      <textarea
+                        className="input"
+                        value={editAchText}
+                        onChange={(e) => setEditAchText(e.target.value)}
+                        rows={2}
+                        style={{ flex: 1 }}
+                        autoFocus
+                      />
+                      <button type="submit" className="btn btn-primary btn-small" disabled={updateAchMutation.isPending || !editAchText.trim()}>✓</button>
+                      <button type="button" className="btn btn-small" onClick={() => { setEditingAchId(null); setEditAchText(""); }}>✕</button>
+                    </form>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 14 }}>{a.text}</div>
+                      <div className="card-hint" style={{ marginTop: 4 }}>
+                        {new Date(a.createdAt).toLocaleDateString("ru-RU")}
+                      </div>
+                    </>
+                  )}
                 </div>
-                <button
-                  className="btn btn-small"
-                  style={{ color: "red", flexShrink: 0 }}
-                  disabled={deleteAchievementMutation.isPending}
-                  onClick={() => {
-                    if (confirm("Удалить достижение?")) {
-                      deleteAchievementMutation.mutate(a.id);
-                    }
-                  }}
-                >
-                  Удалить
-                </button>
+                {editingAchId !== a.id && (
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button
+                      className="btn btn-icon"
+                      onClick={() => startEditAch(a)}
+                      title="Редактировать"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className="btn btn-icon btn-danger"
+                      disabled={deleteAchievementMutation.isPending}
+                      onClick={() => {
+                        if (confirm("Удалить достижение?")) {
+                          deleteAchievementMutation.mutate(a.id);
+                        }
+                      }}
+                      title="Удалить"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

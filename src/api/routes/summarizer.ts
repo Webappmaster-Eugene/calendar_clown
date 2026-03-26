@@ -2,9 +2,11 @@ import { Hono } from "hono";
 import {
   getUserWorkplaces,
   createNewWorkplace,
+  editWorkplace,
   removeWorkplace,
   getWorkplaceAchievements,
   addAchievement,
+  editAchievement,
   removeAchievement,
   generateSummary,
 } from "../../services/summarizerService.js";
@@ -45,6 +47,38 @@ app.post("/workplaces", async (c) => {
   }
 });
 
+/** PUT /api/summarizer/workplaces/:id — update workplace */
+app.put("/workplaces/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const workplaceId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(workplaceId)) {
+    return c.json({ ok: false, error: "Invalid workplace ID" }, 400);
+  }
+
+  const body = await c.req.json<{ title?: string; company?: string }>();
+
+  if (!body.title?.trim() && body.company === undefined) {
+    return c.json({ ok: false, error: "At least one field (title, company) is required" }, 400);
+  }
+
+  try {
+    const updates: { title?: string; company?: string } = {};
+    if (body.title?.trim()) updates.title = body.title.trim();
+    if (body.company !== undefined) updates.company = body.company;
+
+    const workplace = await editWorkplace(telegramId, workplaceId, updates);
+    if (!workplace) {
+      return c.json({ ok: false, error: "Workplace not found" }, 404);
+    }
+    return c.json({ ok: true, data: workplace });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update workplace";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
 /** GET /api/summarizer/workplaces/:id/achievements — list achievements */
 app.get("/workplaces/:id/achievements", async (c) => {
   const initData = c.get("initData");
@@ -79,6 +113,34 @@ app.post("/achievements", async (c) => {
     return c.json({ ok: true, data: achievement });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add achievement";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/summarizer/achievements/:id — update achievement */
+app.put("/achievements/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const achievementId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(achievementId)) {
+    return c.json({ ok: false, error: "Invalid achievement ID" }, 400);
+  }
+
+  const body = await c.req.json<{ text: string }>();
+
+  if (!body.text?.trim()) {
+    return c.json({ ok: false, error: "text is required" }, 400);
+  }
+
+  try {
+    const achievement = await editAchievement(telegramId, achievementId, body.text.trim());
+    if (!achievement) {
+      return c.json({ ok: false, error: "Achievement not found" }, 404);
+    }
+    return c.json({ ok: true, data: achievement });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update achievement";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

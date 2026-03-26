@@ -18,6 +18,8 @@ import {
   getExpensesByCategory,
   countExpensesByCategory,
   getCategories,
+  updateExpense,
+  getExpenseById,
 } from "../expenses/repository.js";
 import {
   formatExpenseConfirmation,
@@ -388,6 +390,54 @@ export async function undoExpense(telegramId: number, expenseId: number): Promis
     log.info(`Expense ${expenseId} undone by user ${telegramId}`);
   }
   return deleted;
+}
+
+/**
+ * Edit an existing expense. Verifies ownership via user_id.
+ * Returns updated expense as DTO, or null if not found / not owned.
+ */
+export async function editExpense(
+  telegramId: number,
+  expenseId: number,
+  updates: { amount?: number; categoryId?: number; subcategory?: string | null }
+): Promise<ExpenseDto | null> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+
+  // Verify ownership: the expense must belong to this user
+  const existing = await getExpenseById(expenseId);
+  if (!existing || existing.userId !== dbUser.id) {
+    return null;
+  }
+
+  // Nothing to update
+  if (
+    updates.amount === undefined &&
+    updates.categoryId === undefined &&
+    updates.subcategory === undefined
+  ) {
+    return null;
+  }
+
+  const updated = await updateExpense(expenseId, updates);
+  if (!updated) return null;
+
+  // Re-fetch to get fresh category info (categoryId may have changed)
+  const fresh = await getExpenseById(expenseId);
+  if (!fresh) return null;
+
+  log.info(`Expense ${expenseId} edited by user ${telegramId}`);
+
+  return {
+    id: fresh.id,
+    categoryId: fresh.categoryId,
+    categoryName: fresh.categoryName,
+    categoryEmoji: fresh.categoryEmoji,
+    subcategory: fresh.subcategory,
+    amount: fresh.amount,
+    inputMethod: fresh.inputMethod,
+    createdAt: fresh.createdAt.toISOString(),
+  };
 }
 
 /**

@@ -94,6 +94,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  simplifier: [
+    { command: "simplifier", description: "Упрощатель мыслей (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
   admin: [
     { command: "admin", description: "Управление пользователями" },
     { command: "mode", description: "Выбор режима работы" },
@@ -243,6 +248,9 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
     ],
     [
       Markup.button.callback("🎙️ Транскрибация", "mode:transcribe"),
+      Markup.button.callback("🧹 Упрощатель", "mode:simplifier"),
+    ],
+    [
       Markup.button.callback("🧙 База знаний", "mode:gandalf"),
     ],
   ];

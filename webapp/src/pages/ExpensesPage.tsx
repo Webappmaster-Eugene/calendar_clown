@@ -302,11 +302,12 @@ function ExpenseDrilldown({ categoryId, onBack }: { categoryId: number; onBack: 
                 </div>
                 <div className="list-item-actions">
                   <button
-                    className="btn btn-danger btn-small"
+                    className="btn btn-icon btn-danger"
                     onClick={() => deleteMutation.mutate(exp.id)}
                     disabled={deleteMutation.isPending}
+                    title="Удалить"
                   >
-                    Уд.
+                    🗑️
                   </button>
                 </div>
               </div>

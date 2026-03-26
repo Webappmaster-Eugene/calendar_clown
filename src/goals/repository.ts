@@ -231,6 +231,15 @@ export async function toggleGoalCompleted(goalId: number): Promise<Goal | null> 
   return mapGoal(rows[0]);
 }
 
+export async function updateGoalText(goalId: number, text: string): Promise<Goal | null> {
+  const { rows } = await query<GoalRow>(
+    `UPDATE goals SET text = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+    [text, goalId]
+  );
+  if (rows.length === 0) return null;
+  return mapGoal(rows[0]);
+}
+
 export async function deleteGoal(goalId: number): Promise<boolean> {
   const { rowCount } = await query(
     "DELETE FROM goals WHERE id = $1",

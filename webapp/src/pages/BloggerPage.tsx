@@ -6,11 +6,13 @@ import type {
   BloggerPostDto,
   CreateBloggerChannelRequest,
   CreateBloggerPostRequest,
+  UpdateBloggerChannelRequest,
 } from "@shared/types";
 
 export function BloggerPage() {
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingChannelId, setEditingChannelId] = useState<number | null>(null);
   const [channelTitle, setChannelTitle] = useState("");
   const [channelUsername, setChannelUsername] = useState("");
   const [niche, setNiche] = useState("");
@@ -26,10 +28,16 @@ export function BloggerPage() {
       api.post<BloggerChannelDto>("/api/blogger/channels", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["blogger", "channels"] });
-      setShowForm(false);
-      setChannelTitle("");
-      setChannelUsername("");
-      setNiche("");
+      resetForm();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...data }: UpdateBloggerChannelRequest & { id: number }) =>
+      api.put<BloggerChannelDto>(`/api/blogger/channels/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blogger", "channels"] });
+      resetForm();
     },
   });
 
@@ -41,12 +49,51 @@ export function BloggerPage() {
     },
   });
 
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingChannelId(null);
+    setChannelTitle("");
+    setChannelUsername("");
+    setNiche("");
+  };
+
+  const startEdit = (ch: BloggerChannelDto) => {
+    setEditingChannelId(ch.id);
+    setChannelTitle(ch.channelTitle);
+    setChannelUsername(ch.channelUsername ?? "");
+    setNiche(ch.nicheDescription ?? "");
+    setShowForm(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!channelTitle.trim()) return;
+
+    if (editingChannelId) {
+      updateMutation.mutate({
+        id: editingChannelId,
+        channelTitle: channelTitle.trim(),
+        channelUsername: channelUsername.trim() || null,
+        nicheDescription: niche.trim() || null,
+      });
+    } else {
+      createMutation.mutate({
+        channelTitle: channelTitle.trim(),
+        channelUsername: channelUsername.trim() || undefined,
+        nicheDescription: niche.trim() || undefined,
+      });
+    }
+  };
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedChannelId !== null) {
     return <ChannelPosts channelId={selectedChannelId} onBack={() => setSelectedChannelId(null)} />;
   }
+
+  const mutationPending = createMutation.isPending || updateMutation.isPending;
+  const mutationError = createMutation.error || updateMutation.error;
 
   return (
     <div className="page">
@@ -78,19 +125,28 @@ export function BloggerPage() {
                   </div>
                 </div>
               </button>
-              <button
-                className="btn btn-small"
-                style={{ color: "red", flexShrink: 0 }}
-                disabled={deleteChannelMutation.isPending}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (confirm("Удалить канал?")) {
-                    deleteChannelMutation.mutate(ch.id);
-                  }
-                }}
-              >
-                Удалить
-              </button>
+              <div className="list-item-actions" style={{ display: "flex", gap: 4 }}>
+                <button
+                  className="btn btn-icon"
+                  onClick={(e) => { e.stopPropagation(); startEdit(ch); }}
+                  title="Редактировать"
+                >
+                  ✏️
+                </button>
+                <button
+                  className="btn btn-icon btn-danger"
+                  disabled={deleteChannelMutation.isPending}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm("Удалить канал?")) {
+                      deleteChannelMutation.mutate(ch.id);
+                    }
+                  }}
+                  title="Удалить"
+                >
+                  🗑️
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -98,15 +154,7 @@ export function BloggerPage() {
 
       {showForm && (
         <div className="card" style={{ marginTop: 16 }}>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            if (!channelTitle.trim()) return;
-            createMutation.mutate({
-              channelTitle: channelTitle.trim(),
-              channelUsername: channelUsername.trim() || undefined,
-              nicheDescription: niche.trim() || undefined,
-            });
-          }}>
+          <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label">Название канала</label>
               <input className="input" value={channelTitle} onChange={(e) => setChannelTitle(e.target.value)} placeholder="Мой канал" />
@@ -119,10 +167,12 @@ export function BloggerPage() {
               <label className="form-label">Описание ниши (необязательно)</label>
               <textarea className="input" value={niche} onChange={(e) => setNiche(e.target.value)} placeholder="О чём этот канал?" rows={2} />
             </div>
-            {createMutation.error && <div className="error-msg">{(createMutation.error as Error).message}</div>}
+            {mutationError && <div className="error-msg">{(mutationError as Error).message}</div>}
             <div className="form-row">
-              <button type="button" className="btn" onClick={() => setShowForm(false)}>Отмена</button>
-              <button type="submit" className="btn btn-primary" disabled={createMutation.isPending || !channelTitle.trim()}>Создать</button>
+              <button type="button" className="btn" onClick={resetForm}>Отмена</button>
+              <button type="submit" className="btn btn-primary" disabled={mutationPending || !channelTitle.trim()}>
+                {editingChannelId ? "Сохранить" : "Создать"}
+              </button>
             </div>
           </form>
         </div>
@@ -190,16 +240,16 @@ function ChannelPosts({ channelId, onBack }: { channelId: number; onBack: () => 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div className="card-title">{p.topic}</div>
                 <button
-                  className="btn btn-small"
-                  style={{ color: "red", flexShrink: 0 }}
+                  className="btn btn-icon btn-danger"
                   disabled={deletePostMutation.isPending}
                   onClick={() => {
                     if (confirm("Удалить пост?")) {
                       deletePostMutation.mutate(p.id);
                     }
                   }}
+                  title="Удалить"
                 >
-                  Удалить
+                  🗑️
                 </button>
               </div>
               <div className="card-hint" style={{ marginBottom: 6 }}>

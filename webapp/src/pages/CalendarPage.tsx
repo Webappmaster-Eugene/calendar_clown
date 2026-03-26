@@ -87,11 +87,12 @@ export function CalendarPage() {
               </div>
               <div className="list-item-actions">
                 <button
-                  className="btn btn-danger btn-small"
+                  className="btn btn-icon btn-danger"
                   onClick={() => handleDelete(event.id, event.summary)}
                   disabled={deleteMutation.isPending}
+                  title="Удалить"
                 >
-                  Удалить
+                  🗑️
                 </button>
               </div>
             </div>

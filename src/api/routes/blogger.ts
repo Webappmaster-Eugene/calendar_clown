@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import {
   getUserChannels,
   createNewChannel,
+  editChannel,
   removeChannel,
   getChannelPosts,
   createNewPost,
@@ -52,6 +53,52 @@ app.post("/channels", async (c) => {
     return c.json({ ok: true, data: channel });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create channel";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/blogger/channels/:id — edit channel */
+app.put("/channels/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const channelId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(channelId)) {
+    return c.json({ ok: false, error: "Invalid channel ID" }, 400);
+  }
+
+  const body = await c.req.json<{
+    channelTitle?: string;
+    channelUsername?: string | null;
+    nicheDescription?: string | null;
+  }>();
+
+  if (
+    body.channelTitle === undefined &&
+    body.channelUsername === undefined &&
+    body.nicheDescription === undefined
+  ) {
+    return c.json({ ok: false, error: "No fields to update" }, 400);
+  }
+
+  if (body.channelTitle !== undefined && !body.channelTitle.trim()) {
+    return c.json({ ok: false, error: "channelTitle cannot be empty" }, 400);
+  }
+
+  try {
+    const channel = await editChannel(telegramId, channelId, {
+      channelTitle: body.channelTitle?.trim(),
+      channelUsername: body.channelUsername,
+      nicheDescription: body.nicheDescription,
+    });
+
+    if (!channel) {
+      return c.json({ ok: false, error: "Channel not found" }, 404);
+    }
+
+    return c.json({ ok: true, data: channel });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update channel";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

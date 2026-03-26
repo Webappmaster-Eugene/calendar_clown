@@ -114,7 +114,7 @@ import {
 } from "./commands/osintMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
 import { createLogger } from "./utils/logger.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isCalendarMode } from "./middleware/userMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isCalendarMode, isSimplifierMode } from "./middleware/userMode.js";
 import {
   handleGoalsCommand,
   handleMyGoalSetsButton,
@@ -154,6 +154,16 @@ import {
   handleBlogCallback,
   handleBloggerText,
 } from "./commands/bloggerMode.js";
+import {
+  handleSimplifierCommand,
+  handleSimplifierText,
+  handleSimplifyButton,
+  handleSimplifierClearButton,
+  handleSimplifierHistoryButton,
+  handleSimplifierHistoryCallback,
+  handleSimplifierFullCallback,
+  handleSimplifierDeleteCallback,
+} from "./commands/simplifierMode.js";
 
 export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   const log = createLogger("bot");
@@ -203,6 +213,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.command("osint", handleOsintCommand);
   bot.command("summarizer", handleSummarizerCommand);
   bot.command("blogger", handleBloggerCommand);
+  bot.command("simplifier", handleSimplifierCommand);
   bot.command("neuro", handleNeuroCommand);
 
   // Admin commands
@@ -230,6 +241,12 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^tr_full:/, handleTranscribeFullCallback);
   bot.action(/^tr_del:/, handleTranscribeDeleteCallback);
   bot.action(/^tr_del_yes:/, handleTranscribeDeleteCallback);
+
+  // Simplifier callbacks
+  bot.action(/^simp_hist:/, handleSimplifierHistoryCallback);
+  bot.action(/^simp_full:/, handleSimplifierFullCallback);
+  bot.action(/^simp_del:/, handleSimplifierDeleteCallback);
+  bot.action(/^simp_del_yes:/, handleSimplifierDeleteCallback);
 
   // Admin summary callbacks
   bot.action(/^summary:/, handleSummaryCallback);
@@ -421,6 +438,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     await ctx.answerCbQuery("🎁 Вишлист");
     await handleWishlistCommand(ctx);
   });
+  bot.action("mode:simplifier", async (ctx) => {
+    await ctx.answerCbQuery("🧹 Упрощатель");
+    await handleSimplifierCommand(ctx);
+  });
   bot.action("mode:neuro", async (ctx) => {
     await ctx.answerCbQuery("🧠 Нейро");
     await handleNeuroCommand(ctx);
@@ -492,6 +513,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("🔍 OSINT", handleOsintCommand);
   bot.hears("📋 Резюме", handleSummarizerCommand);
   bot.hears("✍️ Блогер", handleBloggerCommand);
+  bot.hears("🧹 Упрощатель", handleSimplifierCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
   // Backward compatibility — old keyboard labels (for users with cached keyboards)
@@ -527,11 +549,28 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("📂 Импорт из папки", handleFolderImportButton);
   bot.hears("🔑 Привязать Telegram", handleMtprotoAuthButton);
 
+  // Simplifier mode buttons
+  bot.hears("🧹 Упростить", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isSimplifierMode(tid)) {
+      await handleSimplifyButton(ctx);
+    }
+  });
+  bot.hears("🗑 Очистить буфер", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isSimplifierMode(tid)) {
+      await handleSimplifierClearButton(ctx);
+    }
+  });
+
   // Transcribe mode buttons
   bot.hears("📋 История", async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isTranscribeMode(tid)) {
       await handleTranscribeHistoryButton(ctx);
+    }
+    if (tid != null && await isSimplifierMode(tid)) {
+      await handleSimplifierHistoryButton(ctx);
     }
   });
   bot.hears("📊 Очередь", async (ctx) => {
@@ -739,6 +778,13 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     // Blogger mode — text input for channels/posts/sources
     if (await isBloggerMode(telegramId)) {
       const handled = await handleBloggerText(ctx);
+      if (handled) return;
+      return next();
+    }
+
+    // Simplifier mode — accumulate text in buffer
+    if (await isSimplifierMode(telegramId)) {
+      const handled = await handleSimplifierText(ctx);
       if (handled) return;
       return next();
     }

@@ -136,7 +136,7 @@ export async function getChannelById(
 export async function updateChannel(
   channelId: number,
   userId: number,
-  updates: { channelTitle?: string; channelUsername?: string; nicheDescription?: string }
+  updates: { channelTitle?: string; channelUsername?: string | null; nicheDescription?: string | null }
 ): Promise<BloggerChannel | null> {
   const sets: string[] = [];
   const params: unknown[] = [];

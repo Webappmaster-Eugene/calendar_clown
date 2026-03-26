@@ -5,6 +5,7 @@ import {
   getGoalSetWithGoals,
   addGoal,
   toggleGoal,
+  editGoalText,
   removeGoalSet,
   removeGoal,
 } from "../../services/goalsService.js";
@@ -91,6 +92,33 @@ app.post("/:id/goals", async (c) => {
     return c.json({ ok: true, data: goal });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add goal";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/goals/goals/:goalId — update goal text */
+app.put("/goals/:goalId", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const goalId = parseInt(c.req.param("goalId"), 10);
+
+  if (isNaN(goalId)) {
+    return c.json({ ok: false, error: "Invalid goal ID" }, 400);
+  }
+
+  const body = await c.req.json<{ text: string }>();
+  if (!body.text?.trim()) {
+    return c.json({ ok: false, error: "text is required" }, 400);
+  }
+
+  try {
+    const goal = await editGoalText(telegramId, goalId, body.text.trim());
+    if (!goal) {
+      return c.json({ ok: false, error: "Goal not found" }, 404);
+    }
+    return c.json({ ok: true, data: goal });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update goal";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

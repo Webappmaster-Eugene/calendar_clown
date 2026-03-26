@@ -21,6 +21,7 @@ const DigestPage = lazy(() => import("./pages/DigestPage").then((m) => ({ defaul
 const OsintPage = lazy(() => import("./pages/OsintPage").then((m) => ({ default: m.OsintPage })));
 const ChatPage = lazy(() => import("./pages/ChatPage").then((m) => ({ default: m.ChatPage })));
 const TranscribePage = lazy(() => import("./pages/TranscribePage").then((m) => ({ default: m.TranscribePage })));
+const SimplifierPage = lazy(() => import("./pages/SimplifierPage").then((m) => ({ default: m.SimplifierPage })));
 const SummarizerPage = lazy(() => import("./pages/SummarizerPage").then((m) => ({ default: m.SummarizerPage })));
 const BloggerPage = lazy(() => import("./pages/BloggerPage").then((m) => ({ default: m.BloggerPage })));
 const BroadcastPage = lazy(() => import("./pages/BroadcastPage").then((m) => ({ default: m.BroadcastPage })));
@@ -62,6 +63,7 @@ export function App() {
                   <Route path="/osint" element={<OsintPage />} />
                   <Route path="/neuro" element={<ChatPage />} />
                   <Route path="/transcribe" element={<TranscribePage />} />
+                  <Route path="/simplifier" element={<SimplifierPage />} />
                   <Route path="/summarizer" element={<SummarizerPage />} />
                   <Route path="/blogger" element={<BloggerPage />} />
                   <Route path="/broadcast" element={<BroadcastPage />} />

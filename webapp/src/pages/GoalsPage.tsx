@@ -87,14 +87,15 @@ export function GoalsPage() {
               </div>
               <div className="list-item-actions">
                 <button
-                  className="btn btn-danger btn-small"
+                  className="btn btn-icon btn-danger"
                   onClick={() => {
                     if (confirm(`Удалить набор "${s.name}" и все его цели?`)) {
                       deleteSetMutation.mutate(s.id);
                     }
                   }}
+                  title="Удалить"
                 >
-                  Уд.
+                  🗑️
                 </button>
               </div>
             </div>
@@ -139,6 +140,8 @@ export function GoalsPage() {
 function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => void }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
+  const [editingGoalId, setEditingGoalId] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
 
   const { data: goalSetData, isLoading } = useQuery({
     queryKey: ["goals", "list", goalSetId],
@@ -157,6 +160,16 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
     },
   });
 
+  const updateGoalMutation = useMutation({
+    mutationFn: ({ goalId, text: newText }: { goalId: number; text: string }) =>
+      api.put<GoalDto>(`/api/goals/goals/${goalId}`, { text: newText }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+      setEditingGoalId(null);
+      setEditText("");
+    },
+  });
+
   const toggleMutation = useMutation({
     mutationFn: (goalId: number) =>
       api.put<GoalDto>(`/api/goals/goals/${goalId}/toggle`),
@@ -172,6 +185,21 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
       queryClient.invalidateQueries({ queryKey: ["goals"] });
     },
   });
+
+  const startEditGoal = (goal: GoalDto) => {
+    setEditingGoalId(goal.id);
+    setEditText(goal.text);
+  };
+
+  const cancelEditGoal = () => {
+    setEditingGoalId(null);
+    setEditText("");
+  };
+
+  const handleEditSubmit = (goalId: number) => {
+    if (!editText.trim()) return;
+    updateGoalMutation.mutate({ goalId, text: editText.trim() });
+  };
 
   return (
     <div className="page">
@@ -203,27 +231,68 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
                 onClick={() => toggleMutation.mutate(goal.id)}
               />
               <div className="list-item-content">
-                <div
-                  className="list-item-title"
-                  style={{ textDecoration: goal.isCompleted ? "line-through" : "none" }}
-                >
-                  {goal.text}
-                </div>
-                {goal.completedAt && (
-                  <div className="list-item-hint">
-                    Выполнено {new Date(goal.completedAt).toLocaleDateString("ru-RU")}
-                  </div>
+                {editingGoalId === goal.id ? (
+                  <form
+                    style={{ display: "flex", gap: 6, alignItems: "center" }}
+                    onSubmit={(e) => { e.preventDefault(); handleEditSubmit(goal.id); }}
+                  >
+                    <input
+                      className="input"
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      style={{ flex: 1, padding: "4px 8px", fontSize: 14 }}
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      className="btn btn-primary btn-small"
+                      disabled={updateGoalMutation.isPending || !editText.trim()}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={cancelEditGoal}
+                    >
+                      ✕
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <div
+                      className="list-item-title"
+                      style={{ textDecoration: goal.isCompleted ? "line-through" : "none" }}
+                    >
+                      {goal.text}
+                    </div>
+                    {goal.completedAt && (
+                      <div className="list-item-hint">
+                        Выполнено {new Date(goal.completedAt).toLocaleDateString("ru-RU")}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
-              <div className="list-item-actions">
-                <button
-                  className="btn btn-danger btn-small"
-                  onClick={() => deleteGoalMutation.mutate(goal.id)}
-                  disabled={deleteGoalMutation.isPending}
-                >
-                  Уд.
-                </button>
-              </div>
+              {editingGoalId !== goal.id && (
+                <div className="list-item-actions">
+                  <button
+                    className="btn btn-icon"
+                    onClick={() => startEditGoal(goal)}
+                    title="Редактировать"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    className="btn btn-icon btn-danger"
+                    onClick={() => deleteGoalMutation.mutate(goal.id)}
+                    disabled={deleteGoalMutation.isPending}
+                    title="Удалить"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -8,11 +8,12 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isNeuroMode } from "../middleware/userMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isNeuroMode, isSimplifierMode } from "../middleware/userMode.js";
 import { handleGoalsVoice } from "./goalsMode.js";
 import { handleRemindersVoice } from "./remindersMode.js";
 import { handleSummarizerVoice } from "./summarizerMode.js";
 import { handleBloggerVoice } from "./bloggerMode.js";
+import { handleSimplifierVoice } from "./simplifierMode.js";
 import { handleVoiceExpense } from "./addExpense.js";
 import { getCategories, getUserByTelegramId } from "../expenses/repository.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
@@ -159,6 +160,12 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
     // Summarizer mode — add achievement from voice
     if (telegramId != null && await isSummarizerMode(telegramId)) {
       await handleSummarizerVoice(ctx, transcript, statusMsg.message_id);
+      return;
+    }
+
+    // Simplifier mode — add transcribed text to buffer
+    if (telegramId != null && await isSimplifierMode(telegramId)) {
+      await handleSimplifierVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 

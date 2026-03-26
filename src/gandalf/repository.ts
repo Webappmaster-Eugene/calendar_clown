@@ -149,6 +149,45 @@ export async function deleteCategory(categoryId: number, tribeId: number | null)
   return (rowCount ?? 0) > 0;
 }
 
+export async function updateCategory(
+  categoryId: number,
+  tribeId: number | null,
+  updates: { name?: string; emoji?: string }
+): Promise<boolean> {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (updates.name !== undefined) {
+    sets.push(`name = $${idx++}`);
+    params.push(updates.name);
+  }
+  if (updates.emoji !== undefined) {
+    sets.push(`emoji = $${idx++}`);
+    params.push(updates.emoji);
+  }
+
+  if (sets.length === 0) return false;
+
+  params.push(categoryId);
+  const catIdx = idx++;
+
+  if (tribeId != null) {
+    params.push(tribeId);
+    const { rowCount } = await query(
+      `UPDATE gandalf_categories SET ${sets.join(", ")} WHERE id = $${catIdx} AND tribe_id = $${idx} AND is_active = true`,
+      params
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
+  const { rowCount } = await query(
+    `UPDATE gandalf_categories SET ${sets.join(", ")} WHERE id = $${catIdx} AND tribe_id IS NULL AND is_active = true`,
+    params
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 // ─── Entries ────────────────────────────────────────────────────────────
 
 export async function createEntry(params: {

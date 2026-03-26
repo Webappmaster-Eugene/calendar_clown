@@ -32,6 +32,7 @@ export const MODE_LABELS: Record<string, { label: string; emoji: string; descrip
   calendar: { label: "Календарь", emoji: "📅", description: "Управление встречами в Google Calendar" },
   expenses: { label: "Расходы", emoji: "💰", description: "Учёт и аналитика расходов" },
   transcribe: { label: "Транскрибация", emoji: "🎙️", description: "Транскрибация голосовых сообщений" },
+  simplifier: { label: "Упрощатель", emoji: "🧹", description: "Очистка текста от мусора и повторений" },
   digest: { label: "Дайджест", emoji: "📰", description: "Дайджесты из Telegram-каналов" },
   gandalf: { label: "База знаний", emoji: "🧙", description: "Структурированная база знаний" },
   neuro: { label: "Нейро", emoji: "🧠", description: "AI-чат с контекстом" },
@@ -46,9 +47,12 @@ export const MODE_LABELS: Record<string, { label: string; emoji: string; descrip
   admin: { label: "Админка", emoji: "⚙️", description: "Управление пользователями и трайбами" },
 };
 
+/** Simplifier */
+export const MAX_SIMPLIFIER_INPUT_LENGTH = 15_000;
+
 /** Modes accessible without a tribe */
 export const INDIVIDUAL_MODES = [
-  "calendar", "transcribe", "gandalf", "neuro", "goals", "reminders",
+  "calendar", "transcribe", "simplifier", "gandalf", "neuro", "goals", "reminders",
 ] as const;
 
 /** Modes requiring tribe membership */

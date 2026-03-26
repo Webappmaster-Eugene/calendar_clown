@@ -157,12 +157,13 @@ export function NotableDatesPage() {
                 )}
               </div>
               <div className="list-item-actions">
-                <button className="btn btn-small" onClick={() => startEdit(d)}>Ред.</button>
+                <button className="btn btn-icon" onClick={() => startEdit(d)} title="Редактировать">✏️</button>
                 <button
-                  className="btn btn-danger btn-small"
+                  className="btn btn-icon btn-danger"
                   onClick={() => handleDelete(d.id, d.name)}
+                  title="Удалить"
                 >
-                  Уд.
+                  🗑️
                 </button>
               </div>
             </div>

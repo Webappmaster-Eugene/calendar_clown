@@ -553,6 +553,43 @@ export async function addExpense(
   };
 }
 
+/** Get a single expense by ID with category info. */
+export async function getExpenseById(expenseId: number): Promise<ExpenseWithCategory | null> {
+  const { rows } = await query<{
+    id: number;
+    user_id: number;
+    tribe_id: number;
+    category_id: number;
+    subcategory: string | null;
+    amount: string;
+    input_method: string;
+    created_at: Date;
+    category_name: string;
+    category_emoji: string;
+  }>(
+    `SELECT e.id, e.user_id, e.tribe_id, e.category_id, e.subcategory, e.amount,
+            e.input_method, e.created_at, c.name AS category_name, c.emoji AS category_emoji
+     FROM expenses e
+     JOIN categories c ON c.id = e.category_id
+     WHERE e.id = $1`,
+    [expenseId]
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    id: r.id,
+    userId: r.user_id,
+    tribeId: r.tribe_id,
+    categoryId: r.category_id,
+    subcategory: r.subcategory,
+    amount: parseFloat(r.amount),
+    inputMethod: r.input_method as "text" | "voice",
+    createdAt: r.created_at,
+    categoryName: r.category_name,
+    categoryEmoji: r.category_emoji,
+  };
+}
+
 /** Delete an expense by ID. Only deletes if owned by the given user. */
 export async function deleteExpense(expenseId: number, userId: number): Promise<boolean> {
   const { rowCount } = await query(

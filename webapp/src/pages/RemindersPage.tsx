@@ -225,12 +225,13 @@ export function RemindersPage() {
                     </div>
                   </div>
                   <div className="list-item-actions">
-                    <button className="btn btn-small" onClick={() => startEdit(r)}>Ред.</button>
+                    <button className="btn btn-icon" onClick={() => startEdit(r)} title="Редактировать">✏️</button>
                     <button
-                      className="btn btn-danger btn-small"
+                      className="btn btn-icon btn-danger"
                       onClick={() => handleDelete(r.id, r.text)}
+                      title="Удалить"
                     >
-                      Уд.
+                      🗑️
                     </button>
                   </div>
                 </div>

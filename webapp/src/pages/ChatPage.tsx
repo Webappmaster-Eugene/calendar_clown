@@ -84,10 +84,11 @@ export function ChatPage() {
               </div>
               <div className="list-item-actions">
                 <button
-                  className="btn btn-danger btn-small"
+                  className="btn btn-icon btn-danger"
                   onClick={() => handleDeleteDialog(d.id, d.title)}
+                  title="Удалить"
                 >
-                  Уд.
+                  🗑️
                 </button>
               </div>
             </div>

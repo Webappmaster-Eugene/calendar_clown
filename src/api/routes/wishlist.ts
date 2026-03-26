@@ -5,6 +5,7 @@ import {
   createNewWishlist,
   getWishlistItems,
   addWishlistItem,
+  editWishlistItem,
   reserveWishlistItem,
   unreserveWishlistItem,
   removeWishlistItem,
@@ -127,6 +128,44 @@ app.post("/:id/items", async (c) => {
     return c.json({ ok: true, data: item });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add item";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/wishlist/items/:itemId — edit item */
+app.put("/items/:itemId", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const itemId = parseInt(c.req.param("itemId"), 10);
+  const body = await c.req.json<{
+    title?: string;
+    description?: string | null;
+    link?: string | null;
+    priority?: number;
+  }>();
+
+  if (isNaN(itemId)) {
+    return c.json({ ok: false, error: "Invalid item ID" }, 400);
+  }
+
+  if (body.title !== undefined && !body.title.trim()) {
+    return c.json({ ok: false, error: "title cannot be empty" }, 400);
+  }
+
+  try {
+    const updates: { title?: string; description?: string | null; link?: string | null; priority?: number } = {};
+    if (body.title !== undefined) updates.title = body.title.trim();
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.link !== undefined) updates.link = body.link;
+    if (body.priority !== undefined) updates.priority = body.priority;
+
+    const item = await editWishlistItem(telegramId, itemId, updates);
+    if (!item) {
+      return c.json({ ok: false, error: "Item not found or access denied" }, 404);
+    }
+    return c.json({ ok: true, data: item });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to edit item";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

@@ -131,6 +131,21 @@ export async function createNewChannel(
 }
 
 /**
+ * Edit an existing channel.
+ */
+export async function editChannel(
+  telegramId: number,
+  channelId: number,
+  updates: { channelTitle?: string; channelUsername?: string | null; nicheDescription?: string | null }
+): Promise<BloggerChannelDto | null> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  const updated = await updateChannel(channelId, dbUser.id, updates);
+  if (!updated) return null;
+  return channelToDto(updated);
+}
+
+/**
  * Delete a channel.
  */
 export async function removeChannel(telegramId: number, channelId: number): Promise<boolean> {

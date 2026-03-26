@@ -7,6 +7,7 @@ import type {
   WishlistsListResponse,
   CreateWishlistRequest,
   CreateWishlistItemRequest,
+  UpdateWishlistItemRequest,
 } from "@shared/types";
 
 type WishlistTab = "own" | "tribe";
@@ -97,11 +98,12 @@ export function WishlistPage() {
               </button>
               {w.isOwn && (
                 <button
-                  className="btn btn-danger btn-small"
+                  className="btn btn-icon btn-danger"
                   onClick={() => deleteMutation.mutate(w.id)}
                   disabled={deleteMutation.isPending}
+                  title="Удалить"
                 >
-                  Уд.
+                  🗑️
                 </button>
               )}
             </div>
@@ -133,6 +135,7 @@ export function WishlistPage() {
 function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () => void }) {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
 
@@ -151,9 +154,16 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
       api.post<WishlistItemDto>(`/api/wishlist/${wishlistId}/items`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["wishlist", "items", wishlistId] });
-      setShowForm(false);
-      setTitle("");
-      setLink("");
+      resetForm();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ itemId, ...data }: UpdateWishlistItemRequest & { itemId: number }) =>
+      api.put<WishlistItemDto>(`/api/wishlist/items/${itemId}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["wishlist", "items", wishlistId] });
+      resetForm();
     },
   });
 
@@ -172,6 +182,42 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
       queryClient.invalidateQueries({ queryKey: ["wishlist", "items", wishlistId] });
     },
   });
+
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingItemId(null);
+    setTitle("");
+    setLink("");
+  };
+
+  const startEdit = (item: WishlistItemDto) => {
+    setEditingItemId(item.id);
+    setTitle(item.title);
+    setLink(item.link ?? "");
+    setShowForm(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    if (editingItemId) {
+      updateMutation.mutate({
+        itemId: editingItemId,
+        title: title.trim(),
+        link: link.trim() || null,
+      });
+    } else {
+      addMutation.mutate({
+        wishlistId,
+        title: title.trim(),
+        link: link.trim() || undefined,
+      });
+    }
+  };
+
+  const mutationPending = addMutation.isPending || updateMutation.isPending;
+  const mutationError = addMutation.error || updateMutation.error;
 
   return (
     <div className="page">
@@ -205,10 +251,18 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
                   </button>
                 )}
                 <button
-                  className="btn btn-danger btn-small"
-                  onClick={() => deleteMutation.mutate(item.id)}
+                  className="btn btn-icon"
+                  onClick={() => startEdit(item)}
+                  title="Редактировать"
                 >
-                  Уд.
+                  ✏️
+                </button>
+                <button
+                  className="btn btn-icon btn-danger"
+                  onClick={() => deleteMutation.mutate(item.id)}
+                  title="Удалить"
+                >
+                  🗑️
                 </button>
               </div>
             </div>
@@ -218,10 +272,7 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
 
       {showForm && (
         <div className="card" style={{ marginTop: 16 }}>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            if (title.trim()) addMutation.mutate({ wishlistId, title: title.trim(), link: link.trim() || undefined });
-          }}>
+          <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label">Название</label>
               <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название элемента" />
@@ -230,10 +281,12 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
               <label className="form-label">Ссылка (необязательно)</label>
               <input className="input" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." />
             </div>
-            {addMutation.error && <div className="error-msg">{(addMutation.error as Error).message}</div>}
+            {mutationError && <div className="error-msg">{(mutationError as Error).message}</div>}
             <div className="form-row">
-              <button type="button" className="btn" onClick={() => setShowForm(false)}>Отмена</button>
-              <button type="submit" className="btn btn-primary" disabled={addMutation.isPending || !title.trim()}>Добавить</button>
+              <button type="button" className="btn" onClick={resetForm}>Отмена</button>
+              <button type="submit" className="btn btn-primary" disabled={mutationPending || !title.trim()}>
+                {editingItemId ? "Сохранить" : "Добавить"}
+              </button>
             </div>
           </form>
         </div>

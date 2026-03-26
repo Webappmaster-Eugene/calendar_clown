@@ -20,6 +20,7 @@ import digestRoutes from "./routes/digest.js";
 import osintRoutes from "./routes/osint.js";
 import chatRoutes from "./routes/chat.js";
 import transcribeRoutes from "./routes/transcribe.js";
+import simplifierRoutes from "./routes/simplifier.js";
 import summarizerRoutes from "./routes/summarizer.js";
 import bloggerRoutes from "./routes/blogger.js";
 import broadcastRoutes from "./routes/broadcast.js";
@@ -61,6 +62,7 @@ export function createApiApp(): Hono<ApiEnv> {
   api.route("/osint", osintRoutes);
   api.route("/chat", chatRoutes);
   api.route("/transcribe", transcribeRoutes);
+  api.route("/simplifier", simplifierRoutes);
   api.route("/summarizer", summarizerRoutes);
   api.route("/blogger", bloggerRoutes);
   api.route("/broadcast", broadcastRoutes);

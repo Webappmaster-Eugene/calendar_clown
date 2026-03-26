@@ -4,9 +4,11 @@ import {
   generateExcel,
   getCategoryDtos,
   undoExpense,
+  editExpense,
   addExpenseFromText,
   getCategoryDrilldown,
 } from "../../services/expenseService.js";
+import type { UpdateExpenseRequest } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
@@ -69,6 +71,46 @@ app.delete("/:id", async (c) => {
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to undo expense";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/expenses/:id — edit expense */
+app.put("/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const expenseId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(expenseId)) {
+    return c.json({ ok: false, error: "Invalid expense ID" }, 400);
+  }
+
+  const body = await c.req.json<UpdateExpenseRequest>();
+
+  if (
+    body.amount === undefined &&
+    body.categoryId === undefined &&
+    body.subcategory === undefined
+  ) {
+    return c.json({ ok: false, error: "No fields to update" }, 400);
+  }
+
+  if (body.amount !== undefined && (typeof body.amount !== "number" || body.amount <= 0)) {
+    return c.json({ ok: false, error: "Invalid amount" }, 400);
+  }
+
+  if (body.categoryId !== undefined && (typeof body.categoryId !== "number" || body.categoryId <= 0)) {
+    return c.json({ ok: false, error: "Invalid categoryId" }, 400);
+  }
+
+  try {
+    const updated = await editExpense(telegramId, expenseId, body);
+    if (!updated) {
+      return c.json({ ok: false, error: "Expense not found or access denied" }, 404);
+    }
+    return c.json({ ok: true, data: updated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to edit expense";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

@@ -5,11 +5,13 @@ import type {
   DigestRubricDto,
   DigestChannelDto,
   CreateRubricRequest,
+  UpdateRubricRequest,
 } from "@shared/types";
 
 export function DigestPage() {
   const [selectedRubricId, setSelectedRubricId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingRubricId, setEditingRubricId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [keywords, setKeywords] = useState("");
   const queryClient = useQueryClient();
@@ -24,9 +26,16 @@ export function DigestPage() {
       api.post<DigestRubricDto>("/api/digest/rubrics", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["digest", "rubrics"] });
-      setShowForm(false);
-      setName("");
-      setKeywords("");
+      resetForm();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...data }: UpdateRubricRequest & { id: number }) =>
+      api.put<DigestRubricDto>(`/api/digest/rubrics/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["digest", "rubrics"] });
+      resetForm();
     },
   });
 
@@ -46,12 +55,41 @@ export function DigestPage() {
     },
   });
 
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingRubricId(null);
+    setName("");
+    setKeywords("");
+  };
+
+  const startEdit = (r: DigestRubricDto) => {
+    setEditingRubricId(r.id);
+    setName(r.name);
+    setKeywords(r.keywords.join(", "));
+    setShowForm(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const kws = keywords.split(",").map((k) => k.trim()).filter(Boolean);
+
+    if (editingRubricId) {
+      updateMutation.mutate({ id: editingRubricId, name: name.trim(), keywords: kws });
+    } else {
+      createMutation.mutate({ name: name.trim(), keywords: kws });
+    }
+  };
+
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedRubricId !== null) {
     return <RubricChannels rubricId={selectedRubricId} onBack={() => setSelectedRubricId(null)} />;
   }
+
+  const mutationPending = createMutation.isPending || updateMutation.isPending;
+  const mutationError = createMutation.error || updateMutation.error;
 
   return (
     <div className="page">
@@ -89,7 +127,7 @@ export function DigestPage() {
               </button>
               <div className="list-item-actions" style={{ display: "flex", gap: 4 }}>
                 <button
-                  className="btn btn-small"
+                  className="btn btn-icon"
                   onClick={(e) => { e.stopPropagation(); toggleRubricMutation.mutate(r.id); }}
                   disabled={toggleRubricMutation.isPending}
                   title={r.isActive ? "Поставить на паузу" : "Возобновить"}
@@ -97,12 +135,19 @@ export function DigestPage() {
                   {r.isActive ? "⏸" : "▶️"}
                 </button>
                 <button
-                  className="btn btn-danger btn-small"
+                  className="btn btn-icon"
+                  onClick={(e) => { e.stopPropagation(); startEdit(r); }}
+                  title="Редактировать"
+                >
+                  ✏️
+                </button>
+                <button
+                  className="btn btn-icon btn-danger"
                   onClick={(e) => { e.stopPropagation(); deleteRubricMutation.mutate(r.id); }}
                   disabled={deleteRubricMutation.isPending}
-                  title="Удалить рубрику"
+                  title="Удалить"
                 >
-                  Уд.
+                  🗑️
                 </button>
               </div>
             </div>
@@ -112,14 +157,7 @@ export function DigestPage() {
 
       {showForm && (
         <div className="card" style={{ marginTop: 16 }}>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            if (!name.trim()) return;
-            createMutation.mutate({
-              name: name.trim(),
-              keywords: keywords.split(",").map((k) => k.trim()).filter(Boolean),
-            });
-          }}>
+          <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label">Название рубрики</label>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Название" />
@@ -128,10 +166,12 @@ export function DigestPage() {
               <label className="form-label">Ключевые слова (через запятую)</label>
               <input className="input" value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="AI, tech, news" />
             </div>
-            {createMutation.error && <div className="error-msg">{(createMutation.error as Error).message}</div>}
+            {mutationError && <div className="error-msg">{(mutationError as Error).message}</div>}
             <div className="form-row">
-              <button type="button" className="btn" onClick={() => setShowForm(false)}>Отмена</button>
-              <button type="submit" className="btn btn-primary" disabled={createMutation.isPending || !name.trim()}>Создать</button>
+              <button type="button" className="btn" onClick={resetForm}>Отмена</button>
+              <button type="submit" className="btn btn-primary" disabled={mutationPending || !name.trim()}>
+                {editingRubricId ? "Сохранить" : "Создать"}
+              </button>
             </div>
           </form>
         </div>
@@ -190,7 +230,7 @@ function RubricChannels({ rubricId, onBack }: { rubricId: number; onBack: () => 
                 <div className="list-item-hint">{ch.channelTitle ?? "Неизвестно"}</div>
               </div>
               <div className="list-item-actions">
-                <button className="btn btn-danger btn-small" onClick={() => deleteMutation.mutate(ch.id)}>Уд.</button>
+                <button className="btn btn-icon btn-danger" onClick={() => deleteMutation.mutate(ch.id)} title="Удалить">🗑️</button>
               </div>
             </div>
           ))}

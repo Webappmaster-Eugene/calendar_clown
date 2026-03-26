@@ -7,6 +7,7 @@ import {
   getCategoriesByScope,
   getCategoryById,
   deleteCategory,
+  updateCategory,
   createEntry,
   getEntriesByCategory,
   getEntriesByScope,
@@ -234,6 +235,76 @@ export async function addEntry(
   });
 
   return entryToDto(entry);
+}
+
+/**
+ * Update an existing entry's fields.
+ */
+export async function editEntry(
+  telegramId: number,
+  entryId: number,
+  updates: {
+    title?: string;
+    price?: number | null;
+    nextDate?: string | null;
+    additionalInfo?: string | null;
+    isImportant?: boolean;
+    isUrgent?: boolean;
+    visibility?: "tribe" | "private";
+    categoryId?: number;
+  }
+): Promise<GandalfEntryDto | null> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  const scope = buildScope(dbUser);
+
+  const entry = await getEntryByIdScoped(entryId, scope);
+  if (!entry) return null;
+
+  const repoUpdates: Parameters<typeof updateEntry>[2] = {};
+  if (updates.title !== undefined) repoUpdates.title = updates.title;
+  if (updates.price !== undefined) repoUpdates.price = updates.price;
+  if (updates.nextDate !== undefined) {
+    repoUpdates.nextDate = updates.nextDate ? new Date(updates.nextDate) : null;
+  }
+  if (updates.additionalInfo !== undefined) repoUpdates.additionalInfo = updates.additionalInfo;
+  if (updates.isImportant !== undefined) repoUpdates.isImportant = updates.isImportant;
+  if (updates.isUrgent !== undefined) repoUpdates.isUrgent = updates.isUrgent;
+  if (updates.visibility !== undefined) repoUpdates.visibility = updates.visibility;
+  if (updates.categoryId !== undefined) repoUpdates.categoryId = updates.categoryId;
+
+  const updated = await updateEntry(entryId, dbUser.tribeId, repoUpdates);
+  if (!updated) return null;
+
+  return getEntry(telegramId, entryId);
+}
+
+/**
+ * Update a category's name/emoji.
+ */
+export async function editCategory(
+  telegramId: number,
+  categoryId: number,
+  updates: { name?: string; emoji?: string }
+): Promise<GandalfCategoryDto | null> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+
+  const cat = await getCategoryById(categoryId, dbUser.tribeId);
+  if (!cat) return null;
+
+  const updated = await updateCategory(categoryId, dbUser.tribeId, updates);
+  if (!updated) return null;
+
+  const result = await getCategoryById(categoryId, dbUser.tribeId);
+  if (!result) return null;
+
+  return {
+    id: result.id,
+    name: result.name,
+    emoji: result.emoji,
+    isActive: result.isActive,
+  };
 }
 
 /**

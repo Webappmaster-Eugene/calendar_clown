@@ -3,10 +3,12 @@ import {
   getCategories,
   addCategory,
   removeCategory,
+  editCategory,
   getEntriesForCategory,
   getAllEntries,
   addEntry,
   removeEntry,
+  editEntry,
   getStats,
 } from "../../services/gandalfService.js";
 import type { ApiEnv } from "../authMiddleware.js";
@@ -42,6 +44,38 @@ app.post("/categories", async (c) => {
     return c.json({ ok: true, data: category });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create category";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/gandalf/categories/:id — update category */
+app.put("/categories/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const categoryId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(categoryId)) {
+    return c.json({ ok: false, error: "Invalid category ID" }, 400);
+  }
+
+  const body = await c.req.json<{ name?: string; emoji?: string }>();
+
+  if (!body.name?.trim() && !body.emoji?.trim()) {
+    return c.json({ ok: false, error: "At least one field (name or emoji) is required" }, 400);
+  }
+
+  try {
+    const updates: { name?: string; emoji?: string } = {};
+    if (body.name?.trim()) updates.name = body.name.trim();
+    if (body.emoji?.trim()) updates.emoji = body.emoji.trim();
+
+    const result = await editCategory(telegramId, categoryId, updates);
+    if (!result) {
+      return c.json({ ok: false, error: "Category not found" }, 404);
+    }
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update category";
     return c.json({ ok: false, error: msg }, 500);
   }
 });
@@ -140,6 +174,39 @@ app.post("/entries", async (c) => {
     return c.json({ ok: true, data: entry });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create entry";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/gandalf/entries/:id — update entry */
+app.put("/entries/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const entryId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(entryId)) {
+    return c.json({ ok: false, error: "Invalid entry ID" }, 400);
+  }
+
+  const body = await c.req.json<{
+    title?: string;
+    price?: number | null;
+    nextDate?: string | null;
+    additionalInfo?: string | null;
+    isImportant?: boolean;
+    isUrgent?: boolean;
+    visibility?: "tribe" | "private";
+    categoryId?: number;
+  }>();
+
+  try {
+    const result = await editEntry(telegramId, entryId, body);
+    if (!result) {
+      return c.json({ ok: false, error: "Entry not found" }, 404);
+    }
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update entry";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

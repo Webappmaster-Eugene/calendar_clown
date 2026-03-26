@@ -35,6 +35,7 @@ export type UserMode =
   | "calendar"
   | "expenses"
   | "transcribe"
+  | "simplifier"
   | "digest"
   | "broadcast"
   | "notable_dates"
@@ -171,6 +172,12 @@ export interface AddExpenseRequest {
   subcategory?: string;
 }
 
+export interface UpdateExpenseRequest {
+  amount?: number;
+  categoryId?: number;
+  subcategory?: string | null;
+}
+
 // ─── Gandalf (Knowledge Base) ─────────────────────────────────
 
 export interface GandalfCategoryDto {
@@ -217,6 +224,22 @@ export interface CreateGandalfEntryRequest {
   visibility?: "tribe" | "private";
 }
 
+export interface UpdateGandalfEntryRequest {
+  title?: string;
+  price?: number | null;
+  nextDate?: string | null;
+  additionalInfo?: string | null;
+  isImportant?: boolean;
+  isUrgent?: boolean;
+  visibility?: "tribe" | "private";
+  categoryId?: number;
+}
+
+export interface UpdateGandalfCategoryRequest {
+  name?: string;
+  emoji?: string;
+}
+
 // ─── Goals ────────────────────────────────────────────────────
 
 export type GoalPeriod = "current" | "month" | "year" | "5years";
@@ -253,6 +276,10 @@ export interface CreateGoalSetRequest {
 
 export interface CreateGoalRequest {
   goalSetId: number;
+  text: string;
+}
+
+export interface UpdateGoalRequest {
   text: string;
 }
 
@@ -326,6 +353,13 @@ export interface CreateWishlistItemRequest {
   title: string;
   description?: string;
   link?: string;
+  priority?: number;
+}
+
+export interface UpdateWishlistItemRequest {
+  title?: string;
+  description?: string | null;
+  link?: string | null;
   priority?: number;
 }
 
@@ -406,6 +440,13 @@ export interface CreateRubricRequest {
   description?: string;
   emoji?: string;
   keywords: string[];
+}
+
+export interface UpdateRubricRequest {
+  name?: string;
+  description?: string | null;
+  emoji?: string | null;
+  keywords?: string[];
 }
 
 // ─── OSINT ────────────────────────────────────────────────────
@@ -510,6 +551,15 @@ export interface AddAchievementRequest {
   text: string;
 }
 
+export interface UpdateWorkplaceRequest {
+  title?: string;
+  company?: string | null;
+}
+
+export interface UpdateAchievementRequest {
+  text: string;
+}
+
 export interface SummaryDto {
   workplaceId: number;
   summary: string;
@@ -551,6 +601,12 @@ export interface CreateBloggerChannelRequest {
   channelTitle: string;
   channelUsername?: string;
   nicheDescription?: string;
+}
+
+export interface UpdateBloggerChannelRequest {
+  channelTitle?: string;
+  channelUsername?: string | null;
+  nicheDescription?: string | null;
 }
 
 export interface CreateBloggerPostRequest {
@@ -620,5 +676,26 @@ export interface OsintSearchHistoryResponse {
 /** Response from GET /api/transcribe — paginated transcription history */
 export interface TranscribeHistoryResponse {
   transcriptions: TranscriptionDto[];
+  total: number;
+}
+
+// ─── Simplifier ──────────────────────────────────────────────
+
+export type SimplificationInputType = "text" | "voice" | "mixed";
+export type SimplificationStatus = "pending" | "processing" | "completed" | "failed";
+
+export interface SimplificationDto {
+  id: number;
+  inputType: SimplificationInputType;
+  originalText: string;
+  simplifiedText: string | null;
+  status: SimplificationStatus;
+  errorMessage: string | null;
+  createdAt: string;
+  simplifiedAt: string | null;
+}
+
+export interface SimplifierHistoryResponse {
+  simplifications: SimplificationDto[];
   total: number;
 }

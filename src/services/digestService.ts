@@ -132,6 +132,41 @@ export async function createNewRubric(
 }
 
 /**
+ * Edit a rubric (partial update).
+ */
+export async function editRubric(
+  telegramId: number,
+  rubricId: number,
+  updates: { name?: string; description?: string | null; emoji?: string | null; keywords?: string[] }
+): Promise<DigestRubricDto | null> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+
+  // Verify ownership
+  const existing = await getRubricByIdAndUser(rubricId, dbUser.id);
+  if (!existing) return null;
+
+  const updated = await updateRubric(rubricId, updates);
+  if (!updated) return null;
+
+  // Re-fetch to return the full updated DTO
+  const rubric = await getRubricByIdAndUser(rubricId, dbUser.id);
+  if (!rubric) return null;
+
+  const channelCount = await countChannelsByRubric(rubric.id);
+  return {
+    id: rubric.id,
+    name: rubric.name,
+    description: rubric.description,
+    emoji: rubric.emoji,
+    keywords: rubric.keywords,
+    isActive: rubric.isActive,
+    channelCount,
+    lastRunAt: null,
+  };
+}
+
+/**
  * Delete a rubric.
  */
 export async function removeRubric(telegramId: number, rubricId: number): Promise<boolean> {

@@ -251,15 +251,16 @@ function UsersTab() {
               )}
 
               <button
-                className="btn btn-danger btn-small"
+                className="btn btn-icon btn-danger"
                 onClick={() => {
                   if (confirm(`Удалить пользователя ${u.firstName}?`)) {
                     removeUserMutation.mutate(u.id);
                   }
                 }}
                 disabled={removeUserMutation.isPending}
+                title="Удалить"
               >
-                Удалить
+                🗑️
               </button>
             </div>
           </div>
@@ -401,25 +402,27 @@ function TribesTab() {
               </div>
               <div className="list-item-actions">
                 <button
-                  className="btn btn-small"
+                  className="btn btn-icon"
                   onClick={() => {
                     setEditingTribeId(t.id);
                     setEditName(t.name);
                     setEditLimit(String(t.monthlyLimit));
                   }}
+                  title="Редактировать"
                 >
-                  Ред.
+                  ✏️
                 </button>
                 <button
-                  className="btn btn-danger btn-small"
+                  className="btn btn-icon btn-danger"
                   onClick={() => {
                     if (confirm(`Удалить трайб "${t.name}"?`)) {
                       deleteMutation.mutate(t.id);
                     }
                   }}
                   disabled={deleteMutation.isPending}
+                  title="Удалить"
                 >
-                  Уд.
+                  🗑️
                 </button>
               </div>
 
@@ -595,11 +598,12 @@ function DataTab() {
                 </div>
                 <div className="list-item-actions">
                   <button
-                    className="btn btn-danger btn-small"
+                    className="btn btn-icon btn-danger"
                     onClick={() => deleteMutation.mutate({ entity: selectedEntity, id: item.id })}
                     disabled={deleteMutation.isPending}
+                    title="Удалить"
                   >
-                    Уд.
+                    🗑️
                   </button>
                 </div>
               </div>

@@ -177,6 +177,29 @@ export const voiceTranscriptions = pgTable(
   ],
 );
 
+// ─── Thought Simplifications ─────────────────────────────────────────────────
+
+export const thoughtSimplifications = pgTable(
+  "thought_simplifications",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    inputType: varchar("input_type", { length: 10 }).notNull().default("text"),
+    originalText: text("original_text").notNull(),
+    simplifiedText: text("simplified_text"),
+    modelUsed: varchar("model_used", { length: 100 }),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    simplifiedAt: timestamp("simplified_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_thought_simplifications_user_created").on(table.userId, table.createdAt),
+  ],
+);
+
 // ─── Digest Rubrics ──────────────────────────────────────────────────────────
 
 export const digestRubrics = pgTable(

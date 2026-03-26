@@ -12,6 +12,7 @@ import {
   createGoal,
   getGoalsBySet,
   toggleGoalCompleted,
+  updateGoalText,
   deleteGoal,
   getGoalSetProgress,
   addViewer,
@@ -194,6 +195,16 @@ export async function toggleGoal(telegramId: number, goalId: number): Promise<Go
   requireDb();
   // Note: toggleGoalCompleted doesn't do ownership check, but the API layer verifies telegramId
   const goal = await toggleGoalCompleted(goalId);
+  if (!goal) return null;
+  return goalToDto(goal);
+}
+
+/**
+ * Edit a goal's text.
+ */
+export async function editGoalText(telegramId: number, goalId: number, text: string): Promise<GoalDto | null> {
+  requireDb();
+  const goal = await updateGoalText(goalId, text);
   if (!goal) return null;
   return goalToDto(goal);
 }

@@ -7,6 +7,7 @@ import type {
   GandalfCategoryDto,
   GandalfEntryDto,
   CreateGandalfEntryRequest,
+  UpdateGandalfEntryRequest,
 } from "@shared/types";
 
 type GandalfTab = "categories" | "all" | "stats";
@@ -21,6 +22,7 @@ export function GandalfPage() {
   const [tab, setTab] = useState<GandalfTab>("categories");
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [showCatForm, setShowCatForm] = useState(false);
+  const [editingCatId, setEditingCatId] = useState<number | null>(null);
   const [catName, setCatName] = useState("");
   const [catEmoji, setCatEmoji] = useState("");
   const queryClient = useQueryClient();
@@ -35,9 +37,16 @@ export function GandalfPage() {
       api.post<GandalfCategoryDto>("/api/gandalf/categories", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["gandalf"] });
-      setShowCatForm(false);
-      setCatName("");
-      setCatEmoji("");
+      resetCatForm();
+    },
+  });
+
+  const updateCatMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name?: string; emoji?: string }) =>
+      api.put<GandalfCategoryDto>(`/api/gandalf/categories/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gandalf"] });
+      resetCatForm();
     },
   });
 
@@ -47,6 +56,30 @@ export function GandalfPage() {
       queryClient.invalidateQueries({ queryKey: ["gandalf"] });
     },
   });
+
+  const resetCatForm = () => {
+    setShowCatForm(false);
+    setEditingCatId(null);
+    setCatName("");
+    setCatEmoji("");
+  };
+
+  const startEditCat = (cat: GandalfCategoryDto) => {
+    setEditingCatId(cat.id);
+    setCatName(cat.name);
+    setCatEmoji(cat.emoji ?? "");
+    setShowCatForm(true);
+  };
+
+  const handleCatSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!catName.trim()) return;
+    if (editingCatId) {
+      updateCatMutation.mutate({ id: editingCatId, name: catName.trim(), emoji: catEmoji.trim() || undefined });
+    } else {
+      createCatMutation.mutate({ name: catName.trim(), emoji: catEmoji.trim() || undefined });
+    }
+  };
 
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
@@ -59,6 +92,9 @@ export function GandalfPage() {
       />
     );
   }
+
+  const catMutationPending = createCatMutation.isPending || updateCatMutation.isPending;
+  const catMutationError = createCatMutation.error || updateCatMutation.error;
 
   return (
     <div className="page">
@@ -104,17 +140,27 @@ export function GandalfPage() {
                       </div>
                     </div>
                   </button>
-                  <button
-                    className="btn btn-danger btn-small"
-                    onClick={() => {
-                      if (confirm(`Удалить категорию "${cat.name}"?`)) {
-                        deleteCatMutation.mutate(cat.id);
-                      }
-                    }}
-                    disabled={deleteCatMutation.isPending}
-                  >
-                    Уд.
-                  </button>
+                  <div className="list-item-actions">
+                    <button
+                      className="btn btn-icon"
+                      onClick={() => startEditCat(cat)}
+                      title="Редактировать"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className="btn btn-icon btn-danger"
+                      onClick={() => {
+                        if (confirm(`Удалить категорию "${cat.name}"?`)) {
+                          deleteCatMutation.mutate(cat.id);
+                        }
+                      }}
+                      disabled={deleteCatMutation.isPending}
+                      title="Удалить"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -122,10 +168,7 @@ export function GandalfPage() {
 
           {showCatForm && (
             <div className="card" style={{ marginTop: 16 }}>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                if (catName.trim()) createCatMutation.mutate({ name: catName.trim(), emoji: catEmoji.trim() || undefined });
-              }}>
+              <form onSubmit={handleCatSubmit}>
                 <div className="form-group">
                   <label className="form-label">Название категории</label>
                   <input className="input" value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="Название" />
@@ -134,10 +177,12 @@ export function GandalfPage() {
                   <label className="form-label">Эмодзи (необязательно)</label>
                   <input className="input" value={catEmoji} onChange={(e) => setCatEmoji(e.target.value)} placeholder="📁" style={{ width: 80 }} />
                 </div>
-                {createCatMutation.error && <div className="error-msg">{(createCatMutation.error as Error).message}</div>}
+                {catMutationError && <div className="error-msg">{(catMutationError as Error).message}</div>}
                 <div className="form-row">
-                  <button type="button" className="btn" onClick={() => setShowCatForm(false)}>Отмена</button>
-                  <button type="submit" className="btn btn-primary" disabled={createCatMutation.isPending || !catName.trim()}>Создать</button>
+                  <button type="button" className="btn" onClick={resetCatForm}>Отмена</button>
+                  <button type="submit" className="btn btn-primary" disabled={catMutationPending || !catName.trim()}>
+                    {editingCatId ? "Сохранить" : "Создать"}
+                  </button>
                 </div>
               </form>
             </div>
@@ -309,6 +354,7 @@ function GandalfEntries({
   const queryClient = useQueryClient();
   const { webApp } = useTelegram();
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [info, setInfo] = useState("");
@@ -335,14 +381,16 @@ function GandalfEntries({
       api.post<GandalfEntryDto>("/api/gandalf/entries", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["gandalf"] });
-      setShowForm(false);
-      setTitle("");
-      setPrice("");
-      setInfo("");
-      setNextDate("");
-      setIsImportant(false);
-      setIsUrgent(false);
-      setVisibility("tribe");
+      resetForm();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...data }: UpdateGandalfEntryRequest & { id: number }) =>
+      api.put<GandalfEntryDto>(`/api/gandalf/entries/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gandalf"] });
+      resetForm();
     },
   });
 
@@ -352,6 +400,30 @@ function GandalfEntries({
       queryClient.invalidateQueries({ queryKey: ["gandalf"] });
     },
   });
+
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setTitle("");
+    setPrice("");
+    setInfo("");
+    setNextDate("");
+    setIsImportant(false);
+    setIsUrgent(false);
+    setVisibility("tribe");
+  };
+
+  const startEdit = (entry: GandalfEntryDto) => {
+    setEditingId(entry.id);
+    setTitle(entry.title);
+    setPrice(entry.price != null ? String(entry.price) : "");
+    setInfo(entry.additionalInfo ?? "");
+    setNextDate(entry.nextDate ? entry.nextDate.slice(0, 10) : "");
+    setIsImportant(entry.isImportant);
+    setIsUrgent(entry.isUrgent);
+    setVisibility(entry.visibility ?? "tribe");
+    setShowForm(true);
+  };
 
   const handleDelete = (entryId: number, entryTitle: string) => {
     if (webApp) {
@@ -366,18 +438,34 @@ function GandalfEntries({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    const req: CreateGandalfEntryRequest = {
-      categoryId,
-      title: title.trim(),
-    };
-    if (price.trim()) req.price = parseFloat(price);
-    if (info.trim()) req.additionalInfo = info.trim();
-    if (nextDate) req.nextDate = nextDate;
-    if (isImportant) req.isImportant = true;
-    if (isUrgent) req.isUrgent = true;
-    if (visibility !== "tribe") req.visibility = visibility;
-    addMutation.mutate(req);
+
+    if (editingId) {
+      const updates: UpdateGandalfEntryRequest & { id: number } = { id: editingId };
+      updates.title = title.trim();
+      updates.price = price.trim() ? parseFloat(price) : null;
+      updates.additionalInfo = info.trim() || null;
+      updates.nextDate = nextDate || null;
+      updates.isImportant = isImportant;
+      updates.isUrgent = isUrgent;
+      updates.visibility = visibility;
+      updateMutation.mutate(updates);
+    } else {
+      const req: CreateGandalfEntryRequest = {
+        categoryId,
+        title: title.trim(),
+      };
+      if (price.trim()) req.price = parseFloat(price);
+      if (info.trim()) req.additionalInfo = info.trim();
+      if (nextDate) req.nextDate = nextDate;
+      if (isImportant) req.isImportant = true;
+      if (isUrgent) req.isUrgent = true;
+      if (visibility !== "tribe") req.visibility = visibility;
+      addMutation.mutate(req);
+    }
   };
+
+  const mutationPending = addMutation.isPending || updateMutation.isPending;
+  const mutationError = addMutation.error || updateMutation.error;
 
   return (
     <div className="page">
@@ -413,10 +501,18 @@ function GandalfEntries({
                 </div>
                 <div className="list-item-actions">
                   <button
-                    className="btn btn-danger btn-small"
-                    onClick={() => handleDelete(entry.id, entry.title)}
+                    className="btn btn-icon"
+                    onClick={() => startEdit(entry)}
+                    title="Редактировать"
                   >
-                    Уд.
+                    ✏️
+                  </button>
+                  <button
+                    className="btn btn-icon btn-danger"
+                    onClick={() => handleDelete(entry.id, entry.title)}
+                    title="Удалить"
+                  >
+                    🗑️
                   </button>
                 </div>
               </div>
@@ -500,13 +596,13 @@ function GandalfEntries({
                 <option value="private">Личное</option>
               </select>
             </div>
-            {addMutation.error && (
-              <div className="error-msg">{(addMutation.error as Error).message}</div>
+            {mutationError && (
+              <div className="error-msg">{(mutationError as Error).message}</div>
             )}
             <div className="form-row">
-              <button type="button" className="btn" onClick={() => setShowForm(false)}>Отмена</button>
-              <button type="submit" className="btn btn-primary" disabled={addMutation.isPending || !title.trim()}>
-                {addMutation.isPending ? "Добавление..." : "Добавить"}
+              <button type="button" className="btn" onClick={resetForm}>Отмена</button>
+              <button type="submit" className="btn btn-primary" disabled={mutationPending || !title.trim()}>
+                {mutationPending ? "Сохранение..." : editingId ? "Сохранить" : "Добавить"}
               </button>
             </div>
           </form>

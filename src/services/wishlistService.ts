@@ -12,6 +12,7 @@ import {
   createItem,
   getItemsByWishlist,
   getItemById,
+  updateItem,
   deleteItem,
   countItemsByWishlist,
   reserveItem,
@@ -197,6 +198,40 @@ export async function addWishlistItem(
   });
 
   return itemToDto(item, dbUser.id);
+}
+
+/**
+ * Edit an existing wishlist item.
+ * Verifies the item exists and belongs to a wishlist owned by the user.
+ */
+export async function editWishlistItem(
+  telegramId: number,
+  itemId: number,
+  updates: { title?: string; description?: string | null; link?: string | null; priority?: number }
+): Promise<WishlistItemDto | null> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+
+  const item = await getItemById(itemId);
+  if (!item) return null;
+
+  if (!dbUser.tribeId) throw new Error("Нет трайба.");
+
+  const wishlist = await getWishlistById(item.wishlistId, dbUser.tribeId);
+  if (!wishlist || wishlist.userId !== dbUser.id) return null;
+
+  const updated = await updateItem(itemId, updates);
+  if (!updated) return null;
+
+  const updatedItem = await getItemById(itemId);
+  if (!updatedItem) return null;
+
+  const files = await getFilesByItem(itemId);
+  return itemToDto(updatedItem, dbUser.id, files.map((f) => ({
+    id: f.id,
+    fileType: f.fileType,
+    fileName: f.fileName,
+  })));
 }
 
 /**
