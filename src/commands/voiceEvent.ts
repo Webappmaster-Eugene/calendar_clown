@@ -8,8 +8,9 @@ import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isNeuroMode, isSimplifierMode } from "../middleware/userMode.js";
+import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isNeuroMode, isSimplifierMode, isTasksMode } from "../middleware/userMode.js";
 import { handleGoalsVoice } from "./goalsMode.js";
+import { handleTasksVoice } from "./tasksMode.js";
 import { handleRemindersVoice } from "./remindersMode.js";
 import { handleSummarizerVoice } from "./summarizerMode.js";
 import { handleBloggerVoice } from "./bloggerMode.js";
@@ -148,6 +149,12 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
     // Goals mode — add goal from voice
     if (telegramId != null && await isGoalsMode(telegramId)) {
       await handleGoalsVoice(ctx, transcript, statusMsg.message_id);
+      return;
+    }
+
+    // Tasks mode — add task from voice
+    if (telegramId != null && await isTasksMode(telegramId)) {
+      await handleTasksVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 

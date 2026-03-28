@@ -459,3 +459,60 @@ import { bulkDeleteWorkplaces } from "../summarizer/repository.js";
 import { bulkDeleteChannels } from "../blogger/repository.js";
 import { bulkDeleteRubrics } from "../digest/repository.js";
 import { bulkDeleteEntries } from "../gandalf/repository.js";
+
+// ─── Edit support ────────────────────────────────────────────
+
+import { updateExpense } from "../expenses/repository.js";
+import { updateEntryFields } from "../gandalf/repository.js";
+import { updateRubric } from "../digest/repository.js";
+import type { EntityEditField } from "../shared/types.js";
+
+export const ENTITY_EDIT_FIELDS: Partial<Record<EntityType, EntityEditField[]>> = {
+  expenses: [{ key: "amount", label: "Сумма", type: "number" }],
+  gandalf: [
+    { key: "title", label: "Название", type: "text" },
+    { key: "price", label: "Цена", type: "number" },
+  ],
+  digest: [{ key: "name", label: "Название рубрики", type: "text" }],
+};
+
+export async function editEntity(
+  telegramId: number,
+  entity: EntityType,
+  entityId: number,
+  fields: Record<string, unknown>,
+): Promise<boolean> {
+  requireAdmin(telegramId);
+  requireDb();
+
+  if (!(entity in ENTITY_EDIT_FIELDS)) {
+    throw new Error(`Edit not supported for entity: ${entity}`);
+  }
+
+  switch (entity) {
+    case "expenses": {
+      const amount = typeof fields.amount === "number" ? fields.amount : undefined;
+      if (amount === undefined || amount <= 0) {
+        throw new Error("Valid positive amount is required");
+      }
+      return updateExpense(entityId, { amount });
+    }
+    case "gandalf": {
+      const title = typeof fields.title === "string" && fields.title.trim() ? fields.title.trim() : undefined;
+      const price = fields.price === null ? null : (typeof fields.price === "number" ? fields.price : undefined);
+      if (title === undefined && price === undefined) {
+        throw new Error("At least title or price is required");
+      }
+      return updateEntryFields(entityId, { title, price });
+    }
+    case "digest": {
+      const name = typeof fields.name === "string" && fields.name.trim() ? fields.name.trim() : undefined;
+      if (!name) {
+        throw new Error("Non-empty name is required");
+      }
+      return updateRubric(entityId, { name });
+    }
+    default:
+      throw new Error(`Edit not supported for entity: ${entity}`);
+  }
+}

@@ -1,9 +1,16 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { AdminUserDto, TribeDto, AdminStatsDto } from "@shared/types";
+import type {
+  AdminUserDto,
+  TribeDto,
+  AdminStatsDto,
+  UsageSummaryDto,
+  SummaryPeriod,
+  EntityMetaDto,
+} from "@shared/types";
 
-type AdminTab = "stats" | "users" | "pending" | "tribes" | "data";
+type AdminTab = "stats" | "summary" | "users" | "pending" | "tribes" | "data";
 
 export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("stats");
@@ -13,9 +20,10 @@ export function AdminPage() {
       <h1 className="page-title">Админ-панель</h1>
 
       <div className="tabs">
-        {(["stats", "users", "pending", "tribes", "data"] as const).map((t) => {
+        {(["stats", "summary", "users", "pending", "tribes", "data"] as const).map((t) => {
           const labels: Record<AdminTab, string> = {
             stats: "Статистика",
+            summary: "Саммари",
             users: "Пользователи",
             pending: "Заявки",
             tribes: "Трайбы",
@@ -34,6 +42,7 @@ export function AdminPage() {
       </div>
 
       {tab === "stats" && <StatsTab />}
+      {tab === "summary" && <SummaryTab />}
       {tab === "users" && <UsersTab />}
       {tab === "pending" && <PendingTab />}
       {tab === "tribes" && <TribesTab />}
@@ -101,6 +110,273 @@ function StatsTab() {
     </>
   );
 }
+
+// ─── Summary Tab ──────────────────────────────────────────────
+
+const PERIODS: { key: SummaryPeriod; label: string }[] = [
+  { key: "today", label: "Сегодня" },
+  { key: "yesterday", label: "Вчера" },
+  { key: "week", label: "Неделя" },
+  { key: "month", label: "Месяц" },
+  { key: "year", label: "Год" },
+];
+
+function fmtNum(n: number): string {
+  return n.toLocaleString("ru-RU");
+}
+
+function SummaryTab() {
+  const [period, setPeriod] = useState<SummaryPeriod>("today");
+  const [aiText, setAiText] = useState<string | null>(null);
+
+  const { data: summary, isLoading, error } = useQuery({
+    queryKey: ["admin", "summary", period],
+    queryFn: () => api.get<UsageSummaryDto>(`/api/admin/summary?period=${period}`),
+  });
+
+  const aiMutation = useMutation({
+    mutationFn: (p: SummaryPeriod) =>
+      api.post<{ text: string }>("/api/admin/summary/ai", { period: p }),
+    onSuccess: (data) => {
+      setAiText(data.text);
+    },
+  });
+
+  const handlePeriodChange = (p: SummaryPeriod) => {
+    setPeriod(p);
+    setAiText(null);
+  };
+
+  const isEmpty = summary && (
+    summary.expenses.count === 0 &&
+    summary.calendarEvents.created === 0 &&
+    summary.calendarEvents.deleted === 0 &&
+    summary.transcriptions.total === 0 &&
+    summary.actionLogs.length === 0 &&
+    summary.gandalfEntries.count === 0 &&
+    summary.chatMessages.count === 0 &&
+    summary.digestRuns.count === 0 &&
+    summary.wishlistItems.count === 0 &&
+    summary.goals.created === 0 &&
+    summary.notableDates.count === 0
+  );
+
+  return (
+    <>
+      <div className="period-selector">
+        {PERIODS.map((p) => (
+          <button
+            key={p.key}
+            className={`btn btn-small ${period === p.key ? "btn-primary" : ""}`}
+            onClick={() => handlePeriodChange(p.key)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {isLoading && <div className="loading">Загрузка...</div>}
+      {error && <div className="error-msg">{(error as Error).message}</div>}
+
+      {isEmpty && (
+        <div className="empty-state">
+          <div className="empty-state-text">За этот период активности не обнаружено</div>
+        </div>
+      )}
+
+      {summary && !isEmpty && (
+        <>
+          {/* AI Summary */}
+          <div style={{ marginBottom: 16 }}>
+            {aiText ? (
+              <div className="card">
+                <div className="summary-section-title">AI Саммари</div>
+                <div className="summary-ai-text">{aiText}</div>
+              </div>
+            ) : (
+              <button
+                className="btn btn-primary btn-block"
+                onClick={() => aiMutation.mutate(period)}
+                disabled={aiMutation.isPending}
+              >
+                {aiMutation.isPending ? "Генерация..." : "Сгенерировать AI саммари"}
+              </button>
+            )}
+            {aiMutation.error && (
+              <div className="error-msg" style={{ marginTop: 8 }}>
+                {(aiMutation.error as Error).message}
+              </div>
+            )}
+          </div>
+
+          {/* Expenses */}
+          {summary.expenses.count > 0 && (
+            <div className="card summary-section">
+              <div className="summary-section-title">Расходы</div>
+              <div className="summary-row">
+                <span className="summary-row-label">Всего записей</span>
+                <span className="summary-row-value">{fmtNum(summary.expenses.count)}</span>
+              </div>
+              <div className="summary-row">
+                <span className="summary-row-label">Общая сумма</span>
+                <span className="summary-row-value">{fmtNum(summary.expenses.totalAmount)} ₽</span>
+              </div>
+              <div className="summary-row">
+                <span className="summary-row-label">Текст / Голос</span>
+                <span className="summary-row-value">{summary.expenses.textCount} / {summary.expenses.voiceCount}</span>
+              </div>
+
+              {summary.expenses.categories.length > 0 && (
+                <>
+                  <div className="summary-subsection-title">Топ категории</div>
+                  {summary.expenses.categories.map((cat) => {
+                    const pct = summary.expenses.totalAmount > 0
+                      ? Math.round((cat.amount / summary.expenses.totalAmount) * 100)
+                      : 0;
+                    return (
+                      <div key={cat.name} className="summary-bar-row">
+                        <div className="summary-bar-label">
+                          {cat.emoji} {cat.name}
+                          <span className="summary-bar-amount">{fmtNum(cat.amount)} ₽</span>
+                        </div>
+                        <div className="summary-bar">
+                          <div className="summary-bar-fill" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+
+              {summary.expenses.perUser.length > 0 && (
+                <>
+                  <div className="summary-subsection-title">По пользователям</div>
+                  {summary.expenses.perUser.map((u) => (
+                    <div key={u.firstName} className="summary-row">
+                      <span className="summary-row-label">{u.firstName}</span>
+                      <span className="summary-row-value">{fmtNum(u.amount)} ₽ ({u.count})</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Calendar */}
+          {(summary.calendarEvents.created > 0 || summary.calendarEvents.deleted > 0) && (
+            <div className="card summary-section">
+              <div className="summary-section-title">Календарь</div>
+              <div className="summary-row">
+                <span className="summary-row-label">Создано / Удалено</span>
+                <span className="summary-row-value">{summary.calendarEvents.created} / {summary.calendarEvents.deleted}</span>
+              </div>
+              <div className="summary-row">
+                <span className="summary-row-label">Текст / Голос</span>
+                <span className="summary-row-value">{summary.calendarEvents.textCount} / {summary.calendarEvents.voiceCount}</span>
+              </div>
+              {summary.calendarEvents.perUser.length > 0 && (
+                <>
+                  <div className="summary-subsection-title">По пользователям</div>
+                  {summary.calendarEvents.perUser.map((u) => (
+                    <div key={u.firstName} className="summary-row">
+                      <span className="summary-row-label">{u.firstName}</span>
+                      <span className="summary-row-value">+{u.created} / -{u.deleted}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Transcriptions */}
+          {summary.transcriptions.total > 0 && (
+            <div className="card summary-section">
+              <div className="summary-section-title">Транскрибация</div>
+              <div className="summary-row">
+                <span className="summary-row-label">Всего</span>
+                <span className="summary-row-value">{summary.transcriptions.total}</span>
+              </div>
+              {summary.transcriptions.errors > 0 && (
+                <div className="summary-row">
+                  <span className="summary-row-label">Ошибок</span>
+                  <span className="summary-row-value" style={{ color: "var(--tg-theme-destructive-text-color, #e53935)" }}>
+                    {summary.transcriptions.errors}
+                  </span>
+                </div>
+              )}
+              {summary.transcriptions.perUser.length > 0 && (
+                <>
+                  <div className="summary-subsection-title">По пользователям</div>
+                  {summary.transcriptions.perUser.map((u) => (
+                    <div key={u.firstName} className="summary-row">
+                      <span className="summary-row-label">{u.firstName}</span>
+                      <span className="summary-row-value">{u.count}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Other modules — compact */}
+          <SummaryCompactModules summary={summary} />
+
+          {/* Action logs */}
+          {summary.actionLogs.length > 0 && (
+            <div className="card summary-section">
+              <div className="summary-section-title">Топ действий</div>
+              {summary.actionLogs.slice(0, 10).map((a) => (
+                <div key={a.action} className="summary-row">
+                  <span className="summary-row-label" style={{ fontSize: 13 }}>{a.action}</span>
+                  <span className="summary-row-value">{a.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function SummaryCompactModules({ summary }: { summary: UsageSummaryDto }) {
+  const modules: Array<{ label: string; emoji: string; value: string }> = [];
+
+  if (summary.gandalfEntries.count > 0) {
+    modules.push({ label: "База знаний", emoji: "📚", value: String(summary.gandalfEntries.count) });
+  }
+  if (summary.chatMessages.count > 0) {
+    modules.push({ label: "Нейро-чат", emoji: "💬", value: String(summary.chatMessages.count) });
+  }
+  if (summary.digestRuns.count > 0) {
+    modules.push({ label: "Дайджест", emoji: "📰", value: `${summary.digestRuns.count} (${summary.digestRuns.postsFound} постов)` });
+  }
+  if (summary.wishlistItems.count > 0) {
+    modules.push({ label: "Вишлист", emoji: "🎁", value: String(summary.wishlistItems.count) });
+  }
+  if (summary.goals.created > 0) {
+    modules.push({ label: "Цели", emoji: "🎯", value: `${summary.goals.created} создано, ${summary.goals.completed} выполнено` });
+  }
+  if (summary.notableDates.count > 0) {
+    modules.push({ label: "Памятные даты", emoji: "🗓", value: String(summary.notableDates.count) });
+  }
+
+  if (modules.length === 0) return null;
+
+  return (
+    <div className="card summary-section">
+      <div className="summary-section-title">Другие модули</div>
+      {modules.map((m) => (
+        <div key={m.label} className="summary-row">
+          <span className="summary-row-label">{m.emoji} {m.label}</span>
+          <span className="summary-row-value">{m.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Users Tab ────────────────────────────────────────────────
 
 function UsersTab() {
   const queryClient = useQueryClient();
@@ -497,11 +773,7 @@ function TribesTab() {
   );
 }
 
-interface EntityMeta {
-  key: string;
-  emoji: string;
-  label: string;
-}
+// ─── Data Tab ─────────────────────────────────────────────────
 
 interface EntityListItem {
   id: number;
@@ -513,11 +785,13 @@ function DataTab() {
   const queryClient = useQueryClient();
   const [selectedEntity, setSelectedEntity] = useState<string>("");
   const [page, setPage] = useState(1);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
   const LIMIT = 10;
 
   const { data: entities } = useQuery({
     queryKey: ["admin", "data", "entities"],
-    queryFn: () => api.get<EntityMeta[]>("/api/admin/data/entities"),
+    queryFn: () => api.get<EntityMetaDto[]>("/api/admin/data/entities"),
   });
 
   const { data: listData, isLoading } = useQuery({
@@ -545,9 +819,35 @@ function DataTab() {
     },
   });
 
+  const editMutation = useMutation({
+    mutationFn: ({ entity, id, fields }: { entity: string; id: number; fields: Record<string, unknown> }) =>
+      api.put<{ updated: boolean }>(`/api/admin/data/${entity}/${id}`, fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "data", selectedEntity] });
+      setEditingId(null);
+      setEditValues({});
+    },
+  });
+
   const items = listData?.items ?? [];
   const total = listData?.total ?? 0;
   const totalPages = Math.ceil(total / LIMIT);
+  const currentEntityMeta = entities?.find((e) => e.key === selectedEntity);
+
+  function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedEntity || editingId === null || !currentEntityMeta?.editFields) return;
+
+    const fields: Record<string, unknown> = {};
+    for (const field of currentEntityMeta.editFields) {
+      const raw = editValues[field.key];
+      if (raw === undefined || raw === "") continue;
+      fields[field.key] = field.type === "number" ? parseFloat(raw) : raw;
+    }
+
+    if (Object.keys(fields).length === 0) return;
+    editMutation.mutate({ entity: selectedEntity, id: editingId, fields });
+  }
 
   return (
     <>
@@ -559,6 +859,8 @@ function DataTab() {
           onChange={(e) => {
             setSelectedEntity(e.target.value);
             setPage(1);
+            setEditingId(null);
+            setEditValues({});
           }}
         >
           <option value="">Выберите раздел...</option>
@@ -591,12 +893,24 @@ function DataTab() {
           </div>
           <div className="list">
             {items.map((item) => (
-              <div key={item.id} className="list-item">
+              <div key={item.id} className="list-item" style={{ flexWrap: "wrap" }}>
                 <div className="list-item-content">
                   <div className="list-item-title">{item.label}</div>
                   <div className="list-item-hint">{item.hint}</div>
                 </div>
                 <div className="list-item-actions">
+                  {currentEntityMeta?.editable && (
+                    <button
+                      className="btn btn-icon"
+                      onClick={() => {
+                        setEditingId(editingId === item.id ? null : item.id);
+                        setEditValues({});
+                      }}
+                      title="Редактировать"
+                    >
+                      ✏️
+                    </button>
+                  )}
                   <button
                     className="btn btn-icon btn-danger"
                     onClick={() => deleteMutation.mutate({ entity: selectedEntity, id: item.id })}
@@ -606,6 +920,35 @@ function DataTab() {
                     🗑️
                   </button>
                 </div>
+
+                {editingId === item.id && currentEntityMeta?.editFields && (
+                  <div className="card" style={{ marginTop: 8, width: "100%" }}>
+                    <form onSubmit={handleEditSubmit}>
+                      {currentEntityMeta.editFields.map((field) => (
+                        <div className="form-group" key={field.key}>
+                          <label className="form-label">{field.label}</label>
+                          <input
+                            className="input"
+                            type={field.type}
+                            step={field.type === "number" ? "any" : undefined}
+                            value={editValues[field.key] ?? ""}
+                            onChange={(e) => setEditValues((v) => ({ ...v, [field.key]: e.target.value }))}
+                            placeholder={field.label}
+                          />
+                        </div>
+                      ))}
+                      {editMutation.error && (
+                        <div className="error-msg">{(editMutation.error as Error).message}</div>
+                      )}
+                      <div className="form-row">
+                        <button type="button" className="btn" onClick={() => { setEditingId(null); setEditValues({}); }}>Отмена</button>
+                        <button type="submit" className="btn btn-primary" disabled={editMutation.isPending}>
+                          {editMutation.isPending ? "Сохранение..." : "Сохранить"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
               </div>
             ))}
           </div>

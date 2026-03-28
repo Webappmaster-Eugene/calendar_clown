@@ -61,6 +61,12 @@ interface TelegramWebApp {
   showConfirm: (message: string, callback?: (confirmed: boolean) => void) => void;
   platform: string;
   version: string;
+  // SDK v7.8+ — home screen support
+  addToHomeScreen?: () => void;
+  checkHomeScreenStatus?: (callback: (status: "unsupported" | "unknown" | "added" | "missed") => void) => void;
+  // Event system
+  onEvent?: (event: string, callback: () => void) => void;
+  offEvent?: (event: string, callback: () => void) => void;
 }
 
 declare global {

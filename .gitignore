@@ -16,6 +16,9 @@ GB.conf
 # Claude Code local settings (personal overrides)
 .claude/settings.local.json
 
+# MCP config (contains credentials)
+.mcp.json
+
 # IDE
 .idea/
 .vscode/

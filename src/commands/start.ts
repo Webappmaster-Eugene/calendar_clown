@@ -21,6 +21,9 @@ const HELP_TEXT = `
 🎙️ *Транскрибация:*
 /transcribe — расшифровка голосовых в текст
 
+🧹 *Упрощатель:*
+/simplifier — упрощение текста от мусора и повторений
+
 🧙 *База знаний:*
 /gandalf — каталог записей с категориями
 
@@ -50,6 +53,9 @@ const HELP_TEXT = `
 
 ✍️ *Блогер (требуется трайб):*
 /blogger — управление каналами и постами
+
+✅ *Задачи (требуется трайб):*
+/tasks — трекер задач с дедлайнами
 
 🔀 *Переключение:*
 /mode — выбор режима работы
@@ -98,20 +104,25 @@ export async function handleStart(ctx: Context): Promise<void> {
 
   let greeting: string;
   if (linked) {
-    greeting = "Привет! Календарь привязан. Выберите режим:";
+    greeting = "👋 *Привет! Календарь привязан.*";
   } else {
-    greeting = "Привет! Привяжите календарь: /auth\nВыберите режим работы:";
+    greeting = "👋 *Привет!* Привяжите календарь: /auth";
   }
+
+  greeting += "\n\nВыберите режим работы кнопками ниже.\n" +
+    "Подробнее о каждом: /help\n" +
+    "Сменить режим: /mode или 🏠";
 
   // Add user status info
   if (menuCtx) {
     const roleLabel = menuCtx.role === "admin" ? "Админ" : "Пользователь";
     const statusLabel = menuCtx.status === "approved" ? "Активен" : menuCtx.status;
     const tribeLabel = menuCtx.tribeName ?? "—";
-    greeting += `\n\n👤 Роль: ${roleLabel} | Статус: ${statusLabel} | Трайб: ${tribeLabel}`;
+    greeting += `\n\n👤 ${roleLabel} | ${statusLabel} | Трайб: ${tribeLabel}`;
   }
 
   await ctx.reply(greeting, {
+    parse_mode: "Markdown",
     ...getModeKeyboard(isAdmin, menuCtx),
   });
 }

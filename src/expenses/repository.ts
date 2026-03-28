@@ -472,9 +472,9 @@ export async function createTribe(name: string): Promise<{ id: number; name: str
 }
 
 /** Valid bot modes. */
-type BotMode = "calendar" | "expenses" | "transcribe" | "simplifier" | "digest" | "broadcast" | "notable_dates" | "gandalf" | "neuro" | "wishlist" | "goals" | "reminders" | "osint" | "summarizer" | "blogger" | "admin";
+type BotMode = "calendar" | "expenses" | "transcribe" | "simplifier" | "digest" | "broadcast" | "notable_dates" | "gandalf" | "neuro" | "wishlist" | "goals" | "reminders" | "osint" | "summarizer" | "blogger" | "admin" | "tasks";
 
-const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "simplifier", "digest", "broadcast", "notable_dates", "gandalf", "neuro", "wishlist", "goals", "reminders", "osint", "summarizer", "blogger", "admin"]);
+const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "simplifier", "digest", "broadcast", "notable_dates", "gandalf", "neuro", "wishlist", "goals", "reminders", "osint", "summarizer", "blogger", "admin", "tasks"]);
 
 /** Get user's current bot mode from DB. */
 export async function getUserMode(telegramId: number): Promise<BotMode> {

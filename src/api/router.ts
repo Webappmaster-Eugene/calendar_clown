@@ -25,6 +25,7 @@ import summarizerRoutes from "./routes/summarizer.js";
 import bloggerRoutes from "./routes/blogger.js";
 import broadcastRoutes from "./routes/broadcast.js";
 import adminRoutes from "./routes/admin.js";
+import tasksRoutes from "./routes/tasks.js";
 import voiceRoutes from "./routes/voice.js";
 
 const log = createLogger("api");
@@ -67,6 +68,7 @@ export function createApiApp(): Hono<ApiEnv> {
   api.route("/blogger", bloggerRoutes);
   api.route("/broadcast", broadcastRoutes);
   api.route("/admin", adminRoutes);
+  api.route("/tasks", tasksRoutes);
   api.route("/voice", voiceRoutes);
 
   // ── Global error handler ───────────────────────────────────

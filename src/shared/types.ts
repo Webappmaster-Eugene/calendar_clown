@@ -47,7 +47,8 @@ export type UserMode =
   | "osint"
   | "summarizer"
   | "blogger"
-  | "admin";
+  | "admin"
+  | "tasks";
 
 export interface UserProfile {
   telegramId: number;
@@ -657,6 +658,120 @@ export interface AdminStatsDto {
   totalExpenses: number;
   totalCalendarEvents: number;
   totalTranscriptions: number;
+}
+
+// ─── Admin Summary Analytics ─────────────────────────────────
+
+export type SummaryPeriod = "today" | "yesterday" | "week" | "month" | "year";
+
+export interface SummaryPeriodRange {
+  from: string;
+  to: string;
+  label: string;
+}
+
+export interface SummaryCategoryStat {
+  name: string;
+  emoji: string;
+  count: number;
+  amount: number;
+}
+
+export interface SummaryUserCount {
+  firstName: string;
+  count: number;
+}
+
+export interface SummaryUserExpense {
+  firstName: string;
+  count: number;
+  amount: number;
+}
+
+export interface SummaryUserCalendar {
+  firstName: string;
+  created: number;
+  deleted: number;
+}
+
+export interface UsageSummaryDto {
+  period: SummaryPeriodRange;
+  expenses: {
+    count: number;
+    totalAmount: number;
+    textCount: number;
+    voiceCount: number;
+    categories: SummaryCategoryStat[];
+    perUser: SummaryUserExpense[];
+  };
+  calendarEvents: {
+    created: number;
+    deleted: number;
+    textCount: number;
+    voiceCount: number;
+    perUser: SummaryUserCalendar[];
+  };
+  transcriptions: { total: number; errors: number; perUser: SummaryUserCount[] };
+  actionLogs: Array<{ action: string; count: number }>;
+  gandalfEntries: { count: number; categories: Array<{ name: string; count: number }> };
+  chatMessages: { count: number; perUser: SummaryUserCount[] };
+  digestRuns: { count: number; postsFound: number };
+  wishlistItems: { count: number };
+  goals: { created: number; completed: number };
+  notableDates: { count: number };
+}
+
+// ─── Admin Data Editing ──────────────────────────────────────
+
+export interface EntityEditField {
+  key: string;
+  label: string;
+  type: "number" | "text";
+}
+
+export interface EntityMetaDto {
+  key: string;
+  emoji: string;
+  label: string;
+  editable: boolean;
+  editFields: EntityEditField[];
+}
+
+// ─── Tasks ───────────────────────────────────────────────────
+
+export interface TaskWorkDto {
+  id: number;
+  name: string;
+  emoji: string;
+  isArchived: boolean;
+  activeCount: number;
+  completedCount: number;
+  createdAt: string;
+}
+
+export interface TaskItemDto {
+  id: number;
+  workId: number;
+  text: string;
+  deadline: string;
+  isCompleted: boolean;
+  completedAt: string | null;
+  inputMethod: string;
+  createdAt: string;
+}
+
+export interface CreateTaskWorkRequest {
+  name: string;
+  emoji?: string;
+}
+
+export interface CreateTaskItemRequest {
+  text: string;
+  deadline: string;
+}
+
+export interface UpdateTaskDeadlineRequest {
+  deadline: string;
 }
 
 // ─── Paginated Response Types ────────────────────────────────

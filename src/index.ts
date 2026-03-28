@@ -24,6 +24,7 @@ import { setAuthBotRef } from "./commands/digestAuth.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
 import { startRemindersScheduler, stopRemindersScheduler } from "./reminders/scheduler.js";
+import { startTasksScheduler, stopTasksScheduler } from "./tasks/scheduler.js";
 import { initProxyAgent } from "./utils/proxyAgent.js";
 import { clearAllBatches } from "./chat/messageBatcher.js";
 import { createLogger } from "./utils/logger.js";
@@ -130,6 +131,9 @@ async function main(): Promise<void> {
 
     startRemindersScheduler(bot);
     log.info("Reminders scheduler enabled.");
+
+    startTasksScheduler(bot);
+    log.info("Tasks scheduler enabled.");
   } else if (process.env.DATABASE_URL) {
     log.warn("DATABASE_URL is set but DB is unavailable — schedulers not started.");
   }
@@ -146,9 +150,11 @@ async function main(): Promise<void> {
     { command: "week", description: "Встречи на неделю" },
     { command: "cancel", description: "Отменить встречу" },
     { command: "status", description: "Статус привязки календаря" },
+    { command: "auth", description: "Привязать Google Календарь" },
     { command: "calendar", description: "Режим календаря" },
     { command: "expenses", description: "Режим учёта расходов" },
     { command: "transcribe", description: "Режим транскрибатора" },
+    { command: "simplifier", description: "Упрощение текста" },
     { command: "gandalf", description: "База знаний" },
     { command: "digest", description: "Дайджест телеграм-каналов" },
     { command: "dates", description: "Знаменательные даты" },
@@ -159,6 +165,7 @@ async function main(): Promise<void> {
     { command: "osint", description: "Поиск информации" },
     { command: "summarizer", description: "Учёт достижений" },
     { command: "blogger", description: "Генерация постов" },
+    { command: "tasks", description: "Трекер задач" },
     { command: "broadcast", description: "Рассылка сообщений" },
     { command: "admin", description: "Управление пользователями" },
     { command: "stats", description: "Статистика бота" },
@@ -177,6 +184,7 @@ async function main(): Promise<void> {
     stopNotableDatesScheduler();
     stopGoalsScheduler();
     stopRemindersScheduler();
+    stopTasksScheduler();
     stopWorkerHealthMonitor();
     stopStaleJobCleaner();
     await closeTranscribeQueue();

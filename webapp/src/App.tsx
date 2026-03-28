@@ -26,6 +26,7 @@ const SummarizerPage = lazy(() => import("./pages/SummarizerPage").then((m) => (
 const BloggerPage = lazy(() => import("./pages/BloggerPage").then((m) => ({ default: m.BloggerPage })));
 const BroadcastPage = lazy(() => import("./pages/BroadcastPage").then((m) => ({ default: m.BroadcastPage })));
 const AdminPage = lazy(() => import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })));
+const TasksPage = lazy(() => import("./pages/TasksPage").then((m) => ({ default: m.TasksPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,11 +44,11 @@ function PageLoader() {
 
 export function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TelegramProvider>
-        <BrowserRouter>
-          <AppShell>
-            <ErrorBoundary>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TelegramProvider>
+          <BrowserRouter>
+            <AppShell>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/" element={<ModeSelectorPage />} />
@@ -68,12 +69,13 @@ export function App() {
                   <Route path="/blogger" element={<BloggerPage />} />
                   <Route path="/broadcast" element={<BroadcastPage />} />
                   <Route path="/admin" element={<AdminPage />} />
+                  <Route path="/tasks" element={<TasksPage />} />
                 </Routes>
               </Suspense>
-            </ErrorBoundary>
-          </AppShell>
-        </BrowserRouter>
-      </TelegramProvider>
-    </QueryClientProvider>
+            </AppShell>
+          </BrowserRouter>
+        </TelegramProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

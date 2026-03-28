@@ -4,7 +4,7 @@ import {
 } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 
-export type UserMode = "calendar" | "expenses" | "transcribe" | "simplifier" | "digest" | "broadcast" | "notable_dates" | "gandalf" | "neuro" | "wishlist" | "goals" | "reminders" | "osint" | "summarizer" | "blogger" | "admin";
+export type UserMode = "calendar" | "expenses" | "transcribe" | "simplifier" | "digest" | "broadcast" | "notable_dates" | "gandalf" | "neuro" | "wishlist" | "goals" | "reminders" | "osint" | "summarizer" | "blogger" | "admin" | "tasks";
 
 /** Get user's current mode from DB. Falls back to 'calendar'. */
 export async function getUserMode(telegramId: number): Promise<UserMode> {
@@ -104,6 +104,12 @@ export async function isSummarizerMode(telegramId: number): Promise<boolean> {
 export async function isBloggerMode(telegramId: number): Promise<boolean> {
   const mode = await getUserMode(telegramId);
   return mode === "blogger";
+}
+
+/** Check if user is in tasks mode. */
+export async function isTasksMode(telegramId: number): Promise<boolean> {
+  const mode = await getUserMode(telegramId);
+  return mode === "tasks";
 }
 
 /** Check if user is in simplifier mode. */

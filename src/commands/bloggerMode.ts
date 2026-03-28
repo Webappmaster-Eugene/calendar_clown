@@ -135,7 +135,7 @@ export async function handleBloggerCommand(ctx: Context): Promise<void> {
 
   await ctx.reply(
     "✍️ *Режим Блогер активирован*\n\n" +
-    "Создавайте посты для Telegram\\-каналов с помощью AI\\.",
+    "Создавайте посты для Telegram-каналов с помощью AI.",
     { parse_mode: "Markdown", ...getBloggerKeyboard(isAdmin) }
   );
 }

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
@@ -25,10 +26,35 @@ const MODE_ROUTES: Record<string, string> = {
   blogger: "/blogger",
   broadcast: "/broadcast",
   admin: "/admin",
+  tasks: "/tasks",
 };
+
+type HomeScreenStatus = "unsupported" | "unknown" | "added" | "missed";
 
 export function ModeSelectorPage() {
   const navigate = useNavigate();
+  const [homeScreenStatus, setHomeScreenStatus] = useState<HomeScreenStatus>("unknown");
+
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp || typeof webApp.checkHomeScreenStatus !== "function") {
+      setHomeScreenStatus("unsupported");
+      return;
+    }
+
+    webApp.checkHomeScreenStatus((status) => setHomeScreenStatus(status));
+
+    // React to home screen addition while page is open
+    const onAdded = () => setHomeScreenStatus("added");
+    if (typeof webApp.onEvent === "function") {
+      webApp.onEvent("homeScreenAdded", onAdded);
+    }
+    return () => {
+      if (typeof webApp.offEvent === "function") {
+        webApp.offEvent("homeScreenAdded", onAdded);
+      }
+    };
+  }, []);
 
   const { data: profile, isLoading, error } = useQuery({
     queryKey: ["user", "me"],
@@ -39,12 +65,14 @@ export function ModeSelectorPage() {
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   const modes = profile?.availableModes ?? [];
+  const showHomeScreenButton = homeScreenStatus !== "unsupported" && homeScreenStatus !== "added";
 
   return (
     <div className="page">
       <h1 className="page-title">
         {profile ? `Привет, ${profile.firstName}` : "Режимы"}
       </h1>
+      <p className="page-subtitle">Выберите режим работы</p>
 
       {modes.length === 0 ? (
         <div className="empty-state">
@@ -72,6 +100,15 @@ export function ModeSelectorPage() {
             );
           })}
         </div>
+      )}
+
+      {showHomeScreenButton && (
+        <button
+          className="home-screen-btn"
+          onClick={() => window.Telegram?.WebApp?.addToHomeScreen?.()}
+        >
+          📱 Добавить на главный экран
+        </button>
       )}
     </div>
   );

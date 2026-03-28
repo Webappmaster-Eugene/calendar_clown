@@ -873,3 +873,75 @@ export const reminderSubscribers = pgTable(
     unique("reminder_subscribers_unique").on(table.reminderId, table.subscriberUserId),
   ],
 );
+
+// ─── Task Works (Task Tracker) ──────────────────────────────────────────
+
+export const taskWorks = pgTable(
+  "task_works",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    name: varchar("name", { length: 100 }).notNull(),
+    emoji: varchar("emoji", { length: 10 }).notNull().default("📋"),
+    isArchived: boolean("is_archived").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_task_works_user").on(table.userId),
+    unique("task_works_user_name_key").on(table.userId, table.name),
+  ],
+);
+
+// ─── Task Items (Task Tracker) ──────────────────────────────────────────
+
+export const taskItems = pgTable(
+  "task_items",
+  {
+    id: serial("id").primaryKey(),
+    workId: integer("work_id")
+      .notNull()
+      .references(() => taskWorks.id, { onDelete: "cascade" }),
+    text: varchar("text", { length: 500 }).notNull(),
+    deadline: timestamp("deadline", { withTimezone: true }).notNull(),
+    isCompleted: boolean("is_completed").notNull().default(false),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_task_items_work").on(table.workId),
+    index("idx_task_items_deadline_active").on(table.deadline).where(sql`is_completed = false`),
+    check(
+      "task_items_input_method_check",
+      sql`${table.inputMethod} IN ('text', 'voice')`,
+    ),
+  ],
+);
+
+// ─── Task Reminders (Task Tracker) ──────────────────────────────────────
+
+export const taskReminders = pgTable(
+  "task_reminders",
+  {
+    id: serial("id").primaryKey(),
+    taskItemId: integer("task_item_id")
+      .notNull()
+      .references(() => taskItems.id, { onDelete: "cascade" }),
+    remindAt: timestamp("remind_at", { withTimezone: true }).notNull(),
+    reminderType: varchar("reminder_type", { length: 20 }).notNull(),
+    sent: boolean("sent").notNull().default(false),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_task_reminders_pending").on(table.remindAt).where(sql`sent = false`),
+    check(
+      "task_reminders_type_check",
+      sql`${table.reminderType} IN ('day_before', '4h_before', '1h_before')`,
+    ),
+  ],
+);

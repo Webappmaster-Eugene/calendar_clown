@@ -14,7 +14,17 @@ import {
   removeTribe,
   getGlobalStats,
 } from "../../services/adminService.js";
+import {
+  getPeriodRange,
+  collectSummaryData,
+  isEmptyData,
+  generateAiSummary,
+} from "../../services/adminSummaryService.js";
+import { isBootstrapAdmin } from "../../middleware/auth.js";
+import type { SummaryPeriod } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
+
+const VALID_SUMMARY_PERIODS = new Set<string>(["today", "yesterday", "week", "month", "year"]);
 
 const app = new Hono<ApiEnv>();
 
@@ -250,12 +260,79 @@ app.get("/stats", async (c) => {
   }
 });
 
+/** GET /api/admin/summary — usage analytics for a given period */
+app.get("/summary", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const period = (c.req.query("period") ?? "today") as SummaryPeriod;
+
+  if (!VALID_SUMMARY_PERIODS.has(period)) {
+    return c.json({ ok: false, error: "Invalid period. Use: today, yesterday, week, month, year" }, 400);
+  }
+
+  try {
+    if (!isBootstrapAdmin(telegramId)) {
+      return c.json({ ok: false, error: "Admin access required" }, 403);
+    }
+
+    const range = getPeriodRange(period);
+    const data = await collectSummaryData(range);
+
+    return c.json({
+      ok: true,
+      data: {
+        ...data,
+        period: {
+          from: range.from.toISOString(),
+          to: range.to.toISOString(),
+          label: range.label,
+        },
+      },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get summary";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** POST /api/admin/summary/ai — generate AI summary for a period */
+app.post("/summary/ai", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const body = await c.req.json<{ period: SummaryPeriod }>();
+
+  if (!body.period || !VALID_SUMMARY_PERIODS.has(body.period)) {
+    return c.json({ ok: false, error: "Invalid period" }, 400);
+  }
+
+  try {
+    if (!isBootstrapAdmin(telegramId)) {
+      return c.json({ ok: false, error: "Admin access required" }, 403);
+    }
+
+    const range = getPeriodRange(body.period);
+    const data = await collectSummaryData(range);
+
+    if (isEmptyData(data)) {
+      return c.json({ ok: true, data: { text: "За этот период активности не обнаружено." } });
+    }
+
+    const text = await generateAiSummary(data);
+    return c.json({ ok: true, data: { text } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to generate AI summary";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
 /** GET /api/admin/data/entities — list available entity types */
 app.get("/data/entities", async (c) => {
-  const { ENTITY_LABELS } = await import("../../services/adminDataService.js");
+  const { ENTITY_LABELS, ENTITY_EDIT_FIELDS } = await import("../../services/adminDataService.js");
   const entities = Object.entries(ENTITY_LABELS).map(([key, val]) => ({
     key,
     ...val,
+    editable: key in ENTITY_EDIT_FIELDS,
+    editFields: ENTITY_EDIT_FIELDS[key as keyof typeof ENTITY_EDIT_FIELDS] ?? [],
   }));
   return c.json({ ok: true, data: entities });
 });
@@ -276,6 +353,29 @@ app.get("/data/:entity", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get data";
     return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/admin/data/:entity/:id — edit single entity */
+app.put("/data/:entity/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const entity = c.req.param("entity");
+  const entityId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(entityId)) {
+    return c.json({ ok: false, error: "Invalid entity ID" }, 400);
+  }
+
+  try {
+    const body = await c.req.json<Record<string, unknown>>();
+    const { editEntity } = await import("../../services/adminDataService.js");
+    const updated = await editEntity(telegramId, entity as never, entityId, body);
+    return c.json({ ok: true, data: { updated } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to edit";
+    const status = msg.includes("not supported") ? 400 : 500;
+    return c.json({ ok: false, error: msg }, status);
   }
 });
 

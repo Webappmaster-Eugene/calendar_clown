@@ -62,7 +62,7 @@ export async function handleTranscribeCommand(ctx: Context): Promise<void> {
     "🎙 *Режим транскрибатора активирован*\n\n" +
     "Отправьте или перешлите голосовое сообщение — я расшифрую его в текст.\n\n" +
     "Можно отправлять несколько голосовых подряд — они встанут в очередь и будут обработаны по порядку.\n\n" +
-    "Для переключения режима используйте кнопки ниже или команды /calendar, /expenses.",
+    "Для переключения режима нажмите 🏠 или /mode.",
     { parse_mode: "Markdown", ...getTranscribeKeyboard(isBootstrapAdmin(telegramId)) }
   );
 }

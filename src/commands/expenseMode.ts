@@ -104,6 +104,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  tasks: [
+    { command: "tasks", description: "Трекер задач (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
 };
 
 /** Update the Telegram hamburger menu commands for the user's current mode. */
@@ -132,6 +137,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["🧠 Нейро", "🎯 Цели"],
         ["⏰ Напоминания", "🔍 OSINT"],
         ["📋 Резюме", "✍️ Блогер"],
+        ["✅ Задачи"],
         ["📢 Рассылка", "⚙️ Админка"],
       ]).resize();
     }
@@ -144,6 +150,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["🧠 Нейро", "🎯 Цели"],
         ["⏰ Напоминания", "🔍 OSINT"],
         ["📋 Резюме", "✍️ Блогер"],
+        ["✅ Задачи"],
       ]).resize();
     }
     // User without tribe — limited modes
@@ -164,6 +171,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["🧠 Нейро", "🎯 Цели"],
     ["⏰ Напоминания", "🔍 OSINT"],
     ["📋 Резюме", "✍️ Блогер"],
+    ["✅ Задачи"],
   ];
   if (isAdmin) {
     rows.push(["📢 Рассылка", "⚙️ Админка"]);
@@ -235,8 +243,14 @@ export async function handleCalendarCommand(ctx: Context): Promise<void> {
   await setModeMenuCommands(ctx, "calendar");
 
   await ctx.reply(
-    "📅 Режим календаря активирован. Используйте /help для списка команд.",
-    { ...getModeKeyboard(isBootstrapAdmin(telegramId)) }
+    "📅 *Режим календаря активирован*\n\n" +
+    "Создавайте встречи текстом или голосом:\n" +
+    "• /new _Встреча завтра в 15:00_ — создать\n" +
+    "• /today — расписание на сегодня\n" +
+    "• /week — расписание на неделю\n" +
+    "• /cancel — отменить встречу\n\n" +
+    "🎤 Голосом: просто отправьте голосовое сообщение.",
+    { parse_mode: "Markdown", ...getModeKeyboard(isBootstrapAdmin(telegramId)) }
   );
 }
 
@@ -282,6 +296,11 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
     rows.push([
       Markup.button.callback("📋 Резюме", "mode:summarizer"),
       Markup.button.callback("✍️ Блогер", "mode:blogger"),
+    ]);
+  }
+  if (canAccessMode("tasks", ctx)) {
+    rows.push([
+      Markup.button.callback("✅ Задачи", "mode:tasks"),
     ]);
   }
   if (isAdmin) {

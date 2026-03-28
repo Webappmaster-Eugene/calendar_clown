@@ -42,8 +42,18 @@ export function VoiceButton({ onResult, onError, mode, endpoint }: VoiceButtonPr
   const handleStart = async () => {
     try {
       await startRecording();
-    } catch {
-      onError?.("Не удалось получить доступ к микрофону");
+    } catch (err) {
+      if (err instanceof DOMException) {
+        if (err.name === "NotAllowedError") {
+          onError?.("Доступ к микрофону запрещён. Разрешите доступ в настройках Telegram.");
+        } else if (err.name === "NotFoundError") {
+          onError?.("Микрофон не найден на устройстве.");
+        } else {
+          onError?.("Не удалось получить доступ к микрофону.");
+        }
+      } else {
+        onError?.("Не удалось получить доступ к микрофону.");
+      }
     }
   };
 
