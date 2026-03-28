@@ -21,11 +21,20 @@ const ROUTE_TO_MODE: Record<string, string> = {
   "/osint": "osint",
   "/neuro": "neuro",
   "/transcribe": "transcribe",
+  "/simplifier": "simplifier",
   "/summarizer": "summarizer",
   "/blogger": "blogger",
   "/broadcast": "broadcast",
   "/admin": "admin",
+  "/tasks": "tasks",
 };
+
+/** Top-level mode routes (direct children of root) */
+const TOP_LEVEL_ROUTES = new Set(
+  Object.entries(ROUTE_TO_MODE)
+    .filter(([path]) => path.split("/").filter(Boolean).length === 1)
+    .map(([path]) => path),
+);
 
 export function AppShell({ children }: AppShellProps) {
   const navigate = useNavigate();
@@ -37,8 +46,18 @@ export function AppShell({ children }: AppShellProps) {
   const modeMeta = modeKey ? MODE_LABELS[modeKey] : null;
 
   const handleBack = useCallback(() => {
-    navigate(-1);
-  }, [navigate]);
+    webApp?.HapticFeedback.impactOccurred("light");
+    if (TOP_LEVEL_ROUTES.has(location.pathname)) {
+      navigate("/");
+    } else {
+      navigate(-1);
+    }
+  }, [navigate, location.pathname, webApp]);
+
+  const handleHome = useCallback(() => {
+    webApp?.HapticFeedback.impactOccurred("light");
+    navigate("/");
+  }, [navigate, webApp]);
 
   useEffect(() => {
     if (!webApp) return;
@@ -58,10 +77,11 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="app-shell">
       {modeMeta && (
-        <div className="mode-indicator">
+        <button className="mode-indicator" onClick={handleHome} type="button">
+          <span className="mode-indicator-chevron">&#8249;</span>
           <span className="mode-indicator-emoji">{modeMeta.emoji}</span>
           <span className="mode-indicator-label">{modeMeta.label}</span>
-        </div>
+        </button>
       )}
       {children}
     </div>

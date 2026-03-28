@@ -64,6 +64,14 @@ interface TelegramWebApp {
   // SDK v7.8+ — home screen support
   addToHomeScreen?: () => void;
   checkHomeScreenStatus?: (callback: (status: "unsupported" | "unknown" | "added" | "missed") => void) => void;
+  // SDK v7.7+ — swipe & closing behavior
+  disableVerticalSwipes?: () => void;
+  enableVerticalSwipes?: () => void;
+  enableClosingConfirmation?: () => void;
+  disableClosingConfirmation?: () => void;
+  // SDK v6.1+ — header/background color
+  setHeaderColor?: (color: "bg_color" | "secondary_bg_color" | string) => void;
+  setBackgroundColor?: (color: string) => void;
   // Event system
   onEvent?: (event: string, callback: () => void) => void;
   offEvent?: (event: string, callback: () => void) => void;
@@ -117,9 +125,12 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Expand viewport
+    // Expand viewport & configure native behavior
     webApp.expand();
     webApp.ready();
+    webApp.disableVerticalSwipes?.();
+    webApp.enableClosingConfirmation?.();
+    webApp.setHeaderColor?.("secondary_bg_color");
 
     // Initialize API client with auth data
     setInitData(webApp.initData);

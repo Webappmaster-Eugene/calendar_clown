@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
+import { useHaptic } from "../hooks/useHaptic";
 import type { UserProfile } from "@shared/types";
 import { MODE_LABELS } from "@shared/constants";
 
@@ -33,7 +34,16 @@ type HomeScreenStatus = "unsupported" | "unknown" | "added" | "missed";
 
 export function ModeSelectorPage() {
   const navigate = useNavigate();
+  const { impact } = useHaptic();
   const [homeScreenStatus, setHomeScreenStatus] = useState<HomeScreenStatus>("unknown");
+
+  const handleModeClick = useCallback(
+    (route: string) => {
+      impact("light");
+      navigate(route);
+    },
+    [impact, navigate],
+  );
 
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
@@ -91,7 +101,7 @@ export function ModeSelectorPage() {
               <button
                 key={mode}
                 className="mode-card"
-                onClick={() => navigate(route)}
+                onClick={() => handleModeClick(route)}
               >
                 <span className="mode-card-emoji">{meta.emoji}</span>
                 <span className="mode-card-label">{meta.label}</span>

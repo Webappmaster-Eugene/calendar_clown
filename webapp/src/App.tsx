@@ -39,7 +39,14 @@ const queryClient = new QueryClient({
 });
 
 function PageLoader() {
-  return <div className="loading">Загрузка...</div>;
+  return (
+    <div className="skeleton-page">
+      <div className="skeleton skeleton-line-short" />
+      <div className="skeleton skeleton-block" />
+      <div className="skeleton skeleton-block" />
+      <div className="skeleton skeleton-line" />
+    </div>
+  );
 }
 
 export function App() {
