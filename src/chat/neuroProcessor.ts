@@ -5,11 +5,12 @@ import {
   getRecentMessages,
   saveMessage,
   updateDialogTitle,
+  getChatProvider,
 } from "./repository.js";
 import { extractUrls, fetchLinksContent, formatLinksForContext } from "./linkAnalyzer.js";
 import { classifySearchNeed, executeWebSearch, formatSearchResultsForContext } from "./webSearch.js";
 import { splitMessage } from "../utils/telegram.js";
-import { DEEPSEEK_MODEL } from "../constants.js";
+import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("neuro-processor");
@@ -19,7 +20,7 @@ const MAX_AUGMENTED_CONTEXT_LENGTH = 15_000;
 
 /** Process a flushed batch: links, search, AI, reply. */
 export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
-  const { combinedText, ctx, dialogId, dbUserId } = batch;
+  const { combinedText, ctx, dialogId, dbUserId, model: batchModel } = batch;
 
   try {
     // 1. Send status message
@@ -77,21 +78,28 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
     if (searchContext) augmentedParts.push(searchContext);
     const augmentedMessage = augmentedParts.join("\n\n");
 
+    // 5.5. Resolve model: from batch or from user's chat provider
+    let model = batchModel;
+    if (!model) {
+      const provider = await getChatProvider(dbUserId);
+      model = provider === "free" ? DEEPSEEK_FREE_MODEL : DEEPSEEK_MODEL;
+    }
+
     // 6. Call AI
     const messages = [
       ...historyMessages,
       { role: "user", content: augmentedMessage },
     ];
 
-    const result = await chatCompletion(messages);
+    const result = await chatCompletion(messages, model);
 
     // 7. Save original text to DB (without search/links context)
     await saveMessage(dbUserId, dialog.id, "user", combinedText);
-    await saveMessage(dbUserId, dialog.id, "assistant", result.content, DEEPSEEK_MODEL, result.tokensUsed ?? undefined);
+    await saveMessage(dbUserId, dialog.id, "assistant", result.content, model, result.tokensUsed ?? undefined);
 
     // 8. Auto-name dialog (fire-and-forget)
     if (dialog.title === "Новый диалог") {
-      generateDialogTitle(combinedText)
+      generateDialogTitle(combinedText, model)
         .then((title) => {
           if (title && title !== "Новый диалог") {
             return updateDialogTitle(dialog.id, title);

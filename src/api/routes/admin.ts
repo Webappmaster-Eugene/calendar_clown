@@ -337,6 +337,29 @@ app.get("/data/entities", async (c) => {
   return c.json({ ok: true, data: entities });
 });
 
+/** GET /api/admin/data/wishlists/:wishlistId/items — drill-down into wishlist items */
+app.get("/data/wishlists/:wishlistId/items", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const wishlistId = parseInt(c.req.param("wishlistId"), 10);
+  const page = parseInt(c.req.query("page") ?? "1", 10);
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "10", 10), 50);
+  const offset = (page - 1) * limit;
+
+  if (isNaN(wishlistId)) {
+    return c.json({ ok: false, error: "Invalid wishlist ID" }, 400);
+  }
+
+  try {
+    const { getWishlistItemsList } = await import("../../services/adminDataService.js");
+    const result = await getWishlistItemsList(telegramId, wishlistId, limit, offset);
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get wishlist items";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
 /** GET /api/admin/data/:entity — paginated entity list */
 app.get("/data/:entity", async (c) => {
   const initData = c.get("initData");

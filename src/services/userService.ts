@@ -88,7 +88,7 @@ export function getAvailableModes(profile: UserProfile): UserMode[] {
   const allModes: UserMode[] = [
     "calendar", "expenses", "transcribe", "simplifier", "digest", "gandalf", "neuro",
     "goals", "reminders", "wishlist", "notable_dates", "osint",
-    "summarizer", "blogger", "broadcast", "admin",
+    "summarizer", "blogger", "broadcast", "admin", "tasks",
   ];
 
   return allModes.filter((mode) =>

@@ -43,6 +43,7 @@ export const users = pgTable(
     tribeId: integer("tribe_id")
       .references(() => tribes.id),
     activeDialogId: integer("active_dialog_id"),
+    chatProvider: varchar("chat_provider", { length: 20 }).notNull().default("free"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

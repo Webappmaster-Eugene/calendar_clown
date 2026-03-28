@@ -10,6 +10,7 @@ interface PendingBatch {
   dialogId: number;
   dbUserId: number;
   telegramId: number;
+  model: string;
   firstMessageTime: number;
   onFlush: (batch: FlushedBatch) => Promise<void>;
 }
@@ -20,6 +21,7 @@ export interface FlushedBatch {
   dialogId: number;
   dbUserId: number;
   telegramId: number;
+  model: string;
 }
 
 /** In-memory map: dbUserId → PendingBatch. */
@@ -45,6 +47,7 @@ function flushBatch(dbUserId: number): void {
     dialogId: batch.dialogId,
     dbUserId: batch.dbUserId,
     telegramId: batch.telegramId,
+    model: batch.model,
   };
 
   batch.onFlush(flushed).catch((err) => {
@@ -59,7 +62,8 @@ export function addMessage(
   dialogId: number,
   text: string,
   ctx: Context,
-  onFlush: (batch: FlushedBatch) => Promise<void>
+  onFlush: (batch: FlushedBatch) => Promise<void>,
+  model: string = ""
 ): void {
   const now = Date.now();
   const existing = batches.get(dbUserId);
@@ -86,6 +90,7 @@ export function addMessage(
       dialogId,
       dbUserId,
       telegramId,
+      model,
       firstMessageTime: now,
       onFlush,
     });
@@ -130,6 +135,7 @@ export function flushBatchSync(dbUserId: number): FlushedBatch | null {
     dialogId: batch.dialogId,
     dbUserId: batch.dbUserId,
     telegramId: batch.telegramId,
+    model: batch.model,
   };
 }
 

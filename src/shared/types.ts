@@ -472,6 +472,8 @@ export interface StartOsintSearchRequest {
 
 // ─── Chat (Neuro) ─────────────────────────────────────────────
 
+export type ChatProvider = "free" | "paid";
+
 export interface ChatDialogDto {
   id: number;
   title: string;
@@ -486,6 +488,7 @@ export interface ChatMessageDto {
   dialogId: number;
   role: "user" | "assistant";
   content: string;
+  modelUsed?: string;
   createdAt: string;
 }
 

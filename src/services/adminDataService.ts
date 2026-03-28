@@ -59,6 +59,8 @@ import {
   getAllWishlistsPaginated,
   countAllWishlists,
   deleteAllWishlists,
+  getItemsByWishlist,
+  countItemsByWishlist,
 } from "../wishlist/repository.js";
 
 import {
@@ -161,6 +163,32 @@ function formatDate(d: Date | string | null): string {
   if (!d) return "";
   const date = typeof d === "string" ? new Date(d) : d;
   return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+// ─── Wishlist Drill-down ─────────────────────────────────────
+
+export async function getWishlistItemsList(
+  telegramId: number,
+  wishlistId: number,
+  limit: number = 10,
+  offset: number = 0,
+): Promise<EntityListResult> {
+  requireAdmin(telegramId);
+  requireDb();
+
+  const [items, total] = await Promise.all([
+    getItemsByWishlist(wishlistId, limit, offset),
+    countItemsByWishlist(wishlistId),
+  ]);
+
+  return {
+    total,
+    items: items.map((item) => ({
+      id: item.id,
+      label: item.title,
+      hint: `${item.isReserved ? "Забронировано" : "Свободно"} · приоритет ${item.priority}${item.link ? " · ссылка" : ""}`,
+    })),
+  };
 }
 
 // ─── Generic Operations ──────────────────────────────────────

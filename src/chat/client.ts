@@ -44,9 +44,9 @@ export async function chatCompletion(
 }
 
 /** Generate a short title (3-5 words) for a dialog based on the first message. */
-export async function generateDialogTitle(firstMessage: string): Promise<string> {
+export async function generateDialogTitle(firstMessage: string, model?: string): Promise<string> {
   const result = await callOpenRouter({
-    model: DEEPSEEK_MODEL,
+    model: model ?? DEEPSEEK_MODEL,
     messages: [
       {
         role: "system",

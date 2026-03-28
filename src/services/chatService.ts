@@ -16,8 +16,10 @@ import {
   updateDialogTitle,
 } from "../chat/repository.js";
 import { chatCompletion, generateDialogTitle } from "../chat/client.js";
+import { getChatProvider } from "../chat/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
+import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
 import type {
   ChatDialogDto,
@@ -52,12 +54,13 @@ function dialogToDto(d: { id: number; title: string; isActive: boolean; createdA
   };
 }
 
-function messageToDto(m: { id: number; dialogId: number; role: "user" | "assistant"; content: string; createdAt: Date }): ChatMessageDto {
+function messageToDto(m: { id: number; dialogId: number; role: "user" | "assistant"; content: string; modelUsed?: string | null; createdAt: Date }): ChatMessageDto {
   return {
     id: m.id,
     dialogId: m.dialogId,
     role: m.role,
     content: m.content,
+    ...(m.modelUsed ? { modelUsed: m.modelUsed } : {}),
     createdAt: m.createdAt.toISOString(),
   };
 }
@@ -162,6 +165,10 @@ export async function sendMessage(
     dialog = await getOrCreateActiveDialog(dbUser.id);
   }
 
+  // Resolve model from user's chat provider
+  const provider = await getChatProvider(dbUser.id);
+  const model = provider === "free" ? DEEPSEEK_FREE_MODEL : DEEPSEEK_MODEL;
+
   // Save user message
   const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
 
@@ -173,7 +180,7 @@ export async function sendMessage(
   }));
 
   // Call AI
-  const result = await chatCompletion(messages);
+  const result = await chatCompletion(messages, model);
 
   // Save assistant response
   const assistantMsg = await saveMessage(
@@ -181,14 +188,14 @@ export async function sendMessage(
     dialog.id,
     "assistant",
     result.content,
-    undefined,
+    model,
     result.tokensUsed ?? undefined
   );
 
   // Auto-generate title for new dialogs
   if (history.length <= 1) {
     try {
-      const title = await generateDialogTitle(content);
+      const title = await generateDialogTitle(content, model);
       if (title) {
         await updateDialogTitle(dialog.id, title.slice(0, 100));
       }

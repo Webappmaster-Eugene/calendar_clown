@@ -6,6 +6,9 @@ import {
   sendMessage,
   removeDialog,
 } from "../../services/chatService.js";
+import { getUserByTelegramId } from "../../expenses/repository.js";
+import { getChatProvider, setChatProvider } from "../../chat/repository.js";
+import type { ChatProvider } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
@@ -92,6 +95,46 @@ app.delete("/dialogs/:id", async (c) => {
     return c.json({ ok: true, data: { deleted: true } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete dialog";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/chat/provider — get current chat provider */
+app.get("/provider", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  try {
+    const dbUser = await getUserByTelegramId(telegramId);
+    if (!dbUser) return c.json({ ok: false, error: "User not found" }, 404);
+
+    const provider = await getChatProvider(dbUser.id);
+    return c.json({ ok: true, data: { provider } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get provider";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/chat/provider — set chat provider */
+app.put("/provider", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const body = await c.req.json<{ provider: string }>();
+
+  const provider = body.provider as ChatProvider;
+  if (provider !== "free" && provider !== "paid") {
+    return c.json({ ok: false, error: "Invalid provider. Use 'free' or 'paid'" }, 400);
+  }
+
+  try {
+    const dbUser = await getUserByTelegramId(telegramId);
+    if (!dbUser) return c.json({ ok: false, error: "User not found" }, 404);
+
+    await setChatProvider(dbUser.id, provider);
+    return c.json({ ok: true, data: { provider } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to set provider";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

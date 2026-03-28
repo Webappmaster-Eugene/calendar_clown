@@ -15,6 +15,20 @@
       "when": 1742500000000,
       "tag": "0002_add_blogger_style_samples",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1743350000000,
+      "tag": "0003_add_chat_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1743370000000,
+      "tag": "0004_add_task_tracker_tables",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { query } from "../db/connection.js";
+import type { ChatProvider } from "../shared/types.js";
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
@@ -336,6 +337,26 @@ export async function bulkDeleteDialogs(ids: number[]): Promise<number> {
 export async function deleteAllDialogs(): Promise<number> {
   const { rowCount } = await query("DELETE FROM chat_dialogs");
   return rowCount ?? 0;
+}
+
+// ─── Chat Provider ──────────────────────────────────────────────────────────
+
+/** Get chat provider preference for a user. */
+export async function getChatProvider(userId: number): Promise<ChatProvider> {
+  const { rows } = await query<{ chat_provider: string }>(
+    `SELECT chat_provider FROM users WHERE id = $1`,
+    [userId]
+  );
+  const provider = rows[0]?.chat_provider;
+  return provider === "paid" ? "paid" : "free";
+}
+
+/** Set chat provider preference for a user. */
+export async function setChatProvider(userId: number, provider: ChatProvider): Promise<void> {
+  await query(
+    `UPDATE users SET chat_provider = $1 WHERE id = $2`,
+    [provider, userId]
+  );
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

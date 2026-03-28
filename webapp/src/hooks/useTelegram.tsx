@@ -61,7 +61,7 @@ interface TelegramWebApp {
   showConfirm: (message: string, callback?: (confirmed: boolean) => void) => void;
   platform: string;
   version: string;
-  // SDK v7.8+ — home screen support
+  // Bot API 8.0+ — home screen support
   addToHomeScreen?: () => void;
   checkHomeScreenStatus?: (callback: (status: "unsupported" | "unknown" | "added" | "missed") => void) => void;
   // SDK v7.7+ — swipe & closing behavior

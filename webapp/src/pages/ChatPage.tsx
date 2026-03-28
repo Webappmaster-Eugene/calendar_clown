@@ -6,6 +6,7 @@ import { useTelegram } from "../hooks/useTelegram";
 import type {
   ChatDialogDto,
   ChatMessageDto,
+  ChatProvider,
   SendChatMessageRequest,
   SendChatMessageResponse,
 } from "@shared/types";
@@ -19,6 +20,27 @@ export function ChatPage() {
     queryKey: ["chat", "dialogs"],
     queryFn: () => api.get<ChatDialogDto[]>("/api/chat/dialogs"),
   });
+
+  const { data: providerData } = useQuery({
+    queryKey: ["chat", "provider"],
+    queryFn: () => api.get<{ provider: ChatProvider }>("/api/chat/provider"),
+  });
+
+  const toggleProviderMutation = useMutation({
+    mutationFn: (p: ChatProvider) =>
+      api.put<{ provider: ChatProvider }>("/api/chat/provider", { provider: p }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat", "provider"] });
+    },
+  });
+
+  const provider = providerData?.provider ?? "free";
+  const isFree = provider === "free";
+
+  const handleToggleProvider = () => {
+    const next = isFree ? "paid" : "free";
+    toggleProviderMutation.mutate(next);
+  };
 
   const deleteDialogMutation = useMutation({
     mutationFn: (id: number) => api.del<void>(`/api/chat/dialogs/${id}`),
@@ -52,6 +74,32 @@ export function ChatPage() {
   return (
     <div className="page">
       <h1 className="page-title">AI Чат</h1>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 14px",
+          marginBottom: 12,
+          borderRadius: 12,
+          background: "var(--tg-theme-secondary-bg-color, #f5f5f5)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 500 }}>
+            {isFree ? "🆓 Free" : "💎 Paid"}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--tg-theme-hint-color, #999)", marginTop: 2 }}>
+            {isFree ? "Бесплатная модель (rate-limited)" : "Платная модель (быстрее)"}
+          </div>
+        </div>
+        <button
+          className={`toggle ${!isFree ? "active" : ""}`}
+          onClick={handleToggleProvider}
+          disabled={toggleProviderMutation.isPending}
+        />
+      </div>
 
       <button
         className="btn btn-primary btn-block"

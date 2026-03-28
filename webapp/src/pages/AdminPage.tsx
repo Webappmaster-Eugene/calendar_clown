@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { useTelegram } from "../hooks/useTelegram";
 import type {
   AdminUserDto,
   TribeDto,
@@ -19,7 +20,7 @@ export function AdminPage() {
     <div className="page">
       <h1 className="page-title">Админ-панель</h1>
 
-      <div className="tabs">
+      <div className="tabs tabs--scroll">
         {(["stats", "summary", "users", "pending", "tribes", "data"] as const).map((t) => {
           const labels: Record<AdminTab, string> = {
             stats: "Статистика",
@@ -380,6 +381,7 @@ function SummaryCompactModules({ summary }: { summary: UsageSummaryDto }) {
 
 function UsersTab() {
   const queryClient = useQueryClient();
+  const { user, webApp } = useTelegram();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTelegramId, setNewTelegramId] = useState("");
 
@@ -486,7 +488,7 @@ function UsersTab() {
               {u.tribeName ? (
                 <button
                   className="btn btn-small"
-                  onClick={() => removeTribeMutation.mutate(u.id)}
+                  onClick={() => removeTribeMutation.mutate(u.telegramId)}
                   disabled={removeTribeMutation.isPending}
                 >
                   Убрать из трайба
@@ -498,7 +500,7 @@ function UsersTab() {
                   defaultValue=""
                   onChange={(e) => {
                     const tribeId = Number(e.target.value);
-                    if (tribeId) assignTribeMutation.mutate({ userId: u.id, tribeId });
+                    if (tribeId) assignTribeMutation.mutate({ userId: u.telegramId, tribeId });
                   }}
                 >
                   <option value="">Назначить трайб...</option>
@@ -516,7 +518,7 @@ function UsersTab() {
                   defaultValue=""
                   onChange={(e) => {
                     const tribeId = Number(e.target.value);
-                    if (tribeId) assignTribeMutation.mutate({ userId: u.id, tribeId });
+                    if (tribeId) assignTribeMutation.mutate({ userId: u.telegramId, tribeId });
                   }}
                 >
                   <option value="">Сменить трайб...</option>
@@ -526,18 +528,23 @@ function UsersTab() {
                 </select>
               )}
 
-              <button
-                className="btn btn-icon btn-danger"
-                onClick={() => {
-                  if (confirm(`Удалить пользователя ${u.firstName}?`)) {
-                    removeUserMutation.mutate(u.id);
-                  }
-                }}
-                disabled={removeUserMutation.isPending}
-                title="Удалить"
-              >
-                🗑️
-              </button>
+              {u.telegramId !== user?.id && u.telegramId !== 0 && (
+                <button
+                  className="btn btn-icon btn-danger"
+                  onClick={() => {
+                    const msg = `Удалить пользователя ${u.firstName}?`;
+                    if (webApp) {
+                      webApp.showConfirm(msg, (ok: boolean) => { if (ok) removeUserMutation.mutate(u.telegramId); });
+                    } else if (confirm(msg)) {
+                      removeUserMutation.mutate(u.telegramId);
+                    }
+                  }}
+                  disabled={removeUserMutation.isPending}
+                  title="Удалить"
+                >
+                  🗑️
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -595,14 +602,14 @@ function PendingTab() {
           <div className="list-item-actions">
             <button
               className="btn btn-primary btn-small"
-              onClick={() => approveMutation.mutate(u.id)}
+              onClick={() => approveMutation.mutate(u.telegramId)}
               disabled={approveMutation.isPending}
             >
               Одобрить
             </button>
             <button
               className="btn btn-danger btn-small"
-              onClick={() => rejectMutation.mutate(u.id)}
+              onClick={() => rejectMutation.mutate(u.telegramId)}
               disabled={rejectMutation.isPending}
             >
               Отклонить
@@ -616,6 +623,7 @@ function PendingTab() {
 
 function TribesTab() {
   const queryClient = useQueryClient();
+  const { webApp: tribesWebApp } = useTelegram();
   const [showForm, setShowForm] = useState(false);
   const [tribeName, setTribeName] = useState("");
   const [monthlyLimit, setMonthlyLimit] = useState("350000");
@@ -691,7 +699,10 @@ function TribesTab() {
                 <button
                   className="btn btn-icon btn-danger"
                   onClick={() => {
-                    if (confirm(`Удалить трайб "${t.name}"?`)) {
+                    const msg = `Удалить трайб "${t.name}"?`;
+                    if (tribesWebApp) {
+                      tribesWebApp.showConfirm(msg, (ok: boolean) => { if (ok) deleteMutation.mutate(t.id); });
+                    } else if (confirm(msg)) {
                       deleteMutation.mutate(t.id);
                     }
                   }}
@@ -783,10 +794,14 @@ interface EntityListItem {
 
 function DataTab() {
   const queryClient = useQueryClient();
+  const { webApp } = useTelegram();
   const [selectedEntity, setSelectedEntity] = useState<string>("");
   const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [drilldownId, setDrilldownId] = useState<number | null>(null);
+  const [drilldownLabel, setDrilldownLabel] = useState("");
+  const [drilldownPage, setDrilldownPage] = useState(1);
   const LIMIT = 10;
 
   const { data: entities } = useQuery({
@@ -800,7 +815,16 @@ function DataTab() {
       api.get<{ items: EntityListItem[]; total: number }>(
         `/api/admin/data/${selectedEntity}?page=${page}&limit=${LIMIT}`
       ),
-    enabled: !!selectedEntity,
+    enabled: !!selectedEntity && !drilldownId,
+  });
+
+  const { data: drilldownData, isLoading: isDrilldownLoading } = useQuery({
+    queryKey: ["admin", "data", "wishlists", drilldownId, "items", drilldownPage],
+    queryFn: () =>
+      api.get<{ items: EntityListItem[]; total: number }>(
+        `/api/admin/data/wishlists/${drilldownId}/items?page=${drilldownPage}&limit=${LIMIT}`
+      ),
+    enabled: !!drilldownId,
   });
 
   const deleteMutation = useMutation({
@@ -834,6 +858,14 @@ function DataTab() {
   const totalPages = Math.ceil(total / LIMIT);
   const currentEntityMeta = entities?.find((e) => e.key === selectedEntity);
 
+  function confirmAction(msg: string, onConfirm: () => void) {
+    if (webApp) {
+      webApp.showConfirm(msg, (ok: boolean) => { if (ok) onConfirm(); });
+    } else if (confirm(msg)) {
+      onConfirm();
+    }
+  }
+
   function handleEditSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedEntity || editingId === null || !currentEntityMeta?.editFields) return;
@@ -861,6 +893,9 @@ function DataTab() {
             setPage(1);
             setEditingId(null);
             setEditValues({});
+            setDrilldownId(null);
+            setDrilldownLabel("");
+            setDrilldownPage(1);
           }}
         >
           <option value="">Выберите раздел...</option>
@@ -878,15 +913,62 @@ function DataTab() {
         </div>
       )}
 
-      {selectedEntity && isLoading && <div className="loading">Загрузка...</div>}
+      {selectedEntity && drilldownId && (
+        <>
+          <button
+            className="btn btn-small"
+            style={{ marginBottom: 12 }}
+            onClick={() => { setDrilldownId(null); setDrilldownLabel(""); setDrilldownPage(1); }}
+          >
+            &larr; Назад к вишлистам
+          </button>
+          <div style={{ marginBottom: 8, fontSize: 14, fontWeight: 500 }}>{drilldownLabel}</div>
 
-      {selectedEntity && !isLoading && items.length === 0 && (
+          {isDrilldownLoading && <div className="loading">Загрузка...</div>}
+
+          {!isDrilldownLoading && (!drilldownData?.items || drilldownData.items.length === 0) && (
+            <div className="empty-state">
+              <div className="empty-state-text">Нет элементов</div>
+            </div>
+          )}
+
+          {drilldownData && drilldownData.items.length > 0 && (
+            <>
+              <div style={{ marginBottom: 8, fontSize: 13, opacity: 0.7 }}>
+                Всего: {drilldownData.total} · Стр. {drilldownPage}/{Math.ceil(drilldownData.total / LIMIT)}
+              </div>
+              <div className="list">
+                {drilldownData.items.map((item) => (
+                  <div key={item.id} className="list-item">
+                    <div className="list-item-content">
+                      <div className="list-item-title">{item.label}</div>
+                      <div className="list-item-hint">{item.hint}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12 }}>
+                {drilldownPage > 1 && (
+                  <button className="btn btn-small" onClick={() => setDrilldownPage((p) => p - 1)}>Назад</button>
+                )}
+                {drilldownPage < Math.ceil(drilldownData.total / LIMIT) && (
+                  <button className="btn btn-small btn-primary" onClick={() => setDrilldownPage((p) => p + 1)}>Далее</button>
+                )}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {selectedEntity && !drilldownId && isLoading && <div className="loading">Загрузка...</div>}
+
+      {selectedEntity && !drilldownId && !isLoading && items.length === 0 && (
         <div className="empty-state">
           <div className="empty-state-text">Нет данных</div>
         </div>
       )}
 
-      {selectedEntity && items.length > 0 && (
+      {selectedEntity && !drilldownId && items.length > 0 && (
         <>
           <div style={{ marginBottom: 8, fontSize: 13, opacity: 0.7 }}>
             Всего: {total} · Стр. {page}/{totalPages}
@@ -894,7 +976,17 @@ function DataTab() {
           <div className="list">
             {items.map((item) => (
               <div key={item.id} className="list-item" style={{ flexWrap: "wrap" }}>
-                <div className="list-item-content">
+                <div
+                  className="list-item-content"
+                  style={{ cursor: selectedEntity === "wishlists" ? "pointer" : "default" }}
+                  onClick={() => {
+                    if (selectedEntity === "wishlists") {
+                      setDrilldownId(item.id);
+                      setDrilldownLabel(item.label);
+                      setDrilldownPage(1);
+                    }
+                  }}
+                >
                   <div className="list-item-title">{item.label}</div>
                   <div className="list-item-hint">{item.hint}</div>
                 </div>
@@ -913,7 +1005,7 @@ function DataTab() {
                   )}
                   <button
                     className="btn btn-icon btn-danger"
-                    onClick={() => deleteMutation.mutate({ entity: selectedEntity, id: item.id })}
+                    onClick={() => confirmAction(`Удалить "${item.label}"?`, () => deleteMutation.mutate({ entity: selectedEntity, id: item.id }))}
                     disabled={deleteMutation.isPending}
                     title="Удалить"
                   >
@@ -963,15 +1055,14 @@ function DataTab() {
         </>
       )}
 
-      {selectedEntity && total > 0 && (
+      {selectedEntity && !drilldownId && total > 0 && (
         <button
           className="btn btn-danger btn-block"
           style={{ marginTop: 16 }}
-          onClick={() => {
-            if (confirm(`Удалить ВСЕ записи раздела "${selectedEntity}" (${total} шт.)? Это действие необратимо!`)) {
-              deleteAllMutation.mutate(selectedEntity);
-            }
-          }}
+          onClick={() => confirmAction(
+            `Удалить ВСЕ записи раздела "${selectedEntity}" (${total} шт.)? Это действие необратимо!`,
+            () => deleteAllMutation.mutate(selectedEntity),
+          )}
           disabled={deleteAllMutation.isPending}
         >
           {deleteAllMutation.isPending ? "Удаление..." : `Удалить все (${total})`}

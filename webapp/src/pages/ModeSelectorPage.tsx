@@ -47,12 +47,21 @@ export function ModeSelectorPage() {
 
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
-    if (!webApp || typeof webApp.checkHomeScreenStatus !== "function") {
+    if (!webApp) {
       setHomeScreenStatus("unsupported");
       return;
     }
 
-    webApp.checkHomeScreenStatus((status) => setHomeScreenStatus(status));
+    // addToHomeScreen requires Bot API 8.0+
+    const version = parseFloat(webApp.version || "0");
+    if (version < 8.0 || typeof webApp.addToHomeScreen !== "function") {
+      setHomeScreenStatus("unsupported");
+      return;
+    }
+
+    if (typeof webApp.checkHomeScreenStatus === "function") {
+      webApp.checkHomeScreenStatus((status) => setHomeScreenStatus(status));
+    }
 
     // React to home screen addition while page is open
     const onAdded = () => setHomeScreenStatus("added");
@@ -115,7 +124,14 @@ export function ModeSelectorPage() {
       {showHomeScreenButton && (
         <button
           className="home-screen-btn"
-          onClick={() => window.Telegram?.WebApp?.addToHomeScreen?.()}
+          onClick={() => {
+            const wa = window.Telegram?.WebApp;
+            if (typeof wa?.addToHomeScreen === "function") {
+              wa.addToHomeScreen();
+            } else {
+              wa?.showAlert?.("Обновите Telegram до последней версии для этой функции.");
+            }
+          }}
         >
           📱 Добавить на главный экран
         </button>

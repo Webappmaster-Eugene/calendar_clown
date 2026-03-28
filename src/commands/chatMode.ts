@@ -16,11 +16,14 @@ import {
   setActiveDialogId,
   getActiveDialogId,
   updateDialogTitle,
+  getChatProvider,
+  setChatProvider,
 } from "../chat/repository.js";
 import { chatCompletion, generateDialogTitle } from "../chat/client.js";
 import { splitMessage } from "../utils/telegram.js";
 import { setModeMenuCommands, getModeButtons } from "./expenseMode.js";
-import { DEEPSEEK_MODEL, NEURO_VISION_MODEL } from "../constants.js";
+import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_VISION_MODEL } from "../constants.js";
+import type { ChatProvider } from "../shared/types.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
 import type { ContentPart, MessageContent } from "../utils/openRouterClient.js";
@@ -63,17 +66,23 @@ const GEMINI_DOC_MIME_TYPES = new Set([
   "application/vnd.ms-excel",
 ]);
 
-function getNeuroKeyboard(isAdmin: boolean) {
+function getNeuroKeyboard(isAdmin: boolean, provider: ChatProvider = "free") {
+  const providerBtn = provider === "free" ? "🆓 Free" : "💎 Paid";
   return Markup.keyboard([
     ["💬 Диалоги", "➕ Новый диалог"],
-    ["🗑 Очистить историю"],
+    ["🗑 Очистить историю", providerBtn],
     ...getModeButtons(isAdmin),
   ]).resize();
 }
 
+/** Resolve model name from chat provider. */
+function resolveModel(provider: ChatProvider): string {
+  return provider === "free" ? DEEPSEEK_FREE_MODEL : DEEPSEEK_MODEL;
+}
+
 /** Fire-and-forget: auto-generate dialog title after first message. */
-function autoNameDialog(dialogId: number, firstMessage: string): void {
-  generateDialogTitle(firstMessage)
+function autoNameDialog(dialogId: number, firstMessage: string, model?: string): void {
+  generateDialogTitle(firstMessage, model)
     .then((title) => {
       if (title && title !== "Новый диалог") {
         return updateDialogTitle(dialogId, title);
@@ -148,6 +157,10 @@ export async function handleNeuroCommand(ctx: Context): Promise<void> {
   await setModeMenuCommands(ctx, "neuro");
 
   const isAdmin = isBootstrapAdmin(telegramId);
+  const dbUser = await getUserByTelegramId(telegramId);
+  const provider = dbUser ? await getChatProvider(dbUser.id) : "free";
+  const providerLabel = provider === "free" ? "🆓 Free (бесплатно)" : "💎 Paid";
+
   await ctx.reply(
     "🧠 *Режим Нейро активирован*\n\n" +
     "Отправьте текст, голосовое, фото или документ — я отвечу с помощью AI.\n" +
@@ -156,8 +169,9 @@ export async function handleNeuroCommand(ctx: Context): Promise<void> {
     "Контекст — последние 20 сообщений активного диалога.\n\n" +
     "🔍 Бот автоматически ищет информацию в интернете при необходимости.\n" +
     "🔗 Ссылки в сообщениях анализируются автоматически.\n" +
-    "📨 Можно отправлять несколько сообщений подряд — они будут обработаны как один запрос.",
-    { parse_mode: "Markdown", ...getNeuroKeyboard(isAdmin) }
+    "📨 Можно отправлять несколько сообщений подряд — они будут обработаны как один запрос.\n\n" +
+    `🤖 Модель: ${providerLabel}`,
+    { parse_mode: "Markdown", ...getNeuroKeyboard(isAdmin, provider) }
   );
 }
 
@@ -180,7 +194,9 @@ export async function handleNeuroText(ctx: Context): Promise<boolean> {
 
   try {
     const dialog = await getOrCreateActiveDialog(dbUser.id);
-    addMessage(dbUser.id, telegramId, dialog.id, userText, ctx, processNeuroRequest);
+    const provider = await getChatProvider(dbUser.id);
+    const model = resolveModel(provider);
+    addMessage(dbUser.id, telegramId, dialog.id, userText, ctx, processNeuroRequest, model);
   } catch (err) {
     log.error("Neuro text batch error:", err);
     await ctx.reply("❌ Ошибка при обработке запроса. Попробуйте позже.");
@@ -445,6 +461,8 @@ export async function handleNeuroVoice(
     const fullText = prependText + transcript;
 
     const dialog = await getOrCreateActiveDialog(dbUser.id);
+    const provider = await getChatProvider(dbUser.id);
+    const model = resolveModel(provider);
     const history = await getRecentMessages(dialog.id, 20);
     const historyMessages = history.map((m) => ({ role: m.role, content: m.content }));
 
@@ -458,18 +476,18 @@ export async function handleNeuroVoice(
       { role: "user", content: augmentedMessage },
     ];
 
-    const result = await chatCompletion(messages);
+    const result = await chatCompletion(messages, model);
 
     // Save original text only (no search/links context)
     const userEntry = prependText
       ? `${prependText}[Голос] ${transcript}`
       : `[Голос] ${transcript}`;
     await saveMessage(dbUser.id, dialog.id, "user", userEntry);
-    await saveMessage(dbUser.id, dialog.id, "assistant", result.content, DEEPSEEK_MODEL, result.tokensUsed ?? undefined);
+    await saveMessage(dbUser.id, dialog.id, "assistant", result.content, model, result.tokensUsed ?? undefined);
 
     // Auto-name dialog on first message
     if (dialog.title === "Новый диалог") {
-      autoNameDialog(dialog.id, transcript);
+      autoNameDialog(dialog.id, transcript, model);
     }
 
     const fullReply = `🎤 _${transcript}_\n\n${result.content}`;
@@ -549,6 +567,8 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
 
     // Build multimodal message
     const dialog = await getOrCreateActiveDialog(dbUser.id);
+    const photoProvider = await getChatProvider(dbUser.id);
+    const photoModel = resolveModel(photoProvider);
     const history = await getRecentMessages(dialog.id, 20);
     const historyMessages: Array<{ role: string; content: MessageContent }> = history.map((m) => ({
       role: m.role,
@@ -580,9 +600,9 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
     await saveMessage(dbUser.id, dialog.id, "user", userEntry);
     await saveMessage(dbUser.id, dialog.id, "assistant", result.content, NEURO_VISION_MODEL, result.tokensUsed ?? undefined);
 
-    // Auto-name dialog on first message
+    // Auto-name dialog on first message (uses user's chat model, not vision model)
     if (dialog.title === "Новый диалог") {
-      autoNameDialog(dialog.id, caption);
+      autoNameDialog(dialog.id, caption, photoModel);
     }
 
     const chunks = splitMessage(result.content);
@@ -652,6 +672,8 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     const isText = TEXT_MIME_TYPES.has(mimeType) || TEXT_EXTENSIONS.has(ext);
 
     const dialog = await getOrCreateActiveDialog(dbUser.id);
+    const docProviderPref = await getChatProvider(dbUser.id);
+    const docTitleModel = resolveModel(docProviderPref);
     const history = await getRecentMessages(dialog.id, 20);
     const historyMessages: Array<{ role: string; content: MessageContent }> = history.map((m) => ({
       role: m.role,
@@ -715,8 +737,8 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
         { role: "user", content: userMessage },
       ];
 
-      result = await chatCompletion(messages);
-      modelUsed = DEEPSEEK_MODEL;
+      result = await chatCompletion(messages, docTitleModel);
+      modelUsed = docTitleModel;
     } else {
       // Unsupported format
       await ctx.reply(
@@ -733,9 +755,9 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     await saveMessage(dbUser.id, dialog.id, "user", userEntry);
     await saveMessage(dbUser.id, dialog.id, "assistant", result.content, modelUsed, result.tokensUsed ?? undefined);
 
-    // Auto-name dialog on first message
+    // Auto-name dialog on first message (uses user's chat model, not vision model)
     if (dialog.title === "Новый диалог") {
-      autoNameDialog(dialog.id, `${fileName}: ${caption}`);
+      autoNameDialog(dialog.id, `${fileName}: ${caption}`, docTitleModel);
     }
 
     const chunks = splitMessage(result.content);
@@ -750,4 +772,32 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     log.error("Neuro document error:", err);
     await ctx.reply("❌ Ошибка при обработке документа. Попробуйте позже.");
   }
+}
+
+/** Handle provider toggle button (🆓 Free / 💎 Paid). */
+export async function handleProviderToggle(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  if (!isDatabaseAvailable()) {
+    await ctx.reply("⚠️ База данных недоступна.");
+    return;
+  }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) return;
+
+  const current = await getChatProvider(dbUser.id);
+  const next: ChatProvider = current === "free" ? "paid" : "free";
+  await setChatProvider(dbUser.id, next);
+
+  const isAdmin = isBootstrapAdmin(telegramId);
+  const label = next === "free"
+    ? "🆓 *Free* — бесплатная модель DeepSeek (rate-limited)"
+    : "💎 *Paid* — платная модель DeepSeek (быстрее, без лимитов)";
+
+  await ctx.reply(
+    `Модель переключена: ${label}`,
+    { parse_mode: "Markdown", ...getNeuroKeyboard(isAdmin, next) }
+  );
 }

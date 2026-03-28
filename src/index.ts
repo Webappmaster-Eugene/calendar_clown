@@ -173,6 +173,21 @@ async function main(): Promise<void> {
 
   await bot.launch();
   await bot.telegram.setMyCommands(commands);
+
+  // Configure Mini App menu button if WEBAPP_URL is set
+  // Required for addToHomeScreen() and direct Mini App access
+  const webappUrl = process.env.WEBAPP_URL?.trim();
+  if (webappUrl) {
+    try {
+      await bot.telegram.setChatMenuButton({
+        menuButton: { type: "web_app", text: "Открыть", web_app: { url: webappUrl } },
+      });
+      log.info("Mini App menu button configured: %s", webappUrl);
+    } catch (err) {
+      log.warn("Failed to set Mini App menu button: %s", err instanceof Error ? err.message : err);
+    }
+  }
+
   log.info("Bot started (long polling)");
 
   const shutdown = async (signal: string) => {

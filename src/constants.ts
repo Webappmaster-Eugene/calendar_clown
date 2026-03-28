@@ -23,6 +23,9 @@ export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 /** DeepSeek model for intent/expense extraction. */
 export const DEEPSEEK_MODEL = "deepseek/deepseek-chat-v3.1";
 
+/** DeepSeek free model via OpenRouter (rate-limited but genuinely free). */
+export const DEEPSEEK_FREE_MODEL = "deepseek/deepseek-chat:free";
+
 /** Gemini model for voice transcription (calendar/expenses modes). */
 export const TRANSCRIBE_MODEL = process.env.STT_MODEL || "google/gemini-2.0-flash-001";
 

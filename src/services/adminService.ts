@@ -148,6 +148,14 @@ export async function addUser(telegramId: number, targetTelegramId: number): Pro
 export async function removeUser(telegramId: number, targetTelegramId: number): Promise<boolean> {
   requireDb();
   requireAdmin(telegramId);
+
+  if (telegramId === targetTelegramId) {
+    throw new Error("Нельзя удалить самого себя");
+  }
+  if (targetTelegramId === 0) {
+    throw new Error("Нельзя удалить системного пользователя");
+  }
+
   return removeUserByTelegramId(targetTelegramId);
 }
 
