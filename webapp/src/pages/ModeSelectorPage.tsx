@@ -37,7 +37,7 @@ export function ModeSelectorPage() {
   const { impact } = useHaptic();
   const [homeScreenStatus, setHomeScreenStatus] = useState<HomeScreenStatus>("unknown");
   const [addingToHome, setAddingToHome] = useState(false);
-  const addingTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const addingTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const handleModeClick = useCallback(
     (route: string) => {
