@@ -19,6 +19,8 @@ import {
   removeTask,
   getCompletedHistory,
   findWorkByName,
+  updateText,
+  updateDeadline,
 } from "../services/tasksService.js";
 import { extractTaskIntent } from "../voice/extractTaskIntent.js";
 import { formatTaskDeadlineFull, isOverdue } from "../tasks/logic.js";
@@ -50,6 +52,15 @@ const taskCreationStates = new Map<number, TaskCreationState>();
 
 /** Voice task creation: waiting for work selection (telegramId → { text, deadline }). */
 const voiceWorkSelection = new Map<number, { text: string; deadline: string | null }>();
+
+interface TaskEditState {
+  field: "text" | "deadline";
+  taskItemId: number;
+  workId: number;
+}
+
+/** In-memory edit wizard states (telegramId → state). */
+const taskEditStates = new Map<number, TaskEditState>();
 
 // ─── Keyboard ───────────────────────────────────────────────────────────
 
@@ -104,6 +115,7 @@ function clearStates(telegramId: number): void {
   workCreationStates.delete(telegramId);
   taskCreationStates.delete(telegramId);
   voiceWorkSelection.delete(telegramId);
+  taskEditStates.delete(telegramId);
 }
 
 // ─── My Projects ────────────────────────────────────────────────────────
@@ -146,9 +158,7 @@ export async function handleNewProjectButton(ctx: Context): Promise<void> {
   clearStates(telegramId);
   workCreationStates.set(telegramId, { step: "name" });
 
-  await ctx.reply("Введите название нового проекта (например: _9RED_, _Росатом_, _Польза_):", {
-    parse_mode: "Markdown",
-  });
+  await ctx.reply("Введите название нового проекта:");
 }
 
 // ─── History ────────────────────────────────────────────────────────────
@@ -319,6 +329,50 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
     }
     return;
   }
+
+  // ti_edit:<itemId>:<workId> — show edit options
+  if (data.startsWith("ti_edit:")) {
+    const parts = data.split(":");
+    const itemId = parseInt(parts[1], 10);
+    const workId = parseInt(parts[2], 10);
+    if (isNaN(itemId) || isNaN(workId)) return;
+    await ctx.reply(
+      "Что изменить?",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("📝 Изменить текст", `ti_edt:${itemId}:${workId}`)],
+        [Markup.button.callback("⏰ Изменить дедлайн", `ti_edl:${itemId}:${workId}`)],
+        [Markup.button.callback("Отмена", "noop")],
+      ]),
+    );
+    return;
+  }
+
+  // ti_edt:<itemId>:<workId> — start editing text
+  if (data.startsWith("ti_edt:")) {
+    const parts = data.split(":");
+    const itemId = parseInt(parts[1], 10);
+    const workId = parseInt(parts[2], 10);
+    if (isNaN(itemId) || isNaN(workId)) return;
+    clearStates(telegramId);
+    taskEditStates.set(telegramId, { field: "text", taskItemId: itemId, workId });
+    await ctx.reply("Введите новый текст задачи:");
+    return;
+  }
+
+  // ti_edl:<itemId>:<workId> — start editing deadline
+  if (data.startsWith("ti_edl:")) {
+    const parts = data.split(":");
+    const itemId = parseInt(parts[1], 10);
+    const workId = parseInt(parts[2], 10);
+    if (isNaN(itemId) || isNaN(workId)) return;
+    clearStates(telegramId);
+    taskEditStates.set(telegramId, { field: "deadline", taskItemId: itemId, workId });
+    await ctx.reply(
+      "Введите новый дедлайн:\n\nПримеры: `завтра 18:00`, `понедельник 15:00`, `30.03 12:00`",
+      { parse_mode: "Markdown" },
+    );
+    return;
+  }
 }
 
 // ─── Pagination ─────────────────────────────────────────────────────────
@@ -348,6 +402,12 @@ export async function handleTasksText(ctx: Context): Promise<boolean> {
   if (!ctx.message || !("text" in ctx.message)) return false;
   const text = ctx.message.text.trim();
   if (!text) return false;
+
+  // Edit state handler (must come before creation wizards)
+  const editState = taskEditStates.get(telegramId);
+  if (editState) {
+    return await handleEditInput(ctx, telegramId, editState, text);
+  }
 
   // Work creation wizard
   const workState = workCreationStates.get(telegramId);
@@ -627,6 +687,7 @@ async function showWorkDetail(
     for (const task of activeTasks) {
       buttons.push([
         Markup.button.callback(`✅ ${task.text.substring(0, 30)}`, `ti_done:${task.id}:${workId}`),
+        Markup.button.callback("✏️", `ti_edit:${task.id}:${workId}`),
         Markup.button.callback("🗑", `ti_del:${task.id}:${workId}`),
       ]);
     }
@@ -757,13 +818,16 @@ async function handleVoiceWorkPick(
  */
 function parseDeadline(text: string): Date | null {
   // Try chrono-node first (handles Russian dates like "завтра 18:00")
-  const results = chrono.ru.parse(text, new Date(), { forwardDate: true });
+  // Use MSK reference so "11:00" means 11:00 Moscow time, not server-local
+  const results = chrono.ru.parse(text, { instant: new Date(), timezone: "MSK" as const }, { forwardDate: true });
   if (results.length > 0) {
     return results[0].start.date();
   }
 
   // Try parsing ISO or common formats as fallback
-  const date = new Date(text);
+  // If no timezone info present, interpret as MSK (UTC+3)
+  const hasTimezone = /[Zz]$/.test(text) || /[+-]\d{2}(:\d{2})?$/.test(text);
+  const date = new Date(hasTimezone ? text : text + "+03:00");
   if (!isNaN(date.getTime()) && date.getTime() > Date.now()) {
     return date;
   }
@@ -776,11 +840,66 @@ function parseDeadline(text: string): Date | null {
     const year = ddmmMatch[3] ? parseInt(ddmmMatch[3], 10) : new Date().getFullYear();
     const hours = parseInt(ddmmMatch[4], 10);
     const minutes = parseInt(ddmmMatch[5], 10);
-    const parsed = new Date(year, month, day, hours, minutes);
+    // MSK is always UTC+3 (no DST since 2014)
+    const parsed = new Date(Date.UTC(year, month, day, hours - 3, minutes));
     if (!isNaN(parsed.getTime()) && parsed.getTime() > Date.now()) {
       return parsed;
     }
   }
 
   return null;
+}
+
+/**
+ * Handle text input for task edit wizards (text or deadline).
+ */
+async function handleEditInput(
+  ctx: Context,
+  telegramId: number,
+  edit: TaskEditState,
+  text: string,
+): Promise<boolean> {
+  try {
+    if (edit.field === "text") {
+      taskEditStates.delete(telegramId);
+      const updated = await updateText(telegramId, edit.taskItemId, text);
+      if (!updated) {
+        await ctx.reply("Задача не найдена.");
+        return true;
+      }
+      await ctx.reply(`✅ Текст обновлён: ${escapeMarkdown(updated.text)}`, {
+        parse_mode: "Markdown",
+      });
+      await showWorkDetail(ctx, telegramId, edit.workId);
+      return true;
+    }
+
+    if (edit.field === "deadline") {
+      const deadline = parseDeadline(text);
+      if (!deadline) {
+        await ctx.reply(
+          "Не удалось распознать дату. Попробуйте ещё раз (например: `завтра 18:00`):",
+          { parse_mode: "Markdown" },
+        );
+        return true;
+      }
+
+      taskEditStates.delete(telegramId);
+      const updated = await updateDeadline(telegramId, edit.taskItemId, deadline);
+      if (!updated) {
+        await ctx.reply("Задача не найдена.");
+        return true;
+      }
+      const deadlineStr = formatTaskDeadlineFull(new Date(updated.deadline));
+      await ctx.reply(`✅ Дедлайн обновлён: ${deadlineStr}`);
+      await showWorkDetail(ctx, telegramId, edit.workId);
+      return true;
+    }
+  } catch (err: unknown) {
+    log.error("handleEditInput error:", err);
+    await ctx.reply(err instanceof Error ? err.message : "Ошибка при обновлении.");
+  }
+
+  taskEditStates.delete(telegramId);
+  return true;
 }

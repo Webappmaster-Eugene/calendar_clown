@@ -238,6 +238,27 @@ export async function updateDeadline(
   return taskItemToDto(updated);
 }
 
+export async function updateText(
+  telegramId: number,
+  taskItemId: number,
+  text: string,
+): Promise<TaskItemDto | null> {
+  requireDb();
+  const dbUser = await requireTribeMember(telegramId);
+
+  // Verify ownership
+  const ownership = await getTaskItemWithOwnership(taskItemId, dbUser.id);
+  if (!ownership) return null;
+
+  const trimmedText = text.trim();
+  if (!trimmedText || trimmedText.length > 500) {
+    throw new Error("Текст задачи должен быть от 1 до 500 символов.");
+  }
+
+  const updated = await updateTaskItemText(taskItemId, trimmedText);
+  return updated ? taskItemToDto(updated) : null;
+}
+
 export async function removeTask(
   telegramId: number,
   taskItemId: number,

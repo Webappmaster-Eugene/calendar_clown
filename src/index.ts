@@ -171,11 +171,10 @@ async function main(): Promise<void> {
     { command: "stats", description: "Статистика бота" },
   ];
 
-  await bot.launch();
+  // Configure bot commands and menu button before launch() —
+  // launch() may block while connecting through proxy
   await bot.telegram.setMyCommands(commands);
 
-  // Configure Mini App menu button if WEBAPP_URL is set
-  // Required for addToHomeScreen() and direct Mini App access
   const webappUrl = process.env.WEBAPP_URL?.trim();
   if (webappUrl) {
     try {
@@ -190,6 +189,7 @@ async function main(): Promise<void> {
     log.warn("WEBAPP_URL not set — Mini App menu button and addToHomeScreen() will not work.");
   }
 
+  await bot.launch();
   log.info("Bot started (long polling)");
 
   const shutdown = async (signal: string) => {

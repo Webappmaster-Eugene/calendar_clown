@@ -373,6 +373,9 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^tw_voice_work:/, handleTaskWorkCallback);
   bot.action(/^ti_done:/, handleTaskItemCallback);
   bot.action(/^ti_del:/, handleTaskItemCallback);
+  bot.action(/^ti_edit:/, handleTaskItemCallback);
+  bot.action(/^ti_edt:/, handleTaskItemCallback);
+  bot.action(/^ti_edl:/, handleTaskItemCallback);
   bot.action(/^t_page:/, handleTasksPageCallback);
 
   // OSINT callbacks

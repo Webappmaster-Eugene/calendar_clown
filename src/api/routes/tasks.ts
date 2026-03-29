@@ -13,10 +13,23 @@ import {
   addTask,
   toggleTask,
   updateDeadline,
+  updateText,
   removeTask,
   getCompletedHistory,
 } from "../../services/tasksService.js";
 import type { ApiEnv } from "../authMiddleware.js";
+
+/**
+ * Parse a deadline string from the webapp.
+ * If the string has no timezone info (naive datetime from datetime-local input),
+ * interpret it as MSK (UTC+3, no DST since 2014).
+ */
+function parseMskDeadline(deadline: string): Date {
+  if (/[Zz]$/.test(deadline) || /[+-]\d{2}(:\d{2})?$/.test(deadline)) {
+    return new Date(deadline);
+  }
+  return new Date(deadline + "+03:00");
+}
 
 const app = new Hono<ApiEnv>();
 
@@ -136,7 +149,7 @@ app.post("/:id/items", async (c) => {
     return c.json({ ok: false, error: "deadline is required" }, 400);
   }
 
-  const deadlineDate = new Date(body.deadline);
+  const deadlineDate = parseMskDeadline(body.deadline);
   if (isNaN(deadlineDate.getTime())) {
     return c.json({ ok: false, error: "Invalid deadline format" }, 400);
   }
@@ -205,7 +218,7 @@ app.put("/items/:itemId/deadline", async (c) => {
     return c.json({ ok: false, error: "deadline is required" }, 400);
   }
 
-  const deadlineDate = new Date(body.deadline);
+  const deadlineDate = parseMskDeadline(body.deadline);
   if (isNaN(deadlineDate.getTime())) {
     return c.json({ ok: false, error: "Invalid deadline format" }, 400);
   }
@@ -218,6 +231,32 @@ app.put("/items/:itemId/deadline", async (c) => {
     return c.json({ ok: true, data: updated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to update deadline";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/tasks/items/:itemId/text — update text */
+app.put("/items/:itemId/text", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const itemId = parseInt(c.req.param("itemId"), 10);
+  const body = await c.req.json<{ text: string }>();
+
+  if (isNaN(itemId)) {
+    return c.json({ ok: false, error: "Invalid item ID" }, 400);
+  }
+  if (!body.text?.trim()) {
+    return c.json({ ok: false, error: "text is required" }, 400);
+  }
+
+  try {
+    const updated = await updateText(telegramId, itemId, body.text.trim());
+    if (!updated) {
+      return c.json({ ok: false, error: "Task not found" }, 404);
+    }
+    return c.json({ ok: true, data: updated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update text";
     return c.json({ ok: false, error: msg }, 500);
   }
 });
