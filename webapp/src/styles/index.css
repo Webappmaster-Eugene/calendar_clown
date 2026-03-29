@@ -304,6 +304,12 @@ select.input {
   border-color: var(--tg-theme-link-color, #2481cc);
 }
 
+.home-screen-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: var(--tg-theme-hint-color, #bbb);
+}
+
 /* ─── Tabs ────────────────────────────────────────────────── */
 
 .tabs {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
@@ -36,6 +36,8 @@ export function ModeSelectorPage() {
   const navigate = useNavigate();
   const { impact } = useHaptic();
   const [homeScreenStatus, setHomeScreenStatus] = useState<HomeScreenStatus>("unknown");
+  const [addingToHome, setAddingToHome] = useState(false);
+  const addingTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const handleModeClick = useCallback(
     (route: string) => {
@@ -72,8 +74,44 @@ export function ModeSelectorPage() {
       if (typeof webApp.offEvent === "function") {
         webApp.offEvent("homeScreenAdded", onAdded);
       }
+      clearTimeout(addingTimerRef.current);
     };
   }, []);
+
+  const handleAddToHomeScreen = useCallback(() => {
+    const wa = window.Telegram?.WebApp;
+    if (typeof wa?.addToHomeScreen !== "function") {
+      wa?.showAlert?.(`Функция недоступна. Версия Telegram: ${wa?.version ?? "?"}.`);
+      return;
+    }
+
+    setAddingToHome(true);
+    impact("light");
+
+    try {
+      wa.addToHomeScreen();
+    } catch (err) {
+      setAddingToHome(false);
+      const msg = err instanceof Error ? err.message : String(err);
+      wa.showAlert?.(`Ошибка: ${msg}`);
+      return;
+    }
+
+    // Listen for successful addition
+    const onAdded = () => {
+      clearTimeout(addingTimerRef.current);
+      setAddingToHome(false);
+      setHomeScreenStatus("added");
+      wa.offEvent?.("homeScreenAdded", onAdded);
+    };
+    wa.onEvent?.("homeScreenAdded", onAdded);
+
+    // Fallback: reset loading after 5s if no event received
+    addingTimerRef.current = setTimeout(() => {
+      setAddingToHome(false);
+      wa.offEvent?.("homeScreenAdded", onAdded);
+    }, 5000);
+  }, [impact]);
 
   const { data: profile, isLoading, error } = useQuery({
     queryKey: ["user", "me"],
@@ -124,16 +162,10 @@ export function ModeSelectorPage() {
       {showHomeScreenButton && (
         <button
           className="home-screen-btn"
-          onClick={() => {
-            const wa = window.Telegram?.WebApp;
-            if (typeof wa?.addToHomeScreen === "function") {
-              wa.addToHomeScreen();
-            } else {
-              wa?.showAlert?.("Обновите Telegram до последней версии для этой функции.");
-            }
-          }}
+          disabled={addingToHome}
+          onClick={handleAddToHomeScreen}
         >
-          📱 Добавить на главный экран
+          {addingToHome ? "Добавление..." : "Добавить на главный экран"}
         </button>
       )}
     </div>
