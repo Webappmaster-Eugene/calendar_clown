@@ -186,6 +186,8 @@ async function main(): Promise<void> {
     } catch (err) {
       log.warn("Failed to set Mini App menu button: %s", err instanceof Error ? err.message : err);
     }
+  } else {
+    log.warn("WEBAPP_URL not set — Mini App menu button and addToHomeScreen() will not work.");
   }
 
   log.info("Bot started (long polling)");
