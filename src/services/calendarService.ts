@@ -18,7 +18,7 @@ import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
-import type { CalendarEventDto, CalendarEventInputMethod } from "../shared/types.js";
+import type { CalendarEventDto, CalendarEventInputMethod, CalendarIntentEvent } from "../shared/types.js";
 
 const log = createLogger("calendar-service");
 
@@ -122,6 +122,49 @@ export async function createEventFromText(
   });
 
   return { event: toDto(event), savedToDb };
+}
+
+/**
+ * Create events from pre-extracted LLM intent data (voice input).
+ * Bypasses chrono-node parsing — dates come directly from the LLM as ISO strings with +03:00 offset.
+ */
+export async function createEventFromIntent(
+  userId: string,
+  telegramId: number,
+  intentEvents: CalendarIntentEvent[]
+): Promise<CreateEventResult[]> {
+  const results: CreateEventResult[] = [];
+
+  for (const ev of intentEvents) {
+    const start = new Date(ev.startISO);
+    const end = new Date(ev.endISO);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      log.error("Invalid ISO dates in intent event: start=%s, end=%s", ev.startISO, ev.endISO);
+      continue;
+    }
+
+    try {
+      const event = await createEvent(ev.title, start, end, userId, undefined, ev.recurrence);
+      const savedToDb = await saveEventToDb(telegramId, {
+        googleEventId: event.id ?? null,
+        summary: event.summary,
+        startTime: new Date(event.start),
+        endTime: new Date(event.end),
+        recurrence: ev.recurrence ?? null,
+        inputMethod: "voice",
+        status: "created",
+        htmlLink: event.htmlLink ?? null,
+      });
+
+      results.push({ event: toDto(event), savedToDb });
+    } catch (err) {
+      log.error("Failed to create event from intent \"%s\":", ev.title, err);
+      // Re-throw PastDateError and NoCalendarLinkedError for the route to handle
+      if (err instanceof PastDateError || err instanceof NoCalendarLinkedError) throw err;
+    }
+  }
+
+  return results;
 }
 
 /**

@@ -4,8 +4,10 @@
  */
 import {
   createSimplification,
+  markSimplificationProcessing,
   markSimplificationCompleted,
   markSimplificationFailed,
+  markSimplificationDelivered,
   getSimplificationsPaginated,
   countSimplifications,
   getSimplificationById,
@@ -112,11 +114,20 @@ export async function simplifyFromApi(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  const record = await createSimplification(dbUser.id, inputType, text);
+  // API records: no chatId/statusMessageId, use Date.now() as sequence number
+  const sequenceNumber = Date.now();
+  const record = await createSimplification(
+    dbUser.id, inputType, text,
+    sequenceNumber, null, null,
+  );
+
+  await markSimplificationProcessing(record.id);
 
   try {
     const { result, model } = await simplifyText(text);
     await markSimplificationCompleted(record.id, result, model);
+    // Mark as delivered immediately — API returns result directly to the caller
+    await markSimplificationDelivered(record.id);
 
     return toDto({
       ...record,
@@ -128,6 +139,8 @@ export async function simplifyFromApi(
     const errorMsg = err instanceof Error ? err.message : "Неизвестная ошибка";
     log.error("Error simplifying text from API:", err);
     await markSimplificationFailed(record.id, errorMsg);
+    // Mark as delivered immediately — API returns error directly to the caller
+    await markSimplificationDelivered(record.id);
 
     return toDto({
       ...record,

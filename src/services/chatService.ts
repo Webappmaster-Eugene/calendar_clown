@@ -15,7 +15,7 @@ import {
   getActiveDialogId,
   updateDialogTitle,
 } from "../chat/repository.js";
-import { chatCompletion, generateDialogTitle } from "../chat/client.js";
+import { chatCompletion, chatCompletionStream, generateDialogTitle } from "../chat/client.js";
 import { getChatProvider } from "../chat/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -202,6 +202,72 @@ export async function sendMessage(
     } catch (err) {
       log.error("Failed to generate dialog title:", err);
     }
+  }
+
+  return {
+    dialogId: dialog.id,
+    userMessage: messageToDto(userMsg),
+    assistantMessage: messageToDto(assistantMsg),
+  };
+}
+
+/**
+ * Streaming variant of sendMessage.
+ * Prepares the dialog and user message, then streams the AI response via onChunk.
+ * After streaming completes, saves the full response to DB.
+ */
+export async function sendMessageStream(
+  telegramId: number,
+  content: string,
+  onChunk: (text: string) => void | Promise<void>,
+  dialogId?: number
+): Promise<SendChatMessageResponse> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+
+  // Get or create dialog
+  let dialog;
+  if (dialogId) {
+    dialog = await getDialogById(dialogId, dbUser.id);
+    if (!dialog) throw new Error("Диалог не найден.");
+  } else {
+    dialog = await getOrCreateActiveDialog(dbUser.id);
+  }
+
+  // Resolve model from user's chat provider
+  const provider = await getChatProvider(dbUser.id);
+  const model = provider === "free" ? DEEPSEEK_FREE_MODEL : DEEPSEEK_MODEL;
+
+  // Save user message
+  const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
+
+  // Get conversation history
+  const history = await getRecentMessages(dialog.id, 20);
+  const messages = history.map((m) => ({
+    role: m.role,
+    content: m.content as string,
+  }));
+
+  // Stream AI response
+  const result = await chatCompletionStream(messages, onChunk, model);
+
+  // Save assistant response
+  const assistantMsg = await saveMessage(
+    dbUser.id,
+    dialog.id,
+    "assistant",
+    result.content,
+    model,
+    result.tokensUsed ?? undefined
+  );
+
+  // Auto-generate title for new dialogs (fire-and-forget to avoid blocking the SSE "done" event)
+  if (history.length <= 1) {
+    generateDialogTitle(content, model)
+      .then((title) => {
+        if (title) return updateDialogTitle(dialog.id, title.slice(0, 100));
+      })
+      .catch((err) => log.error("Failed to generate dialog title:", err));
   }
 
   return {

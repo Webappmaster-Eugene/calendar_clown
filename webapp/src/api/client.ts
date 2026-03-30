@@ -73,12 +73,107 @@ async function request<T>(
   return json.data;
 }
 
+export interface StreamDoneEvent {
+  dialogId: number;
+  messageId: number;
+}
+
+/**
+ * POST with SSE streaming response.
+ * Calls onChunk for each content delta.
+ * Returns final metadata when stream completes.
+ */
+async function streamRequest(
+  path: string,
+  body: unknown,
+  onChunk: (text: string) => void
+): Promise<StreamDoneEvent> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (initDataRaw) {
+    headers["Authorization"] = `tma ${initDataRaw}`;
+  }
+
+  const res = await fetch(path, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let errorMsg = `HTTP ${res.status}`;
+    try {
+      const json = (await res.json()) as { error?: string };
+      if (json.error) errorMsg = json.error;
+    } catch { /* use default */ }
+    throw new ApiError(res.status, undefined, errorMsg);
+  }
+
+  if (!res.body) {
+    throw new ApiError(0, "NO_BODY", "No response body for streaming request");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+  let doneEvent: StreamDoneEvent | null = null;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        currentEvent = "";
+        continue;
+      }
+
+      if (trimmed.startsWith("event: ")) {
+        currentEvent = trimmed.slice(7);
+        continue;
+      }
+
+      if (trimmed.startsWith("data: ")) {
+        const payload = trimmed.slice(6);
+        try {
+          const parsed = JSON.parse(payload);
+
+          if (currentEvent === "chunk" && parsed.content != null) {
+            onChunk(parsed.content);
+          } else if (currentEvent === "done" && parsed.dialogId != null) {
+            doneEvent = parsed as StreamDoneEvent;
+          } else if (currentEvent === "error" && parsed.error != null) {
+            throw new ApiError(0, "STREAM_ERROR", parsed.error);
+          }
+        } catch (err) {
+          if (err instanceof ApiError) throw err;
+          // skip malformed JSON
+        }
+      }
+    }
+  }
+
+  if (!doneEvent) {
+    throw new ApiError(0, "STREAM_INCOMPLETE", "Stream ended without completion event");
+  }
+
+  return doneEvent;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
   upload: <T>(path: string, formData: FormData) => request<T>("POST", path, formData, 120_000),
+  stream: streamRequest,
 };
 
 export { ApiError };

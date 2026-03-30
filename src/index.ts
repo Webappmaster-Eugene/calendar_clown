@@ -16,6 +16,8 @@ import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, start
 import { createTranscribeProcessor } from "./transcribe/worker.js";
 import { getDistinctUsersWithUndelivered } from "./transcribe/repository.js";
 import { deliverCompletedInOrder, setDeliveryBotRef } from "./transcribe/deliveryQueue.js";
+import { setSimplifierDeliveryBotRef, deliverSimplificationsInOrder } from "./simplifier/deliveryQueue.js";
+import { getDistinctUsersWithUndeliveredSimplifications, markStaleSimplificationsAsFailed } from "./simplifier/repository.js";
 import { isDigestConfigured, isDigestReady } from "./digest/telegramClient.js";
 import { disconnectAll as disconnectAllMtprotoSessions } from "./digest/sessionManager.js";
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
@@ -105,6 +107,29 @@ async function main(): Promise<void> {
     }
   } else {
     log.info("REDIS_URL not set — transcribe mode disabled.");
+  }
+
+  // Set bot reference for simplifier ordered delivery
+  setSimplifierDeliveryBotRef(bot);
+
+  // Simplifier recovery: deliver any undelivered results from before restart
+  if (isDatabaseAvailable()) {
+    try {
+      const staleCount = await markStaleSimplificationsAsFailed(30);
+      if (staleCount > 0) {
+        log.info(`Simplifier recovery: marked ${staleCount} stale simplification(s) as failed.`);
+      }
+
+      const simpUsersToDeliver = await getDistinctUsersWithUndeliveredSimplifications();
+      for (const userId of simpUsersToDeliver) {
+        deliverSimplificationsInOrder(bot, userId);
+      }
+      if (simpUsersToDeliver.length > 0) {
+        log.info(`Simplifier recovery: triggered delivery for ${simpUsersToDeliver.length} user(s).`);
+      }
+    } catch (err) {
+      log.error("Simplifier recovery failed:", err instanceof Error ? err.message : err);
+    }
   }
 
   // Set bot reference for MTProto web auth notifications

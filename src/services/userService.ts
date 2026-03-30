@@ -87,8 +87,8 @@ export async function switchMode(telegramId: number, newMode: UserMode): Promise
 export function getAvailableModes(profile: UserProfile): UserMode[] {
   const allModes: UserMode[] = [
     "calendar", "expenses", "transcribe", "simplifier", "digest", "gandalf", "neuro",
-    "goals", "reminders", "wishlist", "notable_dates", "osint",
-    "summarizer", "blogger", "broadcast", "admin", "tasks",
+    "goals", "reminders", "wishlist", "notable_dates", "osint", "tasks",
+    "summarizer", "blogger", "broadcast", "admin",
   ];
 
   return allModes.filter((mode) =>

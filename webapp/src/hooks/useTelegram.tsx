@@ -72,9 +72,11 @@ interface TelegramWebApp {
   // SDK v6.1+ — header/background color
   setHeaderColor?: (color: "bg_color" | "secondary_bg_color" | string) => void;
   setBackgroundColor?: (color: string) => void;
-  // Event system
-  onEvent?: (event: string, callback: () => void) => void;
-  offEvent?: (event: string, callback: () => void) => void;
+  // Event system (callbacks vary by event: some pass no args, some pass objects)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onEvent?: (event: string, callback: (...args: any[]) => void) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  offEvent?: (event: string, callback: (...args: any[]) => void) => void;
 }
 
 declare global {

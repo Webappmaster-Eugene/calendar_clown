@@ -204,8 +204,10 @@ app.put("/rubrics/:id/toggle", async (c) => {
   }
 
   try {
-    const body = await c.req.json<{ isActive: boolean }>();
-    const rubric = await toggleRubricActive(telegramId, rubricId, body.isActive);
+    const rubric = await toggleRubricActive(telegramId, rubricId);
+    if (!rubric) {
+      return c.json({ ok: false, error: "Rubric not found" }, 404);
+    }
     return c.json({ ok: true, data: rubric });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to toggle rubric";

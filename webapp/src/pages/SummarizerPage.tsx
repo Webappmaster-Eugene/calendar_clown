@@ -108,7 +108,7 @@ export function SummarizerPage() {
                 <div className="list-item-content">
                   <div className="list-item-title">{w.title}</div>
                   <div className="list-item-hint">
-                    {w.company ?? "Без компании"} &middot; {w.achievementCount} достижений
+                    {w.company ? `${w.company} \u00b7 ` : ""}{w.achievementCount} достижений
                   </div>
                 </div>
               </button>

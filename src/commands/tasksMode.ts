@@ -425,7 +425,7 @@ export async function handleTasksText(ctx: Context): Promise<boolean> {
         },
       );
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("unique")) {
+      if (err instanceof Error && (err.message.includes("уже существует") || err.message.includes("unique"))) {
         await ctx.reply("Проект с таким названием уже существует. Введите другое название:");
         workCreationStates.set(telegramId, { step: "name" });
       } else {

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { transcribeAudio } from "../../services/voiceService.js";
+import { transcribeAudio, extractIntent } from "../../services/voiceService.js";
 import { extractExpenseIntent } from "../../voice/extractExpenseIntent.js";
 import { getCategoriesListFormatted, addExpenseFromVoice } from "../../services/expenseService.js";
 import type { ApiEnv } from "../authMiddleware.js";
@@ -54,6 +54,42 @@ app.post("/transcribe", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to transcribe audio";
     log.error("Voice transcription error for user %d: %s", telegramId, msg);
+    return c.json({ ok: false, error: msg }, 500);
+  } finally {
+    if (tempPath) unlink(tempPath).catch(() => {});
+  }
+});
+
+/**
+ * POST /api/voice/extract-intent — transcribe audio and extract calendar/voice intent via LLM.
+ * Returns transcript + structured intent (same LLM pipeline as the Telegram bot).
+ * Used by Mini App to get the same accuracy as bot voice handling.
+ */
+app.post("/extract-intent", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  let tempPath: string | null = null;
+
+  try {
+    const formData = await c.req.formData();
+    const audioFile = extractAudioFile(formData);
+
+    if (!audioFile) {
+      return c.json({ ok: false, error: "audio file is required (multipart field 'audio')" }, 400);
+    }
+
+    // Step 1: Transcribe audio to text
+    tempPath = await saveAudioToTemp(audioFile, telegramId);
+    const { transcript } = await transcribeAudio(tempPath);
+
+    // Step 2: Extract intent via LLM (same as bot's extractVoiceIntent)
+    const intent = await extractIntent(transcript);
+
+    return c.json({ ok: true, data: { transcript, intent } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to extract voice intent";
+    log.error("Voice extract-intent error for user %d: %s", telegramId, msg);
     return c.json({ ok: false, error: msg }, 500);
   } finally {
     if (tempPath) unlink(tempPath).catch(() => {});

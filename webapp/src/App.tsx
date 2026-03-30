@@ -72,11 +72,11 @@ export function App() {
                   <Route path="/neuro" element={<ChatPage />} />
                   <Route path="/transcribe" element={<TranscribePage />} />
                   <Route path="/simplifier" element={<SimplifierPage />} />
+                  <Route path="/tasks" element={<TasksPage />} />
                   <Route path="/summarizer" element={<SummarizerPage />} />
                   <Route path="/blogger" element={<BloggerPage />} />
                   <Route path="/broadcast" element={<BroadcastPage />} />
                   <Route path="/admin" element={<AdminPage />} />
-                  <Route path="/tasks" element={<TasksPage />} />
                 </Routes>
               </Suspense>
             </AppShell>

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import {
   createEventFromText,
+  createEventFromIntent,
   getEventsToday,
   getEventsWeek,
   cancelEventById,
@@ -9,6 +10,7 @@ import {
   NoCalendarLinkedError,
   PastDateError,
 } from "../../services/calendarService.js";
+import type { CreateEventRequest } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
@@ -45,15 +47,37 @@ app.get("/week", async (c) => {
   }
 });
 
-/** POST /api/calendar/events — create event from text */
+/** POST /api/calendar/events — create event from text or pre-extracted intent */
 app.post("/events", async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
   const telegramId = initData.user.id;
-  const body = await c.req.json<{ text: string }>();
+  const body = await c.req.json<CreateEventRequest>();
 
+  // Route 1: Pre-extracted intent from LLM (voice input via /api/voice/extract-intent)
+  if (body.intent?.events?.length) {
+    try {
+      const results = await createEventFromIntent(userId, telegramId, body.intent.events);
+      if (results.length === 0) {
+        return c.json({ ok: false, error: "Не удалось создать событие из распознанных данных." }, 400);
+      }
+      // Return first event for backward compatibility with CreateEventResponse
+      return c.json({ ok: true, data: results[0] });
+    } catch (err) {
+      if (err instanceof NoCalendarLinkedError) {
+        return c.json({ ok: false, error: err.message, code: "NO_CALENDAR" }, 400);
+      }
+      if (err instanceof PastDateError) {
+        return c.json({ ok: false, error: err.message, code: "PAST_DATE" }, 400);
+      }
+      const msg = err instanceof Error ? err.message : "Failed to create event";
+      return c.json({ ok: false, error: msg }, 500);
+    }
+  }
+
+  // Route 2: Natural language text (typed input, parsed via chrono-node)
   if (!body.text?.trim()) {
-    return c.json({ ok: false, error: "text is required" }, 400);
+    return c.json({ ok: false, error: "text or intent is required" }, 400);
   }
 
   try {

@@ -119,6 +119,11 @@ export async function createNewWork(
     throw new Error("Название проекта должно быть от 1 до 100 символов.");
   }
 
+  const existing = await getTaskWorkByName(dbUser.id, trimmedName);
+  if (existing) {
+    throw new Error(`Проект «${trimmedName}» уже существует.`);
+  }
+
   const work = await createTaskWork(dbUser.id, trimmedName, emoji);
   return taskWorkToDto(work);
 }

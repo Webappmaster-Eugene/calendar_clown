@@ -1,13 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
-import type { CreateEventRequest, CreateEventResponse } from "@shared/types";
+import type { CreateEventRequest, CreateEventResponse, VoiceExtractIntentResponse, CalendarIntentEvent } from "@shared/types";
 
 export function CreateEventPage() {
   const [text, setText] = useState("");
   const navigate = useNavigate();
+
+  // Stores LLM-extracted intent from voice input (cleared when user edits text)
+  const [extractedEvents, setExtractedEvents] = useState<CalendarIntentEvent[] | null>(null);
+  // Tracks the transcript that corresponds to the current extractedEvents
+  const voiceTranscriptRef = useRef<string>("");
 
   const mutation = useMutation({
     mutationFn: (data: CreateEventRequest) =>
@@ -20,11 +25,39 @@ export function CreateEventPage() {
     return () => clearTimeout(timer);
   }, [mutation.isSuccess, navigate]);
 
+  const handleTextChange = (newText: string) => {
+    setText(newText);
+    // If user manually edits the transcript, invalidate the extracted intent
+    if (extractedEvents && newText !== voiceTranscriptRef.current) {
+      setExtractedEvents(null);
+    }
+  };
+
+  const handleVoiceResult = (transcript: string, data?: unknown) => {
+    setText(transcript);
+    voiceTranscriptRef.current = transcript;
+
+    // VoiceButton passes the full response as second arg: { transcript, intent }
+    const response = data as Partial<VoiceExtractIntentResponse> | undefined;
+    const intent = response?.intent;
+    if (intent?.type === "calendar" && intent.events?.length) {
+      setExtractedEvents(intent.events);
+    } else {
+      setExtractedEvents(null);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = text.trim();
     if (!trimmed) return;
-    mutation.mutate({ text: trimmed });
+
+    // If we have pre-extracted intent from voice (and user didn't edit), use it directly
+    if (extractedEvents) {
+      mutation.mutate({ intent: { events: extractedEvents } });
+    } else {
+      mutation.mutate({ text: trimmed });
+    }
   };
 
   return (
@@ -38,14 +71,15 @@ export function CreateEventPage() {
             <textarea
               className="input"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => handleTextChange(e.target.value)}
               placeholder="Встреча с командой завтра в 15:00"
               rows={3}
               style={{ flex: 1 }}
             />
             <VoiceButton
               mode="calendar"
-              onResult={(transcript) => setText((prev) => prev ? `${prev} ${transcript}` : transcript)}
+              endpoint="/api/voice/extract-intent"
+              onResult={handleVoiceResult}
             />
           </div>
         </div>

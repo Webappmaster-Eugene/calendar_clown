@@ -58,7 +58,7 @@ export const INDIVIDUAL_MODES = [
 
 /** Modes requiring tribe membership */
 export const TRIBE_MODES = [
-  "expenses", "digest", "notable_dates", "wishlist", "osint", "summarizer", "blogger", "tasks",
+  "expenses", "digest", "notable_dates", "wishlist", "osint", "tasks", "summarizer", "blogger",
 ] as const;
 
 /** Tasks */

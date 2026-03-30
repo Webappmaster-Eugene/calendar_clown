@@ -1,9 +1,11 @@
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import {
   getUserDialogs,
   createNewDialog,
   getDialogMessages,
   sendMessage,
+  sendMessageStream,
   removeDialog,
 } from "../../services/chatService.js";
 import { getUserByTelegramId } from "../../expenses/repository.js";
@@ -78,6 +80,52 @@ app.post("/messages", async (c) => {
     const msg = err instanceof Error ? err.message : "Failed to send message";
     return c.json({ ok: false, error: msg }, 500);
   }
+});
+
+/** POST /api/chat/messages/stream — send message with SSE streaming response */
+app.post("/messages/stream", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const body = await c.req.json<{ dialogId?: number; content: string }>();
+
+  if (!body.content?.trim()) {
+    return c.json({ ok: false, error: "content is required" }, 400);
+  }
+
+  return streamSSE(c, async (stream) => {
+    let eventId = 0;
+
+    try {
+      const result = await sendMessageStream(
+        telegramId,
+        body.content.trim(),
+        async (chunk) => {
+          await stream.writeSSE({
+            id: String(eventId++),
+            event: "chunk",
+            data: JSON.stringify({ content: chunk }),
+          });
+        },
+        body.dialogId
+      );
+
+      await stream.writeSSE({
+        id: String(eventId++),
+        event: "done",
+        data: JSON.stringify({
+          dialogId: result.dialogId,
+          messageId: result.assistantMessage.id,
+        }),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to send message";
+      await stream.writeSSE({
+        id: String(eventId++),
+        event: "error",
+        data: JSON.stringify({ error: msg }),
+      });
+    }
+  });
 });
 
 /** DELETE /api/chat/dialogs/:id — delete dialog */

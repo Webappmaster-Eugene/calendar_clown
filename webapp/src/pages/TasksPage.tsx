@@ -50,88 +50,103 @@ export function TasksPage() {
 
   return (
     <div className="page">
-      <h2>✅ Трекер задач</h2>
+      <h1 className="page-title">Трекер задач</h1>
 
-      {works && works.length === 0 && (
-        <div className="empty-state">Нет проектов. Создайте первый!</div>
+      {works && works.length === 0 && !showForm && (
+        <div className="empty-state">
+          <div className="empty-state-emoji">✅</div>
+          <div className="empty-state-text">Нет проектов. Создайте первый!</div>
+        </div>
       )}
 
-      <div className="list">
-        {works?.map((w) => (
-          <div
-            key={w.id}
-            className="list-item clickable"
-            onClick={() => setSelectedWorkId(w.id)}
-          >
-            <div className="list-item-main">
+      {works && works.length > 0 && (
+        <div className="list">
+          {works.map((w) => (
+            <div key={w.id} className="list-item">
               <span className="list-item-emoji">{w.emoji}</span>
-              <div className="list-item-content">
+              <div
+                className="list-item-content"
+                style={{ cursor: "pointer" }}
+                onClick={() => setSelectedWorkId(w.id)}
+              >
                 <div className="list-item-title">{w.name}</div>
-                <div className="list-item-subtitle">
+                <div className="list-item-hint">
                   {w.activeCount > 0
                     ? `${w.activeCount} активн.`
                     : "нет задач"}
                   {w.completedCount > 0 && ` | ${w.completedCount} выполн.`}
                 </div>
               </div>
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-icon btn-danger"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm("Удалить проект со всеми задачами?")) {
+                      deleteWorkMutation.mutate(w.id);
+                    }
+                  }}
+                  title="Удалить"
+                >
+                  🗑️
+                </button>
+              </div>
             </div>
-            <button
-              className="btn-icon danger"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirm("Удалить проект со всеми задачами?")) {
-                  deleteWorkMutation.mutate(w.id);
-                }
-              }}
-            >
-              🗑
-            </button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {showForm ? (
-        <form
-          className="form-inline"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (name.trim()) {
-              createWorkMutation.mutate({ name: name.trim() });
-            }
-          }}
-        >
-          <input
-            type="text"
-            placeholder="Название проекта"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-            maxLength={100}
-          />
-          <div className="form-actions">
-            <button type="submit" className="btn primary" disabled={createWorkMutation.isPending}>
-              Создать
-            </button>
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => {
-                setShowForm(false);
-                setName("");
-              }}
-            >
-              Отмена
-            </button>
-          </div>
-          {createWorkMutation.isError && (
-            <div className="error-msg">
-              {(createWorkMutation.error as Error).message}
+        <div className="card" style={{ marginTop: 16 }}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (name.trim()) {
+                createWorkMutation.mutate({ name: name.trim() });
+              }
+            }}
+          >
+            <div className="form-group">
+              <label className="form-label">Название проекта</label>
+              <input
+                className="input"
+                type="text"
+                placeholder="Например: Работа"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+                maxLength={100}
+              />
             </div>
-          )}
-        </form>
+            {createWorkMutation.isError && (
+              <div className="error-msg">
+                {(createWorkMutation.error as Error).message}
+              </div>
+            )}
+            <div className="form-row">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setShowForm(false);
+                  setName("");
+                }}
+              >
+                Отмена
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={createWorkMutation.isPending || !name.trim()}
+              >
+                {createWorkMutation.isPending ? "Создание..." : "Создать"}
+              </button>
+            </div>
+          </form>
+        </div>
       ) : (
-        <button className="btn primary full-width" onClick={() => setShowForm(true)}>
-          ➕ Новый проект
+        <button className="fab" onClick={() => setShowForm(true)} title="Новый проект">
+          +
         </button>
       )}
     </div>
@@ -203,14 +218,19 @@ function TaskList({ workId, onBack }: { workId: number; onBack: () => void }) {
 
   return (
     <div className="page">
-      <button className="btn-back" onClick={onBack}>← Назад</button>
-      <h2>{work.emoji} {work.name}</h2>
-      <div className="subtitle">
+      <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>
+        ← Назад
+      </button>
+      <h1 className="page-title">{work.emoji} {work.name}</h1>
+      <p className="page-subtitle">
         Активных: {activeTasks.length} | Выполненных: {completedTasks.length}
-      </div>
+      </p>
 
       {activeTasks.length === 0 && completedTasks.length === 0 && (
-        <div className="empty-state">Нет задач. Добавьте первую!</div>
+        <div className="empty-state">
+          <div className="empty-state-emoji">📝</div>
+          <div className="empty-state-text">Нет задач. Добавьте первую!</div>
+        </div>
       )}
 
       <div className="list">
@@ -218,63 +238,62 @@ function TaskList({ workId, onBack }: { workId: number; onBack: () => void }) {
           const dl = new Date(task.deadline);
           const isOverdue = dl.getTime() < Date.now();
           return (
-            <div key={task.id} className={`list-item ${isOverdue ? "overdue" : ""}`}>
-              <div className="list-item-main">
-                <button
-                  className="btn-check"
-                  onClick={() => toggleMutation.mutate(task.id)}
-                  title="Отметить выполненной"
-                >
-                  ⬜
-                </button>
-                <div className="list-item-content">
-                  <div className="list-item-title">{task.text}</div>
-                  <div className={`list-item-subtitle ${isOverdue ? "text-danger" : ""}`}>
-                    ⏰ {formatDeadline(dl)}
-                    {isOverdue && " ⚠️ просрочено"}
-                  </div>
+            <div key={task.id} className={`list-item${isOverdue ? " overdue" : ""}`}>
+              <button
+                className="btn btn-icon"
+                onClick={() => toggleMutation.mutate(task.id)}
+                title="Отметить выполненной"
+              >
+                ⬜
+              </button>
+              <div className="list-item-content">
+                <div className="list-item-title">{task.text}</div>
+                <div className={`list-item-hint${isOverdue ? " text-danger" : ""}`}>
+                  ⏰ {formatDeadline(dl)}
+                  {isOverdue && " — просрочено"}
                 </div>
               </div>
-              <button
-                className="btn-icon danger"
-                onClick={() => {
-                  if (confirm("Удалить задачу?")) {
-                    deleteMutation.mutate(task.id);
-                  }
-                }}
-              >
-                🗑
-              </button>
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-icon btn-danger"
+                  onClick={() => {
+                    if (confirm("Удалить задачу?")) {
+                      deleteMutation.mutate(task.id);
+                    }
+                  }}
+                  title="Удалить"
+                >
+                  🗑️
+                </button>
+              </div>
             </div>
           );
         })}
 
         {completedTasks.length > 0 && (
           <>
-            <div className="section-divider">Выполнено</div>
+            <div className="section-title">Выполнено</div>
             {completedTasks.slice(0, 5).map((task) => (
-              <div key={task.id} className="list-item completed">
-                <div className="list-item-main">
-                  <button
-                    className="btn-check"
-                    onClick={() => toggleMutation.mutate(task.id)}
-                    title="Вернуть в работу"
-                  >
-                    ✅
-                  </button>
-                  <div className="list-item-content">
-                    <div className="list-item-title strikethrough">{task.text}</div>
-                    {task.completedAt && (
-                      <div className="list-item-subtitle">
-                        Выполнено: {formatDeadline(new Date(task.completedAt))}
-                      </div>
-                    )}
-                  </div>
+              <div key={task.id} className="list-item">
+                <button
+                  className="btn btn-icon"
+                  onClick={() => toggleMutation.mutate(task.id)}
+                  title="Вернуть в работу"
+                >
+                  ✅
+                </button>
+                <div className="list-item-content">
+                  <div className="list-item-title completed">{task.text}</div>
+                  {task.completedAt && (
+                    <div className="list-item-hint">
+                      Выполнено: {formatDeadline(new Date(task.completedAt))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
             {completedTasks.length > 5 && (
-              <button className="btn link" onClick={() => setShowHistory(true)}>
+              <button className="btn btn-small" onClick={() => setShowHistory(true)}>
                 Показать все ({completedTasks.length})
               </button>
             )}
@@ -283,57 +302,66 @@ function TaskList({ workId, onBack }: { workId: number; onBack: () => void }) {
       </div>
 
       {showForm ? (
-        <form
-          className="form-card"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (text.trim() && deadline) {
-              addTaskMutation.mutate({ text: text.trim(), deadline });
-            }
-          }}
-        >
-          <input
-            type="text"
-            placeholder="Описание задачи"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            autoFocus
-            maxLength={500}
-          />
-          <input
-            type="datetime-local"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-          />
-          <div className="form-actions">
-            <button
-              type="submit"
-              className="btn primary"
-              disabled={addTaskMutation.isPending || !text.trim() || !deadline}
-            >
-              Добавить
-            </button>
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => {
-                setShowForm(false);
-                setText("");
-                setDeadline("");
-              }}
-            >
-              Отмена
-            </button>
-          </div>
-          {addTaskMutation.isError && (
-            <div className="error-msg">
-              {(addTaskMutation.error as Error).message}
+        <div className="card" style={{ marginTop: 16 }}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (text.trim() && deadline) {
+                addTaskMutation.mutate({ text: text.trim(), deadline });
+              }
+            }}
+          >
+            <div className="form-group">
+              <label className="form-label">Описание задачи</label>
+              <input
+                className="input"
+                type="text"
+                placeholder="Что нужно сделать?"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                autoFocus
+                maxLength={500}
+              />
             </div>
-          )}
-        </form>
+            <div className="form-group">
+              <label className="form-label">Дедлайн</label>
+              <input
+                className="input"
+                type="datetime-local"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+              />
+            </div>
+            {addTaskMutation.isError && (
+              <div className="error-msg">
+                {(addTaskMutation.error as Error).message}
+              </div>
+            )}
+            <div className="form-row">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setShowForm(false);
+                  setText("");
+                  setDeadline("");
+                }}
+              >
+                Отмена
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={addTaskMutation.isPending || !text.trim() || !deadline}
+              >
+                {addTaskMutation.isPending ? "Добавление..." : "Добавить"}
+              </button>
+            </div>
+          </form>
+        </div>
       ) : (
-        <button className="btn primary full-width" onClick={() => setShowForm(true)}>
-          ➕ Добавить задачу
+        <button className="fab" onClick={() => setShowForm(true)} title="Добавить задачу">
+          +
         </button>
       )}
     </div>
@@ -361,20 +389,25 @@ function TaskHistory({
 
   return (
     <div className="page">
-      <button className="btn-back" onClick={onBack}>← Назад</button>
-      <h2>📜 История: {workName}</h2>
+      <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>
+        ← Назад
+      </button>
+      <h1 className="page-title">История: {workName}</h1>
 
       {(!history || history.length === 0) && (
-        <div className="empty-state">Нет выполненных задач</div>
+        <div className="empty-state">
+          <div className="empty-state-emoji">📜</div>
+          <div className="empty-state-text">Нет выполненных задач</div>
+        </div>
       )}
 
       <div className="list">
         {history?.map((task) => (
-          <div key={task.id} className="list-item completed">
+          <div key={task.id} className="list-item">
             <div className="list-item-content">
               <div className="list-item-title">✅ {task.text}</div>
               {task.completedAt && (
-                <div className="list-item-subtitle">
+                <div className="list-item-hint">
                   Выполнено: {formatDeadline(new Date(task.completedAt))}
                 </div>
               )}

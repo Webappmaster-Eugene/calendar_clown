@@ -1,6 +1,7 @@
 /**
  * Simplifier mode command handler.
  * Accumulates text/voice messages, then simplifies via AI on demand.
+ * Results are delivered in the order requests were submitted (ordered delivery).
  */
 
 import type { Context } from "telegraf";
@@ -17,11 +18,16 @@ import {
   createSimplification,
   markSimplificationCompleted,
   markSimplificationFailed,
+  markSimplificationProcessing,
   getSimplificationsPaginated,
   countSimplifications,
   getSimplificationById,
   deleteSimplification,
 } from "../simplifier/repository.js";
+import {
+  deliverSimplificationsInOrder,
+  getSimplifierDeliveryBot,
+} from "../simplifier/deliveryQueue.js";
 import { MAX_SIMPLIFIER_INPUT_LENGTH } from "../constants.js";
 import { DB_UNAVAILABLE_MSG } from "../constants.js";
 
@@ -208,59 +214,57 @@ export async function handleSimplifyButton(ctx: Context): Promise<void> {
     return;
   }
 
-  // Create DB record
+  // Use message_id of the "Simplify" button press as sequence number
+  const sequenceNumber = ctx.message!.message_id;
+  const chatId = ctx.chat!.id;
+
+  // Send status message BEFORE creating DB record (need its message_id)
+  const statusMsg = await ctx.reply("⏳ Упрощаю текст...");
+
+  // Create DB record with sequence tracking
   let record;
   try {
-    record = await createSimplification(dbUser.id, inputType, combinedText);
+    record = await createSimplification(
+      dbUser.id, inputType, combinedText,
+      sequenceNumber, chatId, statusMsg.message_id,
+    );
   } catch (err) {
     log.error("Error creating simplification record:", err);
+    try {
+      await ctx.telegram.deleteMessage(chatId, statusMsg.message_id);
+    } catch { /* ignore */ }
     await ctx.reply("Ошибка при сохранении. Попробуйте ещё раз.");
     return;
   }
 
-  const statusMsg = await ctx.reply("⏳ Упрощаю текст...");
+  // Clear buffer immediately — text is persisted in DB
+  clearBuffer(telegramId);
 
+  // Fire-and-forget: process async, trigger ordered delivery when done
+  void processSimplificationAsync(dbUser.id, record.id, combinedText);
+}
+
+/** Process simplification asynchronously and trigger ordered delivery. */
+async function processSimplificationAsync(
+  userId: number,
+  recordId: number,
+  text: string,
+): Promise<void> {
   try {
-    const { result, model } = await simplifyText(combinedText);
-    await markSimplificationCompleted(record.id, result, model);
-
-    // Clear buffer on success
-    clearBuffer(telegramId);
-
-    // Send result
-    try {
-      await ctx.telegram.deleteMessage(ctx.chat!.id, statusMsg.message_id);
-    } catch {
-      // ignore delete errors
-    }
-
-    const header = "🧹 *Результат упрощения:*\n\n";
-    const chunks = splitMessage(header + result, 4096);
-    for (const chunk of chunks) {
-      await ctx.reply(chunk, { parse_mode: "Markdown" });
-    }
+    await markSimplificationProcessing(recordId);
+    const { result, model } = await simplifyText(text);
+    await markSimplificationCompleted(recordId, result, model);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : "Неизвестная ошибка";
-    log.error("Error simplifying text:", err);
-
+    log.error(`Simplification ${recordId} failed:`, err);
     try {
-      await markSimplificationFailed(record.id, errorMsg);
+      await markSimplificationFailed(recordId, errorMsg);
     } catch (dbErr) {
       log.error("Error marking simplification as failed:", dbErr);
     }
-
-    // Do NOT clear buffer on AI error — let user retry
-    try {
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id,
-        statusMsg.message_id,
-        undefined,
-        `❌ Ошибка при упрощении: ${errorMsg}`,
-      );
-    } catch {
-      await ctx.reply(`❌ Ошибка при упрощении: ${errorMsg}`);
-    }
   }
+  // Always trigger delivery — whether success or failure
+  deliverSimplificationsInOrder(getSimplifierDeliveryBot(), userId);
 }
 
 // ─── Clear buffer button ───────────────────────────────────────

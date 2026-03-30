@@ -107,6 +107,16 @@ export async function toggleRubric(rubricId: number, userId: number, isActive: b
   return (rowCount ?? 0) > 0;
 }
 
+/** Toggle is_active to its opposite value and return the updated rubric. */
+export async function toggleRubricIsActive(rubricId: number, userId: number): Promise<DigestRubric | null> {
+  const { rows } = await query<RubricRow>(
+    `UPDATE digest_rubrics SET is_active = NOT is_active, updated_at = NOW()
+     WHERE id = $1 AND user_id = $2 RETURNING *`,
+    [rubricId, userId]
+  );
+  return rows.length > 0 ? mapRubric(rows[0]) : null;
+}
+
 // ─── Channels ────────────────────────────────────────────────────────────────
 
 export async function addChannel(

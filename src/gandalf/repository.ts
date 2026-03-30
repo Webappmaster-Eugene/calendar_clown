@@ -461,6 +461,35 @@ export async function deleteEntry(entryId: number, tribeId: number | null): Prom
   return (rowCount ?? 0) > 0;
 }
 
+/**
+ * Get entry count and total price for all categories in one query.
+ * Handles both tribe and personal (null tribeId) scopes.
+ */
+export async function getCategoryEntryCounts(
+  tribeId: number | null
+): Promise<Map<number, { count: number; totalPrice: number | null }>> {
+  const { rows } = tribeId != null
+    ? await query<{ category_id: number; count: string; total_price: string | null }>(
+        `SELECT category_id, COUNT(*) AS count, SUM(price) AS total_price
+         FROM gandalf_entries WHERE tribe_id = $1 GROUP BY category_id`,
+        [tribeId]
+      )
+    : await query<{ category_id: number; count: string; total_price: string | null }>(
+        `SELECT category_id, COUNT(*) AS count, SUM(price) AS total_price
+         FROM gandalf_entries WHERE tribe_id IS NULL GROUP BY category_id`,
+        []
+      );
+
+  const map = new Map<number, { count: number; totalPrice: number | null }>();
+  for (const r of rows) {
+    map.set(r.category_id, {
+      count: parseInt(r.count, 10),
+      totalPrice: r.total_price != null ? parseFloat(r.total_price) : null,
+    });
+  }
+  return map;
+}
+
 export async function countEntriesByCategory(tribeId: number | null, categoryId: number): Promise<number> {
   const { rows } = tribeId != null
     ? await query<{ count: string }>(

@@ -23,14 +23,17 @@ const MODE_ROUTES: Record<string, string> = {
   neuro: "/neuro",
   transcribe: "/transcribe",
   simplifier: "/simplifier",
+  tasks: "/tasks",
   summarizer: "/summarizer",
   blogger: "/blogger",
   broadcast: "/broadcast",
   admin: "/admin",
-  tasks: "/tasks",
 };
 
 type HomeScreenStatus = "unsupported" | "unknown" | "added" | "missed";
+
+/** Platforms where home screen shortcuts are meaningful */
+const MOBILE_PLATFORMS = new Set(["android", "android_x", "ios"]);
 
 export function ModeSelectorPage() {
   const navigate = useNavigate();
@@ -54,6 +57,12 @@ export function ModeSelectorPage() {
       return;
     }
 
+    // Home screen shortcuts only make sense on mobile platforms
+    if (!MOBILE_PLATFORMS.has(webApp.platform ?? "")) {
+      setHomeScreenStatus("unsupported");
+      return;
+    }
+
     // addToHomeScreen requires Bot API 8.0+
     const version = parseFloat(webApp.version || "0");
     if (version < 8.0 || typeof webApp.addToHomeScreen !== "function") {
@@ -61,19 +70,39 @@ export function ModeSelectorPage() {
       return;
     }
 
+    // Use checkHomeScreenStatus only to detect "added" — hide the button
+    // if the shortcut already exists. Other statuses (including "unsupported")
+    // are ignored because the method existence check above is the authoritative
+    // capability indicator; checkHomeScreenStatus can give false negatives
+    // on some Telegram clients.
+    const handleStatusResult = (status: HomeScreenStatus) => {
+      if (status === "added") {
+        setHomeScreenStatus("added");
+      }
+    };
+
     if (typeof webApp.checkHomeScreenStatus === "function") {
-      webApp.checkHomeScreenStatus((status) => setHomeScreenStatus(status));
+      try {
+        webApp.checkHomeScreenStatus(handleStatusResult);
+      } catch {
+        // SDK may throw WebAppMethodUnsupported — ignore, keep button visible
+      }
     }
+
+    // Listen for event-based status check (some clients deliver via event, not callback)
+    const onChecked = (evt: { status: HomeScreenStatus }) => {
+      handleStatusResult(evt?.status ?? "unknown");
+    };
 
     // React to home screen addition while page is open
     const onAdded = () => setHomeScreenStatus("added");
-    if (typeof webApp.onEvent === "function") {
-      webApp.onEvent("homeScreenAdded", onAdded);
-    }
+
+    webApp.onEvent?.("homeScreenChecked", onChecked);
+    webApp.onEvent?.("homeScreenAdded", onAdded);
+
     return () => {
-      if (typeof webApp.offEvent === "function") {
-        webApp.offEvent("homeScreenAdded", onAdded);
-      }
+      webApp.offEvent?.("homeScreenChecked", onChecked);
+      webApp.offEvent?.("homeScreenAdded", onAdded);
       clearTimeout(addingTimerRef.current);
     };
   }, []);
@@ -86,7 +115,12 @@ export function ModeSelectorPage() {
     }
 
     setAddingToHome(true);
-    impact("light");
+
+    try {
+      impact("light");
+    } catch {
+      // Haptic feedback is non-critical — don't block the main action
+    }
 
     try {
       wa.addToHomeScreen();
@@ -106,10 +140,24 @@ export function ModeSelectorPage() {
     };
     wa.onEvent?.("homeScreenAdded", onAdded);
 
-    // Fallback: reset loading after 5s if no event received
+    // Fallback: reset loading state after timeout if no event received.
+    // Re-check status to detect silent success (docs: "the event may not
+    // be received even if the icon has been added").
     addingTimerRef.current = setTimeout(() => {
       setAddingToHome(false);
       wa.offEvent?.("homeScreenAdded", onAdded);
+
+      if (typeof wa.checkHomeScreenStatus === "function") {
+        try {
+          wa.checkHomeScreenStatus((status) => {
+            if (status === "added") {
+              setHomeScreenStatus("added");
+            }
+          });
+        } catch {
+          // Ignore
+        }
+      }
     }, 5000);
   }, [impact]);
 

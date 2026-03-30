@@ -193,11 +193,16 @@ export const thoughtSimplifications = pgTable(
     modelUsed: varchar("model_used", { length: 100 }),
     status: varchar("status", { length: 20 }).notNull().default("pending"),
     errorMessage: text("error_message"),
+    sequenceNumber: bigint("sequence_number", { mode: "number" }).notNull(),
+    isDelivered: boolean("is_delivered").notNull().default(false),
+    chatId: bigint("chat_id", { mode: "number" }),
+    statusMessageId: integer("status_message_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     simplifiedAt: timestamp("simplified_at", { withTimezone: true }),
   },
   (table) => [
     index("idx_thought_simplifications_user_created").on(table.userId, table.createdAt),
+    index("idx_ts_delivery").on(table.userId, table.sequenceNumber).where(sql`is_delivered = false`),
   ],
 );
 
@@ -892,7 +897,9 @@ export const taskWorks = pgTable(
   },
   (table) => [
     index("idx_task_works_user").on(table.userId),
-    unique("task_works_user_name_key").on(table.userId, table.name),
+    uniqueIndex("task_works_user_name_active_key")
+      .on(table.userId, table.name)
+      .where(sql`is_archived = false`),
   ],
 );
 

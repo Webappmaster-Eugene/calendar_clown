@@ -5,6 +5,26 @@ export { NoCalendarLinkedError } from "./auth.js";
 
 const CALENDAR_ID = "primary";
 
+/**
+ * Format Date as Moscow-local ISO 8601 string with explicit +03:00 offset.
+ * Example: "2026-03-31T15:00:00+03:00"
+ *
+ * This avoids ambiguity when Google Calendar API receives both a UTC "Z" dateTime
+ * and a timeZone field — with explicit offset the time is always unambiguous.
+ */
+function formatDateTimeMsk(date: Date): string {
+  return date.toLocaleString("sv-SE", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).replace(" ", "T") + "+03:00";
+}
+
 export interface CalendarEvent {
   id: string;
   summary: string;
@@ -46,8 +66,8 @@ export async function createEvent(
   } = {
     summary,
     description: description ?? undefined,
-    start: { dateTime: start.toISOString(), timeZone: "Europe/Moscow" },
-    end: { dateTime: end.toISOString(), timeZone: "Europe/Moscow" },
+    start: { dateTime: formatDateTimeMsk(start), timeZone: "Europe/Moscow" },
+    end: { dateTime: formatDateTimeMsk(end), timeZone: "Europe/Moscow" },
   };
   if (recurrence?.length) {
     requestBody.recurrence = recurrence;
@@ -91,8 +111,8 @@ export async function searchEvents(
   const calendar = google.calendar({ version: "v3", auth });
   const res = await calendar.events.list({
     calendarId: CALENDAR_ID,
-    timeMin: timeMin.toISOString(),
-    timeMax: timeMax.toISOString(),
+    timeMin: formatDateTimeMsk(timeMin),
+    timeMax: formatDateTimeMsk(timeMax),
     singleEvents: true,
     orderBy: "startTime",
     q: query || undefined,
@@ -135,8 +155,8 @@ export async function listEvents(
   const calendar = google.calendar({ version: "v3", auth });
   const res = await calendar.events.list({
     calendarId: CALENDAR_ID,
-    timeMin: timeMin.toISOString(),
-    timeMax: timeMax.toISOString(),
+    timeMin: formatDateTimeMsk(timeMin),
+    timeMax: formatDateTimeMsk(timeMax),
     singleEvents: true,
     orderBy: "startTime",
   });

@@ -91,8 +91,20 @@ export interface CalendarEventRecordDto {
   createdAt: string;
 }
 
+export interface CalendarIntentEvent {
+  title: string;
+  startISO: string;
+  endISO: string;
+  recurrence?: string[];
+}
+
 export interface CreateEventRequest {
-  text: string;
+  /** Natural language text — parsed via chrono-node (for typed input). */
+  text?: string;
+  /** Pre-extracted intent from LLM — bypasses chrono-node (for voice input). */
+  intent?: {
+    events: CalendarIntentEvent[];
+  };
 }
 
 export interface CreateEventResponse {
@@ -103,6 +115,16 @@ export interface CreateEventResponse {
 // ─── Voice ────────────────────────────────────────────────────
 
 export type VoiceIntentType = "calendar" | "cancel_event" | "list_today" | "list_week" | "unknown";
+
+export interface VoiceExtractIntentResponse {
+  transcript: string;
+  intent: {
+    type: VoiceIntentType;
+    events?: CalendarIntentEvent[];
+    cancelQuery?: string;
+    cancelDate?: string | null;
+  };
+}
 
 export interface VoiceTranscribeResponse {
   transcript: string;

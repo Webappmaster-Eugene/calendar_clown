@@ -16,6 +16,7 @@ import {
   updateEntry,
   countEntriesByCategory,
   countEntriesByScope,
+  getCategoryEntryCounts,
   addFileToEntry,
   getFilesByEntry,
   getStatsByCategory,
@@ -89,14 +90,23 @@ export async function getCategories(telegramId: number): Promise<GandalfCategory
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   const scope = buildScope(dbUser);
-  const categories = await getCategoriesByScope(scope);
 
-  return categories.map((c) => ({
-    id: c.id,
-    name: c.name,
-    emoji: c.emoji,
-    isActive: c.isActive,
-  }));
+  const [categories, statsMap] = await Promise.all([
+    getCategoriesByScope(scope),
+    getCategoryEntryCounts(dbUser.tribeId),
+  ]);
+
+  return categories.map((c) => {
+    const stats = statsMap.get(c.id);
+    return {
+      id: c.id,
+      name: c.name,
+      emoji: c.emoji,
+      isActive: c.isActive,
+      totalEntries: stats?.count ?? 0,
+      totalPrice: stats?.totalPrice ?? null,
+    };
+  });
 }
 
 /**

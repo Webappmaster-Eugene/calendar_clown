@@ -214,9 +214,7 @@ select.input {
 
 .list-item-title {
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 }
 
 .list-item-hint {
@@ -815,6 +813,21 @@ select.input {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ─── Task-specific utilities ────────────────────────────── */
+
+.list-item.overdue {
+  border-left: 3px solid #e53935;
+}
+
+.list-item-title.completed {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.text-danger {
+  color: #e53935;
 }
 
 /* ─── App Shell ──────────────────────────────────────────── */

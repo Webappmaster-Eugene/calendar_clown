@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
@@ -7,8 +7,6 @@ import type {
   ChatDialogDto,
   ChatMessageDto,
   ChatProvider,
-  SendChatMessageRequest,
-  SendChatMessageResponse,
 } from "@shared/types";
 
 export function ChatPage() {
@@ -150,6 +148,10 @@ export function ChatPage() {
 function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void }) {
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
+  const [streamingContent, setStreamingContent] = useState("");
+  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isNewChat = dialogId === -1;
   const [activeDialogId, setActiveDialogId] = useState<number | null>(
@@ -163,31 +165,53 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
     enabled: activeDialogId !== null,
   });
 
-  const sendMutation = useMutation({
-    mutationFn: (data: SendChatMessageRequest) =>
-      api.post<SendChatMessageResponse>("/api/chat/messages", data),
-    onSuccess: (result) => {
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamingContent, isSending]);
+
+  const handleSend = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text || isSending) return;
+
+    setInput("");
+    setError(null);
+    setStreamingContent("");
+    setPendingUserMessage(text);
+    setIsSending(true);
+
+    try {
+      const result = await api.stream(
+        "/api/chat/messages/stream",
+        {
+          content: text,
+          ...(activeDialogId !== null ? { dialogId: activeDialogId } : {}),
+        },
+        (chunk) => {
+          setStreamingContent((prev) => prev + chunk);
+        }
+      );
+
       if (activeDialogId === null) {
         setActiveDialogId(result.dialogId);
       }
-      queryClient.invalidateQueries({ queryKey: ["chat"] });
-    },
-  });
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sendMutation.isPending]);
-
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || sendMutation.isPending) return;
-    const req: SendChatMessageRequest = { content: input.trim() };
-    if (activeDialogId !== null) {
-      req.dialogId = activeDialogId;
+      // Wait for messages to be refetched before clearing optimistic state
+      // This prevents a visual flash where messages disappear briefly
+      await queryClient.invalidateQueries({ queryKey: ["chat", "messages"] });
+      queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
+      setStreamingContent("");
+      setPendingUserMessage(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка отправки");
+      setPendingUserMessage(null);
+    } finally {
+      setIsSending(false);
     }
-    sendMutation.mutate(req);
-    setInput("");
-  };
+  }, [input, isSending, activeDialogId, queryClient]);
+
+  // Combine server messages with the current user input + streaming response
+  const displayMessages = messages ?? [];
 
   return (
     <div className="page" style={{ paddingBottom: 70 }}>
@@ -196,20 +220,32 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
       </button>
 
       <div className="chat-messages">
-        {messages?.map((msg) => (
+        {displayMessages.map((msg) => (
           <div key={msg.id} className={`chat-bubble ${msg.role}`}>
             {msg.content}
           </div>
         ))}
-        {sendMutation.isPending && (
-          <div className="chat-bubble assistant">Думаю...</div>
+        {pendingUserMessage && (
+          <div className="chat-bubble user">
+            {pendingUserMessage}
+          </div>
+        )}
+        {isSending && !streamingContent && (
+          <div className="chat-bubble assistant" style={{ opacity: 0.6 }}>
+            ...
+          </div>
+        )}
+        {streamingContent && (
+          <div className="chat-bubble assistant">
+            {streamingContent}
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {sendMutation.error && (
+      {error && (
         <div className="error-msg" style={{ margin: "8px 0" }}>
-          {(sendMutation.error as Error).message}
+          {error}
         </div>
       )}
 
@@ -227,7 +263,7 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={sendMutation.isPending || !input.trim()}
+          disabled={isSending || !input.trim()}
         >
           Отправить
         </button>

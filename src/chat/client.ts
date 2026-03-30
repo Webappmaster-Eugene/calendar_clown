@@ -1,5 +1,11 @@
 import { DEEPSEEK_MODEL } from "../constants.js";
-import { callOpenRouter, callOpenRouterWithUsage, type MessageContent } from "../utils/openRouterClient.js";
+import {
+  callOpenRouter,
+  callOpenRouterWithUsage,
+  callOpenRouterStream,
+  type MessageContent,
+  type StreamResult,
+} from "../utils/openRouterClient.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("chat-client");
@@ -41,6 +47,29 @@ export async function chatCompletion(
     model: model ?? DEEPSEEK_MODEL,
     messages: fullMessages,
   });
+}
+
+/**
+ * Send a streaming chat completion request.
+ * Calls onChunk for each content delta.
+ * Returns the full accumulated result when done.
+ */
+export async function chatCompletionStream(
+  messages: Array<{ role: string; content: MessageContent }>,
+  onChunk: (text: string) => void | Promise<void>,
+  model?: string,
+  systemPromptOverride?: string
+): Promise<StreamResult> {
+  const systemPrompt = systemPromptOverride ?? buildSystemPrompt();
+  const fullMessages: Array<{ role: string; content: MessageContent }> = [
+    { role: "system", content: systemPrompt },
+    ...messages,
+  ];
+
+  return callOpenRouterStream(
+    { model: model ?? DEEPSEEK_MODEL, messages: fullMessages },
+    onChunk
+  );
 }
 
 /** Generate a short title (3-5 words) for a dialog based on the first message. */

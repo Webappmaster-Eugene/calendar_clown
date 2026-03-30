@@ -162,7 +162,7 @@ export async function getTaskWorkById(workId: number): Promise<TaskWork | null> 
 
 export async function getTaskWorkByName(userId: number, name: string): Promise<TaskWork | null> {
   const { rows } = await query<TaskWorkRow>(
-    `SELECT * FROM task_works WHERE user_id = $1 AND LOWER(name) = LOWER($2)`,
+    `SELECT * FROM task_works WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND is_archived = false`,
     [userId, name],
   );
   if (rows.length === 0) return null;

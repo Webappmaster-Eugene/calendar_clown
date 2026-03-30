@@ -9,6 +9,7 @@ import {
   createRubric,
   deleteRubric,
   toggleRubric,
+  toggleRubricIsActive,
   updateRubric,
   addChannel,
   removeChannelById,
@@ -176,16 +177,29 @@ export async function removeRubric(telegramId: number, rubricId: number): Promis
 }
 
 /**
- * Toggle rubric active/inactive.
+ * Toggle rubric active/inactive (inverts current state).
+ * Returns updated rubric DTO or null if not found.
  */
 export async function toggleRubricActive(
   telegramId: number,
-  rubricId: number,
-  isActive: boolean
-): Promise<boolean> {
+  rubricId: number
+): Promise<DigestRubricDto | null> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
-  return toggleRubric(rubricId, dbUser.id, isActive);
+  const rubric = await toggleRubricIsActive(rubricId, dbUser.id);
+  if (!rubric) return null;
+
+  const channelCount = await countChannelsByRubric(rubric.id);
+  return {
+    id: rubric.id,
+    name: rubric.name,
+    description: rubric.description,
+    emoji: rubric.emoji,
+    keywords: rubric.keywords,
+    isActive: rubric.isActive,
+    channelCount,
+    lastRunAt: null,
+  };
 }
 
 /**

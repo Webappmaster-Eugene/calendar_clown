@@ -15,6 +15,10 @@ export interface Simplification {
   modelUsed: string | null;
   status: string;
   errorMessage: string | null;
+  sequenceNumber: number;
+  isDelivered: boolean;
+  chatId: number | null;
+  statusMessageId: number | null;
   createdAt: Date;
   simplifiedAt: Date | null;
 }
@@ -28,6 +32,10 @@ interface SimplificationRow {
   model_used: string | null;
   status: string;
   error_message: string | null;
+  sequence_number: number;
+  is_delivered: boolean;
+  chat_id: number | null;
+  status_message_id: number | null;
   created_at: Date;
   simplified_at: Date | null;
 }
@@ -42,6 +50,10 @@ function mapRow(row: SimplificationRow): Simplification {
     modelUsed: row.model_used,
     status: row.status,
     errorMessage: row.error_message,
+    sequenceNumber: row.sequence_number,
+    isDelivered: row.is_delivered,
+    chatId: row.chat_id,
+    statusMessageId: row.status_message_id,
     createdAt: row.created_at,
     simplifiedAt: row.simplified_at,
   };
@@ -54,14 +66,26 @@ export async function createSimplification(
   userId: number,
   inputType: string,
   originalText: string,
+  sequenceNumber: number,
+  chatId: number | null,
+  statusMessageId: number | null,
 ): Promise<Simplification> {
   const { rows } = await query<SimplificationRow>(
-    `INSERT INTO thought_simplifications (user_id, input_type, original_text, status)
-     VALUES ($1, $2, $3, 'pending')
+    `INSERT INTO thought_simplifications
+       (user_id, input_type, original_text, status, sequence_number, chat_id, status_message_id)
+     VALUES ($1, $2, $3, 'pending', $4, $5, $6)
      RETURNING *`,
-    [userId, inputType, originalText],
+    [userId, inputType, originalText, sequenceNumber, chatId, statusMessageId],
   );
   return mapRow(rows[0]);
+}
+
+/** Update simplification status to 'processing'. */
+export async function markSimplificationProcessing(id: number): Promise<void> {
+  await query(
+    "UPDATE thought_simplifications SET status = 'processing' WHERE id = $1",
+    [id],
+  );
 }
 
 /** Mark simplification as completed with the result text. */
@@ -85,11 +109,59 @@ export async function markSimplificationFailed(
 ): Promise<void> {
   await query(
     `UPDATE thought_simplifications
-     SET status = 'failed', error_message = $2
+     SET status = 'failed', error_message = $2, simplified_at = NOW()
      WHERE id = $1`,
     [id, errorMessage],
   );
 }
+
+/** Mark simplification as delivered to the user. */
+export async function markSimplificationDelivered(id: number): Promise<void> {
+  await query(
+    "UPDATE thought_simplifications SET is_delivered = true WHERE id = $1",
+    [id],
+  );
+}
+
+// ─── Delivery Queries ───────────────────────────────────────────
+
+/** Get undelivered simplifications for a user, ordered by sequence_number ASC. */
+export async function getUndeliveredSimplificationsForUser(
+  userId: number,
+): Promise<Simplification[]> {
+  const { rows } = await query<SimplificationRow>(
+    `SELECT * FROM thought_simplifications
+     WHERE user_id = $1 AND is_delivered = false
+     ORDER BY sequence_number ASC`,
+    [userId],
+  );
+  return rows.map(mapRow);
+}
+
+/** Get distinct user IDs with undelivered completed/failed simplifications (for recovery). */
+export async function getDistinctUsersWithUndeliveredSimplifications(): Promise<number[]> {
+  const { rows } = await query<{ user_id: number }>(
+    `SELECT DISTINCT user_id FROM thought_simplifications
+     WHERE is_delivered = false AND status IN ('completed', 'failed')`,
+  );
+  return rows.map((r) => r.user_id);
+}
+
+/** Mark stale pending/processing simplifications as failed (timeout cleanup). */
+export async function markStaleSimplificationsAsFailed(
+  maxAgeMinutes: number = 30,
+): Promise<number> {
+  const { rowCount } = await query(
+    `UPDATE thought_simplifications
+     SET status = 'failed', error_message = 'Превышено время ожидания', simplified_at = NOW()
+     WHERE status IN ('pending', 'processing')
+       AND created_at < NOW() - INTERVAL '1 minute' * $1`,
+    [maxAgeMinutes],
+  );
+  return rowCount ?? 0;
+}
+
+// ─── History Queries ────────────────────────────────────────────
 
 /** Get paginated simplifications for a user (newest first). */
 export async function getSimplificationsPaginated(
