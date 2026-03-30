@@ -21,6 +21,7 @@ import {
   generateAiSummary,
 } from "../../services/adminSummaryService.js";
 import { isBootstrapAdmin } from "../../middleware/auth.js";
+import { getActionLogs, getDistinctActions, logApiAction } from "../../logging/actionLogger.js";
 import type { SummaryPeriod } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
@@ -68,6 +69,7 @@ app.post("/users", async (c) => {
 
   try {
     const added = await addUser(telegramId, body.telegramId);
+    logApiAction(telegramId, "admin_user_add", { targetTelegramId: body.telegramId });
     return c.json({ ok: true, data: { added } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add user";
@@ -87,6 +89,7 @@ app.put("/users/:id/approve", async (c) => {
 
   try {
     const approved = await approveUserById(telegramId, targetTelegramId);
+    logApiAction(telegramId, "admin_user_approve", { targetTelegramId });
     return c.json({ ok: true, data: { approved } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to approve user";
@@ -106,6 +109,7 @@ app.put("/users/:id/reject", async (c) => {
 
   try {
     const rejected = await rejectUserById(telegramId, targetTelegramId);
+    logApiAction(telegramId, "admin_user_reject", { targetTelegramId });
     return c.json({ ok: true, data: { rejected } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to reject user";
@@ -125,6 +129,7 @@ app.delete("/users/:id", async (c) => {
 
   try {
     const removed = await removeUser(telegramId, targetTelegramId);
+    logApiAction(telegramId, "admin_user_remove", { targetTelegramId });
     return c.json({ ok: true, data: { removed } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to remove user";
@@ -148,6 +153,7 @@ app.put("/users/:id/tribe", async (c) => {
 
   try {
     const assigned = await assignUserToTribe(telegramId, targetTelegramId, body.tribeId);
+    logApiAction(telegramId, "admin_tribe_assign", { targetTelegramId, tribeId: body.tribeId });
     return c.json({ ok: true, data: { assigned } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to set tribe";
@@ -167,6 +173,7 @@ app.delete("/users/:id/tribe", async (c) => {
 
   try {
     const removed = await removeUserTribe(telegramId, targetTelegramId);
+    logApiAction(telegramId, "admin_tribe_remove", { targetTelegramId });
     return c.json({ ok: true, data: { removed } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to remove from tribe";
@@ -200,6 +207,7 @@ app.post("/tribes", async (c) => {
 
   try {
     const tribe = await createNewTribe(telegramId, body.name.trim());
+    logApiAction(telegramId, "admin_tribe_create", { name: body.name.trim() });
     return c.json({ ok: true, data: tribe });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create tribe";
@@ -220,6 +228,7 @@ app.put("/tribes/:id", async (c) => {
 
   try {
     const updated = await editTribe(telegramId, tribeId, { name: body.name, monthlyLimit: body.monthlyLimit });
+    logApiAction(telegramId, "admin_tribe_edit", { tribeId });
     return c.json({ ok: true, data: { updated } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to edit tribe";
@@ -239,6 +248,7 @@ app.delete("/tribes/:id", async (c) => {
 
   try {
     const removed = await removeTribe(telegramId, tribeId);
+    logApiAction(telegramId, "admin_tribe_delete", { tribeId });
     return c.json({ ok: true, data: { removed } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete tribe";
@@ -394,6 +404,7 @@ app.put("/data/:entity/:id", async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
     const { editEntity } = await import("../../services/adminDataService.js");
     const updated = await editEntity(telegramId, entity as never, entityId, body);
+    logApiAction(telegramId, "admin_data_edit", { entity, entityId });
     return c.json({ ok: true, data: { updated } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to edit";
@@ -416,6 +427,7 @@ app.delete("/data/:entity/:id", async (c) => {
   try {
     const { deleteEntity } = await import("../../services/adminDataService.js");
     const deleted = await deleteEntity(telegramId, entity as never, entityId);
+    logApiAction(telegramId, "admin_data_delete", { entity, entityId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete";
@@ -437,9 +449,57 @@ app.delete("/data/:entity", async (c) => {
   try {
     const { deleteAllEntitiesOfType } = await import("../../services/adminDataService.js");
     const count = await deleteAllEntitiesOfType(telegramId, entity as never);
+    logApiAction(telegramId, "admin_data_delete_all", { entity, deletedCount: count });
     return c.json({ ok: true, data: { deletedCount: count } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete all";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/admin/logs — paginated action log viewer */
+app.get("/logs", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  if (!isBootstrapAdmin(telegramId)) {
+    return c.json({ ok: false, error: "Admin access required" }, 403);
+  }
+
+  try {
+    const filters = {
+      userId: c.req.query("userId") ? parseInt(c.req.query("userId")!, 10) : undefined,
+      telegramId: c.req.query("telegramId") ? parseInt(c.req.query("telegramId")!, 10) : undefined,
+      action: c.req.query("action") || undefined,
+      search: c.req.query("search") || undefined,
+      dateFrom: c.req.query("dateFrom") || undefined,
+      dateTo: c.req.query("dateTo") || undefined,
+      limit: Math.min(parseInt(c.req.query("limit") ?? "50", 10), 100),
+      offset: parseInt(c.req.query("offset") ?? "0", 10),
+    };
+
+    const result = await getActionLogs(filters);
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get logs";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/admin/logs/actions — distinct action names for filter dropdown */
+app.get("/logs/actions", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  if (!isBootstrapAdmin(telegramId)) {
+    return c.json({ ok: false, error: "Admin access required" }, 403);
+  }
+
+  try {
+    const actions = await getDistinctActions();
+    return c.json({ ok: true, data: actions });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get actions";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

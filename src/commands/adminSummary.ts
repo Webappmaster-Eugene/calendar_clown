@@ -4,6 +4,7 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { DB_UNAVAILABLE_MSG } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import {
   type SummaryPeriod,
   getPeriodRange,
@@ -75,6 +76,8 @@ export async function handleSummaryCallback(ctx: Context): Promise<void> {
   }
 
   await ctx.answerCbQuery();
+
+  logAction(null, telegramId, "admin_summary_view", { period });
 
   const range = getPeriodRange(period as SummaryPeriod);
 

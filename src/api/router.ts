@@ -5,6 +5,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { apiAuthMiddleware, requireApproved } from "./authMiddleware.js";
+import { requestLoggerMiddleware } from "./requestLoggerMiddleware.js";
 import type { ApiEnv } from "./authMiddleware.js";
 import { createLogger } from "../utils/logger.js";
 
@@ -26,6 +27,7 @@ import bloggerRoutes from "./routes/blogger.js";
 import broadcastRoutes from "./routes/broadcast.js";
 import adminRoutes from "./routes/admin.js";
 import tasksRoutes from "./routes/tasks.js";
+import nutritionistRoutes from "./routes/nutritionist.js";
 import voiceRoutes from "./routes/voice.js";
 
 const log = createLogger("api");
@@ -46,6 +48,9 @@ export function createApiApp(): Hono<ApiEnv> {
 
   // Require approved status for all routes
   api.use("*", requireApproved());
+
+  // Audit: log every API request to action_logs
+  api.use("*", requestLoggerMiddleware());
 
   // ── Health check (no auth needed — registered before middleware) ──
   // Note: health is mounted on the parent, not here
@@ -69,6 +74,7 @@ export function createApiApp(): Hono<ApiEnv> {
   api.route("/broadcast", broadcastRoutes);
   api.route("/admin", adminRoutes);
   api.route("/tasks", tasksRoutes);
+  api.route("/nutritionist", nutritionistRoutes);
   api.route("/voice", voiceRoutes);
 
   // ── Global error handler ───────────────────────────────────

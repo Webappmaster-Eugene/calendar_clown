@@ -4,6 +4,7 @@ import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { query } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const TOKENS_DIR = "./data/tokens";
 
@@ -194,6 +195,8 @@ export async function handleStatsCommand(ctx: Context): Promise<void> {
     await ctx.reply(DB_UNAVAILABLE_MSG);
     return;
   }
+
+  logAction(null, telegramId, "admin_stats_view");
 
   try {
     const [global, perUser] = await Promise.all([

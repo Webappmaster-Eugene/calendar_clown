@@ -3,6 +3,7 @@ import { Markup } from "telegraf";
 import { getAuthUrl, hasToken } from "../calendar/auth.js";
 import { isBootstrapAdmin, getUserMenuContext } from "../middleware/auth.js";
 import { getModeKeyboard } from "./expenseMode.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const HELP_TEXT = `
 *Многофункциональный бот-ассистент*
@@ -57,6 +58,9 @@ const HELP_TEXT = `
 ✅ *Задачи (требуется трайб):*
 /tasks — трекер задач с дедлайнами
 
+🥗 *Нутрициолог:*
+/nutritionist — анализ еды по фотографии
+
 🔀 *Переключение:*
 /mode — выбор режима работы
 
@@ -78,6 +82,7 @@ const HELP_TEXT = `
 
 export async function handleStart(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
+  logAction(null, ctx.from?.id ?? 0, "bot_start", {});
   const isAdmin = userId != null && isBootstrapAdmin(userId);
 
   if (userId == null) {
@@ -128,6 +133,7 @@ export async function handleStart(ctx: Context): Promise<void> {
 }
 
 export async function handleHelp(ctx: Context): Promise<void> {
+  logAction(null, ctx.from?.id ?? 0, "bot_help", {});
   try {
     await ctx.replyWithMarkdown(HELP_TEXT);
   } catch {

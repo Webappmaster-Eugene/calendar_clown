@@ -10,6 +10,7 @@ import {
   removeGoal,
 } from "../../services/goalsService.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
@@ -44,6 +45,7 @@ app.post("/", async (c) => {
       body.period as Parameters<typeof createNewGoalSet>[2],
       body.emoji
     );
+    logApiAction(telegramId, "goal_set_create", { name: body.name.trim(), period: body.period });
     return c.json({ ok: true, data: goalSet });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create goal set";
@@ -89,6 +91,7 @@ app.post("/:id/goals", async (c) => {
 
   try {
     const goal = await addGoal(telegramId, goalSetId, body.text.trim());
+    logApiAction(telegramId, "goal_add", { goalSetId, text: body.text.trim() });
     return c.json({ ok: true, data: goal });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add goal";
@@ -138,6 +141,7 @@ app.put("/goals/:goalId/toggle", async (c) => {
     if (!goal) {
       return c.json({ ok: false, error: "Goal not found" }, 404);
     }
+    logApiAction(telegramId, "goal_toggle", { goalId });
     return c.json({ ok: true, data: goal });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to toggle goal";
@@ -157,6 +161,7 @@ app.delete("/goals/:goalId", async (c) => {
 
   try {
     const deleted = await removeGoal(telegramId, goalId);
+    logApiAction(telegramId, "goal_delete", { goalId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete goal";
@@ -176,6 +181,7 @@ app.delete("/:id", async (c) => {
 
   try {
     const deleted = await removeGoalSet(telegramId, goalSetId);
+    logApiAction(telegramId, "goal_set_delete", { goalSetId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete goal set";

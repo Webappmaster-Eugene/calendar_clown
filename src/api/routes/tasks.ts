@@ -17,6 +17,7 @@ import {
   removeTask,
   getCompletedHistory,
 } from "../../services/tasksService.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 /**
@@ -156,6 +157,7 @@ app.post("/:id/items", async (c) => {
 
   try {
     const item = await addTask(telegramId, workId, body.text.trim(), deadlineDate);
+    logApiAction(telegramId, "task_add", { workId, text: body.text.trim() });
     return c.json({ ok: true, data: item });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add task";
@@ -197,6 +199,7 @@ app.put("/items/:itemId/toggle", async (c) => {
     if (!toggled) {
       return c.json({ ok: false, error: "Task not found" }, 404);
     }
+    logApiAction(telegramId, "task_complete", { itemId, completed: toggled.completedAt !== null });
     return c.json({ ok: true, data: toggled });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to toggle task";
@@ -254,6 +257,7 @@ app.put("/items/:itemId/text", async (c) => {
     if (!updated) {
       return c.json({ ok: false, error: "Task not found" }, 404);
     }
+    logApiAction(telegramId, "task_edit", { itemId });
     return c.json({ ok: true, data: updated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to update text";
@@ -276,6 +280,7 @@ app.delete("/items/:itemId", async (c) => {
     if (!deleted) {
       return c.json({ ok: false, error: "Task not found" }, 404);
     }
+    logApiAction(telegramId, "task_delete", { itemId });
     return c.json({ ok: true, data: { deleted: true } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete task";

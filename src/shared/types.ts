@@ -47,6 +47,7 @@ export type UserMode =
   | "osint"
   | "summarizer"
   | "blogger"
+  | "nutritionist"
   | "admin"
   | "tasks";
 
@@ -837,5 +838,71 @@ export interface SimplificationDto {
 
 export interface SimplifierHistoryResponse {
   simplifications: SimplificationDto[];
+  total: number;
+}
+
+// ─── Nutritionist ──────────────────────────────────────────────
+
+export type NutritionAnalysisStatus = "pending" | "processing" | "completed" | "failed";
+
+export interface NutritionFoodItemDto {
+  name: string;
+  weightG: number;
+  calories: number;
+  proteinsG: number;
+  fatsG: number;
+  carbsG: number;
+  cookingMethod: string;
+}
+
+export interface NutritionTotalDto {
+  weightG: number;
+  calories: number;
+  proteinsG: number;
+  fatsG: number;
+  carbsG: number;
+}
+
+export interface NutritionAnalysisDto {
+  id: number;
+  items: NutritionFoodItemDto[];
+  total: NutritionTotalDto;
+  dishType: string;
+  mealAssessment: string;
+  confidence: "high" | "medium" | "low";
+  summaryText: string | null;
+  status: NutritionAnalysisStatus;
+  errorMessage: string | null;
+  createdAt: string;
+  analyzedAt: string | null;
+}
+
+export interface NutritionistHistoryResponse {
+  analyses: NutritionAnalysisDto[];
+  total: number;
+}
+
+export interface NutritionDailySummaryDto {
+  date: string;
+  mealsCount: number;
+  total: NutritionTotalDto;
+  analyses: NutritionAnalysisDto[];
+}
+
+// ─── Action Logs Viewer ──────────────────────────────────────
+
+export interface ActionLogEntryDto {
+  id: number;
+  userId: number | null;
+  telegramId: string | null;
+  action: string;
+  details: string | null;
+  createdAt: string;
+  firstName: string | null;
+  username: string | null;
+}
+
+export interface ActionLogsResponseDto {
+  items: ActionLogEntryDto[];
   total: number;
 }

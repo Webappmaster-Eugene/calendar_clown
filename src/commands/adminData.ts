@@ -9,6 +9,7 @@ import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { initBulkSelect } from "../utils/bulkSelect.js";
+import { logAction } from "../logging/actionLogger.js";
 import { createLogger } from "../utils/logger.js";
 
 // ─── Repository imports ────────────────────────────────────────────────
@@ -230,6 +231,7 @@ export async function handleAdminDataTextInput(ctx: Context): Promise<boolean> {
         return true;
       }
       const updated = await updateExpense(pending.expenseId, { amount });
+      if (updated) logAction(null, telegramId, "admin_data_edit", { entity: "expense", id: pending.expenseId, amount });
       await ctx.reply(updated ? `✅ Расход #${pending.expenseId} обновлён. Новая сумма: ${amount}` : "❌ Расход не найден.");
       return true;
     }
@@ -248,6 +250,7 @@ export async function handleAdminDataTextInput(ctx: Context): Promise<boolean> {
         fields.price = isNaN(price) ? null : price;
       }
       const updated = await updateEntryFields(pending.entryId, fields);
+      if (updated) logAction(null, telegramId, "admin_data_edit", { entity: "gandalf", id: pending.entryId });
       await ctx.reply(updated ? `✅ Запись #${pending.entryId} обновлена.` : "❌ Запись не найдена.");
       return true;
     }
@@ -258,6 +261,7 @@ export async function handleAdminDataTextInput(ctx: Context): Promise<boolean> {
         return true;
       }
       const updated = await updateRubric(pending.rubricId, { name: text });
+      if (updated) logAction(null, telegramId, "admin_data_edit", { entity: "rubric", id: pending.rubricId });
       await ctx.reply(updated ? `✅ Рубрика #${pending.rubricId} обновлена.` : "❌ Рубрика не найдена.");
       return true;
     }
@@ -303,6 +307,7 @@ async function handleTranscriptions(ctx: Context, data: string, telegramId: numb
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await deleteTranscription(id);
+    logAction(null, telegramId, "admin_data_delete", { entity: "transcription", id });
     await ctx.editMessageText(`✅ Транскрипция #${id} удалена.`);
     return;
   }
@@ -371,6 +376,7 @@ async function handleExpenses(ctx: Context, data: string, telegramId: number): P
     // Admin delete: no ownership check
     const { query } = await import("../db/connection.js");
     await query("DELETE FROM expenses WHERE id = $1", [id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "expense", id });
     await ctx.editMessageText(`✅ Расход #${id} удалён.`);
     return;
   }
@@ -447,6 +453,7 @@ async function handleGandalf(ctx: Context, data: string, telegramId: number): Pr
     const id = parseInt(delYesMatch[1], 10);
     const { query } = await import("../db/connection.js");
     await query("DELETE FROM gandalf_entries WHERE id = $1", [id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "gandalf_entry", id });
     await ctx.editMessageText(`✅ Запись #${id} удалена.`);
     return;
   }
@@ -521,6 +528,7 @@ async function handleDigest(ctx: Context, data: string, telegramId: number): Pro
     const id = parseInt(delYesMatch[1], 10);
     const { query } = await import("../db/connection.js");
     await query("DELETE FROM digest_rubrics WHERE id = $1", [id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "digest_rubric", id });
     await ctx.editMessageText(`✅ Рубрика #${id} удалена.`);
     return;
   }
@@ -596,6 +604,7 @@ async function handleDates(ctx: Context, data: string, telegramId: number): Prom
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await removeNotableDate(id, tribeId);
+    logAction(null, telegramId, "admin_data_delete", { entity: "notable_date", id });
     await ctx.editMessageText(`✅ Дата #${id} удалена.`);
     return;
   }
@@ -660,6 +669,7 @@ async function handleCalendar(ctx: Context, data: string, telegramId: number): P
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await bulkDeleteEvents([id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "calendar_event", id });
     await ctx.editMessageText(`✅ Событие #${id} помечено удалённым.`);
     return;
   }
@@ -724,6 +734,7 @@ async function handleChatDialogs(ctx: Context, data: string, telegramId: number)
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await bulkDeleteDialogs([id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "chat_dialog", id });
     await ctx.editMessageText(`✅ Диалог #${id} удалён.`);
     return;
   }
@@ -787,6 +798,7 @@ async function handleWishlists(ctx: Context, data: string, telegramId: number): 
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await bulkDeleteWishlists([id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "wishlist", id });
     await ctx.editMessageText(`✅ Вишлист #${id} удалён.`);
     return;
   }
@@ -850,6 +862,7 @@ async function handleGoalSets(ctx: Context, data: string, telegramId: number): P
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await bulkDeleteGoalSets([id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "goal_set", id });
     await ctx.editMessageText(`✅ Набор целей #${id} удалён.`);
     return;
   }
@@ -914,6 +927,7 @@ async function handleRemindersAdmin(ctx: Context, data: string, telegramId: numb
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await bulkDeleteReminders([id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "reminder", id });
     await ctx.editMessageText(`✅ Напоминание #${id} удалено.`);
     return;
   }
@@ -977,6 +991,7 @@ async function handleOsintSearches(ctx: Context, data: string, telegramId: numbe
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await bulkDeleteSearches([id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "osint_search", id });
     await ctx.editMessageText(`✅ Поиск #${id} удалён.`);
     return;
   }
@@ -1040,6 +1055,7 @@ async function handleWorkplaces(ctx: Context, data: string, telegramId: number):
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await bulkDeleteWorkplaces([id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "workplace", id });
     await ctx.editMessageText(`✅ Место работы #${id} удалено.`);
     return;
   }
@@ -1103,6 +1119,7 @@ async function handleBlogChannels(ctx: Context, data: string, telegramId: number
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     await bulkDeleteChannels([id]);
+    logAction(null, telegramId, "admin_data_delete", { entity: "blogger_channel", id });
     await ctx.editMessageText(`✅ Канал #${id} удалён.`);
     return;
   }

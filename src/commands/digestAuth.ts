@@ -15,6 +15,7 @@ import { computeCheck } from "telegram/Password.js";
 import { saveUserSession, hasActiveSession } from "../digest/sessionManager.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("digest-auth");
 
@@ -259,6 +260,8 @@ export async function handleMtprotoAuthButton(ctx: Context): Promise<void> {
     authStates.set(telegramId, { step: "phone" });
     return;
   }
+
+  logAction(dbUser.id, telegramId, "digest_auth_start", {});
 
   await ctx.reply(
     "🔑 *Привязка Telegram\\-аккаунта*\n\n" +

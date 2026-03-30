@@ -6,6 +6,7 @@ import { checkRateLimit } from "../middleware/rateLimit.js";
 import { getExpenseKeyboard, DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("expense");
 
@@ -54,6 +55,7 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
       }
 
       await ctx.replyWithMarkdown(parts.join("\n"), { ...getExpenseKeyboard(isAdmin) });
+      logAction(null, telegramId, "expense_add_text", { count: multiResult.expenses.length, totalAmount: multiResult.totalAmount });
       return;
     }
   } catch (err) {
@@ -67,6 +69,7 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
   try {
     const result = await addExpenseFromText(telegramId, username, firstName, lastName, isAdmin, text);
     await ctx.replyWithMarkdown(result.confirmation, { ...getExpenseKeyboard(isAdmin) });
+    logAction(null, telegramId, "expense_add_text", { text });
   } catch (err) {
     log.error("Error adding expense:", err);
     const msg = err instanceof Error ? err.message : "Ошибка";
@@ -114,6 +117,7 @@ export async function handleVoiceExpense(
       result.confirmation,
       { parse_mode: "Markdown" }
     );
+    logAction(null, telegramId, "expense_add_voice", { category: categoryName, subcategory, amount });
   } catch (err) {
     log.error("Error adding voice expense:", err);
     const msg = err instanceof Error ? err.message : "Ошибка";

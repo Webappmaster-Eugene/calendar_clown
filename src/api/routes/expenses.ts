@@ -10,6 +10,7 @@ import {
 } from "../../services/expenseService.js";
 import type { UpdateExpenseRequest } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
@@ -49,6 +50,7 @@ app.post("/", async (c) => {
       false,
       body.text.trim()
     );
+    logApiAction(telegramId, "expense_add_text", { text: body.text.trim() });
     return c.json({ ok: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add expense";
@@ -68,6 +70,7 @@ app.delete("/:id", async (c) => {
 
   try {
     const deleted = await undoExpense(telegramId, expenseId);
+    logApiAction(telegramId, "expense_undo", { expenseId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to undo expense";
@@ -108,6 +111,7 @@ app.put("/:id", async (c) => {
     if (!updated) {
       return c.json({ ok: false, error: "Expense not found or access denied" }, 404);
     }
+    logApiAction(telegramId, "expense_edit", { expenseId, fields: Object.keys(body) });
     return c.json({ ok: true, data: updated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to edit expense";

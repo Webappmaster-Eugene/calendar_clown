@@ -3,6 +3,7 @@ import { listEvents, NoCalendarLinkedError } from "../calendar/client.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId, replyMarkdownSafe } from "../utils/telegram.js";
 import { TIMEZONE_MSK } from "../constants.js";
+import { logAction } from "../logging/actionLogger.js";
 
 function formatEvent(e: { summary: string; start: string; end: string }): string {
   const start = new Date(e.start);
@@ -18,6 +19,7 @@ export async function handleToday(ctx: Context): Promise<void> {
     await ctx.reply("Не удалось определить пользователя.");
     return;
   }
+  logAction(null, ctx.from?.id ?? 0, "calendar_view_today", {});
   const now = new Date();
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
@@ -47,6 +49,7 @@ export async function handleWeek(ctx: Context): Promise<void> {
     await ctx.reply("Не удалось определить пользователя.");
     return;
   }
+  logAction(null, ctx.from?.id ?? 0, "calendar_view_week", {});
   const now = new Date();
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);

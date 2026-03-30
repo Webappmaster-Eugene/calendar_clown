@@ -46,6 +46,7 @@ export const MODE_LABELS: Record<string, { label: string; emoji: string; descrip
   broadcast: { label: "Рассылка", emoji: "📢", description: "Отправка сообщений участникам трайба" },
   admin: { label: "Админка", emoji: "⚙️", description: "Управление пользователями, трайбами и данными" },
   tasks: { label: "Задачи", emoji: "✅", description: "Проекты и задачи с дедлайнами и напоминаниями" },
+  nutritionist: { label: "Нутрициолог", emoji: "🥗", description: "Анализ еды по фото — калории, БЖУ, оценка полезности" },
 };
 
 /** Simplifier */
@@ -53,7 +54,7 @@ export const MAX_SIMPLIFIER_INPUT_LENGTH = 15_000;
 
 /** Modes accessible without a tribe */
 export const INDIVIDUAL_MODES = [
-  "calendar", "transcribe", "simplifier", "gandalf", "neuro", "goals", "reminders",
+  "calendar", "transcribe", "simplifier", "gandalf", "neuro", "goals", "reminders", "nutritionist",
 ] as const;
 
 /** Modes requiring tribe membership */
@@ -64,6 +65,9 @@ export const TRIBE_MODES = [
 /** Tasks */
 export const MAX_TASK_WORKS = 10;
 export const MAX_TASKS_PER_WORK = 50;
+
+/** Nutritionist */
+export const NUTRITIONIST_DAILY_LIMIT = 20;
 
 /** Admin-only modes */
 export const ADMIN_MODES = ["broadcast", "admin"] as const;

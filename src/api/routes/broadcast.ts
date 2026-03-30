@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { sendBroadcast } from "../../services/broadcastService.js";
 import { getBotSendMessage } from "../../botInstance.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
@@ -26,6 +27,7 @@ app.post("/", async (c) => {
     };
 
     const result = await sendBroadcast(sendMessage, telegramId, body.text.trim());
+    logApiAction(telegramId, "broadcast_send", { sent: result.sent, failed: result.failed });
     return c.json({ ok: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to send broadcast";

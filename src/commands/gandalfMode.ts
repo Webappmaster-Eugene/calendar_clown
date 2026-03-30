@@ -1018,6 +1018,7 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
           await ctx.reply("ℹ️ Дополнительная информация обновлена.");
         }
       }
+      logAction(dbUser.id, telegramId, "gandalf_entry_edit", { entryId: editState.entryId, field: editState.field });
       // Show updated entry
       await reRenderEntry(ctx, editState.entryId, scope);
     } catch (err) {

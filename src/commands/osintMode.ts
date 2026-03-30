@@ -11,6 +11,7 @@ import { getSearchById, getFilteredSearchHistory, countTodaySearches } from "../
 import { parseSearchSubject } from "../osint/queryParser.js";
 import { escapeMarkdown, escapeMarkdownV2 } from "../utils/markdown.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import type { OsintParsedSubject, OsintStatus } from "../osint/types.js";
 
@@ -279,6 +280,12 @@ export async function handleOsintConfirmCallback(ctx: Context): Promise<void> {
 
   pendingSearches.delete(telegramId);
 
+  const dbUser = await getUserByTelegramId(telegramId);
+  logAction(dbUser?.id ?? null, telegramId, "osint_search_confirm", {
+    query: pending.originalQuery,
+    searchType: pending.parsedSubject.searchType,
+  });
+
   // Edit the confirmation card to show search started
   try {
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
@@ -349,6 +356,9 @@ export async function handleNewSearchButton(ctx: Context): Promise<void> {
 
 /** Handle "📋 История поисков" button. */
 export async function handleHistoryButton(ctx: Context): Promise<void> {
+  const telegramId = ctx.from?.id ?? 0;
+  const dbUser = await getUserByTelegramId(telegramId);
+  logAction(dbUser?.id ?? null, telegramId, "osint_history_view");
   await showHistory(ctx, 0);
 }
 
@@ -584,6 +594,8 @@ async function executeOsintSearch(
     await ctx.reply("Пользователь не найден.");
     return;
   }
+
+  logAction(dbUser.id, telegramId, "osint_search_start", { query: queryText, inputMethod });
 
   const statusMsg = await ctx.reply("🔍 Запускаю OSINT-поиск...");
 

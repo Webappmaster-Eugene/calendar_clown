@@ -6,6 +6,7 @@
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { getPendingTaskReminders, markTaskReminderSent } from "./repository.js";
 import { formatReminderType, formatTaskDeadlineFull } from "./logic.js";
 import type { TaskReminderType } from "./logic.js";
@@ -58,6 +59,13 @@ async function processTaskReminders(bot: Telegraf): Promise<void> {
         parse_mode: "Markdown",
       });
       await markTaskReminderSent(reminder.reminderId);
+
+      logAction(null, reminder.telegramId, "scheduler_tasks_reminder", {
+        taskItemId: reminder.taskItemId,
+        reminderId: reminder.reminderId,
+        telegramId: reminder.telegramId,
+        reminderType: reminder.reminderType,
+      });
       sent++;
     } catch (err) {
       log.error(

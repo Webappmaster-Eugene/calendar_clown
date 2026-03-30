@@ -11,6 +11,7 @@ import {
   unsubscribeFromReminder,
 } from "../../services/remindersService.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import type { ReminderScheduleDto } from "../../shared/types.js";
 
 const app = new Hono<ApiEnv>();
@@ -58,6 +59,7 @@ app.post("/", async (c) => {
 
   try {
     const reminder = await createNewReminder(telegramId, body.text.trim(), body.schedule);
+    logApiAction(telegramId, "reminder_create", { text: body.text.trim() });
     return c.json({ ok: true, data: reminder });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create reminder";
@@ -80,6 +82,7 @@ app.put("/:id/toggle", async (c) => {
     if (!reminder) {
       return c.json({ ok: false, error: "Reminder not found" }, 404);
     }
+    logApiAction(telegramId, "reminder_toggle", { reminderId });
     return c.json({ ok: true, data: reminder });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to toggle reminder";
@@ -105,6 +108,7 @@ app.put("/:id", async (c) => {
     if (body.schedule) {
       await editReminderSchedule(telegramId, reminderId, body.schedule);
     }
+    logApiAction(telegramId, "reminder_edit", { reminderId });
     return c.json({ ok: true, data: { updated: true } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to update reminder";
@@ -162,6 +166,7 @@ app.delete("/:id", async (c) => {
 
   try {
     const deleted = await removeReminder(telegramId, reminderId);
+    logApiAction(telegramId, "reminder_delete", { reminderId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete reminder";

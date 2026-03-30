@@ -11,6 +11,7 @@ import {
   removeWishlistItem,
   removeWishlist,
 } from "../../services/wishlistService.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
@@ -54,6 +55,7 @@ app.delete("/:id", async (c) => {
 
   try {
     const deleted = await removeWishlist(telegramId, wishlistId);
+    logApiAction(telegramId, "wishlist_delete", { wishlistId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete wishlist";
@@ -73,6 +75,7 @@ app.post("/", async (c) => {
 
   try {
     const wishlist = await createNewWishlist(telegramId, body.name.trim(), body.emoji);
+    logApiAction(telegramId, "wishlist_create", { name: body.name.trim() });
     return c.json({ ok: true, data: wishlist });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create wishlist";
@@ -125,6 +128,7 @@ app.post("/:id/items", async (c) => {
       link: body.link,
       priority: body.priority,
     });
+    logApiAction(telegramId, "wishlist_item_create", { wishlistId, title: body.title.trim() });
     return c.json({ ok: true, data: item });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add item";
@@ -185,8 +189,10 @@ app.put("/items/:itemId/reserve", async (c) => {
     const reserved = await reserveWishlistItem(telegramId, itemId);
     if (!reserved) {
       const unreserved = await unreserveWishlistItem(telegramId, itemId);
+      logApiAction(telegramId, "wishlist_item_unreserve", { itemId });
       return c.json({ ok: true, data: { reserved: false, unreserved } });
     }
+    logApiAction(telegramId, "wishlist_item_reserve", { itemId });
     return c.json({ ok: true, data: { reserved: true } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to toggle reservation";
@@ -206,6 +212,7 @@ app.delete("/items/:itemId", async (c) => {
 
   try {
     const deleted = await removeWishlistItem(telegramId, itemId);
+    logApiAction(telegramId, "wishlist_item_delete", { itemId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete item";

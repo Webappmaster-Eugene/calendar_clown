@@ -9,6 +9,7 @@ import { getUserId, replyMarkdownSafe } from "../utils/telegram.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("calendar");
 
@@ -50,6 +51,8 @@ export async function handleNew(ctx: Context): Promise<void> {
       `✅ Создано: *${safeSummary}*\n${timeStr} – ${endStr}` +
       (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
     await replyMarkdownSafe(ctx, msg);
+
+    logAction(null, ctx.from?.id ?? 0, "calendar_event_create", { summary: event.summary, inputMethod: "text" });
 
     if (isDatabaseAvailable() && ctx.from?.id) {
       try {
@@ -137,6 +140,8 @@ export async function handleCalendarText(ctx: Context): Promise<void> {
         (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
       await replyMarkdownSafe(ctx, msg);
 
+      logAction(null, ctx.from?.id ?? 0, "calendar_event_create", { summary: event.summary, inputMethod: "text" });
+
       if (isDatabaseAvailable() && ctx.from?.id) {
         try {
           const dbUser = await getUserByTelegramId(ctx.from.id);
@@ -223,6 +228,8 @@ export async function handleCalendarText(ctx: Context): Promise<void> {
             `✅ Создано: *${safeSummary}*\n${timeStr} – ${endStr}` +
             (event.htmlLink ? `\n[Открыть в календаре](${event.htmlLink})` : "");
           await replyMarkdownSafe(ctx, msg);
+
+          logAction(null, ctx.from?.id ?? 0, "calendar_event_create", { summary: event.summary, inputMethod: "text" });
 
           if (isDatabaseAvailable() && ctx.from?.id) {
             try {

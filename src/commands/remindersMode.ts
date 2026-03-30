@@ -34,6 +34,7 @@ import {
 import { extractReminderIntent } from "../voice/extractReminderIntent.js";
 import { MAX_REMINDERS_PER_USER } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 
@@ -222,6 +223,10 @@ export async function handleReminderActionCallback(ctx: Context): Promise<void> 
     const reminderId = parseInt(data.split(":")[1], 10);
     const updated = await toggleReminderActive(reminderId, dbUser.id);
     if (updated) {
+      logAction(dbUser.id, telegramId, "reminder_toggle", {
+        reminderId,
+        isActive: updated.isActive,
+      });
       await showReminder(ctx, reminderId, dbUser.id);
     }
     return;
@@ -232,6 +237,7 @@ export async function handleReminderActionCallback(ctx: Context): Promise<void> 
     const reminderId = parseInt(data.split(":")[1], 10);
     const deleted = await deleteReminder(reminderId, dbUser.id);
     if (deleted) {
+      logAction(dbUser.id, telegramId, "reminder_delete", { reminderId });
       await ctx.editMessageText("🗑 Напоминание удалено.");
     } else {
       await ctx.editMessageText("Не удалось удалить напоминание.");
@@ -385,6 +391,7 @@ export async function handleReminderTribeCallback(ctx: Context): Promise<void> {
   if (data.startsWith("rem_sub:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     await addSubscriber(reminderId, dbUser.id);
+    logAction(dbUser.id, telegramId, "reminder_subscribe", { reminderId });
 
     const reminder = await getReminderById(reminderId);
     if (reminder) {
@@ -407,6 +414,7 @@ export async function handleReminderTribeCallback(ctx: Context): Promise<void> {
   if (data.startsWith("rem_unsub:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     await removeSubscriber(reminderId, dbUser.id);
+    logAction(dbUser.id, telegramId, "reminder_unsubscribe", { reminderId });
 
     const reminder = await getReminderById(reminderId);
     if (reminder) {
@@ -691,6 +699,12 @@ async function confirmCreateReminder(ctx: Context, telegramId: number): Promise<
       state.inputMethod
     );
 
+    logAction(dbUser.id, telegramId, "reminder_create", {
+      reminderId: reminder.id,
+      text: state.text,
+      inputMethod: state.inputMethod,
+    });
+
     const schedDesc = formatScheduleDescription(state.schedule);
     const endDateDesc = formatEndDate(state.schedule.endDate);
 
@@ -783,6 +797,7 @@ async function handleEditInput(
         return true;
       }
       await updateReminderText(edit.reminderId, dbUser.id, newText);
+      logAction(dbUser.id, telegramId, "reminder_edit", { reminderId: edit.reminderId, field: "text" });
       editStates.delete(telegramId);
       await ctx.reply(`✅ Текст обновлён: ${newText}`);
       return true;
@@ -806,6 +821,7 @@ async function handleEditInput(
       }
 
       await updateReminderSchedule(edit.reminderId, dbUser.id, newSchedule);
+      logAction(dbUser.id, telegramId, "reminder_edit", { reminderId: edit.reminderId, field: "times" });
       editStates.delete(telegramId);
       await ctx.reply(`✅ Время обновлено: ${normalized.join(", ")}`);
       return true;
@@ -822,6 +838,7 @@ async function handleEditInput(
       }
 
       await updateReminderSchedule(edit.reminderId, dbUser.id, newSchedule);
+      logAction(dbUser.id, telegramId, "reminder_edit", { reminderId: edit.reminderId, field: "weekdays" });
       editStates.delete(telegramId);
       await ctx.reply(`✅ Дни обновлены: ${formatScheduleDescription(newSchedule)}`);
       return true;
@@ -843,6 +860,7 @@ async function handleEditInput(
       }
 
       await updateReminderSchedule(edit.reminderId, dbUser.id, newSchedule);
+      logAction(dbUser.id, telegramId, "reminder_edit", { reminderId: edit.reminderId, field: "endDate" });
       editStates.delete(telegramId);
       await ctx.reply(`✅ Срок обновлён: ${formatEndDate(endDate)}`);
       return true;

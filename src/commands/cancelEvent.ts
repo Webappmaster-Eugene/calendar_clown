@@ -8,6 +8,7 @@ import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("calendar");
 
@@ -74,6 +75,7 @@ export async function handleCancel(ctx: Context): Promise<void> {
 
       await deleteEvent(ev.id, userId);
       log.info(`Event deleted: id=${ev.id}, summary="${ev.summary}", by user ${userId}`);
+      logAction(null, ctx.from?.id ?? 0, "calendar_event_cancel", { summary: ev.summary, eventId: ev.id });
 
       if (isDatabaseAvailable() && ctx.from?.id) {
         try {
@@ -142,6 +144,7 @@ export async function handleCancelRecurringCallback(ctx: Context): Promise<void>
       const eventId = singleMatch[1];
       await deleteEvent(eventId, userId);
       log.info(`Single recurring instance deleted: id=${eventId}, by user ${userId}`);
+      logAction(null, ctx.from?.id ?? 0, "calendar_event_cancel", { eventId, recurring: "single" });
 
       if (isDatabaseAvailable() && ctx.from?.id) {
         try {
@@ -157,6 +160,7 @@ export async function handleCancelRecurringCallback(ctx: Context): Promise<void>
       const recurringEventId = allMatch[1];
       await deleteRecurringEvent(recurringEventId, userId);
       log.info(`All recurring instances deleted: recurringId=${recurringEventId}, by user ${userId}`);
+      logAction(null, ctx.from?.id ?? 0, "calendar_event_cancel", { recurringEventId, recurring: "all" });
       await ctx.editMessageText("✅ Все повторяющиеся экземпляры удалены.");
     }
   } catch (err) {

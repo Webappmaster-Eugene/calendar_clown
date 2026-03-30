@@ -30,6 +30,7 @@ import {
 } from "../simplifier/deliveryQueue.js";
 import { MAX_SIMPLIFIER_INPUT_LENGTH } from "../constants.js";
 import { DB_UNAVAILABLE_MSG } from "../constants.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("simplifier-mode");
 
@@ -237,6 +238,12 @@ export async function handleSimplifyButton(ctx: Context): Promise<void> {
     return;
   }
 
+  logAction(dbUser.id, telegramId, "simplifier_submit", {
+    inputType,
+    messageCount: buffer.texts.length,
+    textLength: combinedText.length,
+  });
+
   // Clear buffer immediately — text is persisted in DB
   clearBuffer(telegramId);
 
@@ -300,6 +307,7 @@ export async function handleSimplifierHistoryButton(ctx: Context): Promise<void>
     return;
   }
 
+  logAction(dbUser.id, telegramId, "simplifier_history_view", { offset: 0 });
   await sendHistoryPage(ctx, dbUser.id, 0);
 }
 
@@ -517,6 +525,7 @@ export async function handleSimplifierDeleteCallback(ctx: Context): Promise<void
     try {
       const deleted = await deleteSimplification(id, dbUser.id);
       if (deleted) {
+        logAction(dbUser.id, ctx.from!.id, "simplifier_delete", { simplificationId: id });
         await ctx.editMessageText(`✅ Упрощение #${id} удалено.`);
       } else {
         await ctx.editMessageText("❌ Запись не найдена или уже удалена.");

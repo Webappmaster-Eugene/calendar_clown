@@ -11,6 +11,7 @@ import {
 import { transcribeAudio } from "../../services/voiceService.js";
 import { MAX_SIMPLIFIER_INPUT_LENGTH } from "../../constants.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import { createLogger } from "../../utils/logger.js";
 import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
@@ -84,6 +85,7 @@ app.post("/", async (c) => {
 
   try {
     const result = await simplifyFromApi(telegramId, text);
+    logApiAction(telegramId, "simplifier_submit", { inputLength: text.length });
     return c.json({ ok: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to simplify text";
@@ -115,8 +117,8 @@ app.post("/voice", async (c) => {
     const arrayBuffer = await audioFile.arrayBuffer();
     await writeFile(tempPath, Buffer.from(arrayBuffer));
 
-    // Transcribe
-    const transcribeResult = await transcribeAudio(tempPath);
+    // Transcribe with general-purpose prompt (not calendar-biased)
+    const transcribeResult = await transcribeAudio(tempPath, "general");
     const transcript = transcribeResult.transcript;
 
     if (!transcript) {

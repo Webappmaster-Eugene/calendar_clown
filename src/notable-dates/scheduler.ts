@@ -7,6 +7,7 @@
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { getDatesByMonthDay } from "./repository.js";
 import { formatDayReminders } from "./service.js";
 import { listTribeUsers } from "../expenses/repository.js";
@@ -110,6 +111,12 @@ async function sendNotableDateReminders(bot: Telegraf): Promise<void> {
         }
       }
 
+      logAction(null, null, "scheduler_notable_dates_reminder", {
+        tribeId: tribe.id,
+        sentCount: sent,
+        usersTotal: users.length,
+        todayDatesCount: todayDates.length,
+      });
       log.info(`Tribe ${tribe.id}: sent ${sent}/${users.length} reminders (today: ${todayDates.length} dates)`);
     } catch (err) {
       log.error(`Error processing notable dates for tribe ${tribe.id}:`, err);

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { transcribeAudio, extractIntent } from "../../services/voiceService.js";
 import { extractExpenseIntent } from "../../voice/extractExpenseIntent.js";
 import { getCategoriesListFormatted, addExpenseFromVoice } from "../../services/expenseService.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { createLogger } from "../../utils/logger.js";
 import { writeFile, unlink, mkdir } from "fs/promises";
@@ -50,6 +51,7 @@ app.post("/transcribe", async (c) => {
 
     tempPath = await saveAudioToTemp(audioFile, telegramId);
     const result = await transcribeAudio(tempPath);
+    logApiAction(telegramId, "voice_transcribe_api", {});
     return c.json({ ok: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to transcribe audio";

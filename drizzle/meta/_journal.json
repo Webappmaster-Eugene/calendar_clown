@@ -29,6 +29,13 @@
       "when": 1743370000000,
       "tag": "0004_add_task_tracker_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774900391309,
+      "tag": "0004_add_nutritionist",
+      "breakpoints": true
     }
   ]
 }

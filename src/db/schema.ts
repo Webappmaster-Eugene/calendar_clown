@@ -953,3 +953,32 @@ export const taskReminders = pgTable(
     ),
   ],
 );
+
+// ─── Nutrition Analyses (Nutritionist) ────────────────────────────────
+
+export const nutritionAnalyses = pgTable(
+  "nutrition_analyses",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    telegramFileId: varchar("telegram_file_id", { length: 255 }),
+    caption: text("caption"),
+    nutritionData: jsonb("nutrition_data"),
+    summaryText: text("summary_text"),
+    modelUsed: varchar("model_used", { length: 100 }),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    analyzedAt: timestamp("analyzed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_nutrition_analyses_user_created").on(table.userId, table.createdAt),
+    index("idx_nutrition_analyses_status").on(table.status),
+    check(
+      "nutrition_analyses_status_check",
+      sql`${table.status} IN ('pending', 'processing', 'completed', 'failed')`,
+    ),
+  ],
+);

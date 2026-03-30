@@ -27,6 +27,7 @@ const MODE_ROUTES: Record<string, string> = {
   summarizer: "/summarizer",
   blogger: "/blogger",
   broadcast: "/broadcast",
+  nutritionist: "/nutritionist",
   admin: "/admin",
 };
 
@@ -41,6 +42,7 @@ export function ModeSelectorPage() {
   const [homeScreenStatus, setHomeScreenStatus] = useState<HomeScreenStatus>("unknown");
   const [addingToHome, setAddingToHome] = useState(false);
   const addingTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const closingConfDisabledRef = useRef(false);
 
   const handleModeClick = useCallback(
     (route: string) => {
@@ -104,7 +106,19 @@ export function ModeSelectorPage() {
       webApp.offEvent?.("homeScreenChecked", onChecked);
       webApp.offEvent?.("homeScreenAdded", onAdded);
       clearTimeout(addingTimerRef.current);
+      // Re-enable closing confirmation if component unmounts mid-operation
+      if (closingConfDisabledRef.current) {
+        closingConfDisabledRef.current = false;
+        webApp.enableClosingConfirmation?.();
+      }
     };
+  }, []);
+
+  const reEnableClosingConfirmation = useCallback(() => {
+    if (closingConfDisabledRef.current) {
+      closingConfDisabledRef.current = false;
+      window.Telegram?.WebApp?.enableClosingConfirmation?.();
+    }
   }, []);
 
   const handleAddToHomeScreen = useCallback(() => {
@@ -122,9 +136,15 @@ export function ModeSelectorPage() {
       // Haptic feedback is non-critical — don't block the main action
     }
 
+    // Temporarily disable closing confirmation to prevent it from
+    // intercepting the addToHomeScreen navigation on Android.
+    wa.disableClosingConfirmation?.();
+    closingConfDisabledRef.current = true;
+
     try {
       wa.addToHomeScreen();
     } catch (err) {
+      reEnableClosingConfirmation();
       setAddingToHome(false);
       const msg = err instanceof Error ? err.message : String(err);
       wa.showAlert?.(`Ошибка: ${msg}`);
@@ -134,6 +154,7 @@ export function ModeSelectorPage() {
     // Listen for successful addition
     const onAdded = () => {
       clearTimeout(addingTimerRef.current);
+      reEnableClosingConfirmation();
       setAddingToHome(false);
       setHomeScreenStatus("added");
       wa.offEvent?.("homeScreenAdded", onAdded);
@@ -144,6 +165,7 @@ export function ModeSelectorPage() {
     // Re-check status to detect silent success (docs: "the event may not
     // be received even if the icon has been added").
     addingTimerRef.current = setTimeout(() => {
+      reEnableClosingConfirmation();
       setAddingToHome(false);
       wa.offEvent?.("homeScreenAdded", onAdded);
 
@@ -159,7 +181,7 @@ export function ModeSelectorPage() {
         }
       }
     }, 5000);
-  }, [impact]);
+  }, [impact, reEnableClosingConfirmation]);
 
   const { data: profile, isLoading, error } = useQuery({
     queryKey: ["user", "me"],

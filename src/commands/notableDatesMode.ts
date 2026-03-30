@@ -20,6 +20,7 @@ import {
 import { parseNotableDateInput, formatNotableDateReminder } from "../notable-dates/service.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("notable-dates");
 
@@ -349,6 +350,7 @@ export async function handleNotableDateDeleteCallback(ctx: Context): Promise<voi
   try {
     const deleted = await removeNotableDate(dateId, dbUser.tribeId!);
     if (deleted) {
+      logAction(dbUser.id, telegramId, "notable_date_delete", { dateId });
       await ctx.editMessageText("✅ Дата удалена.");
     } else {
       await ctx.editMessageText("Дата не найдена или уже удалена.");
@@ -447,6 +449,13 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
       description: parsed.description,
     });
 
+    logAction(dbUser.id, telegramId, "notable_date_add", {
+      dateId: date.id,
+      name: parsed.name,
+      dateDay: parsed.dateDay,
+      dateMonth: parsed.dateMonth,
+    });
+
     await ctx.reply(
       `✅ Добавлено:\n${formatNotableDateReminder(date)}`,
       {
@@ -508,6 +517,8 @@ async function handleEditTextInput(
       await ctx.reply("❌ Дата не найдена.");
       return true;
     }
+
+    logAction(null, telegramId, "notable_date_edit", { dateId: pending.dateId, field: pending.field });
 
     await ctx.reply(`✅ Обновлено:\n${formatNotableDateReminder(updated)}`);
   } catch (err) {
@@ -834,6 +845,8 @@ export async function handleNotableDatesDocument(ctx: Context): Promise<void> {
         skipped++;
       }
     }
+
+    logAction(dbUser.id, telegramId, "notable_date_import", { imported, skipped });
 
     await ctx.reply(
       `📥 *Импорт завершён*\n\n✅ Импортировано: ${imported}\n⏭ Пропущено: ${skipped}`,

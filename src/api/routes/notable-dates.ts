@@ -7,6 +7,7 @@ import {
   removeDate,
 } from "../../services/notableDatesService.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
@@ -70,6 +71,7 @@ app.post("/", async (c) => {
       emoji: body.emoji,
       isPriority: body.isPriority,
     });
+    logApiAction(telegramId, "notable_date_add", { name: body.name.trim(), dateMonth: body.dateMonth, dateDay: body.dateDay });
     return c.json({ ok: true, data: date });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create date";
@@ -99,6 +101,7 @@ app.put("/:id", async (c) => {
     if (!updated) {
       return c.json({ ok: false, error: "Date not found" }, 404);
     }
+    logApiAction(telegramId, "notable_date_edit", { dateId });
     return c.json({ ok: true, data: updated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to update date";
@@ -118,6 +121,7 @@ app.delete("/:id", async (c) => {
 
   try {
     const deleted = await removeDate(telegramId, dateId);
+    logApiAction(telegramId, "notable_date_delete", { dateId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete date";

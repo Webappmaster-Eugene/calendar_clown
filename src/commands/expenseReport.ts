@@ -22,6 +22,7 @@ import {
 import { getMskNow, getMonthRange, getMonthLimit } from "../utils/date.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
+import { logAction } from "../logging/actionLogger.js";
 
 // ─── Report command / button ──────────────────────────────────────────
 
@@ -33,6 +34,8 @@ export async function handleReportButton(ctx: Context): Promise<void> {
     await ctx.reply(DB_UNAVAILABLE_MSG);
     return;
   }
+
+  logAction(null, telegramId, "expense_report", {});
 
   const { year, month } = getMskNow();
 
@@ -209,6 +212,7 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     const year = parseInt(drillMatch[2], 10);
     const month = parseInt(drillMatch[3], 10);
     const offset = parseInt(drillMatch[4], 10);
+    logAction(null, telegramId, "expense_drilldown", { categoryId, year, month });
     const { from, to } = getMonthRange(year, month);
     const PAGE_SIZE = 10;
 
@@ -266,6 +270,8 @@ export async function handleComparisonButton(ctx: Context): Promise<void> {
     return;
   }
 
+  logAction(null, telegramId, "expense_comparison", {});
+
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) {
     await ctx.reply("Пользователь не найден. Отправьте /expenses.");
@@ -292,6 +298,8 @@ export async function handleStatsButton(ctx: Context): Promise<void> {
     await ctx.reply(DB_UNAVAILABLE_MSG);
     return;
   }
+
+  logAction(null, telegramId, "expense_stats", {});
 
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) {

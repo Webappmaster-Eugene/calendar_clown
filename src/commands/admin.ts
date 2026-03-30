@@ -22,6 +22,7 @@ import {
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { showDataManagementMenu } from "./adminData.js";
 import { BUILD_COMMIT, BUILD_DATE, COMMIT_DATE } from "../buildInfo.js";
 import {
@@ -163,6 +164,7 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     const targetId = parseInt(delMatch[1], 10);
     const removed = await removeUserByTelegramId(targetId);
     if (removed) {
+      logAction(null, telegramId, "admin_user_remove", { targetTelegramId: targetId });
       await ctx.editMessageText(`✅ Пользователь ${targetId} удалён.`);
     } else {
       await ctx.editMessageText(`Пользователь ${targetId} не найден.`);
@@ -202,6 +204,7 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     const targetId = parseInt(approveMatch[1], 10);
     const approved = await approveUser(targetId);
     if (approved) {
+      logAction(null, telegramId, "admin_user_approve", { targetTelegramId: targetId });
       await ctx.editMessageText(`✅ Пользователь ${targetId} одобрен.`);
       // Notify user
       try {
@@ -222,6 +225,7 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     const targetId = parseInt(rejectMatch[1], 10);
     const rejected = await rejectUser(targetId);
     if (rejected) {
+      logAction(null, telegramId, "admin_user_reject", { targetTelegramId: targetId });
       await ctx.editMessageText(`❌ Заявка пользователя ${targetId} отклонена.`);
       // Notify user
       try {
@@ -503,6 +507,7 @@ export async function handleAdminTextInput(ctx: Context): Promise<boolean> {
 
     const user = await addUserByTelegramId(newId);
     if (user) {
+      logAction(null, telegramId, "admin_user_add", { targetTelegramId: newId });
       await ctx.reply(`✅ Пользователь ${newId} добавлен.`);
     } else {
       await ctx.reply(`Пользователь ${newId} уже существует.`);

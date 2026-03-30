@@ -1,6 +1,7 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { getAuthUrl, hasToken, saveTokenFromCode } from "../calendar/auth.js";
+import { logAction } from "../logging/actionLogger.js";
 
 export async function handleAuth(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
@@ -21,6 +22,8 @@ export async function handleAuth(ctx: Context): Promise<void> {
       await ctx.reply("✅ Календарь уже привязан. /today — встречи на сегодня.");
       return;
     }
+
+    logAction(null, userId, "calendar_auth_start", {});
 
     try {
       const url = getAuthUrl(String(userId));

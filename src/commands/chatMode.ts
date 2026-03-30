@@ -26,6 +26,7 @@ import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_VISION_MODEL } from "../cons
 import type { ChatProvider } from "../shared/types.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import type { ContentPart, MessageContent } from "../utils/openRouterClient.js";
 import { addMessage, cancelBatch, hasPendingBatch, flushBatchSync } from "../chat/messageBatcher.js";
 import { processNeuroRequest } from "../chat/neuroProcessor.js";
@@ -196,6 +197,7 @@ export async function handleNeuroText(ctx: Context): Promise<boolean> {
     const dialog = await getOrCreateActiveDialog(dbUser.id);
     const provider = await getChatProvider(dbUser.id);
     const model = resolveModel(provider);
+    logAction(dbUser.id, telegramId, "chat_message_send", { dialogId: dialog.id, provider });
     addMessage(dbUser.id, telegramId, dialog.id, userText, ctx, processNeuroRequest, model);
   } catch (err) {
     log.error("Neuro text batch error:", err);
@@ -222,6 +224,7 @@ export async function handleNeuroClearButton(ctx: Context): Promise<void> {
 
   const dialog = await getOrCreateActiveDialog(dbUser.id);
   const deleted = await clearDialogHistory(dialog.id, dbUser.id);
+  logAction(dbUser.id, telegramId, "chat_clear_context", { dialogId: dialog.id, deletedCount: deleted });
   await ctx.reply(`🗑 История диалога «${dialog.title}» очищена (удалено ${deleted} сообщений).`);
 }
 
@@ -282,6 +285,7 @@ export async function handleNeuroNewDialogButton(ctx: Context): Promise<void> {
   try {
     const dialog = await createDialog(dbUser.id);
     await setActiveDialogId(dbUser.id, dialog.id);
+    logAction(dbUser.id, telegramId, "chat_dialog_create", { dialogId: dialog.id });
     await ctx.reply("✅ Создан новый диалог. Отправьте сообщение, чтобы начать.");
   } catch (err) {
     if (err instanceof Error && err.message.includes("лимит")) {
@@ -318,6 +322,7 @@ export async function handleNeuroDialogSwitch(ctx: Context): Promise<void> {
   cancelBatch(dbUser.id);
 
   await setActiveDialogId(dbUser.id, dialog.id);
+  logAction(dbUser.id, telegramId, "chat_dialog_switch", { dialogId: dialog.id });
   await ctx.answerCbQuery(`Переключено на «${dialog.title}»`);
 
   // Update the message to reflect the new active dialog
@@ -403,6 +408,7 @@ export async function handleNeuroDialogDelete(ctx: Context): Promise<void> {
   }
 
   await deleteDialog(dialogId, dbUser.id);
+  logAction(dbUser.id, telegramId, "chat_dialog_delete", { dialogId });
   await ctx.answerCbQuery(`Диалог «${dialog.title}» удалён`);
 
   // Refresh the delete list
@@ -790,6 +796,7 @@ export async function handleProviderToggle(ctx: Context): Promise<void> {
   const current = await getChatProvider(dbUser.id);
   const next: ChatProvider = current === "free" ? "paid" : "free";
   await setChatProvider(dbUser.id, next);
+  logAction(dbUser.id, telegramId, "chat_provider_toggle", { from: current, to: next });
 
   const isAdmin = isBootstrapAdmin(telegramId);
   const label = next === "free"

@@ -11,6 +11,7 @@ import {
   editEntry,
   getStats,
 } from "../../services/gandalfService.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
@@ -41,6 +42,7 @@ app.post("/categories", async (c) => {
 
   try {
     const category = await addCategory(telegramId, body.name.trim(), body.emoji);
+    logApiAction(telegramId, "gandalf_category_create", { name: body.name.trim() });
     return c.json({ ok: true, data: category });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create category";
@@ -92,6 +94,7 @@ app.delete("/categories/:id", async (c) => {
 
   try {
     const deleted = await removeCategory(telegramId, categoryId);
+    logApiAction(telegramId, "gandalf_category_delete", { categoryId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete category";
@@ -171,6 +174,7 @@ app.post("/entries", async (c) => {
       isUrgent: body.isUrgent,
       visibility: body.visibility,
     });
+    logApiAction(telegramId, "gandalf_entry_create", { categoryId: body.categoryId, title: body.title.trim() });
     return c.json({ ok: true, data: entry });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create entry";
@@ -204,6 +208,7 @@ app.put("/entries/:id", async (c) => {
     if (!result) {
       return c.json({ ok: false, error: "Entry not found" }, 404);
     }
+    logApiAction(telegramId, "gandalf_entry_edit", { entryId });
     return c.json({ ok: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to update entry";
@@ -223,6 +228,7 @@ app.delete("/entries/:id", async (c) => {
 
   try {
     const deleted = await removeEntry(telegramId, entryId);
+    logApiAction(telegramId, "gandalf_entry_delete", { entryId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete entry";

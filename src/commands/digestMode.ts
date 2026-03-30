@@ -45,6 +45,7 @@ import { runAllDigests } from "../digest/scheduler.js";
 import { createLogger } from "../utils/logger.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
+import { logAction } from "../logging/actionLogger.js";
 import type { Telegraf } from "telegraf";
 
 const log = createLogger("digest");
@@ -123,6 +124,8 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
 
   // Update hamburger menu commands for digest mode
   await setModeMenuCommands(ctx, "digest");
+
+  logAction(dbUser.id, telegramId, "digest_command", {});
 
   if (!ctx.message || !("text" in ctx.message)) {
     await showRubrics(ctx, telegramId);
@@ -283,6 +286,8 @@ async function handleCreateRubric(
     keywords: meta.keywords,
   });
 
+  logAction(dbUser.id, telegramId, "digest_rubric_create", { rubricId: rubric.id, name });
+
   const keywordsStr = meta.keywords.length > 0
     ? `\nКлючевые слова: ${meta.keywords.join(", ")}`
     : "";
@@ -348,6 +353,7 @@ async function handleAddChannel(
   }
 
   const channel = await addChannel(rubric.id, username);
+  logAction(dbUser.id, telegramId, "digest_channel_add", { rubricId: rubric.id, username });
   await ctx.reply(
     `✅ Канал @${channel.channelUsername} добавлен в рубрику «${rubric.name}».`
   );
@@ -379,6 +385,7 @@ async function handleRemoveChannel(
   const username = channelRaw.replace(/^@/, "").toLowerCase();
   const removed = await removeChannel(rubric.id, username);
   if (removed) {
+    logAction(dbUser.id, telegramId, "digest_channel_remove", { rubricId: rubric.id, username });
     await ctx.reply(`✅ Канал @${username} удалён из рубрики «${rubric.name}».`);
   } else {
     await ctx.reply(`Канал @${username} не найден в рубрике «${rubric.name}».`);
@@ -454,6 +461,7 @@ async function handleDeleteRubric(
   }
 
   await deleteRubric(rubric.id, dbUser.id);
+  logAction(dbUser.id, telegramId, "digest_rubric_delete", { rubricId: rubric.id, name: rubric.name });
   await ctx.reply(`✅ Рубрика «${rubric.name}» удалена.`);
 }
 
@@ -479,6 +487,7 @@ async function handleToggleRubric(
   }
 
   await toggleRubric(rubric.id, dbUser.id, isActive);
+  logAction(dbUser.id, telegramId, "digest_rubric_toggle", { rubricId: rubric.id, isActive });
   const status = isActive ? "▶️ возобновлена" : "⏸ приостановлена";
   await ctx.reply(`${rubric.emoji ?? "📰"} Рубрика «${rubric.name}» ${status}.`);
 }
@@ -489,6 +498,9 @@ async function handleDigestNow(ctx: Context, telegramId: number): Promise<void> 
     await ctx.reply("Ошибка: бот не инициализирован.");
     return;
   }
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  logAction(dbUser?.id ?? null, telegramId, "digest_now", {});
 
   await ctx.reply("⏳ Запускаю дайджест... Это может занять несколько минут.");
 
@@ -603,6 +615,7 @@ export async function handleRubricToggleCallback(ctx: Context): Promise<void> {
   if (!result) return;
 
   await toggleRubric(result.rubric.id, result.dbUser.id, shouldActivate);
+  logAction(result.dbUser.id, ctx.from!.id, "digest_rubric_toggle", { rubricId: result.rubric.id, isActive: shouldActivate });
   await ctx.answerCbQuery(shouldActivate ? "▶️ Возобновлена" : "⏸ Приостановлена");
 
   // Refresh rubric data and show updated detail view
@@ -655,6 +668,7 @@ export async function handleRubricDeleteConfirmCallback(ctx: Context): Promise<v
 
   const name = result.rubric.name;
   await deleteRubric(rubricId, result.dbUser.id);
+  logAction(result.dbUser.id, ctx.from!.id, "digest_rubric_delete", { rubricId, name });
   await ctx.answerCbQuery(`Рубрика «${name}» удалена`);
 
   // Show updated list
@@ -773,6 +787,7 @@ export async function handleChannelRemoveCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  logAction(dbUser.id, telegramId, "digest_channel_remove", { rubricId: rubric.id, channelId });
   await ctx.answerCbQuery("Канал удалён");
 
   const { text, keyboard } = await buildChannelListView(rubric);
@@ -944,6 +959,7 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
     }
 
     const channel = await addChannel(rubric.id, username);
+    logAction(dbUser.id, telegramId, "digest_channel_add", { rubricId: rubric.id, username });
     await ctx.reply(`✅ Канал @${channel.channelUsername} добавлен в рубрику «${rubric.name}».`);
     return true;
   }

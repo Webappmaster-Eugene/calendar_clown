@@ -12,6 +12,7 @@ import { getMskNow, getMonthLimit } from "../utils/date.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("expense");
 
@@ -34,6 +35,7 @@ export async function handleExcelButton(ctx: Context): Promise<void> {
   }
 
   const { year, month } = getMskNow();
+  logAction(null, telegramId, "expense_excel", { year, month });
   await sendExcel(ctx, dbUser.tribeId!, year, month);
 }
 
@@ -68,6 +70,7 @@ export async function handleExcelCallback(ctx: Context): Promise<void> {
   const month = parseInt(match[2], 10);
 
   await ctx.answerCbQuery("Генерирую Excel...");
+  logAction(null, telegramId, "expense_excel", { year, month });
   await sendExcel(ctx, dbUser.tribeId!, year, month);
 }
 

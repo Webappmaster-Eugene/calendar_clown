@@ -13,6 +13,7 @@ export {
   MAX_POST_SOURCES,
   MAX_POST_LENGTH,
   MAX_SIMPLIFIER_INPUT_LENGTH,
+  NUTRITIONIST_DAILY_LIMIT,
 } from "./shared/constants.js";
 
 // ─── Backend-only constants ───────────────────────────────────────
@@ -87,6 +88,9 @@ export const SIMPLIFIER_MODEL = process.env.SIMPLIFIER_MODEL || "deepseek/deepse
 
 /** Neuro: vision model for image/document analysis (supports images, PDF, DOCX natively). */
 export const NEURO_VISION_MODEL = process.env.NEURO_VISION_MODEL || "google/gemini-2.0-flash-001";
+
+/** Nutritionist: vision model for food photo analysis. */
+export const NUTRITIONIST_VISION_MODEL = process.env.NUTRITIONIST_MODEL || "google/gemini-2.0-flash-001";
 
 /** Neuro: debounce delay after last message before flushing batch. */
 export const NEURO_BATCH_DEBOUNCE_MS = 3_000;

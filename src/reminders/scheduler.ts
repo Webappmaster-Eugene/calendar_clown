@@ -6,6 +6,7 @@
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { getActiveRemindersWithUsers, updateLastFiredAt, deactivateReminder, getSubscribers } from "./repository.js";
 import { shouldFireNow, isExpired } from "./service.js";
 
@@ -88,6 +89,10 @@ async function processReminders(bot: Telegraf): Promise<void> {
       // Update last_fired_at
       await updateLastFiredAt(reminder.id);
 
+      logAction(null, reminder.telegramId, "scheduler_reminders_fire", {
+        reminderId: reminder.id,
+        telegramId: reminder.telegramId,
+      });
       log.info(`Fired reminder ${reminder.id} to user ${reminder.telegramId}`);
     } catch (err) {
       log.error(`Error processing reminder ${reminder.id}:`, err);

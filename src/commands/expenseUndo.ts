@@ -7,6 +7,7 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { isExpenseMode } from "../middleware/userMode.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("undo");
 
@@ -93,6 +94,7 @@ export async function handleUndoCallback(ctx: Context): Promise<void> {
     }
 
     log.info(`Expense ${expenseId} undone by user ${telegramId}`);
+    logAction(null, telegramId, "expense_undo", { expenseId });
     await ctx.editMessageText("✅ Запись успешно отменена.");
   } catch (err) {
     log.error("Error undoing expense:", err);

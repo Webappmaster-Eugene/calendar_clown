@@ -9,9 +9,10 @@ import type {
   UsageSummaryDto,
   SummaryPeriod,
   EntityMetaDto,
+  ActionLogsResponseDto,
 } from "@shared/types";
 
-type AdminTab = "stats" | "summary" | "users" | "pending" | "tribes" | "data";
+type AdminTab = "stats" | "summary" | "users" | "pending" | "tribes" | "data" | "logs";
 
 export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("stats");
@@ -21,7 +22,7 @@ export function AdminPage() {
       <h1 className="page-title">Админ-панель</h1>
 
       <div className="tabs tabs--scroll">
-        {(["stats", "summary", "users", "pending", "tribes", "data"] as const).map((t) => {
+        {(["stats", "summary", "users", "pending", "tribes", "data", "logs"] as const).map((t) => {
           const labels: Record<AdminTab, string> = {
             stats: "Статистика",
             summary: "Саммари",
@@ -29,6 +30,7 @@ export function AdminPage() {
             pending: "Заявки",
             tribes: "Трайбы",
             data: "Данные",
+            logs: "Логи",
           };
           return (
           <button
@@ -48,6 +50,7 @@ export function AdminPage() {
       {tab === "pending" && <PendingTab />}
       {tab === "tribes" && <TribesTab />}
       {tab === "data" && <DataTab />}
+      {tab === "logs" && <LogsTab />}
     </div>
   );
 }
@@ -1067,6 +1070,200 @@ function DataTab() {
         >
           {deleteAllMutation.isPending ? "Удаление..." : `Удалить все (${total})`}
         </button>
+      )}
+    </>
+  );
+}
+
+// ─── Logs Tab ────────────────────────────────────────────────
+
+function LogsTab() {
+  const [page, setPage] = useState(1);
+  const [actionFilter, setActionFilter] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const LIMIT = 50;
+
+  const { data: actions } = useQuery({
+    queryKey: ["admin", "logs", "actions"],
+    queryFn: () => api.get<string[]>("/api/admin/logs/actions"),
+  });
+
+  const queryParams = new URLSearchParams();
+  queryParams.set("limit", String(LIMIT));
+  queryParams.set("offset", String((page - 1) * LIMIT));
+  if (actionFilter) queryParams.set("action", actionFilter);
+  if (searchText) queryParams.set("search", searchText);
+  if (dateFrom) queryParams.set("dateFrom", dateFrom);
+  if (dateTo) queryParams.set("dateTo", dateTo);
+
+  const { data: logsData, isLoading } = useQuery({
+    queryKey: ["admin", "logs", page, actionFilter, searchText, dateFrom, dateTo],
+    queryFn: () => api.get<ActionLogsResponseDto>(`/api/admin/logs?${queryParams}`),
+    refetchInterval: 10_000,
+  });
+
+  const totalPages = logsData ? Math.ceil(logsData.total / LIMIT) : 0;
+
+  const handleSearchSubmit = () => {
+    setSearchText(searchInput);
+    setPage(1);
+  };
+
+  const handleReset = () => {
+    setActionFilter("");
+    setSearchText("");
+    setSearchInput("");
+    setDateFrom("");
+    setDateTo("");
+    setPage(1);
+  };
+
+  const formatTime = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+
+  const userLabel = (item: ActionLogsResponseDto["items"][number]) => {
+    if (item.firstName) return item.username ? `${item.firstName} (@${item.username})` : item.firstName;
+    if (item.username) return `@${item.username}`;
+    if (item.telegramId) return `ID: ${item.telegramId}`;
+    return "system";
+  };
+
+  const actionColor = (action: string): string => {
+    if (action === "api_request") return "#2196F3";
+    if (action === "bot_update") return "#4CAF50";
+    if (action.startsWith("scheduler_")) return "#FF9800";
+    if (action.startsWith("admin_")) return "#F44336";
+    return "#9E9E9E";
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select
+            className="input"
+            style={{ flex: 1, minWidth: 140 }}
+            value={actionFilter}
+            onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}
+          >
+            <option value="">Все действия</option>
+            {actions?.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+          <input
+            className="input"
+            style={{ flex: 1, minWidth: 120 }}
+            type="text"
+            placeholder="Поиск в details..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input
+            className="input"
+            style={{ flex: 1, minWidth: 130 }}
+            type="date"
+            value={dateFrom}
+            onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+          />
+          <span style={{ opacity: 0.5 }}>—</span>
+          <input
+            className="input"
+            style={{ flex: 1, minWidth: 130 }}
+            type="date"
+            value={dateTo}
+            onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+          />
+          <button className="btn btn-small" onClick={handleReset}>Сброс</button>
+        </div>
+      </div>
+
+      {isLoading && <div className="loading">Загрузка...</div>}
+
+      {logsData && logsData.items.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-state-text">Логи не найдены</div>
+        </div>
+      )}
+
+      {logsData && logsData.items.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 8 }}>
+            Всего: {logsData.total.toLocaleString("ru-RU")} | Стр. {page}/{totalPages}
+          </div>
+          <div className="list">
+            {logsData.items.map((item) => (
+              <div
+                key={item.id}
+                className="list-item"
+                style={{ cursor: item.details ? "pointer" : "default", flexDirection: "column", alignItems: "stretch" }}
+                onClick={() => item.details && setExpandedId(expandedId === item.id ? null : item.id)}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                          color: "#fff",
+                          backgroundColor: actionColor(item.action),
+                          whiteSpace: "nowrap",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {item.action}
+                      </span>
+                      <span style={{ fontSize: 12, opacity: 0.7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {userLabel(item)}
+                      </span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 11, opacity: 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>
+                    {formatTime(item.createdAt)}
+                  </span>
+                </div>
+                {expandedId === item.id && item.details && (
+                  <pre style={{
+                    fontSize: 11,
+                    marginTop: 6,
+                    padding: 8,
+                    borderRadius: 6,
+                    backgroundColor: "var(--tg-theme-secondary-bg-color, #f0f0f0)",
+                    overflow: "auto",
+                    maxHeight: 200,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                  }}>
+                    {(() => {
+                      try { return JSON.stringify(JSON.parse(item.details), null, 2); }
+                      catch { return item.details; }
+                    })()}
+                  </pre>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12 }}>
+            {page > 1 && (
+              <button className="btn btn-small" onClick={() => setPage((p) => p - 1)}>Назад</button>
+            )}
+            {page < totalPages && (
+              <button className="btn btn-small btn-primary" onClick={() => setPage((p) => p + 1)}>Далее</button>
+            )}
+          </div>
+        </>
       )}
     </>
   );

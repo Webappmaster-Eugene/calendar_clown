@@ -4,6 +4,7 @@ import { setUserMode } from "../middleware/userMode.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
+import { logAction } from "../logging/actionLogger.js";
 
 export async function handleBroadcastCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
@@ -51,6 +52,11 @@ export async function handleBroadcastText(ctx: Context): Promise<void> {
 
   try {
     const result = await broadcastToTribe(sendMessage, telegramId, message);
+    logAction(null, telegramId, "broadcast_send", {
+      sent: result.sent,
+      failed: result.failed,
+      messagePreview: message.slice(0, 100),
+    });
     await ctx.reply(formatBroadcastResult(result));
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Ошибка рассылки";

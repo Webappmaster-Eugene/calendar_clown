@@ -19,6 +19,7 @@ import { splitMessage } from "../utils/telegram.js";
 import { createLogger } from "../utils/logger.js";
 import { DB_UNAVAILABLE_MSG } from "../constants.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const QUEUE_UNAVAILABLE_MSG =
   "Режим транскрибатора недоступен (очередь не инициализирована). Проверьте REDIS_URL.";
@@ -55,8 +56,11 @@ export async function handleTranscribeCommand(ctx: Context): Promise<void> {
     isBootstrapAdmin(telegramId)
   );
 
+  const dbUser = await getUserByTelegramId(telegramId);
   await setUserMode(telegramId, "transcribe");
   await setModeMenuCommands(ctx, "transcribe");
+
+  logAction(dbUser?.id ?? null, telegramId, "transcribe_command", {});
 
   await ctx.reply(
     "🎙 *Режим транскрибатора активирован*\n\n" +
@@ -137,6 +141,7 @@ export async function handleTranscribeHistoryButton(ctx: Context): Promise<void>
     return;
   }
 
+  logAction(dbUser.id, telegramId, "transcribe_history_view", { offset: 0 });
   await sendHistoryPage(ctx, dbUser.id, 0);
 }
 
@@ -422,6 +427,7 @@ export async function handleTranscribeDeleteCallback(ctx: Context): Promise<void
     try {
       const deleted = await deleteTranscriptionForUser(id, dbUser.id);
       if (deleted) {
+        logAction(dbUser.id, ctx.from!.id, "transcribe_delete", { transcriptionId: id });
         await ctx.editMessageText(`✅ Транскрипция #${id} удалена.`);
       } else {
         await ctx.editMessageText("❌ Транскрипция не найдена или уже удалена.");

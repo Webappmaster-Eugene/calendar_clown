@@ -12,6 +12,7 @@ import { getUserByTelegramId } from "../../expenses/repository.js";
 import { getChatProvider, setChatProvider } from "../../chat/repository.js";
 import type { ChatProvider } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
@@ -37,6 +38,7 @@ app.post("/dialogs", async (c) => {
 
   try {
     const dialog = await createNewDialog(telegramId, body.title);
+    logApiAction(telegramId, "chat_dialog_create", { title: body.title });
     return c.json({ ok: true, data: dialog });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create dialog";
@@ -75,6 +77,7 @@ app.post("/messages", async (c) => {
 
   try {
     const result = await sendMessage(telegramId, body.content.trim(), body.dialogId);
+    logApiAction(telegramId, "chat_message_send", { dialogId: body.dialogId });
     return c.json({ ok: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to send message";
@@ -140,6 +143,7 @@ app.delete("/dialogs/:id", async (c) => {
 
   try {
     await removeDialog(telegramId, dialogId);
+    logApiAction(telegramId, "chat_dialog_delete", { dialogId });
     return c.json({ ok: true, data: { deleted: true } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete dialog";

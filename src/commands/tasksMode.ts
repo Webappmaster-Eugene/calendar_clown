@@ -25,6 +25,7 @@ import {
 import { extractTaskIntent } from "../voice/extractTaskIntent.js";
 import { formatTaskDeadlineFull, isOverdue } from "../tasks/logic.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import * as chrono from "chrono-node";
@@ -301,6 +302,7 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
     try {
       const toggled = await toggleTask(telegramId, itemId);
       if (toggled) {
+        logAction(null, telegramId, "task_complete", { taskId: itemId, isCompleted: toggled.isCompleted });
         const status = toggled.isCompleted ? "✅ Задача выполнена!" : "🔄 Задача возвращена в работу.";
         await ctx.reply(status);
         // Refresh work detail
@@ -322,6 +324,7 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
     if (isNaN(itemId)) return;
     try {
       const deleted = await removeTask(telegramId, itemId);
+      if (deleted) logAction(null, telegramId, "task_delete", { taskId: itemId });
       await ctx.reply(deleted ? "🗑 Задача удалена." : "Задача не найдена.");
       if (deleted && !isNaN(workId)) await showWorkDetail(ctx, telegramId, workId);
     } catch (err: unknown) {
@@ -415,6 +418,7 @@ export async function handleTasksText(ctx: Context): Promise<boolean> {
     workCreationStates.delete(telegramId);
     try {
       const work = await createNewWork(telegramId, text);
+      logAction(null, telegramId, "task_project_create", { workId: work.id, name: work.name });
       await ctx.reply(
         `${work.emoji} Проект *${escapeMarkdown(work.name)}* создан!\n\nТеперь добавьте задачи с дедлайнами.`,
         {
@@ -468,6 +472,7 @@ export async function handleTasksText(ctx: Context): Promise<boolean> {
       taskCreationStates.delete(telegramId);
       try {
         const item = await addTask(telegramId, taskState.workId, taskState.text!, deadline);
+        logAction(null, telegramId, "task_add", { taskId: item.id, workId: taskState.workId, text: item.text });
         const deadlineStr = formatTaskDeadlineFull(new Date(item.deadline));
         await ctx.reply(
           `✅ Задача добавлена в *${escapeMarkdown(taskState.workName)}*\n\n` +
@@ -588,6 +593,7 @@ export async function handleTasksVoice(
 
       try {
         const item = await addTask(telegramId, matchedWork.id, text, deadlineDate, "voice");
+        logAction(null, telegramId, "task_add", { taskId: item.id, workId: matchedWork.id, text: item.text, inputMethod: "voice" });
         const deadlineStr = formatTaskDeadlineFull(new Date(item.deadline));
         await ctx.telegram.editMessageText(
           ctx.chat!.id,
@@ -781,6 +787,7 @@ async function handleVoiceWorkPick(
     if (!isNaN(deadlineDate.getTime())) {
       try {
         const item = await addTask(telegramId, workId, text, deadlineDate, "voice");
+        logAction(null, telegramId, "task_add", { taskId: item.id, workId, text: item.text, inputMethod: "voice" });
         const deadlineStr = formatTaskDeadlineFull(new Date(item.deadline));
         await ctx.reply(
           `✅ Задача добавлена\n\n📝 ${escapeMarkdown(item.text)}\n⏰ Дедлайн: ${deadlineStr}`,

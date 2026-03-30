@@ -7,6 +7,7 @@
  * that can work with already-downloaded audio or pre-transcribed text.
  */
 import { transcribeVoice } from "../voice/transcribe.js";
+import type { TranscribeContext } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import type { VoiceIntent } from "../voice/extractVoiceIntent.js";
 import { createLogger } from "../utils/logger.js";
@@ -68,9 +69,10 @@ function intentToResult(intent: VoiceIntent): VoiceIntentResult {
 /**
  * Transcribe a local audio file to text.
  * @param filePath - path to OGG/audio file on disk
+ * @param context - transcription context: "calendar" for calendar/expense modes, "general" for everything else
  */
-export async function transcribeAudio(filePath: string): Promise<TranscribeResult> {
-  const transcript = await transcribeVoice(filePath);
+export async function transcribeAudio(filePath: string, context: TranscribeContext = "calendar"): Promise<TranscribeResult> {
+  const transcript = await transcribeVoice(filePath, context);
   if (!transcript || transcript.trim().length === 0) {
     throw new Error("Не удалось распознать голосовое сообщение.");
   }

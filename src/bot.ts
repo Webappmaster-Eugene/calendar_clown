@@ -114,8 +114,9 @@ import {
   handleOsintCancelCallback,
 } from "./commands/osintMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
+import { botLoggerMiddleware } from "./middleware/botLogger.js";
 import { createLogger } from "./utils/logger.js";
-import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isCalendarMode, isSimplifierMode, isTasksMode } from "./middleware/userMode.js";
+import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isCalendarMode, isSimplifierMode, isTasksMode, isNutritionistMode } from "./middleware/userMode.js";
 import {
   handleGoalsCommand,
   handleMyGoalSetsButton,
@@ -175,6 +176,15 @@ import {
   handleSimplifierFullCallback,
   handleSimplifierDeleteCallback,
 } from "./commands/simplifierMode.js";
+import {
+  handleNutritionistCommand,
+  handleNutritionistPhoto,
+  handleNutritionistDocument,
+  handleNutritionistText,
+  handleNutritionistDailyButton,
+  handleNutritionistHistoryButton,
+  handleNutritionistCallback,
+} from "./commands/nutritionistMode.js";
 
 export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   const log = createLogger("bot");
@@ -196,6 +206,9 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
 
   // Access control — restrict to allowed users
   bot.use(accessControlMiddleware());
+
+  // Audit: log every incoming update to action_logs
+  bot.use(botLoggerMiddleware());
 
   // ─── Commands ───────────────────────────────────────────────────────
 
@@ -227,6 +240,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.command("simplifier", handleSimplifierCommand);
   bot.command("neuro", handleNeuroCommand);
   bot.command("tasks", handleTasksCommand);
+  bot.command("nutritionist", handleNutritionistCommand);
 
   // Admin commands
   bot.command("admin", handleAdminCommand);
@@ -529,6 +543,11 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     await ctx.answerCbQuery("✅ Задачи");
     await handleTasksCommand(ctx);
   });
+  bot.action("mode:nutritionist", async (ctx) => {
+    await ctx.answerCbQuery("🥗 Нутрициолог");
+    await handleNutritionistCommand(ctx);
+  });
+  bot.action(/^nutri_/, handleNutritionistCallback);
   bot.action("noop", async (ctx) => { await ctx.answerCbQuery(); });
 
   // ─── Voice ──────────────────────────────────────────────────────────
@@ -554,6 +573,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("✍️ Блогер", handleBloggerCommand);
   bot.hears("🧹 Упрощатель", handleSimplifierCommand);
   bot.hears("✅ Задачи", handleTasksCommand);
+  bot.hears("🥗 Нутрициолог", handleNutritionistCommand);
   bot.hears("🏠 Главное меню", handleModeCommand);
 
   // Backward compatibility — old keyboard labels (for users with cached keyboards)
@@ -603,6 +623,14 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
   });
 
+  // Nutritionist mode buttons
+  bot.hears("📊 За сегодня", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleNutritionistDailyButton(ctx);
+    }
+  });
+
   // Transcribe mode buttons
   bot.hears("📋 История", async (ctx) => {
     const tid = ctx.from?.id;
@@ -611,6 +639,9 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
     if (tid != null && await isSimplifierMode(tid)) {
       await handleSimplifierHistoryButton(ctx);
+    }
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleNutritionistHistoryButton(ctx);
     }
   });
   bot.hears("📊 Очередь", async (ctx) => {
@@ -712,6 +743,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.on("photo", async (ctx) => {
     const telegramId = ctx.from?.id;
     if (telegramId == null) return;
+    if (await isNutritionistMode(telegramId)) {
+      await handleNutritionistPhoto(ctx);
+      return;
+    }
     if (await isNeuroMode(telegramId)) {
       await handleNeuroPhoto(ctx);
       return;
@@ -728,6 +763,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.on("document", async (ctx) => {
     const telegramId = ctx.from?.id;
     if (telegramId == null) return;
+    if (await isNutritionistMode(telegramId)) {
+      await handleNutritionistDocument(ctx);
+      return;
+    }
     if (await isNeuroMode(telegramId)) {
       await handleNeuroDocument(ctx);
       return;
@@ -843,6 +882,13 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     // Simplifier mode — accumulate text in buffer
     if (await isSimplifierMode(telegramId)) {
       const handled = await handleSimplifierText(ctx);
+      if (handled) return;
+      return next();
+    }
+
+    // Nutritionist mode — prompt to send photo
+    if (await isNutritionistMode(telegramId)) {
+      const handled = await handleNutritionistText(ctx);
       if (handled) return;
       return next();
     }

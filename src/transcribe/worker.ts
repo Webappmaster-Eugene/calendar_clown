@@ -12,6 +12,7 @@ import { isFFmpegAvailable } from "./audioUtils.js";
 import { TRANSCRIBE_MODEL_HQ } from "../constants.js";
 import type { TranscribeJobData } from "./types.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { createProgressReporter } from "./progressReporter.js";
 import { editStatusSafe } from "./telegramHelpers.js";
 import { deliverCompletedInOrder } from "./deliveryQueue.js";
@@ -62,6 +63,12 @@ export function createTranscribeProcessor(bot: Telegraf) {
 
       log.info(`Transcription ${transcriptionId} completed: ${transcript.length} chars`);
       await markCompleted(transcriptionId, transcript, TRANSCRIBE_MODEL_HQ);
+
+      logAction(null, null, "scheduler_transcribe_complete", {
+        transcriptionId,
+        jobId: job.id,
+        chars: transcript.length,
+      });
 
       // Flush any pending progress update before delivery
       await reporter.flush();

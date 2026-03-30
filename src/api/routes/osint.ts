@@ -5,6 +5,7 @@ import {
   initiateSearch,
 } from "../../services/osintService.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
@@ -58,6 +59,7 @@ app.post("/", async (c) => {
 
   try {
     const search = await initiateSearch(telegramId, body.query.trim());
+    logApiAction(telegramId, "osint_search_start", { query: body.query.trim() });
     return c.json({ ok: true, data: search });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to start search";

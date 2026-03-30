@@ -1,6 +1,7 @@
 import type { Context } from "telegraf";
 import { hasToken, getAuthUrl } from "../calendar/auth.js";
 import { Markup } from "telegraf";
+import { logAction } from "../logging/actionLogger.js";
 
 export async function handleStatus(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
@@ -8,6 +9,8 @@ export async function handleStatus(ctx: Context): Promise<void> {
     await ctx.reply("Не удалось определить пользователя.");
     return;
   }
+
+  logAction(null, userId, "bot_status", {});
 
   const linked = await hasToken(String(userId));
 

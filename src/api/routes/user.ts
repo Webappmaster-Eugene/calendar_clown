@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getUserProfile, switchMode, getAvailableModes } from "../../services/userService.js";
 import { getAuthUrl, hasToken } from "../../calendar/auth.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import type { UserMode } from "../../shared/types.js";
 
@@ -34,6 +35,7 @@ app.put("/mode", async (c) => {
 
   try {
     await switchMode(initData.user.id, body.mode as UserMode);
+    logApiAction(initData.user.id, "user_mode_switch", { mode: body.mode });
     return c.json({ ok: true, data: { mode: body.mode } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to switch mode";

@@ -36,6 +36,7 @@ import { fetchStyleSamples } from "../blogger/styleFetcher.js";
 import { BLOGGER_MODEL, MAX_POST_SOURCES } from "../constants.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
+import { logAction } from "../logging/actionLogger.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("blogger-mode");
@@ -524,6 +525,7 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
       const channelTitle = usernameMatch ? title : title;
 
       const channel = await createChannel(dbUser.id, channelTitle, channelUsername, niche);
+      logAction(dbUser.id, telegramId, "blogger_channel_create", { channelId: channel.id, title: channelTitle });
       channelCreationStates.delete(telegramId);
 
       await showChannelDetails(ctx, channel.id, dbUser.id);
@@ -1049,6 +1051,7 @@ async function handleGeneratePost(ctx: Context, postId: number, userId: number):
   try {
     const generatedText = await generatePost(channel, post, sources);
     await updatePostGenerated(postId, userId, generatedText, BLOGGER_MODEL);
+    logAction(userId, ctx.from?.id ?? null, "blogger_post_generate", { postId, channelId: post.channelId, topic: post.topic });
 
     const messages = splitIntoMessages(generatedText);
     for (const msgText of messages) {
@@ -1127,6 +1130,7 @@ async function handlePublishPost(ctx: Context, postId: number, userId: number): 
     }
 
     await updatePostStatus(postId, userId, "published");
+    logAction(userId, ctx.from?.id ?? null, "blogger_post_publish", { postId, channelTarget });
     await ctx.reply(`📢 Пост опубликован в ${escapeMarkdown(channelTarget)}!`, {
       parse_mode: "Markdown",
     });

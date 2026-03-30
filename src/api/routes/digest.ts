@@ -10,6 +10,7 @@ import {
   removeChannelFromRubric,
 } from "../../services/digestService.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
@@ -49,6 +50,7 @@ app.post("/rubrics", async (c) => {
       emoji: body.emoji,
       keywords: body.keywords,
     });
+    logApiAction(telegramId, "digest_rubric_create", { name: body.name.trim() });
     return c.json({ ok: true, data: rubric });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create rubric";
@@ -141,6 +143,7 @@ app.post("/rubrics/:id/channels", async (c) => {
 
   try {
     const channel = await addChannelToRubric(telegramId, rubricId, body.channelUsername.trim());
+    logApiAction(telegramId, "digest_channel_add", { rubricId, channel: body.channelUsername.trim() });
     return c.json({ ok: true, data: channel });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add channel";
@@ -167,6 +170,7 @@ app.delete("/channels/:channelId", async (c) => {
 
   try {
     const deleted = await removeChannelFromRubric(telegramId, rubricId, channelId);
+    logApiAction(telegramId, "digest_channel_remove", { rubricId, channelId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to remove channel";
@@ -186,6 +190,7 @@ app.delete("/rubrics/:id", async (c) => {
 
   try {
     const deleted = await removeRubric(telegramId, rubricId);
+    logApiAction(telegramId, "digest_rubric_delete", { rubricId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete rubric";
@@ -208,6 +213,7 @@ app.put("/rubrics/:id/toggle", async (c) => {
     if (!rubric) {
       return c.json({ ok: false, error: "Rubric not found" }, 404);
     }
+    logApiAction(telegramId, "digest_rubric_toggle", { rubricId });
     return c.json({ ok: true, data: rubric });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to toggle rubric";

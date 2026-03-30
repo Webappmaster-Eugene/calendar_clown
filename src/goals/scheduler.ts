@@ -6,6 +6,7 @@
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { getPendingReminders, markReminderSent, getGoalSetProgress } from "./repository.js";
 import { formatProgress } from "./service.js";
 
@@ -57,6 +58,11 @@ async function sendGoalReminders(bot: Telegraf): Promise<void> {
       await bot.telegram.sendMessage(reminder.telegramId, message, { parse_mode: "Markdown" });
       await markReminderSent(reminder.reminderId);
 
+      logAction(null, reminder.telegramId, "scheduler_goals_reminder_sent", {
+        reminderId: reminder.reminderId,
+        telegramId: reminder.telegramId,
+        goalSetId: reminder.goalSetId,
+      });
       log.info(`Sent goal reminder ${reminder.reminderId} to user ${reminder.telegramId}`);
     } catch (err) {
       log.error(`Failed to send goal reminder ${reminder.reminderId}:`, err);

@@ -6,9 +6,10 @@ import { createEvent, deleteEvent, deleteRecurringEvent, searchEvents, listEvent
 import { extractCalendarEvents } from "../calendar/extractViaOpenRouter.js";
 import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
+import type { TranscribeContext } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
-import { isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isNeuroMode, isSimplifierMode, isTasksMode } from "../middleware/userMode.js";
+import { getUserMode, isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isNeuroMode, isSimplifierMode, isTasksMode } from "../middleware/userMode.js";
 import { handleGoalsVoice } from "./goalsMode.js";
 import { handleTasksVoice } from "./tasksMode.js";
 import { handleRemindersVoice } from "./remindersMode.js";
@@ -30,6 +31,7 @@ import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
 import type { DbUser } from "../expenses/types.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("voice");
 
@@ -58,6 +60,7 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
 
   // Check modes that don't need voice processing
   const telegramId = ctx.from?.id;
+  logAction(null, telegramId ?? 0, "voice_message_received", { duration: voice.duration });
   if (telegramId != null && await isWishlistMode(telegramId)) {
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
@@ -114,7 +117,18 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
   }
 
   try {
-    const transcript = await transcribeVoice(filePath);
+    // Determine STT context based on user mode:
+    // Calendar and expense modes benefit from calendar-specific prompt,
+    // all other modes use a general-purpose prompt for better accuracy.
+    let sttContext: TranscribeContext = "calendar";
+    if (telegramId != null) {
+      const currentMode = await getUserMode(telegramId);
+      if (currentMode !== "calendar" && currentMode !== "expenses") {
+        sttContext = "general";
+      }
+    }
+
+    const transcript = await transcribeVoice(filePath, sttContext);
     await unlink(filePath).catch(() => {});
     filePath = null;
 

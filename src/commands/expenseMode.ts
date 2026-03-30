@@ -8,6 +8,7 @@ import { isBootstrapAdmin, getUserMenuContext, canAccessMode } from "../middlewa
 import type { UserMenuContext } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG } from "../constants.js";
+import { logAction } from "../logging/actionLogger.js";
 
 export { DB_UNAVAILABLE_MSG };
 
@@ -99,6 +100,11 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
     { command: "mode", description: "Выбор режима работы" },
     { command: "help", description: "Справка" },
   ],
+  nutritionist: [
+    { command: "nutritionist", description: "Нутрициолог (текущий)" },
+    { command: "mode", description: "Выбор режима работы" },
+    { command: "help", description: "Справка" },
+  ],
   admin: [
     { command: "admin", description: "Управление пользователями" },
     { command: "mode", description: "Выбор режима работы" },
@@ -137,7 +143,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["🧠 Нейро", "🎯 Цели"],
         ["⏰ Напоминания", "🔍 OSINT"],
         ["📋 Резюме", "✍️ Блогер"],
-        ["✅ Задачи"],
+        ["🥗 Нутрициолог", "✅ Задачи"],
         ["📢 Рассылка", "⚙️ Админка"],
       ]).resize();
     }
@@ -150,7 +156,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["🧠 Нейро", "🎯 Цели"],
         ["⏰ Напоминания", "🔍 OSINT"],
         ["📋 Резюме", "✍️ Блогер"],
-        ["✅ Задачи"],
+        ["🥗 Нутрициолог", "✅ Задачи"],
       ]).resize();
     }
     // User without tribe — limited modes
@@ -158,7 +164,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
       ["📅 Календарь", "🎙️ Транскрибация"],
       ["🧹 Упрощатель", "🧙 База знаний"],
       ["🧠 Нейро", "🎯 Цели"],
-      ["⏰ Напоминания"],
+      ["⏰ Напоминания", "🥗 Нутрициолог"],
     ]).resize();
   }
 
@@ -171,7 +177,7 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ["🧠 Нейро", "🎯 Цели"],
     ["⏰ Напоминания", "🔍 OSINT"],
     ["📋 Резюме", "✍️ Блогер"],
-    ["✅ Задачи"],
+    ["🥗 Нутрициолог", "✅ Задачи"],
   ];
   if (isAdmin) {
     rows.push(["📢 Рассылка", "⚙️ Админка"]);
@@ -213,6 +219,7 @@ export async function handleExpensesCommand(ctx: Context): Promise<void> {
 
   await setUserMode(telegramId, "expenses");
   await setModeMenuCommands(ctx, "expenses");
+  logAction(dbUser.id, telegramId, "mode_switch", { mode: "expenses" });
 
   const categoriesList = await getCategoriesList();
 
@@ -241,6 +248,7 @@ export async function handleCalendarCommand(ctx: Context): Promise<void> {
 
   await setUserMode(telegramId, "calendar");
   await setModeMenuCommands(ctx, "calendar");
+  logAction(null, telegramId, "mode_switch", { mode: "calendar" });
 
   await ctx.reply(
     "📅 *Режим календаря активирован*\n\n" +
@@ -286,6 +294,7 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
   ]);
   rows.push([
     Markup.button.callback("⏰ Напоминания", "mode:reminders"),
+    Markup.button.callback("🥗 Нутрициолог", "mode:nutritionist"),
   ]);
   if (canAccessMode("osint", ctx)) {
     rows.push([
@@ -315,6 +324,7 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
 export async function handleModeCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   const isAdmin = telegramId != null && isBootstrapAdmin(telegramId);
+  logAction(null, telegramId ?? 0, "mode_switch", { mode: "menu" });
 
   // If triggered from the "🏠 Главное меню" keyboard button, show keyboard-based mode selector
   const isFromKeyboard = ctx.message && "text" in ctx.message && ctx.message.text === "🏠 Главное меню";

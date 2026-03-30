@@ -10,6 +10,7 @@ import {
   removeAchievement,
   generateSummary,
 } from "../../services/summarizerService.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
@@ -110,6 +111,7 @@ app.post("/achievements", async (c) => {
 
   try {
     const achievement = await addAchievement(telegramId, body.workplaceId, body.text.trim());
+    logApiAction(telegramId, "summarizer_entry_add", { workplaceId: body.workplaceId });
     return c.json({ ok: true, data: achievement });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add achievement";
@@ -157,6 +159,7 @@ app.post("/workplaces/:id/summary", async (c) => {
 
   try {
     const summary = await generateSummary(telegramId, workplaceId);
+    logApiAction(telegramId, "summarizer_generate", { workplaceId });
     return c.json({ ok: true, data: summary });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to generate summary";
@@ -176,6 +179,7 @@ app.delete("/workplaces/:id", async (c) => {
 
   try {
     const deleted = await removeWorkplace(telegramId, workplaceId);
+    logApiAction(telegramId, "summarizer_delete", { workplaceId, type: "workplace" });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete workplace";
@@ -195,6 +199,7 @@ app.delete("/achievements/:id", async (c) => {
 
   try {
     const deleted = await removeAchievement(telegramId, achievementId);
+    logApiAction(telegramId, "summarizer_delete", { achievementId, type: "achievement" });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete achievement";

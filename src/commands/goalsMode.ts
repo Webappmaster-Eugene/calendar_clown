@@ -40,6 +40,7 @@ import type { GoalPeriod } from "../goals/service.js";
 import { createLogger } from "../utils/logger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("goals-mode");
 
@@ -233,6 +234,7 @@ export async function handleGoalSetCallback(ctx: Context): Promise<void> {
     const setId = parseInt(data.split(":")[1], 10);
     const deleted = await deleteGoalSet(setId, dbUser.id);
     if (deleted) {
+      logAction(dbUser.id, telegramId, "goal_set_delete", { goalSetId: setId });
       await ctx.editMessageText("🗑 Набор целей удалён.");
     } else {
       await ctx.editMessageText("Не удалось удалить набор.");
@@ -329,6 +331,8 @@ export async function handleGoalCallback(ctx: Context): Promise<void> {
     const dbUser = await getUserByTelegramId(telegramId);
     if (!dbUser) return;
 
+    logAction(dbUser.id, telegramId, "goal_toggle", { goalId, isCompleted: goal.isCompleted });
+
     // Refresh the goal set view
     await showGoalSet(ctx, goal.goalSetId, dbUser.id);
     return;
@@ -343,6 +347,8 @@ export async function handleGoalCallback(ctx: Context): Promise<void> {
 
     const dbUser = await getUserByTelegramId(telegramId);
     if (!dbUser) return;
+
+    logAction(dbUser.id, telegramId, "goal_delete", { goalId, goalSetId: setId });
 
     await showGoalSet(ctx, setId, dbUser.id);
     return;
@@ -389,6 +395,8 @@ export async function handleGoalPeriodCallback(ctx: Context): Promise<void> {
     await createReminders(goalSet.id, reminderDates);
   }
 
+  logAction(dbUser.id, telegramId, "goal_set_create", { goalSetId: goalSet.id, name: state.name, period });
+
   creationStates.delete(telegramId);
   goalAddingStates.set(telegramId, goalSet.id);
 
@@ -429,6 +437,7 @@ export async function handleGoalViewerCallback(ctx: Context): Promise<void> {
     const setId = parseInt(parts[1], 10);
     const viewerUserId = parseInt(parts[2], 10);
     await addViewer(setId, viewerUserId);
+    logAction(dbUser.id, telegramId, "goal_viewer_add", { goalSetId: setId, viewerUserId });
     await showViewerSelection(ctx, setId, dbUser.id, dbUser.tribeId);
     return;
   }
@@ -439,6 +448,7 @@ export async function handleGoalViewerCallback(ctx: Context): Promise<void> {
     const setId = parseInt(parts[1], 10);
     const viewerUserId = parseInt(parts[2], 10);
     await removeViewer(setId, viewerUserId);
+    logAction(dbUser.id, telegramId, "goal_viewer_remove", { goalSetId: setId, viewerUserId });
     await showViewerSelection(ctx, setId, dbUser.id, dbUser.tribeId);
     return;
   }
@@ -527,6 +537,9 @@ export async function handleGoalsText(ctx: Context): Promise<boolean> {
     const goal = await createGoal(goalSetId, goalText, "text");
     const progress = await getGoalSetProgress(goalSetId);
 
+    const dbUser = await getUserByTelegramId(telegramId);
+    logAction(dbUser?.id ?? null, telegramId, "goal_add", { goalSetId, goalId: goal.id, source: "text" });
+
     await ctx.reply(
       `✅ Цель добавлена (${progress.total})\n• ${escapeMarkdown(goalText)}`,
       { parse_mode: "Markdown" }
@@ -582,6 +595,9 @@ export async function handleGoalsVoice(
 
   const goal = await createGoal(goalSetId, goalText, "voice");
   const progress = await getGoalSetProgress(goalSetId);
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  logAction(dbUser?.id ?? null, telegramId, "goal_add", { goalSetId, goalId: goal.id, source: "voice" });
 
   await ctx.telegram.editMessageText(
     ctx.chat!.id,

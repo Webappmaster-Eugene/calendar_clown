@@ -27,6 +27,7 @@ const BloggerPage = lazy(() => import("./pages/BloggerPage").then((m) => ({ defa
 const BroadcastPage = lazy(() => import("./pages/BroadcastPage").then((m) => ({ default: m.BroadcastPage })));
 const AdminPage = lazy(() => import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })));
 const TasksPage = lazy(() => import("./pages/TasksPage").then((m) => ({ default: m.TasksPage })));
+const NutritionistPage = lazy(() => import("./pages/NutritionistPage").then((m) => ({ default: m.NutritionistPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -76,6 +77,7 @@ export function App() {
                   <Route path="/summarizer" element={<SummarizerPage />} />
                   <Route path="/blogger" element={<BloggerPage />} />
                   <Route path="/broadcast" element={<BroadcastPage />} />
+                  <Route path="/nutritionist" element={<NutritionistPage />} />
                   <Route path="/admin" element={<AdminPage />} />
                 </Routes>
               </Suspense>

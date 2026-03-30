@@ -5,6 +5,7 @@
 
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { readMultipleChannels } from "./telegramClient.js";
 import { selectTopPosts, DEFAULT_DIGEST_SIZE } from "./parser.js";
 import { summarizePosts } from "./summarizer.js";
@@ -61,6 +62,12 @@ export async function runDigestForUser(
       await new Promise((r) => setTimeout(r, 10_000));
     }
   }
+
+  logAction(dbUser.id, telegramId, "scheduler_digest_user_complete", {
+    telegramId,
+    rubricsProcessed: processed,
+    rubricsTotal: rubrics.length,
+  });
 
   return processed;
 }

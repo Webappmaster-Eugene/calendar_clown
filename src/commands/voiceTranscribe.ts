@@ -15,6 +15,7 @@ import { addTranscribeJob, isTranscribeAvailable } from "../transcribe/queue.js"
 import { VOICE_DIR } from "../constants.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("transcribe");
 
@@ -234,6 +235,12 @@ export async function handleVoiceInTranscribeMode(
     }
     return;
   }
+
+  logAction(dbUser.id, telegramId, "transcribe_queue_add", {
+    transcriptionId: transcription.id,
+    durationSeconds: voice.duration,
+    forwarded: !!forwardedFromName,
+  });
 
   // Show queue position to the user
   try {

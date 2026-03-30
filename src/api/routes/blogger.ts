@@ -12,6 +12,7 @@ import {
   addTextSource,
   generatePostText,
 } from "../../services/bloggerService.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
@@ -50,6 +51,7 @@ app.post("/channels", async (c) => {
       channelUsername: body.channelUsername,
       nicheDescription: body.nicheDescription,
     });
+    logApiAction(telegramId, "blogger_channel_create", { channelTitle: body.channelTitle.trim() });
     return c.json({ ok: true, data: channel });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create channel";
@@ -177,6 +179,7 @@ app.post("/posts/:id/generate", async (c) => {
 
   try {
     const post = await generatePostText(telegramId, postId);
+    logApiAction(telegramId, "blogger_post_generate", { postId });
     return c.json({ ok: true, data: post });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to generate post";
@@ -196,6 +199,7 @@ app.delete("/channels/:id", async (c) => {
 
   try {
     const deleted = await removeChannel(telegramId, channelId);
+    logApiAction(telegramId, "blogger_channel_delete", { channelId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete channel";
@@ -215,6 +219,7 @@ app.delete("/posts/:id", async (c) => {
 
   try {
     const deleted = await removePost(telegramId, postId);
+    logApiAction(telegramId, "blogger_post_delete", { postId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete post";

@@ -6,6 +6,7 @@
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
+import { logAction } from "../logging/actionLogger.js";
 import { getUsersWithActiveDigest } from "./repository.js";
 import { connectGramClient, disconnectGramClient, isDigestReady } from "./telegramClient.js";
 import { runDigestForUser } from "./worker.js";
@@ -52,6 +53,7 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
   }
 
   let totalProcessed = 0;
+  let usersCount = 0;
 
   try {
     // Connect GramJS before processing
@@ -59,6 +61,7 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
 
     // Get all user IDs (DB internal) who have active rubrics with channels
     const dbUserIds = await getUsersWithActiveDigest();
+    usersCount = dbUserIds.length;
     if (dbUserIds.length === 0) {
       log.info("No users with active digest rubrics.");
       return 0;
@@ -93,5 +96,6 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
   }
 
   log.info(`Digest run complete: ${totalProcessed} rubrics processed.`);
+  logAction(null, null, "scheduler_digest_run", { usersProcessed: usersCount, rubricsProcessed: totalProcessed });
   return totalProcessed;
 }

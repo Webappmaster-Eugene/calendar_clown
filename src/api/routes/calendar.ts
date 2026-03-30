@@ -12,6 +12,7 @@ import {
 } from "../../services/calendarService.js";
 import type { CreateEventRequest } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
@@ -62,6 +63,7 @@ app.post("/events", async (c) => {
         return c.json({ ok: false, error: "Не удалось создать событие из распознанных данных." }, 400);
       }
       // Return first event for backward compatibility with CreateEventResponse
+      logApiAction(telegramId, "calendar_event_create", { source: "intent", count: results.length });
       return c.json({ ok: true, data: results[0] });
     } catch (err) {
       if (err instanceof NoCalendarLinkedError) {
@@ -82,6 +84,7 @@ app.post("/events", async (c) => {
 
   try {
     const result = await createEventFromText(userId, telegramId, body.text.trim());
+    logApiAction(telegramId, "calendar_event_create", { source: "text" });
     return c.json({ ok: true, data: result });
   } catch (err) {
     if (err instanceof NoCalendarLinkedError) {
@@ -104,6 +107,7 @@ app.delete("/events/:id", async (c) => {
 
   try {
     await cancelEventById(userId, telegramId, eventId);
+    logApiAction(telegramId, "calendar_event_cancel", { eventId });
     return c.json({ ok: true, data: { cancelled: true } });
   } catch (err) {
     if (err instanceof NoCalendarLinkedError) {
@@ -122,6 +126,7 @@ app.delete("/recurring/:recurringEventId", async (c) => {
 
   try {
     await cancelRecurringEvent(userId, recurringEventId);
+    logApiAction(initData.user.id, "calendar_event_cancel", { recurringEventId });
     return c.json({ ok: true, data: { cancelled: true } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to cancel recurring event";
@@ -142,6 +147,7 @@ app.post("/search-and-cancel", async (c) => {
 
   try {
     const result = await searchAndCancelEvent(userId, telegramId, body.query.trim());
+    logApiAction(telegramId, "calendar_event_cancel", { source: "search", query: body.query.trim() });
     return c.json({ ok: true, data: result });
   } catch (err) {
     if (err instanceof NoCalendarLinkedError) {

@@ -27,6 +27,7 @@ import {
 } from "../summarizer/repository.js";
 import { SUMMARIZER_MODEL, MAX_ACHIEVEMENT_LENGTH } from "../constants.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
+import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("summarizer-mode");
 
@@ -224,6 +225,7 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
       const wpId = parseInt(data.split(":")[1], 10);
       await ctx.editMessageText("⏳ Генерирую саммари...");
       const summary = await generateSummary(wpId, dbUser.id);
+      logAction(dbUser.id, telegramId, "summarizer_generate", { workplaceId: wpId });
       await ctx.editMessageText(summary, { parse_mode: "Markdown" });
       return;
     }
@@ -337,6 +339,7 @@ export async function handleSummarizerText(ctx: Context): Promise<boolean> {
       }
 
       const wp = await createWorkplace(dbUser.id, title);
+      logAction(dbUser.id, telegramId, "summarizer_workplace_create", { workplaceId: wp.id, title });
       creationStates.delete(telegramId);
 
       await showWorkplace(ctx, wp.id, dbUser.id);
@@ -363,6 +366,8 @@ export async function handleSummarizerText(ctx: Context): Promise<boolean> {
 
     try {
       await createAchievement(wpId, achText, "text");
+      const dbUser = await getUserByTelegramId(telegramId);
+      logAction(dbUser?.id ?? null, telegramId, "summarizer_entry_add", { workplaceId: wpId, inputMethod: "text" });
       await ctx.reply(`✅ Записано: ${escapeMarkdown(achText)}`, {
         parse_mode: "Markdown",
       });
@@ -486,6 +491,8 @@ export async function handleSummarizerVoice(
 
   try {
     await createAchievement(wpId, achText, "voice");
+    const dbUser = await getUserByTelegramId(telegramId);
+    logAction(dbUser?.id ?? null, telegramId, "summarizer_entry_add", { workplaceId: wpId, inputMethod: "voice" });
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
       statusMsgId,

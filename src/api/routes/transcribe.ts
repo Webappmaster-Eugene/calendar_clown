@@ -6,6 +6,7 @@ import {
   removeTranscription,
 } from "../../services/transcribeService.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
@@ -70,6 +71,7 @@ app.delete("/:id", async (c) => {
 
   try {
     const deleted = await removeTranscription(telegramId, transcriptionId);
+    logApiAction(telegramId, "transcribe_delete", { transcriptionId });
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete transcription";
