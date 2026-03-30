@@ -36,6 +36,13 @@
       "when": 1774900391309,
       "tag": "0004_add_nutritionist",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774900500000,
+      "tag": "0005_fix_task_works_unique_constraint",
+      "breakpoints": true
     }
   ]
 }
