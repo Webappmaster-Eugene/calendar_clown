@@ -1,5 +1,5 @@
 services:
-  db:
+  sovetnik-db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -21,7 +21,7 @@ services:
         max-size: "50m"
         max-file: "5"
 
-  redis:
+  sovetnik-redis:
     image: redis:7-alpine
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction
@@ -44,9 +44,9 @@ services:
     build: .
     restart: unless-stopped
     depends_on:
-      db:
+      sovetnik-db:
         condition: service_healthy
-      redis:
+      sovetnik-redis:
         condition: service_healthy
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -56,10 +56,10 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID:-}
       - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
-      - DATABASE_URL=postgresql://bot:${DB_PASSWORD:-changeme}@db:5432/expenses_bot
+      - DATABASE_URL=postgresql://bot:${DB_PASSWORD:-changeme}@sovetnik-db:5432/expenses_bot
       - MONTHLY_EXPENSE_LIMIT=${MONTHLY_EXPENSE_LIMIT:-350000}
       - DEFAULT_BOT_MODE=${DEFAULT_BOT_MODE:-calendar}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://sovetnik-redis:6379
       - TELEGRAM_PARSER_API_ID=${TELEGRAM_PARSER_API_ID:-}
       - TELEGRAM_PARSER_API_HASH=${TELEGRAM_PARSER_API_HASH:-}
       - TELEGRAM_SESSION=${TELEGRAM_SESSION:-}
