@@ -19,10 +19,10 @@ import {
   getChatProvider,
   setChatProvider,
 } from "../chat/repository.js";
-import { chatCompletion, generateDialogTitle } from "../chat/client.js";
+import { chatCompletion, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
 import { splitMessage } from "../utils/telegram.js";
 import { setModeMenuCommands, getModeButtons } from "./expenseMode.js";
-import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_VISION_MODEL } from "../constants.js";
+import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_VISION_MODEL, NEURO_UNCENSORED_MODEL } from "../constants.js";
 import type { ChatProvider } from "../shared/types.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
@@ -68,7 +68,12 @@ const GEMINI_DOC_MIME_TYPES = new Set([
 ]);
 
 function getNeuroKeyboard(isAdmin: boolean, provider: ChatProvider = "free") {
-  const providerBtn = provider === "free" ? "🆓 Free" : "💎 Paid";
+  const providerBtnMap: Record<ChatProvider, string> = {
+    free: "🆓 Free",
+    paid: "💎 Paid",
+    uncensored: "🔥 Без цензуры",
+  };
+  const providerBtn = providerBtnMap[provider];
   return Markup.keyboard([
     ["💬 Диалоги", "➕ Новый диалог"],
     ["🗑 Очистить историю", providerBtn],
@@ -78,7 +83,16 @@ function getNeuroKeyboard(isAdmin: boolean, provider: ChatProvider = "free") {
 
 /** Resolve model name from chat provider. */
 function resolveModel(provider: ChatProvider): string {
-  return provider === "free" ? DEEPSEEK_FREE_MODEL : DEEPSEEK_MODEL;
+  switch (provider) {
+    case "free": return DEEPSEEK_FREE_MODEL;
+    case "paid": return DEEPSEEK_MODEL;
+    case "uncensored": return NEURO_UNCENSORED_MODEL;
+  }
+}
+
+/** Return systemPromptOverride for uncensored mode, undefined for others. */
+function resolveSystemPrompt(provider: ChatProvider): string | undefined {
+  return provider === "uncensored" ? buildUncensoredSystemPrompt() : undefined;
 }
 
 /** Fire-and-forget: auto-generate dialog title after first message. */
@@ -160,7 +174,12 @@ export async function handleNeuroCommand(ctx: Context): Promise<void> {
   const isAdmin = isBootstrapAdmin(telegramId);
   const dbUser = await getUserByTelegramId(telegramId);
   const provider = dbUser ? await getChatProvider(dbUser.id) : "free";
-  const providerLabel = provider === "free" ? "🆓 Free (бесплатно)" : "💎 Paid";
+  const providerLabelMap: Record<ChatProvider, string> = {
+    free: "🆓 Free (бесплатно)",
+    paid: "💎 Paid",
+    uncensored: "🔥 Без цензуры",
+  };
+  const providerLabel = providerLabelMap[provider];
 
   await ctx.reply(
     "🧠 *Режим Нейро активирован*\n\n" +
@@ -197,8 +216,9 @@ export async function handleNeuroText(ctx: Context): Promise<boolean> {
     const dialog = await getOrCreateActiveDialog(dbUser.id);
     const provider = await getChatProvider(dbUser.id);
     const model = resolveModel(provider);
+    const systemPrompt = resolveSystemPrompt(provider);
     logAction(dbUser.id, telegramId, "chat_message_send", { dialogId: dialog.id, provider });
-    addMessage(dbUser.id, telegramId, dialog.id, userText, ctx, processNeuroRequest, model);
+    addMessage(dbUser.id, telegramId, dialog.id, userText, ctx, processNeuroRequest, model, systemPrompt);
   } catch (err) {
     log.error("Neuro text batch error:", err);
     await ctx.reply("❌ Ошибка при обработке запроса. Попробуйте позже.");
@@ -475,6 +495,7 @@ export async function handleNeuroVoice(
       ?? await getOrCreateActiveDialog(dbUser.id);
     const provider = await getChatProvider(dbUser.id);
     const model = resolveModel(provider);
+    const systemPrompt = resolveSystemPrompt(provider);
     const history = await getRecentMessages(dialog.id, 20);
     const historyMessages = history.map((m) => ({ role: m.role, content: m.content }));
 
@@ -488,7 +509,7 @@ export async function handleNeuroVoice(
       { role: "user", content: augmentedMessage },
     ];
 
-    const result = await chatCompletion(messages, model);
+    const result = await chatCompletion(messages, model, systemPrompt);
 
     // Save original text only (no search/links context)
     const userEntry = prependText
@@ -586,6 +607,7 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
       ?? await getOrCreateActiveDialog(dbUser.id);
     const photoProvider = await getChatProvider(dbUser.id);
     const photoModel = resolveModel(photoProvider);
+    const photoSystemPrompt = resolveSystemPrompt(photoProvider);
     const history = await getRecentMessages(dialog.id, 20);
     const historyMessages: Array<{ role: string; content: MessageContent }> = history.map((m) => ({
       role: m.role,
@@ -608,7 +630,7 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
       { role: "user", content: userContent },
     ];
 
-    const result = await chatCompletion(messages, NEURO_VISION_MODEL);
+    const result = await chatCompletion(messages, NEURO_VISION_MODEL, photoSystemPrompt);
 
     // Save text-only representation to history (original text only)
     const userEntry = prependText
@@ -697,6 +719,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
       ?? await getOrCreateActiveDialog(dbUser.id);
     const docProviderPref = await getChatProvider(dbUser.id);
     const docTitleModel = resolveModel(docProviderPref);
+    const docSystemPrompt = resolveSystemPrompt(docProviderPref);
     const history = await getRecentMessages(dialog.id, 20);
     const historyMessages: Array<{ role: string; content: MessageContent }> = history.map((m) => ({
       role: m.role,
@@ -727,7 +750,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
         { role: "user", content: userContent },
       ];
 
-      result = await chatCompletion(messages, NEURO_VISION_MODEL);
+      result = await chatCompletion(messages, NEURO_VISION_MODEL, docSystemPrompt);
       modelUsed = NEURO_VISION_MODEL;
     } else if (isGeminiDoc) {
       // PDF, DOCX, XLSX — send as base64 to Gemini (native support)
@@ -744,7 +767,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
         { role: "user", content: userContent },
       ];
 
-      result = await chatCompletion(messages, NEURO_VISION_MODEL);
+      result = await chatCompletion(messages, NEURO_VISION_MODEL, docSystemPrompt);
       modelUsed = NEURO_VISION_MODEL;
     } else if (isText) {
       // Text file — read as UTF-8 and send to DeepSeek
@@ -760,7 +783,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
         { role: "user", content: userMessage },
       ];
 
-      result = await chatCompletion(messages, docTitleModel);
+      result = await chatCompletion(messages, docTitleModel, docSystemPrompt);
       modelUsed = docTitleModel;
     } else {
       // Unsupported format
@@ -811,14 +834,19 @@ export async function handleProviderToggle(ctx: Context): Promise<void> {
   if (!dbUser) return;
 
   const current = await getChatProvider(dbUser.id);
-  const next: ChatProvider = current === "free" ? "paid" : "free";
+  const providerCycle: ChatProvider[] = ["free", "paid", "uncensored"];
+  const currentIdx = providerCycle.indexOf(current);
+  const next = providerCycle[(currentIdx + 1) % providerCycle.length];
   await setChatProvider(dbUser.id, next);
   logAction(dbUser.id, telegramId, "chat_provider_toggle", { from: current, to: next });
 
   const isAdmin = isBootstrapAdmin(telegramId);
-  const label = next === "free"
-    ? "🆓 *Free* — бесплатная модель DeepSeek (rate-limited)"
-    : "💎 *Paid* — платная модель DeepSeek (быстрее, без лимитов)";
+  const labelMap: Record<ChatProvider, string> = {
+    free: "🆓 *Free* — бесплатная модель DeepSeek (rate-limited)",
+    paid: "💎 *Paid* — платная модель DeepSeek (быстрее, без лимитов)",
+    uncensored: "🔥 *Без цензуры* — модель без ограничений контента",
+  };
+  const label = labelMap[next];
 
   await ctx.reply(
     `Модель переключена: ${label}`,

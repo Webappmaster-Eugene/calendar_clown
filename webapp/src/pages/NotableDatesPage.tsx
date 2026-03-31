@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useTelegram } from "../hooks/useTelegram";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import type { NotableDateDto, CreateNotableDateRequest } from "@shared/types";
 
 const MONTHS = [
@@ -12,6 +13,7 @@ const MONTHS = [
 type DateTab = "upcoming" | "all";
 
 export function NotableDatesPage() {
+  useClosingConfirmation();
   const queryClient = useQueryClient();
   const { webApp } = useTelegram();
   const [tab, setTab] = useState<DateTab>("upcoming");

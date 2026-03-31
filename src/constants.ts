@@ -27,6 +27,9 @@ export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek/deepseek-c
 /** DeepSeek free model via OpenRouter (rate-limited but genuinely free). */
 export const DEEPSEEK_FREE_MODEL = process.env.DEEPSEEK_FREE_MODEL || "deepseek/deepseek-chat-v3.1:free";
 
+/** Uncensored model for neuro chat (via OpenRouter, no content filters). */
+export const NEURO_UNCENSORED_MODEL = process.env.NEURO_UNCENSORED_MODEL || "gryphe/mythomax-l2-13b:free";
+
 /** Gemini model for voice transcription (calendar/expenses modes). */
 export const TRANSCRIBE_MODEL = process.env.STT_MODEL || "google/gemini-2.0-flash-001";
 

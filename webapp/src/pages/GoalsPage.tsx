@@ -9,6 +9,7 @@ import type {
   CreateGoalRequest,
   GoalPeriod,
 } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 const PERIOD_LABELS: Record<GoalPeriod, string> = {
   current: "Текущий",
@@ -18,6 +19,7 @@ const PERIOD_LABELS: Record<GoalPeriod, string> = {
 };
 
 export function GoalsPage() {
+  useClosingConfirmation();
   const [selectedSetId, setSelectedSetId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
@@ -82,7 +84,7 @@ export function GoalsPage() {
                 <div className="list-item-title">{s.name}</div>
                 <div className="list-item-hint">
                   {s.completedCount}/{s.totalCount} выполнено &middot; {PERIOD_LABELS[s.period] ?? s.period}
-                  {s.deadline ? ` &middot; до ${new Date(s.deadline).toLocaleDateString("ru-RU")}` : ""}
+                  {s.deadline ? ` · до ${new Date(s.deadline).toLocaleDateString("ru-RU")}` : ""}
                 </div>
               </div>
               <div className="list-item-actions">
@@ -210,7 +212,7 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
       {goalSet && (
         <div style={{ marginBottom: 12, fontSize: 13, opacity: 0.7 }}>
           {goalSet.completedCount}/{goalSet.totalCount} выполнено
-          {goalSet.deadline ? ` &middot; до ${new Date(goalSet.deadline).toLocaleDateString("ru-RU")}` : ""}
+          {goalSet.deadline ? ` · до ${new Date(goalSet.deadline).toLocaleDateString("ru-RU")}` : ""}
         </div>
       )}
 

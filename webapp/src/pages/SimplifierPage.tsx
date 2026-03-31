@@ -3,10 +3,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import type { SimplifierHistoryResponse, SimplificationDto } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 const PAGE_SIZE = 10;
 
 export function SimplifierPage() {
+  useClosingConfirmation();
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [lastResult, setLastResult] = useState<SimplificationDto | null>(null);

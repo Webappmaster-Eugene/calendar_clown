@@ -52,21 +52,6 @@ export function ModeSelectorPage() {
     [impact, navigate],
   );
 
-  // ModeSelectorPage is read-only (no forms, no unsaved data).
-  // Disable closing confirmation here to prevent it from blocking
-  // addToHomeScreen() — the global enableClosingConfirmation() in
-  // TelegramProvider is restored on unmount so inner pages stay protected.
-  useEffect(() => {
-    const webApp = window.Telegram?.WebApp;
-    if (!webApp) return;
-
-    webApp.disableClosingConfirmation?.();
-
-    return () => {
-      webApp.enableClosingConfirmation?.();
-    };
-  }, []);
-
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
     if (!webApp) {

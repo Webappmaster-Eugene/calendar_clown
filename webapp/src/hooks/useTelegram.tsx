@@ -131,7 +131,6 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
     webApp.expand();
     webApp.ready();
     webApp.disableVerticalSwipes?.();
-    webApp.enableClosingConfirmation?.();
     webApp.setHeaderColor?.("secondary_bg_color");
 
     // Initialize API client with auth data

@@ -8,8 +8,10 @@ import type {
   CreateBloggerPostRequest,
   UpdateBloggerChannelRequest,
 } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 export function BloggerPage() {
+  useClosingConfirmation();
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingChannelId, setEditingChannelId] = useState<number | null>(null);

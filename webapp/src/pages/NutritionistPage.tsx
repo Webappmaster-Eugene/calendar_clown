@@ -7,10 +7,12 @@ import type {
   NutritionDailySummaryDto,
   NutritionFoodItemDto,
 } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 const PAGE_SIZE = 10;
 
 export function NutritionistPage() {
+  useClosingConfirmation();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [caption, setCaption] = useState("");

@@ -355,7 +355,9 @@ export async function getChatProvider(userId: number): Promise<ChatProvider> {
     [userId]
   );
   const provider = rows[0]?.chat_provider;
-  return provider === "paid" ? "paid" : "free";
+  if (provider === "paid") return "paid";
+  if (provider === "uncensored") return "uncensored";
+  return "free";
 }
 
 /** Set chat provider preference for a user. */

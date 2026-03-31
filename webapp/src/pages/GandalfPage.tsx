@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import { useTelegram } from "../hooks/useTelegram";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import type {
   GandalfCategoryDto,
   GandalfEntryDto,
@@ -19,6 +20,7 @@ interface GandalfStats {
 }
 
 export function GandalfPage() {
+  useClosingConfirmation();
   const [tab, setTab] = useState<GandalfTab>("categories");
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [showCatForm, setShowCatForm] = useState(false);

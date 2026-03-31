@@ -10,8 +10,10 @@ import type {
   UpdateWorkplaceRequest,
   SummaryDto,
 } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 export function SummarizerPage() {
+  useClosingConfirmation();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);

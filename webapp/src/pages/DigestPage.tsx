@@ -7,8 +7,10 @@ import type {
   CreateRubricRequest,
   UpdateRubricRequest,
 } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 export function DigestPage() {
+  useClosingConfirmation();
   const [selectedRubricId, setSelectedRubricId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingRubricId, setEditingRubricId] = useState<number | null>(null);

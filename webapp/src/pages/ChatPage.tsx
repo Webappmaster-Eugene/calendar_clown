@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import { useTelegram } from "../hooks/useTelegram";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import type {
   ChatDialogDto,
   ChatMessageDto,
@@ -10,6 +11,7 @@ import type {
 } from "@shared/types";
 
 export function ChatPage() {
+  useClosingConfirmation();
   const queryClient = useQueryClient();
   const { webApp } = useTelegram();
   const [selectedDialogId, setSelectedDialogId] = useState<number | null>(null);
@@ -33,10 +35,11 @@ export function ChatPage() {
   });
 
   const provider = providerData?.provider ?? "free";
-  const isFree = provider === "free";
 
+  const providerCycle: ChatProvider[] = ["free", "paid", "uncensored"];
   const handleToggleProvider = () => {
-    const next = isFree ? "paid" : "free";
+    const currentIdx = providerCycle.indexOf(provider);
+    const next = providerCycle[(currentIdx + 1) % providerCycle.length];
     toggleProviderMutation.mutate(next);
   };
 
@@ -90,7 +93,7 @@ export function ChatPage() {
     <div className="page">
       <h1 className="page-title">AI Чат</h1>
 
-      <div
+      <button
         style={{
           display: "flex",
           alignItems: "center",
@@ -99,22 +102,25 @@ export function ChatPage() {
           marginBottom: 12,
           borderRadius: 12,
           background: "var(--tg-theme-secondary-bg-color, #f5f5f5)",
+          border: "none",
+          width: "100%",
+          cursor: "pointer",
+          textAlign: "left",
+          color: "inherit",
         }}
+        onClick={handleToggleProvider}
+        disabled={toggleProviderMutation.isPending}
       >
         <div>
           <div style={{ fontSize: 14, fontWeight: 500 }}>
-            {isFree ? "🆓 Free" : "💎 Paid"}
+            {{ free: "🆓 Free", paid: "💎 Paid", uncensored: "🔥 Без цензуры" }[provider]}
           </div>
           <div style={{ fontSize: 12, color: "var(--tg-theme-hint-color, #999)", marginTop: 2 }}>
-            {isFree ? "Бесплатная модель (rate-limited)" : "Платная модель (быстрее)"}
+            {{ free: "Бесплатная модель (rate-limited)", paid: "Платная модель (быстрее)", uncensored: "Модель без ограничений контента" }[provider]}
           </div>
         </div>
-        <button
-          className={`toggle ${!isFree ? "active" : ""}`}
-          onClick={handleToggleProvider}
-          disabled={toggleProviderMutation.isPending}
-        />
-      </div>
+        <span style={{ fontSize: 12, color: "var(--tg-theme-hint-color, #999)" }}>▶</span>
+      </button>
 
       <button
         className="btn btn-primary btn-block"

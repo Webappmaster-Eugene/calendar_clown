@@ -43,6 +43,13 @@
       "when": 1774900500000,
       "tag": "0005_fix_task_works_unique_constraint",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774900600000,
+      "tag": "0006_add_reminder_sounds",
+      "breakpoints": true
     }
   ]
 }

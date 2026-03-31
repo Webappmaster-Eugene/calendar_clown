@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useTelegram } from "../hooks/useTelegram";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import type { ReminderDto, ReminderScheduleDto, CreateReminderRequest, ReminderSoundDto } from "@shared/types";
 
 type ReminderTab = "own" | "tribe";
@@ -20,6 +21,7 @@ interface TribeReminderDto extends ReminderDto {
 }
 
 export function RemindersPage() {
+  useClosingConfirmation();
   const queryClient = useQueryClient();
   const { webApp } = useTelegram();
   const [tab, setTab] = useState<ReminderTab>("own");
@@ -247,9 +249,9 @@ export function RemindersPage() {
                     <div className="list-item-title">{r.text}</div>
                     <div className="list-item-hint">
                       {r.schedule.times.join(", ")} &middot; {formatWeekdays(r.schedule.weekdays)}
-                      {r.schedule.endDate ? ` &middot; до ${r.schedule.endDate}` : ""}
-                      {r.soundEnabled && r.soundEmoji ? ` &middot; ${r.soundEmoji}` : ""}
-                      {r.subscribers.length > 0 ? ` &middot; ${r.subscribers.length} подписчик(ов)` : ""}
+                      {r.schedule.endDate ? ` · до ${r.schedule.endDate}` : ""}
+                      {r.soundEnabled && r.soundEmoji ? ` · ${r.soundEmoji}` : ""}
+                      {r.subscribers.length > 0 ? ` · ${r.subscribers.length} подписчик(ов)` : ""}
                     </div>
                   </div>
                   <div className="list-item-actions">

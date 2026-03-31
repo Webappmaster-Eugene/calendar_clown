@@ -515,7 +515,7 @@ export interface StartOsintSearchRequest {
 
 // ─── Chat (Neuro) ─────────────────────────────────────────────
 
-export type ChatProvider = "free" | "paid";
+export type ChatProvider = "free" | "paid" | "uncensored";
 
 export interface ChatDialogDto {
   id: number;

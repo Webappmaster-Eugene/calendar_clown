@@ -175,8 +175,8 @@ app.put("/provider", async (c) => {
   const body = await c.req.json<{ provider: string }>();
 
   const provider = body.provider as ChatProvider;
-  if (provider !== "free" && provider !== "paid") {
-    return c.json({ ok: false, error: "Invalid provider. Use 'free' or 'paid'" }, 400);
+  if (provider !== "free" && provider !== "paid" && provider !== "uncensored") {
+    return c.json({ ok: false, error: "Invalid provider. Use 'free', 'paid', or 'uncensored'" }, 400);
   }
 
   try {

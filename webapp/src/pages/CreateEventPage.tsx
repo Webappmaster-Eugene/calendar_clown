@@ -4,8 +4,10 @@ import { useNavigate } from "react-router";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import type { CreateEventRequest, CreateEventResponse, VoiceExtractIntentResponse, CalendarIntentEvent } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 export function CreateEventPage() {
+  useClosingConfirmation();
   const [text, setText] = useState("");
   const navigate = useNavigate();
 

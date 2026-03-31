@@ -9,10 +9,12 @@ import type {
   CreateWishlistItemRequest,
   UpdateWishlistItemRequest,
 } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 type WishlistTab = "own" | "tribe";
 
 export function WishlistPage() {
+  useClosingConfirmation();
   const [tab, setTab] = useState<WishlistTab>("own");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);

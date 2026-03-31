@@ -7,8 +7,10 @@ import type {
   CreateTaskWorkRequest,
   CreateTaskItemRequest,
 } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 export function TasksPage() {
+  useClosingConfirmation();
   const [selectedWorkId, setSelectedWorkId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");

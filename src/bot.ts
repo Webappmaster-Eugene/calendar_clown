@@ -729,7 +729,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
       await handleNeuroClearButton(ctx);
     }
   });
-  bot.hears(/^(🆓 Free|💎 Paid)$/, async (ctx) => {
+  bot.hears(/^(🆓 Free|💎 Paid|🔥 Без цензуры)$/, async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isNeuroMode(tid)) {
       await handleProviderToggle(ctx);

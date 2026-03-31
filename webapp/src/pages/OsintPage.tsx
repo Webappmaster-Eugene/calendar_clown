@@ -3,8 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import type { OsintSearchDto, OsintSearchHistoryResponse, StartOsintSearchRequest } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 export function OsintPage() {
+  useClosingConfirmation();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);

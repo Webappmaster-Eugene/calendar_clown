@@ -7,6 +7,7 @@ import type {
   ExpenseReportDto,
   AddExpenseRequest,
 } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 interface DrilldownExpense {
   id: number;
@@ -24,6 +25,7 @@ interface DrilldownResponse {
 }
 
 export function ExpensesPage() {
+  useClosingConfirmation();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [categoryId, setCategoryId] = useState<number | null>(null);

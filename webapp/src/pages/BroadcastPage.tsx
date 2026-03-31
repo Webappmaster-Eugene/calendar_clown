@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { BroadcastResultDto } from "@shared/types";
+import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
 export function BroadcastPage() {
+  useClosingConfirmation();
   const [text, setText] = useState("");
 
   const broadcastMutation = useMutation({

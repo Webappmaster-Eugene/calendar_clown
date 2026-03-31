@@ -15,13 +15,14 @@ import {
   getActiveDialogId,
   updateDialogTitle,
 } from "../chat/repository.js";
-import { chatCompletion, chatCompletionStream, generateDialogTitle } from "../chat/client.js";
+import { chatCompletion, chatCompletionStream, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
 import { getChatProvider } from "../chat/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL } from "../constants.js";
+import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_UNCENSORED_MODEL } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
 import type {
+  ChatProvider,
   ChatDialogDto,
   ChatMessageDto,
   SendChatMessageResponse,
@@ -30,6 +31,14 @@ import type {
 const log = createLogger("chat-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
+
+function resolveModelAndPrompt(provider: ChatProvider): { model: string; systemPrompt?: string } {
+  switch (provider) {
+    case "free": return { model: DEEPSEEK_FREE_MODEL };
+    case "paid": return { model: DEEPSEEK_MODEL };
+    case "uncensored": return { model: NEURO_UNCENSORED_MODEL, systemPrompt: buildUncensoredSystemPrompt() };
+  }
+}
 
 function requireDb(): void {
   if (!isDatabaseAvailable()) {
@@ -167,7 +176,7 @@ export async function sendMessage(
 
   // Resolve model from user's chat provider
   const provider = await getChatProvider(dbUser.id);
-  const model = provider === "free" ? DEEPSEEK_FREE_MODEL : DEEPSEEK_MODEL;
+  const { model, systemPrompt } = resolveModelAndPrompt(provider);
 
   // Get conversation history BEFORE saving user message (to build context)
   const history = await getRecentMessages(dialog.id, 20);
@@ -180,7 +189,7 @@ export async function sendMessage(
   ];
 
   // Call AI first — if it fails, we don't save orphaned user messages
-  const result = await chatCompletion(messages, model);
+  const result = await chatCompletion(messages, model, systemPrompt);
 
   // Save both messages only after successful AI call
   const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
@@ -237,7 +246,7 @@ export async function sendMessageStream(
 
   // Resolve model from user's chat provider
   const provider = await getChatProvider(dbUser.id);
-  const model = provider === "free" ? DEEPSEEK_FREE_MODEL : DEEPSEEK_MODEL;
+  const { model, systemPrompt } = resolveModelAndPrompt(provider);
 
   // Get conversation history BEFORE saving user message (to build context)
   const history = await getRecentMessages(dialog.id, 20);
@@ -250,7 +259,7 @@ export async function sendMessageStream(
   ];
 
   // Stream AI response first — if it fails, we don't save orphaned user messages
-  const result = await chatCompletionStream(messages, onChunk, model);
+  const result = await chatCompletionStream(messages, onChunk, model, systemPrompt);
 
   // Save both messages only after successful AI call
   const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
