@@ -7,6 +7,9 @@ import { useAddToHomeScreen } from "../hooks/useAddToHomeScreen";
 import type { UserProfile } from "@shared/types";
 import { MODE_LABELS } from "@shared/constants";
 
+/** Build version — visible at the bottom to verify deployment. */
+const BUILD_VERSION = "v24.3";
+
 interface UserProfileWithModes extends UserProfile {
   availableModes: string[];
 }
@@ -35,7 +38,7 @@ const MODE_ROUTES: Record<string, string> = {
 export function ModeSelectorPage() {
   const navigate = useNavigate();
   const { impact } = useHaptic();
-  const { canShow, isAdding, trigger, diagnostics } = useAddToHomeScreen();
+  const { canShow, isAdding, trigger, status, diagnostics } = useAddToHomeScreen();
   const [showDebug, setShowDebug] = useState(false);
   const tapCountRef = useRef(0);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -48,7 +51,7 @@ export function ModeSelectorPage() {
     [impact, navigate],
   );
 
-  // Triple-tap on title to show diagnostics panel.
+  // Triple-tap on title to toggle full diagnostics panel.
   const handleTitleTap = useCallback(() => {
     tapCountRef.current += 1;
     if (tapCountRef.current >= 3) {
@@ -116,9 +119,18 @@ export function ModeSelectorPage() {
         </button>
       )}
 
+      {/* Always-visible status line — verify deployment + see current state */}
+      <div style={{ marginTop: 16, padding: "8px 12px", fontSize: 11, color: "var(--tg-theme-hint-color, #999)", textAlign: "center", lineHeight: 1.6 }}>
+        <div>{BUILD_VERSION} | homeScreen: {status}</div>
+        {diagnostics.length > 0 && (
+          <div style={{ marginTop: 4 }}>{diagnostics[diagnostics.length - 1]}</div>
+        )}
+      </div>
+
+      {/* Full diagnostics panel — triple-tap title to toggle */}
       {showDebug && diagnostics.length > 0 && (
         <div className="home-screen-hint">
-          <p><strong>Diagnostics</strong></p>
+          <p><strong>Diagnostics ({diagnostics.length})</strong></p>
           <pre style={{ fontSize: 11, textAlign: "left", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
             {diagnostics.join("\n")}
           </pre>

@@ -179,16 +179,33 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
       }
     }
 
-    // Call addToHomeScreen — SDK handles bridge serialization.
+    // Call addToHomeScreen — try SDK v3, fallback to vanilla.
     try {
       addToHomeScreen();
-      log("addToHomeScreen() called");
+      log("addToHomeScreen() called via SDK v3");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      log(`addToHomeScreen() threw: ${msg}`);
-      setStatus("idle");
-      restoreClosingConfirmation();
-      return;
+      log(`SDK v3 addToHomeScreen() threw: ${msg}, trying vanilla fallback`);
+      // Fallback: try vanilla Telegram WebApp API directly.
+      try {
+        const wa = (window as unknown as Record<string, unknown>).Telegram as
+          { WebApp?: { addToHomeScreen?: () => void } } | undefined;
+        if (typeof wa?.WebApp?.addToHomeScreen === "function") {
+          wa.WebApp.addToHomeScreen();
+          log("addToHomeScreen() called via vanilla fallback");
+        } else {
+          log("vanilla fallback not available");
+          setStatus("idle");
+          restoreClosingConfirmation();
+          return;
+        }
+      } catch (fallbackErr) {
+        const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        log(`vanilla fallback threw: ${fbMsg}`);
+        setStatus("idle");
+        restoreClosingConfirmation();
+        return;
+      }
     }
 
     // Fallback timeout — SDK docs: "the event may not be received even if the icon has been added."
