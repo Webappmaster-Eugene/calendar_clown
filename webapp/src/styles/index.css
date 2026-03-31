@@ -308,6 +308,31 @@ select.input {
   border-color: var(--tg-theme-hint-color, #bbb);
 }
 
+.home-screen-hint {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+  color: var(--tg-theme-text-color, #333);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.home-screen-hint p {
+  margin: 0 0 8px;
+}
+
+.home-screen-hint-dismiss {
+  border: none;
+  background: none;
+  color: var(--tg-theme-link-color, #2481cc);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 12px;
+}
+
 /* ─── Tabs ────────────────────────────────────────────────── */
 
 .tabs {

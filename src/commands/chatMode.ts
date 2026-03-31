@@ -68,15 +68,18 @@ const GEMINI_DOC_MIME_TYPES = new Set([
 ]);
 
 function getNeuroKeyboard(isAdmin: boolean, provider: ChatProvider = "free") {
-  const providerBtnMap: Record<ChatProvider, string> = {
-    free: "🆓 Free",
-    paid: "💎 Paid",
-    uncensored: "🔥 Без цензуры",
-  };
-  const providerBtn = providerBtnMap[provider];
+  const providers: Array<{ key: ChatProvider; emoji: string; label: string }> = [
+    { key: "free", emoji: "🆓", label: "Free" },
+    { key: "paid", emoji: "💎", label: "Paid" },
+    { key: "uncensored", emoji: "🔥", label: "Без цензуры" },
+  ];
+  const providerButtons = providers.map(({ key, emoji, label }) =>
+    key === provider ? `✅ ${label}` : `${emoji} ${label}`
+  );
   return Markup.keyboard([
     ["💬 Диалоги", "➕ Новый диалог"],
-    ["🗑 Очистить историю", providerBtn],
+    ["🗑 Очистить историю"],
+    providerButtons,
     ...getModeButtons(isAdmin),
   ]).resize();
 }
@@ -820,8 +823,16 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle provider toggle button (🆓 Free / 💎 Paid). */
-export async function handleProviderToggle(ctx: Context): Promise<void> {
+/** Parse ChatProvider from button text (e.g. "✅ Free" → "free", "💎 Paid" → "paid"). */
+function parseProviderFromButton(text: string): ChatProvider | null {
+  if (text.includes("Free")) return "free";
+  if (text.includes("Paid")) return "paid";
+  if (text.includes("Без цензуры")) return "uncensored";
+  return null;
+}
+
+/** Handle provider select button (🆓 Free / 💎 Paid / 🔥 Без цензуры / ✅ variants). */
+export async function handleProviderSelect(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
@@ -833,23 +844,32 @@ export async function handleProviderToggle(ctx: Context): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
 
-  const current = await getChatProvider(dbUser.id);
-  const providerCycle: ChatProvider[] = ["free", "paid", "uncensored"];
-  const currentIdx = providerCycle.indexOf(current);
-  const next = providerCycle[(currentIdx + 1) % providerCycle.length];
-  await setChatProvider(dbUser.id, next);
-  logAction(dbUser.id, telegramId, "chat_provider_toggle", { from: current, to: next });
+  const buttonText = ctx.message && "text" in ctx.message ? ctx.message.text : "";
+  const target = parseProviderFromButton(buttonText);
+  if (!target) return;
 
+  const current = await getChatProvider(dbUser.id);
   const isAdmin = isBootstrapAdmin(telegramId);
+
+  if (target === current) {
+    await ctx.reply(
+      "Эта модель уже активна.",
+      getNeuroKeyboard(isAdmin, current)
+    );
+    return;
+  }
+
+  await setChatProvider(dbUser.id, target);
+  logAction(dbUser.id, telegramId, "chat_provider_select", { from: current, to: target });
+
   const labelMap: Record<ChatProvider, string> = {
     free: "🆓 *Free* — бесплатная модель DeepSeek (rate-limited)",
     paid: "💎 *Paid* — платная модель DeepSeek (быстрее, без лимитов)",
     uncensored: "🔥 *Без цензуры* — модель без ограничений контента",
   };
-  const label = labelMap[next];
 
   await ctx.reply(
-    `Модель переключена: ${label}`,
-    { parse_mode: "Markdown", ...getNeuroKeyboard(isAdmin, next) }
+    `Модель переключена: ${labelMap[target]}`,
+    { parse_mode: "Markdown", ...getNeuroKeyboard(isAdmin, target) }
   );
 }

@@ -41,8 +41,8 @@ export function ModeSelectorPage() {
   const { impact } = useHaptic();
   const [homeScreenStatus, setHomeScreenStatus] = useState<HomeScreenStatus>("unknown");
   const [addingToHome, setAddingToHome] = useState(false);
+  const [showFallbackHint, setShowFallbackHint] = useState(false);
   const addingTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const addedHandlerRef = useRef<(() => void) | null>(null);
 
   const handleModeClick = useCallback(
     (route: string) => {
@@ -100,7 +100,12 @@ export function ModeSelectorPage() {
     };
 
     // React to home screen addition while page is open
-    const onAdded = () => setHomeScreenStatus("added");
+    const onAdded = () => {
+      setHomeScreenStatus("added");
+      setAddingToHome(false);
+      setShowFallbackHint(false);
+      clearTimeout(addingTimerRef.current);
+    };
 
     webApp.onEvent?.("homeScreenChecked", onChecked);
     webApp.onEvent?.("homeScreenAdded", onAdded);
@@ -109,11 +114,6 @@ export function ModeSelectorPage() {
       webApp.offEvent?.("homeScreenChecked", onChecked);
       webApp.offEvent?.("homeScreenAdded", onAdded);
       clearTimeout(addingTimerRef.current);
-      // Clean up click-scoped homeScreenAdded listener (registered in handleAddToHomeScreen)
-      if (addedHandlerRef.current) {
-        webApp.offEvent?.("homeScreenAdded", addedHandlerRef.current);
-        addedHandlerRef.current = null;
-      }
     };
   }, []);
 
@@ -124,64 +124,49 @@ export function ModeSelectorPage() {
       return;
     }
 
+    clearTimeout(addingTimerRef.current);
     setAddingToHome(true);
+    setShowFallbackHint(false);
 
     try {
       impact("light");
     } catch {
-      // Haptic feedback is non-critical — don't block the main action
+      // Haptic feedback is non-critical
     }
 
+    // Defensive: clear any leftover closing confirmation state from other pages
+    try {
+      wa.disableClosingConfirmation?.();
+    } catch {
+      // Non-critical — proceed anyway
+    }
+
+    // Diagnostic logging — check via chrome://inspect on Android
+    console.log(
+      "[home-screen] platform=%s version=%s addToHomeScreen=%s checkHomeScreenStatus=%s",
+      wa.platform, wa.version, typeof wa.addToHomeScreen, typeof wa.checkHomeScreenStatus,
+    );
+
+    // Call addToHomeScreen synchronously in click handler — setTimeout would
+    // break the user gesture context and some clients silently ignore the call.
     try {
       wa.addToHomeScreen();
+      console.log("[home-screen] addToHomeScreen() called successfully");
     } catch (err) {
+      console.error("[home-screen] addToHomeScreen() threw:", err);
       setAddingToHome(false);
       const msg = err instanceof Error ? err.message : String(err);
       wa.showAlert?.(`Ошибка: ${msg}`);
       return;
     }
 
-    // Listen for successful addition
-    const onAdded = () => {
-      clearTimeout(addingTimerRef.current);
-      setAddingToHome(false);
-      setHomeScreenStatus("added");
-      wa.offEvent?.("homeScreenAdded", onAdded);
-      addedHandlerRef.current = null;
-    };
-
-    // Clean up any previous listener (defensive: handles edge cases)
-    if (addedHandlerRef.current) {
-      wa.offEvent?.("homeScreenAdded", addedHandlerRef.current);
-    }
-    addedHandlerRef.current = onAdded;
-    wa.onEvent?.("homeScreenAdded", onAdded);
-
-    // Fallback: reset loading state after timeout if no event received.
-    // Re-check status to detect silent success (docs: "the event may not
-    // be received even if the icon has been added").
+    // Fallback: if no homeScreenAdded event fires within 4s, show manual
+    // instructions. The SDK docs warn: "the event may not be received
+    // even if the icon has been added."
     addingTimerRef.current = setTimeout(() => {
       setAddingToHome(false);
-      if (addedHandlerRef.current) {
-        wa.offEvent?.("homeScreenAdded", addedHandlerRef.current);
-        addedHandlerRef.current = null;
-      }
-
-      if (typeof wa.checkHomeScreenStatus === "function") {
-        try {
-          wa.checkHomeScreenStatus((status) => {
-            if (status === "added") {
-              setHomeScreenStatus("added");
-            } else if (status === "unsupported") {
-              setHomeScreenStatus("unsupported");
-              wa.showAlert?.("Ваше устройство не поддерживает добавление на главный экран.");
-            }
-          });
-        } catch {
-          // Ignore
-        }
-      }
-    }, 3000);
+      setShowFallbackHint(true);
+    }, 4000);
   }, [impact]);
 
   const { data: profile, isLoading, error } = useQuery({
@@ -238,6 +223,22 @@ export function ModeSelectorPage() {
         >
           {addingToHome ? "Добавление..." : "Добавить на главный экран"}
         </button>
+      )}
+
+      {showFallbackHint && (
+        <div className="home-screen-hint">
+          <p>
+            Если диалог не появился, добавьте вручную:
+            <br />
+            <strong>&#8942;</strong> (меню) → <strong>Add to Home Screen</strong>
+          </p>
+          <button
+            className="home-screen-hint-dismiss"
+            onClick={() => setShowFallbackHint(false)}
+          >
+            Понятно
+          </button>
+        </div>
       )}
     </div>
   );

@@ -77,7 +77,7 @@ import {
   handleNeuroDialogSwitch,
   handleNeuroDialogDeleteMode,
   handleNeuroDialogDelete,
-  handleProviderToggle,
+  handleProviderSelect,
 } from "./commands/chatMode.js";
 import { cancelBatch } from "./chat/messageBatcher.js";
 import { getUserByTelegramId as getDbUser } from "./expenses/repository.js";
@@ -729,10 +729,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
       await handleNeuroClearButton(ctx);
     }
   });
-  bot.hears(/^(🆓 Free|💎 Paid|🔥 Без цензуры)$/, async (ctx) => {
+  bot.hears(/^(?:✅|🆓) Free$|^(?:✅|💎) Paid$|^(?:✅|🔥) Без цензуры$/, async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isNeuroMode(tid)) {
-      await handleProviderToggle(ctx);
+      await handleProviderSelect(ctx);
     }
   });
 
