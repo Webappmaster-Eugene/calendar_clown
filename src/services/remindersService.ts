@@ -11,12 +11,18 @@ import {
   toggleReminderActive,
   updateReminderText,
   updateReminderSchedule,
+  updateReminderSound,
   getTribeReminders,
   addSubscriber,
   removeSubscriber,
   getSubscribers,
   isSubscribed,
 } from "../reminders/repository.js";
+import {
+  getAvailableSounds as getAvailableSoundsRepo,
+  getSoundById,
+  getFiredRemindersWithSound,
+} from "../reminders/soundRepository.js";
 import type { ReminderSchedule } from "../reminders/types.js";
 import { formatScheduleDescription, validateSchedule } from "../reminders/service.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
@@ -27,6 +33,8 @@ import type {
   ReminderDto,
   ReminderScheduleDto,
   ReminderSubscriberDto,
+  ReminderSoundDto,
+  FiredReminderDto,
 } from "../shared/types.js";
 
 const log = createLogger("reminders-service");
@@ -45,14 +53,20 @@ async function requireDbUser(telegramId: number) {
   return dbUser;
 }
 
-function reminderToDto(r: {
-  id: number;
-  text: string;
-  schedule: ReminderSchedule;
-  isActive: boolean;
-  lastFiredAt: Date | null;
-  createdAt: Date;
-}, subscribers: ReminderSubscriberDto[] = []): ReminderDto {
+function reminderToDto(
+  r: {
+    id: number;
+    text: string;
+    schedule: ReminderSchedule;
+    isActive: boolean;
+    lastFiredAt: Date | null;
+    soundId: number | null;
+    soundEnabled: boolean;
+    createdAt: Date;
+  },
+  subscribers: ReminderSubscriberDto[] = [],
+  soundInfo?: { name: string; emoji: string } | null,
+): ReminderDto {
   return {
     id: r.id,
     text: r.text,
@@ -63,6 +77,10 @@ function reminderToDto(r: {
     },
     isActive: r.isActive,
     lastFiredAt: r.lastFiredAt?.toISOString() ?? null,
+    soundId: r.soundId,
+    soundEnabled: r.soundEnabled,
+    soundName: soundInfo?.name ?? null,
+    soundEmoji: soundInfo?.emoji ?? null,
     createdAt: r.createdAt.toISOString(),
     subscribers,
   };
@@ -81,10 +99,12 @@ export async function getUserReminders(telegramId: number): Promise<ReminderDto[
   const result: ReminderDto[] = [];
   for (const r of reminders) {
     const subs = await getSubscribers(r.id);
-    result.push(reminderToDto(r, subs.map((s) => ({
-      id: s.id,
-      subscriberName: s.subscriberName ?? "",
-    }))));
+    const soundInfo = r.soundId ? await getSoundById(r.soundId) : null;
+    result.push(reminderToDto(
+      r,
+      subs.map((s) => ({ id: s.id, subscriberName: s.subscriberName ?? "" })),
+      soundInfo ? { name: soundInfo.name, emoji: soundInfo.emoji } : null,
+    ));
   }
   return result;
 }
@@ -102,10 +122,12 @@ export async function getReminder(telegramId: number, reminderId: number): Promi
   if (r.userId !== dbUser.id) return null;
 
   const subs = await getSubscribers(r.id);
-  return reminderToDto(r, subs.map((s) => ({
-    id: s.id,
-    subscriberName: s.subscriberName ?? "",
-  })));
+  const soundInfo = r.soundId ? await getSoundById(r.soundId) : null;
+  return reminderToDto(
+    r,
+    subs.map((s) => ({ id: s.id, subscriberName: s.subscriberName ?? "" })),
+    soundInfo ? { name: soundInfo.name, emoji: soundInfo.emoji } : null,
+  );
 }
 
 /**
@@ -115,7 +137,9 @@ export async function createNewReminder(
   telegramId: number,
   text: string,
   schedule: ReminderScheduleDto,
-  inputMethod: string = "text"
+  inputMethod: string = "text",
+  soundId?: number,
+  soundEnabled?: boolean
 ): Promise<ReminderDto> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -134,15 +158,27 @@ export async function createNewReminder(
   const validationError = validateSchedule(reminderSchedule);
   if (validationError) throw new Error(validationError);
 
+  // Validate sound exists if provided
+  let soundInfo: { name: string; emoji: string } | null = null;
+  const resolvedSoundId = soundId ?? null;
+  const resolvedSoundEnabled = (soundEnabled === true && resolvedSoundId !== null);
+  if (resolvedSoundId !== null) {
+    const sound = await getSoundById(resolvedSoundId);
+    if (!sound) throw new Error("Выбранный звук не найден.");
+    soundInfo = { name: sound.name, emoji: sound.emoji };
+  }
+
   const reminder = await createReminder(
     dbUser.id,
     dbUser.tribeId,
     text,
     reminderSchedule,
-    inputMethod
+    inputMethod,
+    resolvedSoundId,
+    resolvedSoundEnabled,
   );
 
-  return reminderToDto(reminder);
+  return reminderToDto(reminder, [], soundInfo);
 }
 
 /**
@@ -162,7 +198,12 @@ export async function toggleReminder(telegramId: number, reminderId: number): Pr
   const dbUser = await requireDbUser(telegramId);
   const updated = await toggleReminderActive(reminderId, dbUser.id);
   if (!updated) return null;
-  return reminderToDto(updated);
+  const soundInfo = updated.soundId ? await getSoundById(updated.soundId) : null;
+  return reminderToDto(
+    updated,
+    [],
+    soundInfo ? { name: soundInfo.name, emoji: soundInfo.emoji } : null,
+  );
 }
 
 /**
@@ -199,6 +240,50 @@ export async function editReminderSchedule(
 }
 
 /**
+ * Update reminder sound settings.
+ */
+export async function editReminderSoundSettings(
+  telegramId: number,
+  reminderId: number,
+  soundId: number | null,
+  soundEnabled: boolean
+): Promise<boolean> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  if (soundId !== null) {
+    const sound = await getSoundById(soundId);
+    if (!sound) throw new Error("Выбранный звук не найден.");
+  }
+  const resolvedEnabled = soundEnabled && soundId !== null;
+  return updateReminderSound(reminderId, dbUser.id, soundId, resolvedEnabled);
+}
+
+/**
+ * Get available reminder sounds.
+ */
+export async function getAvailableSounds(): Promise<ReminderSoundDto[]> {
+  requireDb();
+  const sounds = await getAvailableSoundsRepo();
+  return sounds.map((s) => ({
+    id: s.id,
+    name: s.name,
+    emoji: s.emoji,
+    durationSeconds: s.durationSeconds,
+  }));
+}
+
+/**
+ * Get recently fired reminders with sound for Mini App polling.
+ */
+export async function getFiredReminders(
+  telegramId: number,
+  since: Date
+): Promise<FiredReminderDto[]> {
+  requireDb();
+  return getFiredRemindersWithSound(telegramId, since);
+}
+
+/**
  * Get tribe reminders (excluding own).
  */
 export async function getTribeRemindersList(telegramId: number): Promise<Array<ReminderDto & { ownerName: string }>> {
@@ -207,10 +292,19 @@ export async function getTribeRemindersList(telegramId: number): Promise<Array<R
   if (!dbUser.tribeId) return [];
 
   const reminders = await getTribeReminders(dbUser.tribeId, dbUser.id);
-  return reminders.map((r) => ({
-    ...reminderToDto(r),
-    ownerName: r.ownerName,
-  }));
+  const result: Array<ReminderDto & { ownerName: string }> = [];
+  for (const r of reminders) {
+    const soundInfo = r.soundId ? await getSoundById(r.soundId) : null;
+    result.push({
+      ...reminderToDto(
+        r,
+        [],
+        soundInfo ? { name: soundInfo.name, emoji: soundInfo.emoji } : null,
+      ),
+      ownerName: r.ownerName,
+    });
+  }
+  return result;
 }
 
 /**

@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TelegramProvider } from "./hooks/useTelegram";
+import { ReminderAudioProvider } from "./hooks/useReminderAudio";
 import { AppShell } from "./components/layout/AppShell";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
@@ -56,6 +57,7 @@ export function App() {
       <QueryClientProvider client={queryClient}>
         <TelegramProvider>
           <BrowserRouter>
+            <ReminderAudioProvider>
             <AppShell>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
@@ -82,6 +84,7 @@ export function App() {
                 </Routes>
               </Suspense>
             </AppShell>
+            </ReminderAudioProvider>
           </BrowserRouter>
         </TelegramProvider>
       </QueryClientProvider>

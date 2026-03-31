@@ -69,32 +69,40 @@ export function addMessage(
   const existing = batches.get(dbUserId);
 
   if (existing) {
-    clearTimeout(existing.timer);
-    existing.messages.push({ text, ctx, timestamp: now });
-    existing.dialogId = dialogId;
-
-    // If max wait exceeded, flush immediately
-    if (now - existing.firstMessageTime >= NEURO_BATCH_MAX_WAIT_MS) {
+    // If dialog changed mid-batch, flush old batch first and start a new one
+    if (existing.dialogId !== dialogId) {
       flushBatch(dbUserId);
+      // Fall through to create a new batch below
+    } else {
+      clearTimeout(existing.timer);
+      existing.messages.push({ text, ctx, timestamp: now });
+
+      // If max wait exceeded, flush immediately
+      if (now - existing.firstMessageTime >= NEURO_BATCH_MAX_WAIT_MS) {
+        flushBatch(dbUserId);
+        ctx.sendChatAction("typing").catch(() => {});
+        return;
+      }
+
+      // Reset debounce timer
+      existing.timer = setTimeout(() => flushBatch(dbUserId), NEURO_BATCH_DEBOUNCE_MS);
+      ctx.sendChatAction("typing").catch(() => {});
       return;
     }
-
-    // Reset debounce timer
-    existing.timer = setTimeout(() => flushBatch(dbUserId), NEURO_BATCH_DEBOUNCE_MS);
-  } else {
-    // Create new batch
-    const timer = setTimeout(() => flushBatch(dbUserId), NEURO_BATCH_DEBOUNCE_MS);
-    batches.set(dbUserId, {
-      messages: [{ text, ctx, timestamp: now }],
-      timer,
-      dialogId,
-      dbUserId,
-      telegramId,
-      model,
-      firstMessageTime: now,
-      onFlush,
-    });
   }
+
+  // Create new batch (either no existing batch, or dialog changed and old was flushed)
+  const timer = setTimeout(() => flushBatch(dbUserId), NEURO_BATCH_DEBOUNCE_MS);
+  batches.set(dbUserId, {
+    messages: [{ text, ctx, timestamp: now }],
+    timer,
+    dialogId,
+    dbUserId,
+    telegramId,
+    model,
+    firstMessageTime: now,
+    onFlush,
+  });
 
   // Send typing indicator
   ctx.sendChatAction("typing").catch(() => {});

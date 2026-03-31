@@ -53,8 +53,8 @@ export async function createDialog(
   return mapDialog(rows[0]);
 }
 
-/** Get all active dialogs for a user, ordered by updated_at DESC. */
-export async function getDialogsByUser(userId: number): Promise<ChatDialog[]> {
+/** Get all active dialogs for a user, ordered by updated_at DESC. Includes message count. */
+export async function getDialogsByUser(userId: number): Promise<(ChatDialog & { messageCount: number })[]> {
   const { rows } = await query<{
     id: number;
     user_id: number;
@@ -62,14 +62,21 @@ export async function getDialogsByUser(userId: number): Promise<ChatDialog[]> {
     is_active: boolean;
     created_at: Date;
     updated_at: Date;
+    message_count: string;
   }>(
-    `SELECT id, user_id, title, is_active, created_at, updated_at
-     FROM chat_dialogs
-     WHERE user_id = $1 AND is_active = TRUE
-     ORDER BY updated_at DESC`,
+    `SELECT d.id, d.user_id, d.title, d.is_active, d.created_at, d.updated_at,
+            COUNT(m.id) AS message_count
+     FROM chat_dialogs d
+     LEFT JOIN chat_messages m ON m.dialog_id = d.id
+     WHERE d.user_id = $1 AND d.is_active = TRUE
+     GROUP BY d.id
+     ORDER BY d.updated_at DESC`,
     [userId]
   );
-  return rows.map(mapDialog);
+  return rows.map((r) => ({
+    ...mapDialog(r),
+    messageCount: parseInt(r.message_count, 10),
+  }));
 }
 
 /** Get a dialog by ID with ownership check. Returns null if not found or not owned. */

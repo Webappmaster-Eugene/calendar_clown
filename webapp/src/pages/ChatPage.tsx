@@ -47,6 +47,22 @@ export function ChatPage() {
     },
   });
 
+  const createDialogMutation = useMutation({
+    mutationFn: () => api.post<ChatDialogDto>("/api/chat/dialogs"),
+    onSuccess: (dialog) => {
+      queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
+      setSelectedDialogId(dialog.id);
+    },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : "Не удалось создать диалог";
+      if (webApp) {
+        webApp.showAlert(msg);
+      } else {
+        alert(msg);
+      }
+    },
+  });
+
   const handleDeleteDialog = (id: number, title: string) => {
     if (webApp) {
       webApp.showConfirm(`Удалить диалог "${title}"?`, (confirmed: boolean) => {
@@ -60,6 +76,7 @@ export function ChatPage() {
   if (selectedDialogId !== null) {
     return (
       <ChatDialog
+        key={selectedDialogId}
         dialogId={selectedDialogId}
         onBack={() => setSelectedDialogId(null)}
       />
@@ -102,9 +119,10 @@ export function ChatPage() {
       <button
         className="btn btn-primary btn-block"
         style={{ marginBottom: 16 }}
-        onClick={() => setSelectedDialogId(-1)}
+        onClick={() => createDialogMutation.mutate()}
+        disabled={createDialogMutation.isPending}
       >
-        Новый чат
+        {createDialogMutation.isPending ? "Создание..." : "Новый чат"}
       </button>
 
       {dialogs && dialogs.length === 0 && (
@@ -120,8 +138,8 @@ export function ChatPage() {
             <div key={d.id} className="list-item">
               <div
                 className="list-item-content"
-                style={{ cursor: "pointer" }}
-                onClick={() => setSelectedDialogId(d.id)}
+                style={{ cursor: createDialogMutation.isPending ? "default" : "pointer", opacity: createDialogMutation.isPending ? 0.6 : 1 }}
+                onClick={() => { if (!createDialogMutation.isPending) setSelectedDialogId(d.id); }}
               >
                 <div className="list-item-title">{d.title}</div>
                 <div className="list-item-hint">
@@ -153,16 +171,11 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const isNewChat = dialogId === -1;
-  const [activeDialogId, setActiveDialogId] = useState<number | null>(
-    isNewChat ? null : dialogId
-  );
 
   const { data: messages } = useQuery({
-    queryKey: ["chat", "messages", activeDialogId],
+    queryKey: ["chat", "messages", dialogId],
     queryFn: () =>
-      api.get<ChatMessageDto[]>(`/api/chat/dialogs/${activeDialogId}/messages`),
-    enabled: activeDialogId !== null,
+      api.get<ChatMessageDto[]>(`/api/chat/dialogs/${dialogId}/messages`),
   });
 
   useEffect(() => {
@@ -181,34 +194,33 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
     setIsSending(true);
 
     try {
-      const result = await api.stream(
+      await api.stream(
         "/api/chat/messages/stream",
         {
           content: text,
-          ...(activeDialogId !== null ? { dialogId: activeDialogId } : {}),
+          dialogId,
         },
         (chunk) => {
           setStreamingContent((prev) => prev + chunk);
         }
       );
 
-      if (activeDialogId === null) {
-        setActiveDialogId(result.dialogId);
-      }
-
       // Wait for messages to be refetched before clearing optimistic state
       // This prevents a visual flash where messages disappear briefly
-      await queryClient.invalidateQueries({ queryKey: ["chat", "messages"] });
+      await queryClient.invalidateQueries({ queryKey: ["chat", "messages", dialogId] });
       queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
       setStreamingContent("");
       setPendingUserMessage(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка отправки");
       setPendingUserMessage(null);
+      // Refresh dialog list and messages on error too
+      queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
+      queryClient.invalidateQueries({ queryKey: ["chat", "messages", dialogId] });
     } finally {
       setIsSending(false);
     }
-  }, [input, isSending, activeDialogId, queryClient]);
+  }, [input, isSending, dialogId, queryClient]);
 
   // Combine server messages with the current user input + streaming response
   const displayMessages = messages ?? [];

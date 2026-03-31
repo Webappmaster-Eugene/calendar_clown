@@ -25,7 +25,7 @@ export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek/deepseek-chat-v3.1";
 
 /** DeepSeek free model via OpenRouter (rate-limited but genuinely free). */
-export const DEEPSEEK_FREE_MODEL = process.env.DEEPSEEK_FREE_MODEL || "deepseek/deepseek-chat:free";
+export const DEEPSEEK_FREE_MODEL = process.env.DEEPSEEK_FREE_MODEL || "deepseek/deepseek-chat-v3.1:free";
 
 /** Gemini model for voice transcription (calendar/expenses modes). */
 export const TRANSCRIBE_MODEL = process.env.STT_MODEL || "google/gemini-2.0-flash-001";
@@ -63,19 +63,25 @@ export const OSINT_QUERIES_LIMIT = 55;
 export const OSINT_RESULTS_PER_QUERY = 10;
 
 /** OSINT: top sources for final analysis. */
-export const OSINT_TOP_SOURCES = 80;
+export const OSINT_TOP_SOURCES = 100;
 
-/** OSINT: how many top results get raw_content in final analysis. */
-export const OSINT_RAW_CONTENT_TOP = 20;
+/** OSINT: how many top results get raw_content (Tier 1) in final analysis. */
+export const OSINT_RAW_CONTENT_TOP = 40;
+
+/** OSINT: Tier 2 boundary — results from RAW_CONTENT_TOP to this index get medium raw_content. */
+export const OSINT_RAW_CONTENT_MEDIUM_END = 70;
 
 /** OSINT: max follow-up queries in Phase 2. */
-export const OSINT_PHASE2_QUERIES_LIMIT = 15;
+export const OSINT_PHASE2_QUERIES_LIMIT = 25;
 
 /** OSINT: max URLs for extract API. */
-export const OSINT_EXTRACT_URLS_LIMIT = 20;
+export const OSINT_EXTRACT_URLS_LIMIT = 30;
 
 /** OSINT: max tokens for final analysis. */
-export const OSINT_ANALYSIS_MAX_TOKENS = 20000;
+export const OSINT_ANALYSIS_MAX_TOKENS = 32000;
+
+/** OSINT: max results for Phase 1 intermediate analysis. */
+export const OSINT_PHASE1_ANALYSIS_LIMIT = 60;
 
 /** Summarizer: AI model for summary generation (via OpenRouter). */
 export const SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "anthropic/claude-sonnet-4";

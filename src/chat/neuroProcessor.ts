@@ -2,6 +2,7 @@ import type { FlushedBatch } from "./messageBatcher.js";
 import { chatCompletion, generateDialogTitle } from "./client.js";
 import {
   getOrCreateActiveDialog,
+  getDialogById,
   getRecentMessages,
   saveMessage,
   updateDialogTitle,
@@ -28,8 +29,10 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
     const statusMsgId = statusMsg.message_id;
     const chatId = ctx.chat!.id;
 
-    // 2. Get dialog & history
-    const dialog = await getOrCreateActiveDialog(dbUserId);
+    // 2. Get dialog & history — use the dialogId captured when the user sent the message,
+    //    not the current active dialog (which may have changed since batching)
+    const dialog = (dialogId ? await getDialogById(dialogId, dbUserId) : null)
+      ?? await getOrCreateActiveDialog(dbUserId);
     const history = await getRecentMessages(dialog.id, 20);
     const historyMessages = history.map((m) => ({ role: m.role, content: m.content }));
 

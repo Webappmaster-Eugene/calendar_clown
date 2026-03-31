@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   getUserReminders,
   createNewReminder,
@@ -6,15 +8,73 @@ import {
   removeReminder,
   editReminderText,
   editReminderSchedule,
+  editReminderSoundSettings,
   getTribeRemindersList,
   subscribeToReminder,
   unsubscribeFromReminder,
+  getAvailableSounds,
+  getFiredReminders,
 } from "../../services/remindersService.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 import type { ReminderScheduleDto } from "../../shared/types.js";
 
 const app = new Hono<ApiEnv>();
+
+/** GET /api/reminders/sounds — available sounds for selection */
+app.get("/sounds", async (c) => {
+  try {
+    const sounds = await getAvailableSounds();
+    return c.json({ ok: true, data: sounds });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get sounds";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/reminders/sounds/file/:filename — serve MP3 file */
+app.get("/sounds/file/:filename", async (c) => {
+  const filename = c.req.param("filename");
+  if (!/^[\w-]+\.mp3$/.test(filename)) {
+    return c.json({ ok: false, error: "Invalid filename" }, 400);
+  }
+  try {
+    const filePath = join(process.cwd(), "data", "sounds", filename);
+    const file = await readFile(filePath);
+    return new Response(file, {
+      headers: {
+        "Content-Type": "audio/mpeg",
+        "Cache-Control": "public, max-age=86400",
+      },
+    });
+  } catch {
+    return c.json({ ok: false, error: "Sound file not found" }, 404);
+  }
+});
+
+/** GET /api/reminders/fired?since=ISO — recently fired reminders with sound (Mini App polling) */
+app.get("/fired", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const sinceParam = c.req.query("since");
+
+  if (!sinceParam) {
+    return c.json({ ok: false, error: "since query param is required (ISO date)" }, 400);
+  }
+
+  const since = new Date(sinceParam);
+  if (isNaN(since.getTime())) {
+    return c.json({ ok: false, error: "Invalid since date format" }, 400);
+  }
+
+  try {
+    const fired = await getFiredReminders(telegramId, since);
+    return c.json({ ok: true, data: fired });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get fired reminders";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
 
 /** GET /api/reminders — list reminders */
 app.get("/", async (c) => {
@@ -48,7 +108,12 @@ app.get("/tribe", async (c) => {
 app.post("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
-  const body = await c.req.json<{ text: string; schedule: ReminderScheduleDto }>();
+  const body = await c.req.json<{
+    text: string;
+    schedule: ReminderScheduleDto;
+    soundId?: number;
+    soundEnabled?: boolean;
+  }>();
 
   if (!body.text?.trim()) {
     return c.json({ ok: false, error: "text is required" }, 400);
@@ -58,7 +123,14 @@ app.post("/", async (c) => {
   }
 
   try {
-    const reminder = await createNewReminder(telegramId, body.text.trim(), body.schedule);
+    const reminder = await createNewReminder(
+      telegramId,
+      body.text.trim(),
+      body.schedule,
+      "text",
+      body.soundId,
+      body.soundEnabled,
+    );
     logApiAction(telegramId, "reminder_create", { text: body.text.trim() });
     return c.json({ ok: true, data: reminder });
   } catch (err) {
@@ -90,12 +162,17 @@ app.put("/:id/toggle", async (c) => {
   }
 });
 
-/** PUT /api/reminders/:id — update reminder (text + schedule) */
+/** PUT /api/reminders/:id — update reminder (text + schedule + sound) */
 app.put("/:id", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const reminderId = parseInt(c.req.param("id"), 10);
-  const body = await c.req.json<{ text?: string; schedule?: ReminderScheduleDto }>();
+  const body = await c.req.json<{
+    text?: string;
+    schedule?: ReminderScheduleDto;
+    soundId?: number | null;
+    soundEnabled?: boolean;
+  }>();
 
   if (isNaN(reminderId)) {
     return c.json({ ok: false, error: "Invalid reminder ID" }, 400);
@@ -107,6 +184,14 @@ app.put("/:id", async (c) => {
     }
     if (body.schedule) {
       await editReminderSchedule(telegramId, reminderId, body.schedule);
+    }
+    if (body.soundId !== undefined || body.soundEnabled !== undefined) {
+      await editReminderSoundSettings(
+        telegramId,
+        reminderId,
+        body.soundId ?? null,
+        body.soundEnabled ?? false,
+      );
     }
     logApiAction(telegramId, "reminder_edit", { reminderId });
     return c.json({ ok: true, data: { updated: true } });

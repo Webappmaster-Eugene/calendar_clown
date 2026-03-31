@@ -321,6 +321,10 @@ export interface ReminderDto {
   schedule: ReminderScheduleDto;
   isActive: boolean;
   lastFiredAt: string | null;
+  soundId: number | null;
+  soundEnabled: boolean;
+  soundName: string | null;
+  soundEmoji: string | null;
   createdAt: string;
   subscribers: ReminderSubscriberDto[];
 }
@@ -333,6 +337,22 @@ export interface ReminderSubscriberDto {
 export interface CreateReminderRequest {
   text: string;
   schedule: ReminderScheduleDto;
+  soundId?: number;
+  soundEnabled?: boolean;
+}
+
+export interface ReminderSoundDto {
+  id: number;
+  name: string;
+  emoji: string;
+  durationSeconds: number | null;
+}
+
+export interface FiredReminderDto {
+  id: number;
+  text: string;
+  firedAt: string;
+  soundFile: string;
 }
 
 // ─── Wishlist ─────────────────────────────────────────────────

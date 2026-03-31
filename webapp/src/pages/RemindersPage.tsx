@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useTelegram } from "../hooks/useTelegram";
-import type { ReminderDto, ReminderScheduleDto, CreateReminderRequest } from "@shared/types";
+import type { ReminderDto, ReminderScheduleDto, CreateReminderRequest, ReminderSoundDto } from "@shared/types";
 
 type ReminderTab = "own" | "tribe";
 
@@ -29,6 +29,13 @@ export function RemindersPage() {
   const [times, setTimes] = useState<string[]>(["09:00"]);
   const [weekdays, setWeekdays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [endDate, setEndDate] = useState("");
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundId, setSoundId] = useState<number | null>(null);
+
+  const { data: sounds } = useQuery({
+    queryKey: ["reminder-sounds"],
+    queryFn: () => api.get<ReminderSoundDto[]>("/api/reminders/sounds"),
+  });
 
   const { data: reminders, isLoading, error } = useQuery({
     queryKey: ["reminders"],
@@ -51,8 +58,13 @@ export function RemindersPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: { id: number; text?: string; schedule?: ReminderScheduleDto }) =>
-      api.put<void>(`/api/reminders/${id}`, data),
+    mutationFn: ({ id, ...data }: {
+      id: number;
+      text?: string;
+      schedule?: ReminderScheduleDto;
+      soundId?: number | null;
+      soundEnabled?: boolean;
+    }) => api.put<void>(`/api/reminders/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["reminders"] });
       resetForm();
@@ -95,6 +107,8 @@ export function RemindersPage() {
     setTimes(["09:00"]);
     setWeekdays([1, 2, 3, 4, 5, 6, 7]);
     setEndDate("");
+    setSoundEnabled(false);
+    setSoundId(null);
   };
 
   const startEdit = (r: ReminderDto) => {
@@ -103,6 +117,8 @@ export function RemindersPage() {
     setTimes(r.schedule.times.length > 0 ? [...r.schedule.times] : ["09:00"]);
     setWeekdays([...r.schedule.weekdays]);
     setEndDate(r.schedule.endDate ?? "");
+    setSoundEnabled(r.soundEnabled);
+    setSoundId(r.soundId);
     setShowForm(true);
   };
 
@@ -125,9 +141,20 @@ export function RemindersPage() {
       endDate: endDate || null,
     };
     if (editingId) {
-      updateMutation.mutate({ id: editingId, text: text.trim(), schedule });
+      updateMutation.mutate({
+        id: editingId,
+        text: text.trim(),
+        schedule,
+        soundId: soundEnabled ? soundId : null,
+        soundEnabled,
+      });
     } else {
-      createMutation.mutate({ text: text.trim(), schedule });
+      createMutation.mutate({
+        text: text.trim(),
+        schedule,
+        soundId: soundEnabled ? soundId ?? undefined : undefined,
+        soundEnabled: soundEnabled || undefined,
+      });
     }
   };
 
@@ -221,6 +248,7 @@ export function RemindersPage() {
                     <div className="list-item-hint">
                       {r.schedule.times.join(", ")} &middot; {formatWeekdays(r.schedule.weekdays)}
                       {r.schedule.endDate ? ` &middot; до ${r.schedule.endDate}` : ""}
+                      {r.soundEnabled && r.soundEmoji ? ` &middot; ${r.soundEmoji}` : ""}
                       {r.subscribers.length > 0 ? ` &middot; ${r.subscribers.length} подписчик(ов)` : ""}
                     </div>
                   </div>
@@ -299,6 +327,34 @@ export function RemindersPage() {
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                   />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={soundEnabled}
+                      onChange={(e) => {
+                        setSoundEnabled(e.target.checked);
+                        if (!e.target.checked) setSoundId(null);
+                      }}
+                    />
+                    Воспроизводить звук (в Mini App)
+                  </label>
+                  {soundEnabled && sounds && sounds.length > 0 && (
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>
+                      {sounds.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          className={`btn btn-small ${soundId === s.id ? "btn-primary" : ""}`}
+                          onClick={() => setSoundId(s.id)}
+                        >
+                          {s.emoji} {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {(createMutation.error || updateMutation.error) && (

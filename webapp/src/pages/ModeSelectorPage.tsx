@@ -42,7 +42,7 @@ export function ModeSelectorPage() {
   const [homeScreenStatus, setHomeScreenStatus] = useState<HomeScreenStatus>("unknown");
   const [addingToHome, setAddingToHome] = useState(false);
   const addingTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const closingConfDisabledRef = useRef(false);
+  const addedHandlerRef = useRef<(() => void) | null>(null);
 
   const handleModeClick = useCallback(
     (route: string) => {
@@ -51,6 +51,21 @@ export function ModeSelectorPage() {
     },
     [impact, navigate],
   );
+
+  // ModeSelectorPage is read-only (no forms, no unsaved data).
+  // Disable closing confirmation here to prevent it from blocking
+  // addToHomeScreen() — the global enableClosingConfirmation() in
+  // TelegramProvider is restored on unmount so inner pages stay protected.
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp) return;
+
+    webApp.disableClosingConfirmation?.();
+
+    return () => {
+      webApp.enableClosingConfirmation?.();
+    };
+  }, []);
 
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
@@ -93,7 +108,10 @@ export function ModeSelectorPage() {
 
     // Listen for event-based status check (some clients deliver via event, not callback)
     const onChecked = (evt: { status: HomeScreenStatus }) => {
-      handleStatusResult(evt?.status ?? "unknown");
+      const status = evt?.status ?? "unknown";
+      if (status === "added" || status === "unsupported") {
+        setHomeScreenStatus(status);
+      }
     };
 
     // React to home screen addition while page is open
@@ -106,19 +124,12 @@ export function ModeSelectorPage() {
       webApp.offEvent?.("homeScreenChecked", onChecked);
       webApp.offEvent?.("homeScreenAdded", onAdded);
       clearTimeout(addingTimerRef.current);
-      // Re-enable closing confirmation if component unmounts mid-operation
-      if (closingConfDisabledRef.current) {
-        closingConfDisabledRef.current = false;
-        webApp.enableClosingConfirmation?.();
+      // Clean up click-scoped homeScreenAdded listener (registered in handleAddToHomeScreen)
+      if (addedHandlerRef.current) {
+        webApp.offEvent?.("homeScreenAdded", addedHandlerRef.current);
+        addedHandlerRef.current = null;
       }
     };
-  }, []);
-
-  const reEnableClosingConfirmation = useCallback(() => {
-    if (closingConfDisabledRef.current) {
-      closingConfDisabledRef.current = false;
-      window.Telegram?.WebApp?.enableClosingConfirmation?.();
-    }
   }, []);
 
   const handleAddToHomeScreen = useCallback(() => {
@@ -136,15 +147,9 @@ export function ModeSelectorPage() {
       // Haptic feedback is non-critical — don't block the main action
     }
 
-    // Temporarily disable closing confirmation to prevent it from
-    // intercepting the addToHomeScreen navigation on Android.
-    wa.disableClosingConfirmation?.();
-    closingConfDisabledRef.current = true;
-
     try {
       wa.addToHomeScreen();
     } catch (err) {
-      reEnableClosingConfirmation();
       setAddingToHome(false);
       const msg = err instanceof Error ? err.message : String(err);
       wa.showAlert?.(`Ошибка: ${msg}`);
@@ -154,34 +159,45 @@ export function ModeSelectorPage() {
     // Listen for successful addition
     const onAdded = () => {
       clearTimeout(addingTimerRef.current);
-      reEnableClosingConfirmation();
       setAddingToHome(false);
       setHomeScreenStatus("added");
       wa.offEvent?.("homeScreenAdded", onAdded);
+      addedHandlerRef.current = null;
     };
+
+    // Clean up any previous listener (defensive: handles edge cases)
+    if (addedHandlerRef.current) {
+      wa.offEvent?.("homeScreenAdded", addedHandlerRef.current);
+    }
+    addedHandlerRef.current = onAdded;
     wa.onEvent?.("homeScreenAdded", onAdded);
 
     // Fallback: reset loading state after timeout if no event received.
     // Re-check status to detect silent success (docs: "the event may not
     // be received even if the icon has been added").
     addingTimerRef.current = setTimeout(() => {
-      reEnableClosingConfirmation();
       setAddingToHome(false);
-      wa.offEvent?.("homeScreenAdded", onAdded);
+      if (addedHandlerRef.current) {
+        wa.offEvent?.("homeScreenAdded", addedHandlerRef.current);
+        addedHandlerRef.current = null;
+      }
 
       if (typeof wa.checkHomeScreenStatus === "function") {
         try {
           wa.checkHomeScreenStatus((status) => {
             if (status === "added") {
               setHomeScreenStatus("added");
+            } else if (status === "unsupported") {
+              setHomeScreenStatus("unsupported");
+              wa.showAlert?.("Ваше устройство не поддерживает добавление на главный экран.");
             }
           });
         } catch {
           // Ignore
         }
       }
-    }, 5000);
-  }, [impact, reEnableClosingConfirmation]);
+    }, 3000);
+  }, [impact]);
 
   const { data: profile, isLoading, error } = useQuery({
     queryKey: ["user", "me"],

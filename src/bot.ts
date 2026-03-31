@@ -139,6 +139,7 @@ import {
   handleReminderActionCallback,
   handleReminderEditCallback,
   handleReminderTribeCallback,
+  handleReminderSoundCallback,
   handleRemindersText,
 } from "./commands/remindersMode.js";
 import {
@@ -360,6 +361,11 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^rem_tribe_view:/, handleReminderTribeCallback);
   bot.action(/^rem_sub:/, handleReminderTribeCallback);
   bot.action(/^rem_unsub:/, handleReminderTribeCallback);
+  bot.action(/^rem_sound_pick:/, handleReminderSoundCallback);
+  bot.action(/^rem_sound_set:/, handleReminderSoundCallback);
+  bot.action(/^rem_sound_none:/, handleReminderSoundCallback);
+  bot.action(/^rem_edit_sound:/, handleReminderSoundCallback);
+  bot.action(/^rem_set_sound:/, handleReminderSoundCallback);
 
   // Goals callbacks
   bot.action(/^goal_set:/, handleGoalSetCallback);

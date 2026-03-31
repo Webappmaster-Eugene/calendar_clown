@@ -457,16 +457,22 @@ export async function handleNeuroVoice(
   if (!dbUser) return;
 
   try {
-    // Flush pending text batch if any
+    // Flush pending text batch if any, preserving its dialogId
     let prependText = "";
+    let pendingDialogId: number | undefined;
     if (hasPendingBatch(dbUser.id)) {
       const pending = flushBatchSync(dbUser.id);
-      if (pending) prependText = pending.combinedText + "\n\n";
+      if (pending) {
+        prependText = pending.combinedText + "\n\n";
+        pendingDialogId = pending.dialogId;
+      }
     }
 
     const fullText = prependText + transcript;
 
-    const dialog = await getOrCreateActiveDialog(dbUser.id);
+    // Use pending batch's dialog if available, fall back to active dialog
+    const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
+      ?? await getOrCreateActiveDialog(dbUser.id);
     const provider = await getChatProvider(dbUser.id);
     const model = resolveModel(provider);
     const history = await getRecentMessages(dialog.id, 20);
@@ -548,11 +554,15 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
   const photos = ctx.message.photo;
   if (!photos || photos.length === 0) return;
 
-  // Flush pending text batch if any
+  // Flush pending text batch if any, preserving its dialogId
   let prependText = "";
+  let pendingDialogId: number | undefined;
   if (hasPendingBatch(dbUser.id)) {
     const pending = flushBatchSync(dbUser.id);
-    if (pending) prependText = pending.combinedText + "\n\n";
+    if (pending) {
+      prependText = pending.combinedText + "\n\n";
+      pendingDialogId = pending.dialogId;
+    }
   }
 
   const caption = ctx.message.caption || "Опиши что на изображении";
@@ -571,8 +581,9 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
     const base64 = buffer.toString("base64");
     const dataUrl = `data:image/jpeg;base64,${base64}`;
 
-    // Build multimodal message
-    const dialog = await getOrCreateActiveDialog(dbUser.id);
+    // Build multimodal message — use pending batch's dialog if available
+    const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
+      ?? await getOrCreateActiveDialog(dbUser.id);
     const photoProvider = await getChatProvider(dbUser.id);
     const photoModel = resolveModel(photoProvider);
     const history = await getRecentMessages(dialog.id, 20);
@@ -643,11 +654,15 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
   const doc = ctx.message.document;
   if (!doc) return;
 
-  // Flush pending text batch if any
+  // Flush pending text batch if any, preserving its dialogId
   let prependText = "";
+  let pendingDialogId: number | undefined;
   if (hasPendingBatch(dbUser.id)) {
     const pending = flushBatchSync(dbUser.id);
-    if (pending) prependText = pending.combinedText + "\n\n";
+    if (pending) {
+      prependText = pending.combinedText + "\n\n";
+      pendingDialogId = pending.dialogId;
+    }
   }
 
   const caption = ctx.message.caption || "Проанализируй содержимое документа";
@@ -677,7 +692,9 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     const isGeminiDoc = GEMINI_DOC_MIME_TYPES.has(mimeType);
     const isText = TEXT_MIME_TYPES.has(mimeType) || TEXT_EXTENSIONS.has(ext);
 
-    const dialog = await getOrCreateActiveDialog(dbUser.id);
+    // Use pending batch's dialog if available, fall back to active dialog
+    const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
+      ?? await getOrCreateActiveDialog(dbUser.id);
     const docProviderPref = await getChatProvider(dbUser.id);
     const docTitleModel = resolveModel(docProviderPref);
     const history = await getRecentMessages(dialog.id, 20);

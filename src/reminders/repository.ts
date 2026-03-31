@@ -17,6 +17,8 @@ interface ReminderRow {
   is_active: boolean;
   last_fired_at: Date | null;
   input_method: string;
+  sound_id: number | null;
+  sound_enabled: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -33,6 +35,8 @@ function mapReminder(r: ReminderRow): Reminder {
     isActive: r.is_active,
     lastFiredAt: r.last_fired_at,
     inputMethod: r.input_method,
+    soundId: r.sound_id,
+    soundEnabled: r.sound_enabled,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -45,12 +49,14 @@ export async function createReminder(
   tribeId: number | null,
   text: string,
   schedule: ReminderSchedule,
-  inputMethod: string = "text"
+  inputMethod: string = "text",
+  soundId: number | null = null,
+  soundEnabled: boolean = false
 ): Promise<Reminder> {
   const { rows } = await query<ReminderRow>(
-    `INSERT INTO reminders (user_id, tribe_id, text, schedule, input_method)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [userId, tribeId, text, JSON.stringify(schedule), inputMethod]
+    `INSERT INTO reminders (user_id, tribe_id, text, schedule, input_method, sound_id, sound_enabled)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [userId, tribeId, text, JSON.stringify(schedule), inputMethod, soundId, soundEnabled]
   );
   return mapReminder(rows[0]);
 }
@@ -118,13 +124,28 @@ export async function deleteReminder(reminderId: number, userId: number): Promis
   return (rowCount ?? 0) > 0;
 }
 
+export async function updateReminderSound(
+  reminderId: number,
+  userId: number,
+  soundId: number | null,
+  soundEnabled: boolean
+): Promise<boolean> {
+  const { rowCount } = await query(
+    "UPDATE reminders SET sound_id = $1, sound_enabled = $2, updated_at = NOW() WHERE id = $3 AND user_id = $4",
+    [soundId, soundEnabled, reminderId, userId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 // ─── Scheduler queries ──────────────────────────────────────────────────
 
 export async function getActiveRemindersWithUsers(): Promise<ActiveReminderWithUser[]> {
-  const { rows } = await query<ReminderRow & { telegram_id: string }>(
-    `SELECT r.*, u.telegram_id
+  const { rows } = await query<ReminderRow & { telegram_id: string; sound_filename: string | null }>(
+    `SELECT r.*, u.telegram_id,
+            rs.filename AS sound_filename
      FROM reminders r
      JOIN users u ON u.id = r.user_id
+     LEFT JOIN reminder_sounds rs ON rs.id = r.sound_id AND r.sound_enabled = true
      WHERE r.is_active = true
      ORDER BY r.id`,
     []
@@ -132,6 +153,7 @@ export async function getActiveRemindersWithUsers(): Promise<ActiveReminderWithU
   return rows.map((r) => ({
     ...mapReminder(r),
     telegramId: Number(r.telegram_id),
+    soundFilename: r.sound_filename,
   }));
 }
 

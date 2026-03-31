@@ -18,6 +18,7 @@ import {
   toggleReminderActive,
   updateReminderText,
   updateReminderSchedule,
+  updateReminderSound,
   getTribeReminders,
   getTribeUserReminders,
   addSubscriber,
@@ -25,6 +26,7 @@ import {
   getSubscribers,
   isSubscribed,
 } from "../reminders/repository.js";
+import { getAvailableSounds, getSoundById } from "../reminders/soundRepository.js";
 import type { ReminderSchedule, PendingReminderState } from "../reminders/types.js";
 import {
   formatScheduleDescription,
@@ -293,6 +295,9 @@ export async function handleReminderEditCallback(ctx: Context): Promise<void> {
             Markup.button.callback("📅 Дни", `rem_edit_days:${reminderId}`),
             Markup.button.callback("📆 Срок", `rem_edit_end:${reminderId}`),
           ],
+          [
+            Markup.button.callback("🔊 Звук", `rem_edit_sound:${reminderId}`),
+          ],
           [Markup.button.callback("◀️ Назад", `rem_view:${reminderId}`)],
         ]),
       }
@@ -430,6 +435,129 @@ export async function handleReminderTribeCallback(ctx: Context): Promise<void> {
         }
       );
     }
+    return;
+  }
+}
+
+// ─── Sound Callbacks ───────────────────────────────────────────────────
+
+export async function handleReminderSoundCallback(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
+  const data = ctx.callbackQuery.data;
+  const telegramId = ctx.from?.id;
+  if (telegramId == null) return;
+
+  await ctx.answerCbQuery();
+
+  const dbUser = await getUserByTelegramId(telegramId);
+  if (!dbUser) return;
+
+  // rem_sound_pick:<telegramId> — show sound list during creation wizard
+  if (data.startsWith("rem_sound_pick:")) {
+    const targetId = parseInt(data.split(":")[1], 10);
+    if (targetId !== telegramId) return;
+
+    const state = wizardStates.get(telegramId);
+    if (!state || state.step !== "confirming") return;
+
+    const sounds = await getAvailableSounds();
+    if (sounds.length === 0) {
+      await ctx.editMessageText("Нет доступных звуков. Создаём без звука...");
+      return;
+    }
+
+    const buttons = sounds.map((s) => [
+      Markup.button.callback(`${s.emoji} ${s.name}`, `rem_sound_set:${s.id}`),
+    ]);
+    buttons.push([Markup.button.callback("🔕 Без звука", `rem_sound_none:${telegramId}`)]);
+
+    await ctx.editMessageText("🔊 *Выберите звук для напоминания:*\n\nЗвук будет воспроизводиться в Mini App.", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard(buttons),
+    });
+    return;
+  }
+
+  // rem_sound_set:<soundId> — select sound during wizard
+  if (data.startsWith("rem_sound_set:")) {
+    const soundId = parseInt(data.split(":")[1], 10);
+    const state = wizardStates.get(telegramId);
+    if (!state || !state.text || !state.schedule) return;
+
+    const sound = await getSoundById(soundId);
+    if (!sound) return;
+
+    state.soundId = soundId;
+    state.soundEnabled = true;
+    state.step = "confirming";
+    wizardStates.set(telegramId, state);
+
+    try { await ctx.deleteMessage(); } catch { /* ignore */ }
+    await showConfirmation(ctx, telegramId, state.text, state.schedule, `${sound.emoji} ${sound.name}`);
+    return;
+  }
+
+  // rem_sound_none:<telegramId> — no sound during wizard
+  if (data.startsWith("rem_sound_none:")) {
+    const targetId = parseInt(data.split(":")[1], 10);
+    if (targetId !== telegramId) return;
+
+    const state = wizardStates.get(telegramId);
+    if (!state || !state.text || !state.schedule) return;
+
+    state.soundId = undefined;
+    state.soundEnabled = false;
+    state.step = "confirming";
+    wizardStates.set(telegramId, state);
+
+    try { await ctx.deleteMessage(); } catch { /* ignore */ }
+    await showConfirmation(ctx, telegramId, state.text, state.schedule);
+    return;
+  }
+
+  // rem_edit_sound:<reminderId> — show sound list for editing existing reminder
+  if (data.startsWith("rem_edit_sound:")) {
+    const reminderId = parseInt(data.split(":")[1], 10);
+    const reminder = await getReminderById(reminderId);
+    if (!reminder || reminder.userId !== dbUser.id) return;
+
+    const sounds = await getAvailableSounds();
+    if (sounds.length === 0) {
+      await ctx.editMessageText("Нет доступных звуков.");
+      return;
+    }
+
+    const buttons = sounds.map((s) => {
+      const selected = reminder.soundEnabled && reminder.soundId === s.id ? " ✓" : "";
+      return [Markup.button.callback(`${s.emoji} ${s.name}${selected}`, `rem_set_sound:${reminderId}:${s.id}`)];
+    });
+    buttons.push([Markup.button.callback("🔕 Без звука", `rem_set_sound:${reminderId}:0`)]);
+    buttons.push([Markup.button.callback("◀️ Назад", `rem_edit:${reminderId}`)]);
+
+    await ctx.editMessageText("🔊 *Выберите звук:*\n\nЗвук воспроизводится в Mini App при срабатывании.", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard(buttons),
+    });
+    return;
+  }
+
+  // rem_set_sound:<reminderId>:<soundId> — set/remove sound on existing reminder
+  if (data.startsWith("rem_set_sound:")) {
+    const parts = data.split(":");
+    const reminderId = parseInt(parts[1], 10);
+    const soundId = parseInt(parts[2], 10);
+
+    if (soundId === 0) {
+      // Remove sound
+      await updateReminderSound(reminderId, dbUser.id, null, false);
+      logAction(dbUser.id, telegramId, "reminder_edit", { reminderId, field: "sound", soundId: null });
+    } else {
+      // Set sound
+      await updateReminderSound(reminderId, dbUser.id, soundId, true);
+      logAction(dbUser.id, telegramId, "reminder_edit", { reminderId, field: "sound", soundId });
+    }
+
+    await showReminder(ctx, reminderId, dbUser.id);
     return;
   }
 }
@@ -653,21 +781,27 @@ async function showConfirmation(
   ctx: Context,
   telegramId: number,
   text: string,
-  schedule: ReminderSchedule
+  schedule: ReminderSchedule,
+  soundName?: string
 ): Promise<void> {
   const schedDesc = formatScheduleDescription(schedule);
   const endDateDesc = formatEndDate(schedule.endDate);
+  const soundLine = soundName ? `\n🔊 Звук: ${soundName}` : "";
 
   await ctx.reply(
     `⏰ *Напоминание:* ${escapeMarkdown(text)}\n` +
     `📅 ${schedDesc}\n` +
-    `📆 До: ${endDateDesc}\n\n` +
+    `📆 До: ${endDateDesc}` +
+    soundLine + "\n\n" +
     `Всё верно?`,
     {
       parse_mode: "Markdown",
       ...Markup.inlineKeyboard([
         [
           Markup.button.callback("✅ Создать", `rem_confirm:${telegramId}`),
+          Markup.button.callback("🔊 Звук", `rem_sound_pick:${telegramId}`),
+        ],
+        [
           Markup.button.callback("❌ Отмена", `rem_cancel_create:${telegramId}`),
         ],
       ]),
@@ -696,23 +830,30 @@ async function confirmCreateReminder(ctx: Context, telegramId: number): Promise<
       dbUser.tribeId,
       state.text,
       state.schedule,
-      state.inputMethod
+      state.inputMethod,
+      state.soundId ?? null,
+      state.soundEnabled ?? false
     );
 
     logAction(dbUser.id, telegramId, "reminder_create", {
       reminderId: reminder.id,
       text: state.text,
       inputMethod: state.inputMethod,
+      soundEnabled: state.soundEnabled ?? false,
     });
 
     const schedDesc = formatScheduleDescription(state.schedule);
     const endDateDesc = formatEndDate(state.schedule.endDate);
+    const soundLine = state.soundEnabled && state.soundId
+      ? await getSoundById(state.soundId).then((s) => s ? `\n🔊 Звук: ${s.emoji} ${s.name}` : "")
+      : "";
 
     await ctx.editMessageText(
       `✅ *Напоминание создано!*\n\n` +
       `⏰ ${escapeMarkdown(reminder.text)}\n` +
       `📅 ${schedDesc}\n` +
-      `📆 До: ${endDateDesc}`,
+      `📆 До: ${endDateDesc}` +
+      soundLine,
       { parse_mode: "Markdown" }
     );
   } catch (err) {
@@ -740,12 +881,19 @@ async function showReminder(ctx: Context, reminderId: number, userId: number): P
     ? `\n👥 Подписчики: ${subscribers.map((s) => s.subscriberName ?? "?").join(", ")}`
     : "";
 
+  let soundLine = "";
+  if (reminder.soundEnabled && reminder.soundId) {
+    const sound = await getSoundById(reminder.soundId);
+    if (sound) soundLine = `\n🔊 Звук: ${sound.emoji} ${sound.name}`;
+  }
+
   const text =
     `⏰ *${escapeMarkdown(reminder.text)}*\n\n` +
     `📅 ${schedDesc}\n` +
     `📆 До: ${endDateDesc}\n` +
     `Статус: ${statusIcon}\n` +
     `Способ: ${reminder.inputMethod === "voice" ? "🎤 голос" : "⌨️ текст"}` +
+    soundLine +
     subsText;
 
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [];

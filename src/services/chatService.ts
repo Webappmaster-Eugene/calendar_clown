@@ -74,7 +74,7 @@ export async function getUserDialogs(telegramId: number): Promise<ChatDialogDto[
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   const dialogs = await getDialogsByUser(dbUser.id);
-  return dialogs.map((d) => dialogToDto(d));
+  return dialogs.map((d) => dialogToDto(d, d.messageCount));
 }
 
 /**
@@ -169,20 +169,21 @@ export async function sendMessage(
   const provider = await getChatProvider(dbUser.id);
   const model = provider === "free" ? DEEPSEEK_FREE_MODEL : DEEPSEEK_MODEL;
 
-  // Save user message
-  const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
-
-  // Get conversation history
+  // Get conversation history BEFORE saving user message (to build context)
   const history = await getRecentMessages(dialog.id, 20);
-  const messages = history.map((m) => ({
-    role: m.role,
-    content: m.content as string,
-  }));
+  const messages = [
+    ...history.map((m) => ({
+      role: m.role,
+      content: m.content as string,
+    })),
+    { role: "user", content },
+  ];
 
-  // Call AI
+  // Call AI first — if it fails, we don't save orphaned user messages
   const result = await chatCompletion(messages, model);
 
-  // Save assistant response
+  // Save both messages only after successful AI call
+  const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
   const assistantMsg = await saveMessage(
     dbUser.id,
     dialog.id,
@@ -193,7 +194,7 @@ export async function sendMessage(
   );
 
   // Auto-generate title for new dialogs
-  if (history.length <= 1) {
+  if (history.length === 0) {
     try {
       const title = await generateDialogTitle(content, model);
       if (title) {
@@ -238,20 +239,21 @@ export async function sendMessageStream(
   const provider = await getChatProvider(dbUser.id);
   const model = provider === "free" ? DEEPSEEK_FREE_MODEL : DEEPSEEK_MODEL;
 
-  // Save user message
-  const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
-
-  // Get conversation history
+  // Get conversation history BEFORE saving user message (to build context)
   const history = await getRecentMessages(dialog.id, 20);
-  const messages = history.map((m) => ({
-    role: m.role,
-    content: m.content as string,
-  }));
+  const messages = [
+    ...history.map((m) => ({
+      role: m.role,
+      content: m.content as string,
+    })),
+    { role: "user", content },
+  ];
 
-  // Stream AI response
+  // Stream AI response first — if it fails, we don't save orphaned user messages
   const result = await chatCompletionStream(messages, onChunk, model);
 
-  // Save assistant response
+  // Save both messages only after successful AI call
+  const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
   const assistantMsg = await saveMessage(
     dbUser.id,
     dialog.id,
@@ -262,7 +264,7 @@ export async function sendMessageStream(
   );
 
   // Auto-generate title for new dialogs (fire-and-forget to avoid blocking the SSE "done" event)
-  if (history.length <= 1) {
+  if (history.length === 0) {
     generateDialogTitle(content, model)
       .then((title) => {
         if (title) return updateDialogTitle(dialog.id, title.slice(0, 100));

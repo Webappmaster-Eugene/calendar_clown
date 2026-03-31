@@ -22,6 +22,8 @@ export interface Reminder {
   isActive: boolean;
   lastFiredAt: Date | null;
   inputMethod: string;
+  soundId: number | null;
+  soundEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +31,7 @@ export interface Reminder {
 /** Reminder with owner info, used by scheduler. */
 export interface ActiveReminderWithUser extends Reminder {
   telegramId: number;
+  soundFilename: string | null;
 }
 
 /** Subscriber row from the database. */
@@ -41,10 +44,24 @@ export interface ReminderSubscriber {
   subscriberName?: string;
 }
 
+/** Predefined reminder sound from the database. */
+export interface ReminderSound {
+  id: number;
+  name: string;
+  emoji: string;
+  filename: string;
+  durationSeconds: number | null;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: Date;
+}
+
 /** Pending wizard state for creating a reminder via text. */
 export interface PendingReminderState {
-  step: "awaiting_text" | "awaiting_schedule" | "confirming";
+  step: "awaiting_text" | "awaiting_schedule" | "awaiting_sound" | "confirming";
   text?: string;
   schedule?: ReminderSchedule;
+  soundId?: number;
+  soundEnabled?: boolean;
   inputMethod: "text" | "voice";
 }

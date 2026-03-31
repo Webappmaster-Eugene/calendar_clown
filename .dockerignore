@@ -11,3 +11,11 @@ docs
 deploy_key*
 GB.conf
 *.log
+tests
+webapp/node_modules
+webapp/dist
+*.md
+.husky
+.vscode
+.cursor
+drizzle.config.ts

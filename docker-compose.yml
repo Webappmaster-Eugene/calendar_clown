@@ -2,7 +2,6 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
-    # ports removed: DB accessible only within Docker network (bot connects via db:5432)
     environment:
       POSTGRES_DB: expenses_bot
       POSTGRES_USER: bot
@@ -16,6 +15,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   redis:
     image: redis:7-alpine
@@ -30,6 +34,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   bot:
     build: .
@@ -60,12 +69,31 @@ services:
       - TELEGRAM_PROXY=${TELEGRAM_PROXY:-}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - WEBAPP_URL=${WEBAPP_URL:-}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sovetnik-bot}
     volumes:
       - tokens:/app/data/tokens
       - voice:/app/data/voice
       - telegram-session:/app/data/telegram-session
+      - sounds:/app/data/sounds
     networks:
       - dokploy-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:18790/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.calendar-bot.rule=Host(`oauth.podbor-minuta.ru`)"
@@ -79,6 +107,7 @@ volumes:
   tokens:
   voice:
   telegram-session:
+  sounds:
 
 networks:
   dokploy-network:

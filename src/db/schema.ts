@@ -676,6 +676,25 @@ export const wishlistItemFiles = pgTable(
   ],
 );
 
+// ─── Reminder Sounds ────────────────────────────────────────────────────
+
+export const reminderSounds = pgTable(
+  "reminder_sounds",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 100 }).notNull(),
+    emoji: varchar("emoji", { length: 10 }).notNull().default("🔔"),
+    filename: varchar("filename", { length: 255 }).notNull(),
+    durationSeconds: smallint("duration_seconds"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_reminder_sounds_name").on(table.name),
+  ],
+);
+
 // ─── Reminders ──────────────────────────────────────────────────────────
 
 export const reminders = pgTable(
@@ -692,6 +711,9 @@ export const reminders = pgTable(
     isActive: boolean("is_active").notNull().default(true),
     lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
     inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
+    soundId: integer("sound_id")
+      .references(() => reminderSounds.id, { onDelete: "set null" }),
+    soundEnabled: boolean("sound_enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
