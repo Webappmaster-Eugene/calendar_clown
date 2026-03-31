@@ -30,9 +30,6 @@ type HomeScreenStatus = "unsupported" | "unknown" | "idle" | "adding" | "added";
 
 const FALLBACK_TIMEOUT_MS = 5_000;
 
-/** Platforms where home screen shortcuts are meaningful. */
-const MOBILE_PLATFORMS = new Set(["android", "android_x", "ios"]);
-
 interface UseAddToHomeScreenResult {
   status: HomeScreenStatus;
   /** true when the button should be visible (status === "idle") */
@@ -63,25 +60,31 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
 
   // ── Capability check + initial status ──
   useEffect(() => {
-    // Check platform first.
-    let platform = "unknown";
+    // Gather diagnostic info from both SDKs.
+    let sdkPlatform = "unknown";
     try {
       const lp = retrieveLaunchParams();
-      platform = String(lp.platform ?? "unknown");
+      sdkPlatform = String(lp.platform ?? "unknown");
     } catch {
       // Not in Telegram context.
     }
 
-    log(`platform=${platform} addToHomeScreen.isAvailable=${addToHomeScreen.isAvailable()}`);
+    // Fallback: read from vanilla SDK (loaded via script tag).
+    const vanillaWA = (window as unknown as Record<string, unknown>).Telegram as
+      { WebApp?: { platform?: string; version?: string; addToHomeScreen?: () => void } } | undefined;
+    const vanillaPlatform = vanillaWA?.WebApp?.platform ?? "n/a";
+    const vanillaVersion = vanillaWA?.WebApp?.version ?? "n/a";
+    const vanillaHasAdd = typeof vanillaWA?.WebApp?.addToHomeScreen === "function";
+    const sdkAvailable = addToHomeScreen.isAvailable();
 
-    if (!MOBILE_PLATFORMS.has(platform)) {
-      log("unsupported: not a mobile platform");
-      setStatus("unsupported");
-      return;
-    }
+    log(
+      `sdk.platform=${sdkPlatform} vanilla.platform=${vanillaPlatform} vanilla.version=${vanillaVersion} ` +
+      `sdk.addToHomeScreen.isAvailable=${sdkAvailable} vanilla.addToHomeScreen=${vanillaHasAdd}`
+    );
 
-    if (!addToHomeScreen.isAvailable()) {
-      log("unsupported: addToHomeScreen not available");
+    // Rely on SDK isAvailable() OR vanilla function existence — no manual platform filter.
+    if (!sdkAvailable && !vanillaHasAdd) {
+      log("unsupported: addToHomeScreen not available in either SDK");
       setStatus("unsupported");
       return;
     }
@@ -147,10 +150,6 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
 
   // ── Trigger the add-to-home-screen flow ──
   const trigger = useCallback(() => {
-    if (!addToHomeScreen.isAvailable()) {
-      log("trigger: addToHomeScreen not available");
-      return;
-    }
     if (status === "adding" || status === "added") {
       log(`trigger: skipped (status=${status})`);
       return;
@@ -179,33 +178,41 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
       }
     }
 
-    // Call addToHomeScreen — try SDK v3, fallback to vanilla.
-    try {
-      addToHomeScreen();
-      log("addToHomeScreen() called via SDK v3");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log(`SDK v3 addToHomeScreen() threw: ${msg}, trying vanilla fallback`);
+    // Call addToHomeScreen — try SDK v3, then vanilla fallback.
+    let called = false;
+
+    if (addToHomeScreen.isAvailable()) {
+      try {
+        addToHomeScreen();
+        log("addToHomeScreen() called via SDK v3");
+        called = true;
+      } catch (err) {
+        log(`SDK v3 threw: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    if (!called) {
       // Fallback: try vanilla Telegram WebApp API directly.
       try {
         const wa = (window as unknown as Record<string, unknown>).Telegram as
-          { WebApp?: { addToHomeScreen?: () => void } } | undefined;
+          { WebApp?: { addToHomeScreen?: () => void; disableClosingConfirmation?: () => void } } | undefined;
         if (typeof wa?.WebApp?.addToHomeScreen === "function") {
+          wa.WebApp.disableClosingConfirmation?.();
           wa.WebApp.addToHomeScreen();
-          log("addToHomeScreen() called via vanilla fallback");
+          log("addToHomeScreen() called via vanilla SDK");
+          called = true;
         } else {
-          log("vanilla fallback not available");
-          setStatus("idle");
-          restoreClosingConfirmation();
-          return;
+          log("vanilla addToHomeScreen not available either");
         }
       } catch (fallbackErr) {
-        const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-        log(`vanilla fallback threw: ${fbMsg}`);
-        setStatus("idle");
-        restoreClosingConfirmation();
-        return;
+        log(`vanilla threw: ${fallbackErr instanceof Error ? fallbackErr.message : fallbackErr}`);
       }
+    }
+
+    if (!called) {
+      setStatus("idle");
+      restoreClosingConfirmation();
+      return;
     }
 
     // Fallback timeout — SDK docs: "the event may not be received even if the icon has been added."

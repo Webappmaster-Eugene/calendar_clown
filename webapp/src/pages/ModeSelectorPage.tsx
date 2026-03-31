@@ -8,7 +8,7 @@ import type { UserProfile } from "@shared/types";
 import { MODE_LABELS } from "@shared/constants";
 
 /** Build version — visible at the bottom to verify deployment. */
-const BUILD_VERSION = "v24.3";
+const BUILD_VERSION = "v24.4";
 
 interface UserProfileWithModes extends UserProfile {
   availableModes: string[];
@@ -122,9 +122,9 @@ export function ModeSelectorPage() {
       {/* Always-visible status line — verify deployment + see current state */}
       <div style={{ marginTop: 16, padding: "8px 12px", fontSize: 11, color: "var(--tg-theme-hint-color, #999)", textAlign: "center", lineHeight: 1.6 }}>
         <div>{BUILD_VERSION} | homeScreen: {status}</div>
-        {diagnostics.length > 0 && (
-          <div style={{ marginTop: 4 }}>{diagnostics[diagnostics.length - 1]}</div>
-        )}
+        {diagnostics.map((d, i) => (
+          <div key={i} style={{ marginTop: 2 }}>{d}</div>
+        ))}
       </div>
 
       {/* Full diagnostics panel — triple-tap title to toggle */}
