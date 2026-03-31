@@ -13,7 +13,7 @@ import type {
 export function ChatPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
-  const { webApp } = useTelegram();
+  const { showAlert, showConfirm } = useTelegram();
   const [selectedDialogId, setSelectedDialogId] = useState<number | null>(null);
 
   const { data: dialogs, isLoading, error } = useQuery({
@@ -58,22 +58,14 @@ export function ChatPage() {
     },
     onError: (err) => {
       const msg = err instanceof Error ? err.message : "Не удалось создать диалог";
-      if (webApp) {
-        webApp.showAlert(msg);
-      } else {
-        alert(msg);
-      }
+      showAlert(msg);
     },
   });
 
   const handleDeleteDialog = (id: number, title: string) => {
-    if (webApp) {
-      webApp.showConfirm(`Удалить диалог "${title}"?`, (confirmed: boolean) => {
-        if (confirmed) deleteDialogMutation.mutate(id);
-      });
-    } else {
-      if (confirm(`Удалить диалог "${title}"?`)) deleteDialogMutation.mutate(id);
-    }
+    showConfirm(`Удалить диалог "${title}"?`, (confirmed) => {
+      if (confirmed) deleteDialogMutation.mutate(id);
+    });
   };
 
   if (selectedDialogId !== null) {

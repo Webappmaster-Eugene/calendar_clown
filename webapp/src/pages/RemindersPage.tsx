@@ -23,7 +23,7 @@ interface TribeReminderDto extends ReminderDto {
 export function RemindersPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
-  const { webApp } = useTelegram();
+  const { showConfirm } = useTelegram();
   const [tab, setTab] = useState<ReminderTab>("own");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -125,13 +125,9 @@ export function RemindersPage() {
   };
 
   const handleDelete = (id: number, reminderText: string) => {
-    if (webApp) {
-      webApp.showConfirm(`Удалить "${reminderText}"?`, (confirmed) => {
-        if (confirmed) deleteMutation.mutate(id);
-      });
-    } else {
-      if (confirm(`Удалить "${reminderText}"?`)) deleteMutation.mutate(id);
-    }
+    showConfirm(`Удалить "${reminderText}"?`, (confirmed) => {
+      if (confirmed) deleteMutation.mutate(id);
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {

@@ -1,29 +1,33 @@
 import { useCallback } from "react";
-import { useTelegram } from "./useTelegram";
+import { hapticFeedback } from "@telegram-apps/sdk-react";
 
 type ImpactStyle = "light" | "medium" | "heavy" | "rigid" | "soft";
 type NotificationType = "error" | "success" | "warning";
 
 export function useHaptic() {
-  const { webApp } = useTelegram();
-
   const impact = useCallback(
     (style: ImpactStyle = "light") => {
-      webApp?.HapticFeedback.impactOccurred(style);
+      if (hapticFeedback.impactOccurred.isAvailable()) {
+        hapticFeedback.impactOccurred(style);
+      }
     },
-    [webApp],
+    [],
   );
 
   const notification = useCallback(
     (type: NotificationType) => {
-      webApp?.HapticFeedback.notificationOccurred(type);
+      if (hapticFeedback.notificationOccurred.isAvailable()) {
+        hapticFeedback.notificationOccurred(type);
+      }
     },
-    [webApp],
+    [],
   );
 
   const selection = useCallback(() => {
-    webApp?.HapticFeedback.selectionChanged();
-  }, [webApp]);
+    if (hapticFeedback.selectionChanged.isAvailable()) {
+      hapticFeedback.selectionChanged();
+    }
+  }, []);
 
   return { impact, notification, selection };
 }

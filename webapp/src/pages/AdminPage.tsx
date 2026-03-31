@@ -384,7 +384,7 @@ function SummaryCompactModules({ summary }: { summary: UsageSummaryDto }) {
 
 function UsersTab() {
   const queryClient = useQueryClient();
-  const { user, webApp } = useTelegram();
+  const { user, showConfirm } = useTelegram();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTelegramId, setNewTelegramId] = useState("");
 
@@ -536,11 +536,7 @@ function UsersTab() {
                   className="btn btn-icon btn-danger"
                   onClick={() => {
                     const msg = `Удалить пользователя ${u.firstName}?`;
-                    if (webApp) {
-                      webApp.showConfirm(msg, (ok: boolean) => { if (ok) removeUserMutation.mutate(u.telegramId); });
-                    } else if (confirm(msg)) {
-                      removeUserMutation.mutate(u.telegramId);
-                    }
+                    showConfirm(msg, (ok) => { if (ok) removeUserMutation.mutate(u.telegramId); });
                   }}
                   disabled={removeUserMutation.isPending}
                   title="Удалить"
@@ -626,7 +622,7 @@ function PendingTab() {
 
 function TribesTab() {
   const queryClient = useQueryClient();
-  const { webApp: tribesWebApp } = useTelegram();
+  const { showConfirm: tribesShowConfirm } = useTelegram();
   const [showForm, setShowForm] = useState(false);
   const [tribeName, setTribeName] = useState("");
   const [monthlyLimit, setMonthlyLimit] = useState("350000");
@@ -703,11 +699,7 @@ function TribesTab() {
                   className="btn btn-icon btn-danger"
                   onClick={() => {
                     const msg = `Удалить трайб "${t.name}"?`;
-                    if (tribesWebApp) {
-                      tribesWebApp.showConfirm(msg, (ok: boolean) => { if (ok) deleteMutation.mutate(t.id); });
-                    } else if (confirm(msg)) {
-                      deleteMutation.mutate(t.id);
-                    }
+                    tribesShowConfirm(msg, (ok) => { if (ok) deleteMutation.mutate(t.id); });
                   }}
                   disabled={deleteMutation.isPending}
                   title="Удалить"
@@ -797,7 +789,7 @@ interface EntityListItem {
 
 function DataTab() {
   const queryClient = useQueryClient();
-  const { webApp } = useTelegram();
+  const { showConfirm } = useTelegram();
   const [selectedEntity, setSelectedEntity] = useState<string>("");
   const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -862,11 +854,7 @@ function DataTab() {
   const currentEntityMeta = entities?.find((e) => e.key === selectedEntity);
 
   function confirmAction(msg: string, onConfirm: () => void) {
-    if (webApp) {
-      webApp.showConfirm(msg, (ok: boolean) => { if (ok) onConfirm(); });
-    } else if (confirm(msg)) {
-      onConfirm();
-    }
+    showConfirm(msg, (ok) => { if (ok) onConfirm(); });
   }
 
   function handleEditSubmit(e: React.FormEvent) {

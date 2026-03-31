@@ -1,6 +1,6 @@
 import { useEffect, useCallback, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { useTelegram } from "../../hooks/useTelegram";
+import { backButton, hapticFeedback } from "@telegram-apps/sdk-react";
 import { MODE_LABELS } from "@shared/constants";
 
 interface AppShellProps {
@@ -39,40 +39,38 @@ const TOP_LEVEL_ROUTES = new Set(
 export function AppShell({ children }: AppShellProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { webApp } = useTelegram();
 
   const isRoot = location.pathname === "/";
   const modeKey = ROUTE_TO_MODE[location.pathname];
   const modeMeta = modeKey ? MODE_LABELS[modeKey] : null;
 
   const handleBack = useCallback(() => {
-    webApp?.HapticFeedback.impactOccurred("light");
+    hapticFeedback.impactOccurred.ifAvailable("light");
     if (TOP_LEVEL_ROUTES.has(location.pathname)) {
       navigate("/");
     } else {
       navigate(-1);
     }
-  }, [navigate, location.pathname, webApp]);
+  }, [navigate, location.pathname]);
 
   const handleHome = useCallback(() => {
-    webApp?.HapticFeedback.impactOccurred("light");
+    hapticFeedback.impactOccurred.ifAvailable("light");
     navigate("/");
-  }, [navigate, webApp]);
+  }, [navigate]);
 
   useEffect(() => {
-    if (!webApp) return;
+    if (!backButton.show.isAvailable()) return;
 
     if (isRoot) {
-      webApp.BackButton.hide();
+      backButton.hide();
     } else {
-      webApp.BackButton.show();
-      webApp.BackButton.onClick(handleBack);
+      backButton.show();
+      const off = backButton.onClick(handleBack);
+      return () => {
+        off();
+      };
     }
-
-    return () => {
-      webApp.BackButton.offClick(handleBack);
-    };
-  }, [webApp, isRoot, handleBack]);
+  }, [isRoot, handleBack]);
 
   return (
     <div className="app-shell">

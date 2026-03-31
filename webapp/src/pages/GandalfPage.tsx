@@ -354,7 +354,7 @@ function GandalfEntries({
   onBack: () => void;
 }) {
   const queryClient = useQueryClient();
-  const { webApp } = useTelegram();
+  const { showConfirm } = useTelegram();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
@@ -428,13 +428,9 @@ function GandalfEntries({
   };
 
   const handleDelete = (entryId: number, entryTitle: string) => {
-    if (webApp) {
-      webApp.showConfirm(`Удалить "${entryTitle}"?`, (confirmed: boolean) => {
-        if (confirmed) deleteMutation.mutate(entryId);
-      });
-    } else {
-      if (confirm(`Удалить "${entryTitle}"?`)) deleteMutation.mutate(entryId);
-    }
+    showConfirm(`Удалить "${entryTitle}"?`, (confirmed) => {
+      if (confirmed) deleteMutation.mutate(entryId);
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {

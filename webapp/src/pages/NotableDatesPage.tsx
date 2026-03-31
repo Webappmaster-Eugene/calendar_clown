@@ -15,7 +15,7 @@ type DateTab = "upcoming" | "all";
 export function NotableDatesPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
-  const { webApp } = useTelegram();
+  const { showConfirm } = useTelegram();
   const [tab, setTab] = useState<DateTab>("upcoming");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -69,13 +69,9 @@ export function NotableDatesPage() {
   });
 
   const handleDelete = (id: number, dateName: string) => {
-    if (webApp) {
-      webApp.showConfirm(`Удалить "${dateName}"?`, (confirmed: boolean) => {
-        if (confirmed) deleteMutation.mutate(id);
-      });
-    } else {
-      if (confirm(`Удалить "${dateName}"?`)) deleteMutation.mutate(id);
-    }
+    showConfirm(`Удалить "${dateName}"?`, (confirmed) => {
+      if (confirmed) deleteMutation.mutate(id);
+    });
   };
 
   const resetForm = () => {

@@ -1,7 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { initTelegramSdk } from "./init";
 import { App } from "./App";
 import "./styles/index.css";
+
+// Initialize Telegram SDK before React renders.
+// Returns false in dev mode (outside Telegram) — app still works with degraded UX.
+initTelegramSdk();
 
 function showFatalError(error: unknown): void {
   const root = document.getElementById("root");

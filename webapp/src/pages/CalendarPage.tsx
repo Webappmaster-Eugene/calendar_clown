@@ -11,7 +11,7 @@ export function CalendarPage() {
   const [tab, setTab] = useState<Tab>("today");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { webApp } = useTelegram();
+  const { showConfirm, openLink } = useTelegram();
 
   const { data: events, isLoading, error } = useQuery({
     queryKey: ["calendar", tab],
@@ -26,15 +26,9 @@ export function CalendarPage() {
   });
 
   const handleDelete = (eventId: string, summary: string) => {
-    if (webApp) {
-      webApp.showConfirm(`Удалить "${summary}"?`, (confirmed) => {
-        if (confirmed) deleteMutation.mutate(eventId);
-      });
-    } else {
-      if (confirm(`Удалить "${summary}"?`)) {
-        deleteMutation.mutate(eventId);
-      }
-    }
+    showConfirm(`Удалить "${summary}"?`, (confirmed) => {
+      if (confirmed) deleteMutation.mutate(eventId);
+    });
   };
 
   const isNoCalendar =
@@ -109,17 +103,13 @@ export function CalendarPage() {
 
 function NoCalendarLinked() {
   const [loading, setLoading] = useState(false);
-  const { webApp } = useTelegram();
+  const { openLink } = useTelegram();
 
   const handleLink = async () => {
     setLoading(true);
     try {
       const result = await api.get<{ url: string }>("/api/auth/google/url");
-      if (webApp) {
-        webApp.openLink(result.url);
-      } else {
-        window.open(result.url, "_blank");
-      }
+      openLink(result.url);
     } catch (err) {
       console.error("Failed to get auth URL:", err);
     } finally {
