@@ -178,10 +178,27 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
       }
     }
 
-    // Call addToHomeScreen — try SDK v3, then vanilla fallback.
+    // Call addToHomeScreen — try vanilla SDK FIRST (properly connected to bridge),
+    // then SDK v3 as fallback. Diagnostics showed sdk.platform=unknown but
+    // vanilla.platform=android — vanilla SDK has the working bridge connection.
     let called = false;
 
-    if (addToHomeScreen.isAvailable()) {
+    // 1) Vanilla SDK — proven bridge connection to Telegram native client.
+    try {
+      const wa = (window as unknown as Record<string, unknown>).Telegram as
+        { WebApp?: { addToHomeScreen?: () => void; disableClosingConfirmation?: () => void } } | undefined;
+      if (typeof wa?.WebApp?.addToHomeScreen === "function") {
+        wa.WebApp.disableClosingConfirmation?.();
+        wa.WebApp.addToHomeScreen();
+        log("addToHomeScreen() called via vanilla SDK");
+        called = true;
+      }
+    } catch (err) {
+      log(`vanilla threw: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // 2) SDK v3 fallback.
+    if (!called && addToHomeScreen.isAvailable()) {
       try {
         addToHomeScreen();
         log("addToHomeScreen() called via SDK v3");
@@ -192,21 +209,7 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
     }
 
     if (!called) {
-      // Fallback: try vanilla Telegram WebApp API directly.
-      try {
-        const wa = (window as unknown as Record<string, unknown>).Telegram as
-          { WebApp?: { addToHomeScreen?: () => void; disableClosingConfirmation?: () => void } } | undefined;
-        if (typeof wa?.WebApp?.addToHomeScreen === "function") {
-          wa.WebApp.disableClosingConfirmation?.();
-          wa.WebApp.addToHomeScreen();
-          log("addToHomeScreen() called via vanilla SDK");
-          called = true;
-        } else {
-          log("vanilla addToHomeScreen not available either");
-        }
-      } catch (fallbackErr) {
-        log(`vanilla threw: ${fallbackErr instanceof Error ? fallbackErr.message : fallbackErr}`);
-      }
+      log("neither SDK could call addToHomeScreen");
     }
 
     if (!called) {

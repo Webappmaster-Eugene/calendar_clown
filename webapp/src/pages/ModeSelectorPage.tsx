@@ -8,7 +8,7 @@ import type { UserProfile } from "@shared/types";
 import { MODE_LABELS } from "@shared/constants";
 
 /** Build version — visible at the bottom to verify deployment. */
-const BUILD_VERSION = "v24.4";
+const BUILD_VERSION = "v24.5";
 
 interface UserProfileWithModes extends UserProfile {
   availableModes: string[];
