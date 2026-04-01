@@ -29,6 +29,7 @@ import adminRoutes from "./routes/admin.js";
 import tasksRoutes from "./routes/tasks.js";
 import nutritionistRoutes from "./routes/nutritionist.js";
 import voiceRoutes from "./routes/voice.js";
+import supportReportsRoutes from "./routes/support-reports.js";
 
 const log = createLogger("api");
 
@@ -76,6 +77,7 @@ export function createApiApp(): Hono<ApiEnv> {
   api.route("/tasks", tasksRoutes);
   api.route("/nutritionist", nutritionistRoutes);
   api.route("/voice", voiceRoutes);
+  api.route("/support-reports", supportReportsRoutes);
 
   // ── Global error handler ───────────────────────────────────
   api.onError((err, c) => {

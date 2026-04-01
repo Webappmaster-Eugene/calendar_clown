@@ -926,3 +926,30 @@ export interface ActionLogsResponseDto {
   items: ActionLogEntryDto[];
   total: number;
 }
+
+// ─── Support Reports ─────────────────────────────────────────
+
+export type SupportReportStatus = "open" | "resolved";
+
+export interface SupportReportDto {
+  id: number;
+  telegramId: number;
+  firstName: string;
+  category: string;
+  status: SupportReportStatus;
+  diagnostics: string;
+  platform: string | null;
+  appVersion: string | null;
+  userMessage: string | null;
+  adminResponse: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface CreateSupportReportRequest {
+  diagnostics: string;
+  platform?: string;
+  appVersion?: string;
+  userMessage?: string;
+  category?: string;
+}

@@ -1,14 +1,11 @@
 import { useState, useCallback, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
 import { useHaptic } from "../hooks/useHaptic";
 import { useAddToHomeScreen } from "../hooks/useAddToHomeScreen";
-import type { UserProfile } from "@shared/types";
+import type { UserProfile, CreateSupportReportRequest } from "@shared/types";
 import { MODE_LABELS } from "@shared/constants";
-
-/** Build version — visible at the bottom to verify deployment. */
-const BUILD_VERSION = "v24.5";
 
 interface UserProfileWithModes extends UserProfile {
   availableModes: string[];
@@ -38,10 +35,9 @@ const MODE_ROUTES: Record<string, string> = {
 export function ModeSelectorPage() {
   const navigate = useNavigate();
   const { impact } = useHaptic();
-  const { canShow, isAdding, trigger, status, diagnostics } = useAddToHomeScreen();
-  const [showDebug, setShowDebug] = useState(false);
-  const tapCountRef = useRef(0);
-  const tapTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const homeScreen = useAddToHomeScreen();
+  const [showDetails, setShowDetails] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
 
   const handleModeClick = useCallback(
     (route: string) => {
@@ -51,18 +47,20 @@ export function ModeSelectorPage() {
     [impact, navigate],
   );
 
-  // Triple-tap on title to toggle full diagnostics panel.
-  const handleTitleTap = useCallback(() => {
-    tapCountRef.current += 1;
-    if (tapCountRef.current >= 3) {
-      setShowDebug((prev) => !prev);
-      tapCountRef.current = 0;
-      clearTimeout(tapTimerRef.current);
-      return;
-    }
-    clearTimeout(tapTimerRef.current);
-    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 600);
-  }, []);
+  const reportMutation = useMutation({
+    mutationFn: (data: CreateSupportReportRequest) =>
+      api.post<{ id: number }>("/api/support-reports", data),
+    onSuccess: () => setReportSent(true),
+  });
+
+  const handleSendReport = () => {
+    reportMutation.mutate({
+      diagnostics: homeScreen.diagnostics.join("\n"),
+      platform: homeScreen.diagnostics[0]?.match(/platform=(\S+)/)?.[1],
+      appVersion: homeScreen.diagnostics[0]?.match(/version=(\S+)/)?.[1],
+      category: "home_screen",
+    });
+  };
 
   const { data: profile, isLoading, error } = useQuery({
     queryKey: ["user", "me"],
@@ -76,7 +74,7 @@ export function ModeSelectorPage() {
 
   return (
     <div className="page">
-      <h1 className="page-title" onClick={handleTitleTap}>
+      <h1 className="page-title">
         {profile ? `Привет, ${profile.firstName}` : "Режимы"}
       </h1>
       <p className="page-subtitle">Выберите режим работы</p>
@@ -109,36 +107,78 @@ export function ModeSelectorPage() {
         </div>
       )}
 
-      {canShow && (
+      {/* ── Home screen button ── */}
+      {homeScreen.canShow && homeScreen.status === "idle" && (
         <button
           className="home-screen-btn"
-          disabled={isAdding}
-          onClick={trigger}
+          disabled={homeScreen.isAdding}
+          onClick={homeScreen.trigger}
         >
-          {isAdding ? "Добавление..." : "Добавить на главный экран"}
+          {homeScreen.isAdding ? "Добавление..." : "Добавить на главный экран"}
         </button>
       )}
 
-      {/* Always-visible status line — verify deployment + see current state */}
-      <div style={{ marginTop: 16, padding: "8px 12px", fontSize: 11, color: "var(--tg-theme-hint-color, #999)", textAlign: "center", lineHeight: 1.6 }}>
-        <div>{BUILD_VERSION} | homeScreen: {status}</div>
-        {diagnostics.map((d, i) => (
-          <div key={i} style={{ marginTop: 2 }}>{d}</div>
-        ))}
-      </div>
-
-      {/* Full diagnostics panel — triple-tap title to toggle */}
-      {showDebug && diagnostics.length > 0 && (
+      {/* ── Success notification ── */}
+      {homeScreen.status === "added" && (
         <div className="home-screen-hint">
-          <p><strong>Diagnostics ({diagnostics.length})</strong></p>
-          <pre style={{ fontSize: 11, textAlign: "left", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-            {diagnostics.join("\n")}
-          </pre>
-          <button
-            className="home-screen-hint-dismiss"
-            onClick={() => setShowDebug(false)}
-          >
-            Закрыть
+          <p>
+            <strong>Приложение добавлено!</strong>
+            <br />
+            Ищите «Советник» на главном экране телефона.
+          </p>
+          <button className="home-screen-hint-dismiss" onClick={homeScreen.dismiss}>
+            Понятно
+          </button>
+        </div>
+      )}
+
+      {/* ── Failure notification ── */}
+      {homeScreen.status === "failed" && !reportSent && (
+        <div className="home-screen-hint">
+          <p>
+            <strong>Не удалось добавить</strong>
+            <br />
+            Проверьте: Настройки → Приложения → Telegram → Разрешения → Ярлыки на главном экране
+          </p>
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <button className="home-screen-hint-dismiss" onClick={homeScreen.retry}>
+              Попробовать ещё раз
+            </button>
+            <button
+              className="home-screen-hint-dismiss"
+              onClick={() => setShowDetails((prev) => !prev)}
+            >
+              {showDetails ? "Скрыть детали" : "Показать детали"}
+            </button>
+            <button
+              className="home-screen-hint-dismiss"
+              style={{ color: "var(--tg-theme-destructive-text-color, #e53935)" }}
+              onClick={handleSendReport}
+              disabled={reportMutation.isPending}
+            >
+              {reportMutation.isPending ? "Отправка..." : "Отправить отчёт"}
+            </button>
+          </div>
+
+          {showDetails && (
+            <pre style={{ marginTop: 8, fontSize: 10, textAlign: "left", whiteSpace: "pre-wrap", wordBreak: "break-all", opacity: 0.7 }}>
+              {homeScreen.diagnostics.join("\n")}
+            </pre>
+          )}
+        </div>
+      )}
+
+      {/* ── Report sent confirmation ── */}
+      {reportSent && (
+        <div className="home-screen-hint">
+          <p>
+            <strong>Отчёт отправлен администратору</strong>
+            <br />
+            Мы поможем разобраться!
+          </p>
+          <button className="home-screen-hint-dismiss" onClick={() => setReportSent(false)}>
+            Понятно
           </button>
         </div>
       )}

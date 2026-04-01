@@ -1004,3 +1004,28 @@ export const nutritionAnalyses = pgTable(
     ),
   ],
 );
+
+// ─── Support Reports ────────────────────────────────────────────────────────
+
+export const supportReports = pgTable(
+  "support_reports",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id),
+    telegramId: bigint("telegram_id", { mode: "bigint" }).notNull(),
+    category: varchar("category", { length: 50 }).notNull().default("home_screen"),
+    status: varchar("status", { length: 20 }).notNull().default("open"),
+    diagnostics: text("diagnostics").notNull(),
+    platform: varchar("platform", { length: 50 }),
+    appVersion: varchar("app_version", { length: 20 }),
+    userMessage: text("user_message"),
+    adminResponse: text("admin_response"),
+    resolvedBy: integer("resolved_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_support_reports_status").on(table.status),
+    index("idx_support_reports_user").on(table.userId),
+  ],
+);

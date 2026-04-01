@@ -1,17 +1,13 @@
 /**
  * Hook for "Add to Home Screen" functionality.
  *
- * Uses @telegram-apps/sdk v3:
- * - addToHomeScreen / checkHomeScreenStatus — utility functions
- * - onAddedToHomeScreen / onAddToHomeScreenFailed — event listeners
- * - closingBehavior — signal-based state for confirmation toggle
- *
  * State machine:
- *   unsupported → (feature unavailable)
- *   unknown     → (initial, checking status)
- *   idle        → (available, button visible)
- *   adding      → (prompt shown, waiting for user)
- *   added       → (success, button hidden)
+ *   unsupported → feature unavailable
+ *   unknown     → initial, checking status
+ *   idle        → available, button visible
+ *   adding      → prompt shown, waiting for user
+ *   added       → success
+ *   failed      → timeout / error after attempt
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
@@ -26,24 +22,48 @@ import {
   retrieveLaunchParams,
 } from "@telegram-apps/sdk-react";
 
-type HomeScreenStatus = "unsupported" | "unknown" | "idle" | "adding" | "added";
+export type HomeScreenStatus = "unsupported" | "unknown" | "idle" | "adding" | "added" | "failed";
 
 const FALLBACK_TIMEOUT_MS = 5_000;
 
 interface UseAddToHomeScreenResult {
   status: HomeScreenStatus;
-  /** true when the button should be visible (status === "idle") */
+  /** true when the primary button should render */
   canShow: boolean;
-  /** true while the prompt is active (status === "adding") */
+  /** true while the prompt is active */
   isAdding: boolean;
-  /** Call to initiate the add-to-home-screen flow */
+  /** true when we have a result to display (success or failure) */
+  showResult: boolean;
+  /** Initiate the add-to-home-screen flow */
   trigger: () => void;
-  /** Diagnostic log entries for debugging */
+  /** Reset from failed → idle for retry */
+  retry: () => void;
+  /** Dismiss the success banner */
+  dismiss: () => void;
+  /** Diagnostic log entries */
   diagnostics: string[];
 }
 
 function ts(): string {
   return new Date().toISOString().slice(11, 23);
+}
+
+/** Access vanilla Telegram WebApp safely. */
+function getVanillaWebApp(): {
+  platform?: string;
+  version?: string;
+  addToHomeScreen?: () => void;
+  disableClosingConfirmation?: () => void;
+} | undefined {
+  try {
+    return (window as unknown as Record<string, unknown>).Telegram as
+      { WebApp?: Record<string, unknown> } | undefined
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? ((window as any).Telegram.WebApp as Record<string, unknown>) as any
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function useAddToHomeScreen(): UseAddToHomeScreenResult {
@@ -60,68 +80,49 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
 
   // ── Capability check + initial status ──
   useEffect(() => {
-    // Gather diagnostic info from both SDKs.
     let sdkPlatform = "unknown";
     try {
       const lp = retrieveLaunchParams();
       sdkPlatform = String(lp.platform ?? "unknown");
-    } catch {
-      // Not in Telegram context.
-    }
+    } catch { /* dev mode */ }
 
-    // Fallback: read from vanilla SDK (loaded via script tag).
-    const vanillaWA = (window as unknown as Record<string, unknown>).Telegram as
-      { WebApp?: { platform?: string; version?: string; addToHomeScreen?: () => void } } | undefined;
-    const vanillaPlatform = vanillaWA?.WebApp?.platform ?? "n/a";
-    const vanillaVersion = vanillaWA?.WebApp?.version ?? "n/a";
-    const vanillaHasAdd = typeof vanillaWA?.WebApp?.addToHomeScreen === "function";
+    const vanilla = getVanillaWebApp();
     const sdkAvailable = addToHomeScreen.isAvailable();
+    const vanillaHasAdd = typeof vanilla?.addToHomeScreen === "function";
 
     log(
-      `sdk.platform=${sdkPlatform} vanilla.platform=${vanillaPlatform} vanilla.version=${vanillaVersion} ` +
-      `sdk.addToHomeScreen.isAvailable=${sdkAvailable} vanilla.addToHomeScreen=${vanillaHasAdd}`
+      `platform=${vanilla?.platform ?? sdkPlatform} version=${vanilla?.version ?? "?"} ` +
+      `sdk=${sdkAvailable} vanilla=${vanillaHasAdd}`
     );
 
-    // Rely on SDK isAvailable() OR vanilla function existence — no manual platform filter.
     if (!sdkAvailable && !vanillaHasAdd) {
-      log("unsupported: addToHomeScreen not available in either SDK");
+      log("unsupported");
       setStatus("unsupported");
       return;
     }
 
     // Check if already added.
     if (checkHomeScreenStatus.isAvailable()) {
-      log("checking home screen status...");
       checkHomeScreenStatus()
         .then((result) => {
-          log(`checkHomeScreenStatus → "${result}"`);
-          if (result === "added") {
-            setStatus("added");
-          } else {
-            // "unknown", "missed", or anything else → show the button.
-            setStatus("idle");
-          }
+          log(`checkStatus="${result}"`);
+          setStatus(result === "added" ? "added" : "idle");
         })
-        .catch((err) => {
-          log(`checkHomeScreenStatus error: ${err}`);
-          // On error, optimistically show the button.
-          setStatus("idle");
-        });
+        .catch(() => setStatus("idle"));
     } else {
-      log("checkHomeScreenStatus not available, defaulting to idle");
       setStatus("idle");
     }
 
-    // ── Event listeners ──
+    // Event listeners.
     const handleAdded = () => {
-      log("event: homeScreenAdded");
+      log("event: added");
       setStatus("added");
       clearTimeout(timeoutRef.current);
       restoreClosingConfirmation();
     };
 
     const handleFailed = () => {
-      log("event: homeScreenFailed (user declined)");
+      log("event: failed (user declined)");
       setStatus("idle");
       clearTimeout(timeoutRef.current);
       restoreClosingConfirmation();
@@ -140,97 +141,81 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
 
   const restoreClosingConfirmation = useCallback(() => {
     if (wasConfirmationEnabledRef.current) {
-      if (closingBehavior.enableConfirmation.isAvailable()) {
-        closingBehavior.enableConfirmation();
-        log("restored closing confirmation");
-      }
+      closingBehavior.enableConfirmation.ifAvailable();
       wasConfirmationEnabledRef.current = false;
     }
-  }, [log]);
+  }, []);
 
-  // ── Trigger the add-to-home-screen flow ──
+  // ── Trigger ──
   const trigger = useCallback(() => {
-    if (status === "adding" || status === "added") {
-      log(`trigger: skipped (status=${status})`);
-      return;
-    }
+    if (status === "adding" || status === "added") return;
 
     setStatus("adding");
-
-    // Haptic feedback.
     hapticFeedback.impactOccurred.ifAvailable("light");
 
-    // Read closing confirmation state synchronously via signal.
+    // Disable closing confirmation if active.
     let confirmationEnabled = false;
-    try {
-      confirmationEnabled = closingBehavior.isConfirmationEnabled();
-    } catch {
-      // Signal not mounted — confirmation is off.
-    }
-    log(`closingBehavior.isConfirmationEnabled=${confirmationEnabled}`);
-
-    // If enabled, disable it before calling addToHomeScreen.
+    try { confirmationEnabled = closingBehavior.isConfirmationEnabled(); } catch { /* */ }
     if (confirmationEnabled) {
       wasConfirmationEnabledRef.current = true;
-      if (closingBehavior.disableConfirmation.isAvailable()) {
-        closingBehavior.disableConfirmation();
-        log("disabled closing confirmation");
-      }
+      closingBehavior.disableConfirmation.ifAvailable();
     }
 
-    // Call addToHomeScreen — try vanilla SDK FIRST (properly connected to bridge),
-    // then SDK v3 as fallback. Diagnostics showed sdk.platform=unknown but
-    // vanilla.platform=android — vanilla SDK has the working bridge connection.
+    // Try vanilla SDK first, then SDK v3.
     let called = false;
-
-    // 1) Vanilla SDK — proven bridge connection to Telegram native client.
-    try {
-      const wa = (window as unknown as Record<string, unknown>).Telegram as
-        { WebApp?: { addToHomeScreen?: () => void; disableClosingConfirmation?: () => void } } | undefined;
-      if (typeof wa?.WebApp?.addToHomeScreen === "function") {
-        wa.WebApp.disableClosingConfirmation?.();
-        wa.WebApp.addToHomeScreen();
-        log("addToHomeScreen() called via vanilla SDK");
+    const vanilla = getVanillaWebApp();
+    if (typeof vanilla?.addToHomeScreen === "function") {
+      try {
+        vanilla.disableClosingConfirmation?.();
+        vanilla.addToHomeScreen();
+        log("called via vanilla");
         called = true;
+      } catch (err) {
+        log(`vanilla error: ${err instanceof Error ? err.message : err}`);
       }
-    } catch (err) {
-      log(`vanilla threw: ${err instanceof Error ? err.message : err}`);
     }
 
-    // 2) SDK v3 fallback.
     if (!called && addToHomeScreen.isAvailable()) {
       try {
         addToHomeScreen();
-        log("addToHomeScreen() called via SDK v3");
+        log("called via sdk");
         called = true;
       } catch (err) {
-        log(`SDK v3 threw: ${err instanceof Error ? err.message : err}`);
+        log(`sdk error: ${err instanceof Error ? err.message : err}`);
       }
     }
 
     if (!called) {
-      log("neither SDK could call addToHomeScreen");
-    }
-
-    if (!called) {
-      setStatus("idle");
+      log("no method available");
+      setStatus("failed");
       restoreClosingConfirmation();
       return;
     }
 
-    // Fallback timeout — SDK docs: "the event may not be received even if the icon has been added."
+    // Timeout → failed (not idle — so we show the failure UI).
     timeoutRef.current = setTimeout(() => {
-      log(`timeout: no event received in ${FALLBACK_TIMEOUT_MS}ms`);
-      setStatus("idle");
+      log("timeout: no response");
+      setStatus("failed");
       restoreClosingConfirmation();
     }, FALLBACK_TIMEOUT_MS);
   }, [status, log, restoreClosingConfirmation]);
 
+  const retry = useCallback(() => {
+    setStatus("idle");
+  }, []);
+
+  const dismiss = useCallback(() => {
+    setStatus("unsupported"); // Hide everything after user acknowledges success.
+  }, []);
+
   return {
     status,
-    canShow: status === "idle",
+    canShow: status === "idle" || status === "failed",
     isAdding: status === "adding",
+    showResult: status === "added" || status === "failed",
     trigger,
+    retry,
+    dismiss,
     diagnostics,
   };
 }

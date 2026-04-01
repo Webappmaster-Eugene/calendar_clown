@@ -10,9 +10,10 @@ import type {
   SummaryPeriod,
   EntityMetaDto,
   ActionLogsResponseDto,
+  SupportReportDto,
 } from "@shared/types";
 
-type AdminTab = "stats" | "summary" | "users" | "pending" | "tribes" | "data" | "logs";
+type AdminTab = "stats" | "summary" | "users" | "pending" | "tribes" | "data" | "logs" | "reports";
 
 export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("stats");
@@ -22,7 +23,7 @@ export function AdminPage() {
       <h1 className="page-title">Админ-панель</h1>
 
       <div className="tabs tabs--scroll">
-        {(["stats", "summary", "users", "pending", "tribes", "data", "logs"] as const).map((t) => {
+        {(["stats", "summary", "users", "pending", "tribes", "data", "logs", "reports"] as const).map((t) => {
           const labels: Record<AdminTab, string> = {
             stats: "Статистика",
             summary: "Саммари",
@@ -31,6 +32,7 @@ export function AdminPage() {
             tribes: "Трайбы",
             data: "Данные",
             logs: "Логи",
+            reports: "Обращения",
           };
           return (
           <button
@@ -51,6 +53,7 @@ export function AdminPage() {
       {tab === "tribes" && <TribesTab />}
       {tab === "data" && <DataTab />}
       {tab === "logs" && <LogsTab />}
+      {tab === "reports" && <SupportReportsTab />}
     </div>
   );
 }
@@ -1253,6 +1256,150 @@ function LogsTab() {
           </div>
         </>
       )}
+    </>
+  );
+}
+
+// ─── Support Reports Tab ─────────────────────────────────────
+
+function SupportReportsTab() {
+  const queryClient = useQueryClient();
+  const [filter, setFilter] = useState<"open" | "resolved" | "all">("open");
+  const [respondingId, setRespondingId] = useState<number | null>(null);
+  const [responseText, setResponseText] = useState("");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const { data: reports, isLoading, error } = useQuery({
+    queryKey: ["admin", "reports", filter],
+    queryFn: () =>
+      api.get<SupportReportDto[]>(
+        `/api/support-reports/admin${filter !== "all" ? `?status=${filter}` : ""}`
+      ),
+  });
+
+  const respondMutation = useMutation({
+    mutationFn: ({ id, response }: { id: number; response: string }) =>
+      api.put<{ id: number }>(`/api/support-reports/admin/${id}/respond`, { response }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "reports"] });
+      setRespondingId(null);
+      setResponseText("");
+    },
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.put<{ id: number }>(`/api/support-reports/admin/${id}/resolve`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "reports"] });
+    },
+  });
+
+  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (error) return <div className="error-msg">{(error as Error).message}</div>;
+
+  return (
+    <>
+      <div className="tabs" style={{ marginBottom: 12 }}>
+        {(["open", "resolved", "all"] as const).map((f) => (
+          <button
+            key={f}
+            className={`tab ${filter === f ? "active" : ""}`}
+            onClick={() => setFilter(f)}
+          >
+            {f === "open" ? "Открытые" : f === "resolved" ? "Закрытые" : "Все"}
+          </button>
+        ))}
+      </div>
+
+      {!reports?.length && (
+        <div className="empty-state">
+          <div className="empty-state-emoji">📭</div>
+          <div className="empty-state-text">Нет обращений</div>
+        </div>
+      )}
+
+      <div className="list">
+        {reports?.map((r) => (
+          <div key={r.id} className="list-item" style={{ flexDirection: "column", alignItems: "stretch" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <strong>#{r.id} {r.firstName}</strong>
+              <span style={{ fontSize: 12, opacity: 0.6 }}>
+                {r.platform ?? "?"} | {new Date(r.createdAt).toLocaleDateString("ru")}
+              </span>
+            </div>
+
+            <div style={{ fontSize: 13, opacity: 0.8 }}>
+              {r.category} | {r.status === "open" ? "🟡 Открыт" : "🟢 Решён"}
+            </div>
+
+            {r.userMessage && (
+              <div style={{ fontSize: 13, marginTop: 4 }}>💬 {r.userMessage}</div>
+            )}
+
+            {r.adminResponse && (
+              <div style={{ fontSize: 13, marginTop: 4, color: "var(--tg-theme-link-color, #2481cc)" }}>
+                📨 {r.adminResponse}
+              </div>
+            )}
+
+            {/* Expandable diagnostics */}
+            <button
+              style={{ fontSize: 11, background: "none", border: "none", color: "var(--tg-theme-hint-color, #999)", cursor: "pointer", padding: "4px 0", textAlign: "left" }}
+              onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
+            >
+              {expandedId === r.id ? "▲ Скрыть логи" : "▼ Показать логи"}
+            </button>
+            {expandedId === r.id && (
+              <pre style={{ fontSize: 10, whiteSpace: "pre-wrap", wordBreak: "break-all", opacity: 0.6, margin: "4px 0" }}>
+                {r.diagnostics}
+              </pre>
+            )}
+
+            {/* Actions for open reports */}
+            {r.status === "open" && (
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                {respondingId === r.id ? (
+                  <div style={{ flex: 1 }}>
+                    <textarea
+                      value={responseText}
+                      onChange={(e) => setResponseText(e.target.value)}
+                      placeholder="Ответ пользователю..."
+                      rows={2}
+                      style={{ width: "100%", fontSize: 13, padding: 8, borderRadius: 8, border: "1px solid var(--tg-theme-hint-color, #ccc)", background: "var(--tg-theme-secondary-bg-color, #f5f5f5)", color: "var(--tg-theme-text-color, #333)", resize: "vertical" }}
+                    />
+                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                      <button
+                        className="btn btn-small btn-primary"
+                        disabled={!responseText.trim() || respondMutation.isPending}
+                        onClick={() => respondMutation.mutate({ id: r.id, response: responseText })}
+                      >
+                        Отправить
+                      </button>
+                      <button className="btn btn-small" onClick={() => { setRespondingId(null); setResponseText(""); }}>
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button className="btn btn-small btn-primary" onClick={() => setRespondingId(r.id)}>
+                      Ответить
+                    </button>
+                    <button
+                      className="btn btn-small"
+                      disabled={resolveMutation.isPending}
+                      onClick={() => resolveMutation.mutate(r.id)}
+                    >
+                      Закрыть
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </>
   );
 }
