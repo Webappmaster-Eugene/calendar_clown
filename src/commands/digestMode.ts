@@ -46,6 +46,7 @@ import { createLogger } from "../utils/logger.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { logAction } from "../logging/actionLogger.js";
+import { truncateText } from "../utils/uiKit.js";
 import type { Telegraf } from "telegraf";
 
 const log = createLogger("digest");
@@ -63,11 +64,6 @@ const channelAddStates = new Map<number, { rubricId: number }>();
 
 /** State for rubric editing (name/description text input). */
 const rubricEditStates = new Map<number, { rubricId: number; field: "name" | "description" }>();
-
-/** Truncate string to maxLen, appending "…" if needed. */
-function truncate(str: string, maxLen: number): string {
-  return str.length > maxLen ? str.slice(0, maxLen - 1) + "…" : str;
-}
 
 function getDigestKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
@@ -182,7 +178,7 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
 function buildRubricsListKeyboard(rubrics: import("../digest/types.js").DigestRubric[]) {
   const buttons = rubrics.map((r) => {
     const status = r.isActive ? "✅" : "⏸";
-    const label = truncate(`${status} ${r.emoji ?? "📰"} ${r.name}`, 40);
+    const label = truncateText(`${status} ${r.emoji ?? "📰"} ${r.name}`, 40);
     return [Markup.button.callback(label, `drub_view:${r.id}`)];
   });
   return Markup.inlineKeyboard(buttons);
@@ -194,7 +190,7 @@ function buildRubricsListText(rubrics: import("../digest/types.js").DigestRubric
   const lines = rubrics.map((r, i) => {
     const status = r.isActive ? "✅" : "⏸";
     const emoji = r.emoji ?? "📰";
-    const desc = r.description ? ` — ${truncate(r.description, 50)}` : "";
+    const desc = r.description ? ` — ${truncateText(r.description, 50)}` : "";
     return `${i + 1}. ${status} ${emoji} ${r.name}${desc}`;
   });
   return `${header}\n\n${lines.join("\n")}\n\nНажмите на рубрику для настройки:`;
@@ -708,12 +704,12 @@ async function buildChannelListView(rubric: import("../digest/types.js").DigestR
   for (let i = 0; i < channels.length; i += 2) {
     const row: ReturnType<typeof Markup.button.callback>[] = [];
     row.push(Markup.button.callback(
-      `🗑 ${truncate(channels[i].channelUsername, 20)}`,
+      `🗑 ${truncateText(channels[i].channelUsername, 20)}`,
       `drub_ch_rm:${channels[i].id}`
     ));
     if (i + 1 < channels.length) {
       row.push(Markup.button.callback(
-        `🗑 ${truncate(channels[i + 1].channelUsername, 20)}`,
+        `🗑 ${truncateText(channels[i + 1].channelUsername, 20)}`,
         `drub_ch_rm:${channels[i + 1].id}`
       ));
     }

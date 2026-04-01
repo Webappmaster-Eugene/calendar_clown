@@ -5,6 +5,18 @@ import { VoiceButton } from "../components/VoiceButton";
 import type { OsintSearchDto, OsintSearchHistoryResponse, StartOsintSearchRequest } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Ожидание",
+  searching: "Поиск",
+  analyzing: "Анализ",
+  completed: "Готов",
+  failed: "Ошибка",
+};
+
+function statusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status;
+}
+
 export function OsintPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
@@ -102,7 +114,7 @@ export function OsintPage() {
               <div className="list-item-content">
                 <div className="list-item-title">{s.query}</div>
                 <div className="list-item-hint">
-                  {s.status} &middot; {s.sourcesCount} источников
+                  {statusLabel(s.status)} &middot; {s.sourcesCount} источников
                   {s.completedAt ? ` · ${new Date(s.completedAt).toLocaleDateString("ru-RU")}` : ""}
                 </div>
               </div>
@@ -157,7 +169,7 @@ function OsintReport({ searchId, onBack }: { searchId: number; onBack: () => voi
         <>
           <h2 className="page-title">{search.query}</h2>
           <div className="card-hint" style={{ marginBottom: 12 }}>
-            Статус: {search.status} &middot; {search.sourcesCount} источников
+            Статус: {statusLabel(search.status)} &middot; {search.sourcesCount} источников
           </div>
 
           {search.status === "pending" || search.status === "searching" || search.status === "analyzing" ? (

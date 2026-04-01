@@ -5,6 +5,7 @@ import { isBootstrapAdmin } from "../middleware/auth.js";
 import { DB_UNAVAILABLE_MSG } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
 import { logAction } from "../logging/actionLogger.js";
+import { BTN_BACK } from "../utils/uiKit.js";
 import {
   type SummaryPeriod,
   getPeriodRange,
@@ -34,7 +35,7 @@ const PERIOD_KEYBOARD = Markup.inlineKeyboard([
   [Markup.button.callback("📆 Неделя", "summary:week")],
   [Markup.button.callback("🗓 Месяц", "summary:month")],
   [Markup.button.callback("📊 Год", "summary:year")],
-  [Markup.button.callback("⬅️ Назад", "admin:back")],
+  [Markup.button.callback(BTN_BACK, "admin:back")],
 ]);
 
 const VALID_PERIODS = new Set<string>(["today", "yesterday", "week", "month", "year"]);

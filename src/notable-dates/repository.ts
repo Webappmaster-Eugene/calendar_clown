@@ -137,7 +137,7 @@ export async function getNotableDateById(id: number, tribeId: number): Promise<N
 export async function updateNotableDate(
   id: number,
   tribeId: number,
-  fields: Partial<{ name: string; dateMonth: number; dateDay: number; description: string | null }>
+  fields: Partial<{ name: string; dateMonth: number; dateDay: number; description: string | null; eventType: string; emoji: string; isPriority: boolean }>
 ): Promise<NotableDate | null> {
   const setClauses: string[] = [];
   const params: unknown[] = [];
@@ -158,6 +158,18 @@ export async function updateNotableDate(
   if (fields.description !== undefined) {
     setClauses.push(`description = $${paramIdx++}`);
     params.push(fields.description);
+  }
+  if (fields.eventType !== undefined) {
+    setClauses.push(`event_type = $${paramIdx++}`);
+    params.push(fields.eventType);
+  }
+  if (fields.emoji !== undefined) {
+    setClauses.push(`emoji = $${paramIdx++}`);
+    params.push(fields.emoji);
+  }
+  if (fields.isPriority !== undefined) {
+    setClauses.push(`is_priority = $${paramIdx++}`);
+    params.push(fields.isPriority);
   }
 
   if (setClauses.length === 0) return null;

@@ -6,8 +6,20 @@ import type {
   CategoryDto,
   ExpenseReportDto,
   AddExpenseRequest,
+  MonthComparisonDto,
+  UserTotalDto,
+  YearReportMonthDto,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+
+// ─── Constants ─────────────────────────────────────────────────
+
+const RU_MONTHS = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
+
+type ExpenseTab = "report" | "comparison" | "stats" | "year";
 
 interface DrilldownExpense {
   id: number;
@@ -24,9 +36,20 @@ interface DrilldownResponse {
   categoryEmoji: string;
 }
 
+// ─── Main Page ─────────────────────────────────────────────────
+
 export function ExpensesPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
+
+  // Navigation state
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [tab, setTab] = useState<ExpenseTab>("report");
+  const [yearForYearTab, setYearForYearTab] = useState(now.getFullYear());
+
+  // Input state
   const [showForm, setShowForm] = useState(false);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
@@ -34,15 +57,25 @@ export function ExpensesPage() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [drilldownCategoryId, setDrilldownCategoryId] = useState<number | null>(null);
 
+  // ─── Queries ──────────────────────────────────────────────
+
   const { data: report, isLoading: reportLoading, error: reportError } = useQuery({
-    queryKey: ["expenses", "report"],
-    queryFn: () => api.get<ExpenseReportDto>("/api/expenses/report"),
+    queryKey: ["expenses", "report", year, month],
+    queryFn: () => api.get<ExpenseReportDto>(`/api/expenses/report?year=${year}&month=${month}`),
   });
 
   const { data: categories } = useQuery({
     queryKey: ["expenses", "categories"],
     queryFn: () => api.get<CategoryDto[]>("/api/expenses/categories"),
   });
+
+  const { data: yearData, isLoading: yearLoading } = useQuery({
+    queryKey: ["expenses", "year", yearForYearTab],
+    queryFn: () => api.get<YearReportMonthDto[]>(`/api/expenses/year?year=${yearForYearTab}`),
+    enabled: tab === "year",
+  });
+
+  // ─── Mutations ────────────────────────────────────────────
 
   const addMutation = useMutation({
     mutationFn: (data: AddExpenseRequest) =>
@@ -55,7 +88,6 @@ export function ExpensesPage() {
     },
   });
 
-  /** Add expense from natural language text (voice or typed) */
   const addTextMutation = useMutation({
     mutationFn: (text: string) =>
       api.post<void>("/api/expenses", { text }),
@@ -73,16 +105,33 @@ export function ExpensesPage() {
     addMutation.mutate({ categoryId, amount: parsed });
   };
 
+  // ─── Month navigation ─────────────────────────────────────
+
+  const goMonth = (delta: number) => {
+    let m = month + delta;
+    let y = year;
+    if (m < 1) { m = 12; y--; }
+    if (m > 12) { m = 1; y++; }
+    setMonth(m);
+    setYear(y);
+  };
+
+  const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear();
+
+  // ─── Drilldown ────────────────────────────────────────────
+
   if (drilldownCategoryId !== null) {
     return (
       <ExpenseDrilldown
         categoryId={drilldownCategoryId}
+        year={year}
+        month={month}
         onBack={() => setDrilldownCategoryId(null)}
       />
     );
   }
 
-  if (reportLoading) return <div className="loading">Загрузка...</div>;
+  if (reportLoading && tab !== "year") return <div className="loading">Загрузка...</div>;
   if (reportError) return <div className="page"><div className="error-msg">{(reportError as Error).message}</div></div>;
 
   const total = report?.total ?? 0;
@@ -93,14 +142,171 @@ export function ExpensesPage() {
     <div className="page">
       <h1 className="page-title">Расходы</h1>
 
+      {/* Quick input */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+        <input
+          className="input"
+          value={voiceText}
+          onChange={(e) => setVoiceText(e.target.value)}
+          placeholder="кофе 300 или скажите голосом"
+          style={{ flex: 1 }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && voiceText.trim()) {
+              addTextMutation.mutate(voiceText.trim());
+            }
+          }}
+        />
+        <VoiceButton
+          mode="expenses"
+          endpoint="/api/voice/expense"
+          onResult={(_transcript, data) => {
+            setVoiceError(null);
+            queryClient.invalidateQueries({ queryKey: ["expenses"] });
+            const d = data as Record<string, unknown> | undefined;
+            if (d?.confirmation && typeof d.confirmation === "string") {
+              setVoiceText(d.confirmation as string);
+              setTimeout(() => setVoiceText(""), 3000);
+            }
+          }}
+          onError={(err) => setVoiceError(err)}
+        />
+      </div>
+      {voiceError && <div className="error-msg" style={{ marginBottom: 8 }}>{voiceError}</div>}
+      {addTextMutation.error && <div className="error-msg">{(addTextMutation.error as Error).message}</div>}
+      {addTextMutation.isPending && <div className="card-hint" style={{ marginBottom: 8 }}>Добавление...</div>}
+
+      {/* Tabs */}
+      <div className="tabs tabs--scroll">
+        {(["report", "comparison", "stats", "year"] as const).map((t) => (
+          <button
+            key={t}
+            className={`tab${tab === t ? " active" : ""}`}
+            onClick={() => setTab(t)}
+          >
+            {t === "report" ? "Отчёт" : t === "comparison" ? "Сравнение" : t === "stats" ? "Статистика" : "За год"}
+          </button>
+        ))}
+      </div>
+
+      {/* Month navigator (for report/comparison/stats) */}
+      {tab !== "year" && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <button className="btn btn-small" onClick={() => goMonth(-1)}>◀</button>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>
+            {RU_MONTHS[month - 1]} {year}
+          </span>
+          <button
+            className="btn btn-small"
+            onClick={() => goMonth(1)}
+            disabled={isCurrentMonth}
+          >▶</button>
+        </div>
+      )}
+
+      {/* Tab content */}
+      {tab === "report" && (
+        <ReportView
+          report={report}
+          total={total}
+          limit={limit}
+          progress={progress}
+          month={month}
+          year={year}
+          onDrilldown={setDrilldownCategoryId}
+        />
+      )}
+      {tab === "comparison" && (
+        <ComparisonView comparison={report?.comparison ?? []} total={total} />
+      )}
+      {tab === "stats" && (
+        <StatsView byUser={report?.byUser ?? []} total={total} />
+      )}
+      {tab === "year" && (
+        <YearView
+          data={yearData ?? []}
+          isLoading={yearLoading}
+          year={yearForYearTab}
+          onYearChange={setYearForYearTab}
+          onMonthClick={(m) => { setMonth(m); setYear(yearForYearTab); setTab("report"); }}
+          currentYear={now.getFullYear()}
+        />
+      )}
+
+      {/* FAB form */}
+      {!showForm ? (
+        <button className="fab" onClick={() => setShowForm(true)}>+</button>
+      ) : (
+        <div className="card" style={{ marginTop: 16 }}>
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label className="form-label">Категория</label>
+              <select
+                className="input"
+                value={categoryId ?? ""}
+                onChange={(e) => setCategoryId(Number(e.target.value) || null)}
+              >
+                <option value="">Выберите категорию</option>
+                {categories?.map((cat) => (
+                  <option key={cat.id} value={cat.id}>{cat.emoji} {cat.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Сумма</label>
+              <input
+                className="input"
+                type="number"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            {addMutation.error && <div className="error-msg">{(addMutation.error as Error).message}</div>}
+            <div className="form-row">
+              <button type="button" className="btn" onClick={() => setShowForm(false)}>Отмена</button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={addMutation.isPending || categoryId === null || !amount}
+              >
+                {addMutation.isPending ? "Добавление..." : "Добавить"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Report View ─────────────────────────────────────────────
+
+function ReportView({
+  report,
+  total,
+  limit,
+  progress,
+  month,
+  year,
+  onDrilldown,
+}: {
+  report: ExpenseReportDto | undefined;
+  total: number;
+  limit: number;
+  progress: number;
+  month: number;
+  year: number;
+  onDrilldown: (catId: number) => void;
+}) {
+  return (
+    <>
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div className="card-hint">{report?.month ?? "Текущий месяц"}</div>
           <button
             className="btn btn-small"
-            onClick={() => {
-              window.open("/api/expenses/excel", "_blank");
-            }}
+            onClick={() => window.open(`/api/expenses/excel?month=${month}&year=${year}`, "_blank")}
           >
             Excel
           </button>
@@ -121,7 +327,7 @@ export function ExpensesPage() {
               key={cat.categoryId}
               className="list-item"
               style={{ cursor: "pointer" }}
-              onClick={() => setDrilldownCategoryId(cat.categoryId)}
+              onClick={() => onDrilldown(cat.categoryId)}
             >
               <span className="list-item-emoji">{cat.categoryEmoji}</span>
               <div className="list-item-content">
@@ -139,121 +345,244 @@ export function ExpensesPage() {
           <div className="empty-state-text">Нет расходов за этот месяц</div>
         </div>
       )}
-
-      <div className="section-title">Быстрый ввод</div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
-        <input
-          className="input"
-          value={voiceText}
-          onChange={(e) => setVoiceText(e.target.value)}
-          placeholder="кофе 300 или скажите голосом"
-          style={{ flex: 1 }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && voiceText.trim()) {
-              addTextMutation.mutate(voiceText.trim());
-            }
-          }}
-        />
-        <VoiceButton
-          mode="expenses"
-          endpoint="/api/voice/expense"
-          onResult={(_transcript, data) => {
-            setVoiceError(null);
-            queryClient.invalidateQueries({ queryKey: ["expenses"] });
-            // data contains { transcript, expense: { category, amount, ... } }
-            const d = data as Record<string, unknown> | undefined;
-            if (d?.confirmation && typeof d.confirmation === "string") {
-              setVoiceText(d.confirmation as string);
-              setTimeout(() => setVoiceText(""), 3000);
-            }
-          }}
-          onError={(err) => {
-            setVoiceError(err);
-          }}
-        />
-      </div>
-      {voiceError && (
-        <div className="error-msg" style={{ marginBottom: 8 }}>{voiceError}</div>
-      )}
-      {addTextMutation.error && (
-        <div className="error-msg">{(addTextMutation.error as Error).message}</div>
-      )}
-      {addTextMutation.isPending && (
-        <div className="card-hint" style={{ marginBottom: 8 }}>Добавление...</div>
-      )}
-
-      {!showForm ? (
-        <button
-          className="fab"
-          onClick={() => setShowForm(true)}
-        >
-          +
-        </button>
-      ) : (
-        <div className="card" style={{ marginTop: 16 }}>
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label className="form-label">Категория</label>
-              <select
-                className="input"
-                value={categoryId ?? ""}
-                onChange={(e) => setCategoryId(Number(e.target.value) || null)}
-              >
-                <option value="">Выберите категорию</option>
-                {categories?.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.emoji} {cat.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Сумма</label>
-              <input
-                className="input"
-                type="number"
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0"
-              />
-            </div>
-            {addMutation.error && (
-              <div className="error-msg">{(addMutation.error as Error).message}</div>
-            )}
-            <div className="form-row">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setShowForm(false)}
-              >
-                Отмена
-              </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={addMutation.isPending || categoryId === null || !amount}
-              >
-                {addMutation.isPending ? "Добавление..." : "Добавить"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
-function ExpenseDrilldown({ categoryId, onBack }: { categoryId: number; onBack: () => void }) {
+// ─── Comparison View ─────────────────────────────────────────
+
+function ComparisonView({
+  comparison,
+  total,
+}: {
+  comparison: MonthComparisonDto[];
+  total: number;
+}) {
+  if (comparison.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-text">Нет данных для сравнения</div>
+      </div>
+    );
+  }
+
+  const totalPrev = comparison.reduce((s, c) => s + c.prevTotal, 0);
+  const totalDiff = total - totalPrev;
+
+  return (
+    <>
+      {/* Summary card */}
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="card-hint">Пред. месяц</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{totalPrev.toLocaleString("ru-RU")}</div>
+        </div>
+        <div className="stat-card">
+          <div className="card-hint">Текущий</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{total.toLocaleString("ru-RU")}</div>
+        </div>
+        <div className="stat-card">
+          <div className="card-hint">Разница</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: totalDiff > 0 ? "#e53935" : "#43a047" }}>
+            {totalDiff > 0 ? "+" : ""}{totalDiff.toLocaleString("ru-RU")}
+          </div>
+        </div>
+      </div>
+
+      {/* Category rows */}
+      <div className="list">
+        {comparison
+          .filter((c) => c.prevTotal > 0 || c.currTotal > 0)
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((c) => {
+            const pctChange = c.prevTotal > 0
+              ? Math.round(((c.currTotal - c.prevTotal) / c.prevTotal) * 100)
+              : c.currTotal > 0 ? 100 : 0;
+            const isUp = c.diff > 0;
+            const isDown = c.diff < 0;
+
+            return (
+              <div key={c.categoryId} className="list-item">
+                <span className="list-item-emoji">{c.categoryEmoji}</span>
+                <div className="list-item-content">
+                  <div className="list-item-title">{c.categoryName}</div>
+                  <div className="list-item-hint">
+                    {c.prevTotal.toLocaleString("ru-RU")} → {c.currTotal.toLocaleString("ru-RU")}
+                  </div>
+                </div>
+                <div style={{
+                  fontWeight: 600,
+                  color: isUp ? "#e53935" : isDown ? "#43a047" : "inherit",
+                  fontSize: 13,
+                  textAlign: "right",
+                  minWidth: 60,
+                }}>
+                  {isUp ? "+" : ""}{c.diff.toLocaleString("ru-RU")}
+                  {pctChange !== 0 && (
+                    <div style={{ fontSize: 11, opacity: 0.7 }}>
+                      {pctChange > 0 ? "+" : ""}{pctChange}%
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+      </div>
+    </>
+  );
+}
+
+// ─── Stats View ──────────────────────────────────────────────
+
+function StatsView({
+  byUser,
+  total,
+}: {
+  byUser: UserTotalDto[];
+  total: number;
+}) {
+  if (byUser.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-text">Нет данных по пользователям</div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="section-title">По пользователям</div>
+      <div className="list">
+        {byUser
+          .sort((a, b) => b.total - a.total)
+          .map((u) => {
+            const pct = total > 0 ? Math.round((u.total / total) * 100) : 0;
+            return (
+              <div key={u.userId} className="list-item">
+                <div className="list-item-content">
+                  <div className="list-item-title">{u.firstName}</div>
+                  <div className="list-item-hint">{pct}% от общих расходов</div>
+                </div>
+                <div style={{ fontWeight: 600 }}>
+                  {u.total.toLocaleString("ru-RU")}
+                </div>
+              </div>
+            );
+          })}
+      </div>
+
+      {/* Total */}
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="card-hint">Итого</div>
+        <div style={{ fontSize: 22, fontWeight: 700 }}>{total.toLocaleString("ru-RU")}</div>
+      </div>
+    </>
+  );
+}
+
+// ─── Year View ───────────────────────────────────────────────
+
+function YearView({
+  data,
+  isLoading,
+  year,
+  onYearChange,
+  onMonthClick,
+  currentYear,
+}: {
+  data: YearReportMonthDto[];
+  isLoading: boolean;
+  year: number;
+  onYearChange: (y: number) => void;
+  onMonthClick: (month: number) => void;
+  currentYear: number;
+}) {
+  const yearTotal = data.reduce((s, d) => s + d.total, 0);
+  const now = new Date();
+
+  return (
+    <>
+      {/* Year navigator */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <button className="btn btn-small" onClick={() => onYearChange(year - 1)}>◀</button>
+        <span style={{ fontWeight: 600, fontSize: 15 }}>{year}</span>
+        <button
+          className="btn btn-small"
+          onClick={() => onYearChange(year + 1)}
+          disabled={year >= currentYear}
+        >▶</button>
+      </div>
+
+      {isLoading && <div className="loading">Загрузка...</div>}
+
+      {!isLoading && data.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-state-text">Нет данных за {year} год</div>
+        </div>
+      )}
+
+      {!isLoading && data.length > 0 && (
+        <>
+          <div className="list">
+            {RU_MONTHS.map((name, i) => {
+              const monthNum = i + 1;
+              const entry = data.find((d) => d.month === monthNum);
+              const monthTotal = entry?.total ?? 0;
+              const isCurrent = year === now.getFullYear() && monthNum === now.getMonth() + 1;
+
+              return (
+                <div
+                  key={monthNum}
+                  className="list-item"
+                  style={{
+                    cursor: "pointer",
+                    background: isCurrent ? "var(--tg-theme-secondary-bg-color, #f0f0f0)" : undefined,
+                  }}
+                  onClick={() => onMonthClick(monthNum)}
+                >
+                  <div className="list-item-content">
+                    <div className="list-item-title">{name}</div>
+                  </div>
+                  <div style={{ fontWeight: 600, color: monthTotal > 0 ? "inherit" : "var(--tg-theme-hint-color, #999)" }}>
+                    {monthTotal > 0 ? monthTotal.toLocaleString("ru-RU") : "—"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="card" style={{ marginTop: 12 }}>
+            <div className="card-hint">Итого за {year}</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>{yearTotal.toLocaleString("ru-RU")}</div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+// ─── Drilldown ───────────────────────────────────────────────
+
+function ExpenseDrilldown({
+  categoryId,
+  year,
+  month,
+  onBack,
+}: {
+  categoryId: number;
+  year: number;
+  month: number;
+  onBack: () => void;
+}) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const LIMIT = 20;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["expenses", "drilldown", categoryId, page],
+    queryKey: ["expenses", "drilldown", categoryId, year, month, page],
     queryFn: () =>
       api.get<DrilldownResponse>(
-        `/api/expenses/drilldown?categoryId=${categoryId}&page=${page}&limit=${LIMIT}`
+        `/api/expenses/drilldown?categoryId=${categoryId}&year=${year}&month=${month}&page=${page}&limit=${LIMIT}`
       ),
   });
 

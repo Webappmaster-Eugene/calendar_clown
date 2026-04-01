@@ -20,6 +20,7 @@ import { createLogger } from "../utils/logger.js";
 import { DB_UNAVAILABLE_MSG } from "../constants.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { logAction } from "../logging/actionLogger.js";
+import { truncateText } from "../utils/uiKit.js";
 
 const QUEUE_UNAVAILABLE_MSG =
   "Режим транскрибатора недоступен (очередь не инициализирована). Проверьте REDIS_URL.";
@@ -28,7 +29,8 @@ const HISTORY_PAGE_SIZE = 5;
 
 function getTranscribeKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
-    ["📋 История", "📊 Очередь", "🗑 Очистить очередь"],
+    ["📋 История", "📊 Очередь"],
+    ["🗑 Очистить очередь"],
     ...getModeButtons(isAdmin),
   ]).resize();
 }
@@ -207,9 +209,7 @@ async function sendHistoryPage(
       const duration = formatDuration(t.durationSeconds);
       const from = t.forwardedFromName ? ` (от: ${t.forwardedFromName})` : "";
       const preview = t.transcript
-        ? t.transcript.length > 100
-          ? t.transcript.slice(0, 100) + "..."
-          : t.transcript
+        ? truncateText(t.transcript, 100)
         : "(нет текста)";
       return `*${num}.* [${duration}] ${date}${from}\n${preview}`;
     });
@@ -228,12 +228,12 @@ async function sendHistoryPage(
       if (t.transcript && t.transcript.length > 100) {
         row.push(
           Markup.button.callback(
-            `📖 #${num} — ${t.transcript.slice(0, 30)}…`,
+            `📖 #${num} — ${truncateText(t.transcript, 30)}`,
             `tr_full:${t.id}`
           ),
         );
       }
-      row.push(Markup.button.callback(`🗑 #${num}`, `tr_del:${t.id}`));
+      row.push(Markup.button.callback("🗑", `tr_del:${t.id}`));
       inlineRows.push(row);
     }
 

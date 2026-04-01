@@ -12,8 +12,9 @@ import { parseSearchSubject } from "../osint/queryParser.js";
 import { escapeMarkdown, escapeMarkdownV2 } from "../utils/markdown.js";
 import { createLogger } from "../utils/logger.js";
 import { logAction } from "../logging/actionLogger.js";
+import { truncateText } from "../utils/uiKit.js";
 import { TIMEZONE_MSK } from "../constants.js";
-import type { OsintParsedSubject, OsintStatus } from "../osint/types.js";
+import type { OsintParsedSubject } from "../osint/types.js";
 
 const log = createLogger("osint-mode");
 const PAGE_SIZE = 5;
@@ -28,7 +29,6 @@ interface OsintPendingSearch {
 }
 
 const pendingSearches = new Map<number, OsintPendingSearch>();
-const historySearchStates = new Map<number, boolean>();
 
 // ─── Search type labels ─────────────────────────────────────────────────
 
@@ -78,7 +78,6 @@ export async function handleOsintCommand(ctx: Context): Promise<void> {
 
   // Clear any pending state
   pendingSearches.delete(telegramId);
-  historySearchStates.delete(telegramId);
 
   await setUserMode(telegramId, "osint");
   await setModeMenuCommands(ctx, "osint");
@@ -110,13 +109,6 @@ export async function handleOsintText(ctx: Context): Promise<boolean> {
   // Skip mode-specific buttons
   if (["🔍 Новый поиск", "📋 История поисков", "🏠 Главное меню"].includes(text)) {
     return false;
-  }
-
-  // Check if user is in history search mode
-  if (historySearchStates.get(telegramId)) {
-    historySearchStates.delete(telegramId);
-    await showHistory(ctx, 0, { searchText: text });
-    return true;
   }
 
   // Check if there is a pending search — treat text as supplement
@@ -167,9 +159,7 @@ export async function handleOsintVoice(
   if (telegramId == null) return;
 
   const chatId = ctx.chat!.id;
-  const safeTranscript = escapeMarkdown(
-    transcript.length > 200 ? transcript.slice(0, 200) + "…" : transcript
-  );
+  const safeTranscript = escapeMarkdown(truncateText(transcript, 200));
 
   try {
     await ctx.telegram.editMessageText(
@@ -343,7 +333,6 @@ export async function handleNewSearchButton(ctx: Context): Promise<void> {
 
   // Clear any pending state
   pendingSearches.delete(telegramId);
-  historySearchStates.delete(telegramId);
 
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
@@ -371,31 +360,6 @@ export async function handleHistoryPageCallback(ctx: Context): Promise<void> {
   if (isNaN(page)) return;
   await ctx.answerCbQuery();
   await showHistory(ctx, page);
-}
-
-/** Handle history filter callback: osint_hist_filter:{status}:{page} */
-export async function handleHistoryFilterCallback(ctx: Context): Promise<void> {
-  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
-  const parts = ctx.callbackQuery.data.replace("osint_hist_filter:", "").split(":");
-  if (parts.length < 2) return;
-  await ctx.answerCbQuery();
-
-  const statusFilter = parts[0] === "all" ? undefined : parts[0] as OsintStatus;
-  const page = parseInt(parts[1], 10) || 0;
-
-  await showHistory(ctx, page, { status: statusFilter });
-}
-
-/** Handle history search button callback. */
-export async function handleHistorySearchCallback(ctx: Context): Promise<void> {
-  if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
-  await ctx.answerCbQuery();
-
-  const telegramId = ctx.from?.id;
-  if (telegramId == null) return;
-
-  historySearchStates.set(telegramId, true);
-  await ctx.reply("🔎 Отправьте текст для поиска по истории:");
 }
 
 /** Handle view single search callback. */
@@ -443,16 +407,15 @@ export async function handleViewSearchCallback(ctx: Context): Promise<void> {
 
 // ─── History display ────────────────────────────────────────────────────
 
-interface HistoryFilter {
-  status?: OsintStatus;
-  searchText?: string;
-}
+const STATUS_DISPLAY: Record<string, string> = {
+  completed: "✅ Готов",
+  failed: "❌ Ошибка",
+  pending: "⏳ Ожидание",
+  searching: "🔍 Поиск",
+  analyzing: "🧠 Анализ",
+};
 
-async function showHistory(
-  ctx: Context,
-  page: number,
-  filter?: HistoryFilter
-): Promise<void> {
+async function showHistory(ctx: Context, page: number): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
@@ -463,53 +426,24 @@ async function showHistory(
   const { searches, total } = await getFilteredSearchHistory(
     dbUser.id,
     PAGE_SIZE,
-    offset,
-    filter
+    offset
   );
 
   if (total === 0) {
-    const emptyText = filter
-      ? "📋 Ничего не найдено по заданному фильтру."
-      : "📋 История поисков пуста. Отправьте запрос для первого поиска.";
-    await ctx.reply(emptyText);
+    await ctx.reply("📋 История поисков пуста. Отправьте запрос для первого поиска.");
     return;
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
-  const filterSuffix = filter?.status
-    ? ` \\| ${escapeMarkdownV2(getStatusFilterLabel(filter.status))}`
-    : filter?.searchText
-      ? ` \\| 🔎 "${escapeMarkdownV2(filter.searchText)}"`
-      : "";
 
-  let text = `📋 *История OSINT\\-поисков* \\(стр\\. ${page + 1}/${totalPages}${filterSuffix}\\)\n\n`;
+  let text = `📋 *История OSINT\\-поисков* \\(стр\\. ${page + 1}/${totalPages}\\)\n\n`;
 
   const buttons: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
-
-  // Filter row
-  const currentStatus = filter?.status || "all";
-  const filterRow: Array<ReturnType<typeof Markup.button.callback>> = [];
-  const filterOptions: Array<{ label: string; value: string }> = [
-    { label: "Все", value: "all" },
-    { label: "✅", value: "completed" },
-    { label: "❌", value: "failed" },
-    { label: "⏳", value: "pending" },
-  ];
-  for (const opt of filterOptions) {
-    const isActive = currentStatus === opt.value;
-    filterRow.push(
-      Markup.button.callback(
-        isActive ? `[${opt.label}]` : opt.label,
-        `osint_hist_filter:${opt.value}:0`
-      )
-    );
-  }
-  filterRow.push(Markup.button.callback("🔎", "osint_hist_search"));
-  buttons.push(filterRow);
 
   // Search items
   for (let i = 0; i < searches.length; i++) {
     const s = searches[i];
+    const statusLabel = STATUS_DISPLAY[s.status] ?? s.status;
     const statusEmoji = s.status === "completed" ? "✅" : s.status === "failed" ? "❌" : "⏳";
     const date = s.createdAt.toLocaleDateString("ru-RU", {
       day: "2-digit",
@@ -521,14 +455,14 @@ async function showHistory(
     const displayName = s.parsedSubject?.name && s.parsedSubject.name.length > 0
       ? s.parsedSubject.name
       : s.query;
-    const namePreview = displayName.length > 30 ? displayName.slice(0, 30) + "…" : displayName;
+    const namePreview = truncateText(displayName, 30);
 
     // Show sources count for completed
     const sourcesInfo = s.status === "completed" && s.sourcesCount > 0
       ? ` \\(${s.sourcesCount} ист\\.\\)`
       : "";
 
-    text += `${offset + i + 1}\\. ${statusEmoji} ${escapeMarkdownV2(namePreview)}${sourcesInfo} — ${date}\n`;
+    text += `${offset + i + 1}\\. ${escapeMarkdownV2(statusLabel)} — ${escapeMarkdownV2(namePreview)}${sourcesInfo} — ${date}\n`;
 
     const buttonLabel = s.status === "completed" && s.sourcesCount > 0
       ? `${statusEmoji} ${namePreview} (${s.sourcesCount} ист.)`
@@ -536,20 +470,19 @@ async function showHistory(
 
     buttons.push([
       Markup.button.callback(
-        buttonLabel.length > 60 ? buttonLabel.slice(0, 57) + "…" : buttonLabel,
+        truncateText(buttonLabel, 60),
         `osint_view:${s.id}`
       ),
     ]);
   }
 
-  // Pagination — preserve filter
-  const filterParam = filter?.status || "all";
+  // Pagination
   const navRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (page > 0) {
-    navRow.push(Markup.button.callback("⬅️ Назад", `osint_hist_filter:${filterParam}:${page - 1}`));
+    navRow.push(Markup.button.callback("⬅️ Назад", `osint_hist:${page - 1}`));
   }
   if (page < totalPages - 1) {
-    navRow.push(Markup.button.callback("Вперёд ➡️", `osint_hist_filter:${filterParam}:${page + 1}`));
+    navRow.push(Markup.button.callback("Вперёд ➡️", `osint_hist:${page + 1}`));
   }
   if (navRow.length > 0) buttons.push(navRow);
 
@@ -563,17 +496,6 @@ async function showHistory(
     await ctx.reply(text.replace(/\\/g, ""), {
       ...Markup.inlineKeyboard(buttons),
     });
-  }
-}
-
-function getStatusFilterLabel(status: OsintStatus): string {
-  switch (status) {
-    case "completed": return "Успешные";
-    case "failed": return "Ошибки";
-    case "pending": return "В ожидании";
-    case "searching": return "В процессе";
-    case "analyzing": return "Анализ";
-    default: return status;
   }
 }
 
@@ -599,7 +521,15 @@ async function executeOsintSearch(
 
   const statusMsg = await ctx.reply("🔍 Запускаю OSINT-поиск...");
 
-  const result = await runOsintSearch(ctx, chatId, statusMsg.message_id, dbUser.id, queryText, inputMethod);
+  const onProgress = async (text: string): Promise<void> => {
+    try {
+      await ctx.telegram.editMessageText(chatId, statusMsg.message_id, undefined, text);
+    } catch {
+      // Ignore edit errors (message not modified, etc.)
+    }
+  };
+
+  const result = await runOsintSearch(dbUser.id, queryText, inputMethod, { onProgress });
 
   if (!result.success) {
     try {

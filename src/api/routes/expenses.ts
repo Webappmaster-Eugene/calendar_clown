@@ -1,11 +1,13 @@
 import { Hono } from "hono";
 import {
   getMonthReport,
+  getYearReport,
   generateExcel,
   getCategoryDtos,
   undoExpense,
   editExpense,
   addExpenseFromText,
+  addExpenseStructured,
   getCategoryDrilldown,
 } from "../../services/expenseService.js";
 import type { UpdateExpenseRequest } from "../../shared/types.js";
@@ -31,27 +33,50 @@ app.get("/", async (c) => {
   }
 });
 
-/** POST /api/expenses — add expense from text */
+/** POST /api/expenses — add expense (text or structured) */
 app.post("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
-  const body = await c.req.json<{ text: string }>();
-
-  if (!body.text?.trim()) {
-    return c.json({ ok: false, error: "text is required" }, 400);
-  }
+  const body = await c.req.json<{ text?: string; categoryId?: number; amount?: number; subcategory?: string }>();
 
   try {
-    const result = await addExpenseFromText(
-      telegramId,
-      initData.user.username ?? null,
-      initData.user.first_name,
-      initData.user.last_name ?? null,
-      false,
-      body.text.trim()
-    );
-    logApiAction(telegramId, "expense_add_text", { text: body.text.trim() });
-    return c.json({ ok: true, data: result });
+    // Structured input: categoryId + amount (from Mini App form)
+    if (body.categoryId !== undefined && body.amount !== undefined) {
+      if (typeof body.categoryId !== "number" || body.categoryId <= 0) {
+        return c.json({ ok: false, error: "Invalid categoryId" }, 400);
+      }
+      if (typeof body.amount !== "number" || body.amount <= 0) {
+        return c.json({ ok: false, error: "Invalid amount" }, 400);
+      }
+      const result = await addExpenseStructured(
+        telegramId,
+        initData.user.username ?? null,
+        initData.user.first_name,
+        initData.user.last_name ?? null,
+        false,
+        body.categoryId,
+        body.amount,
+        body.subcategory
+      );
+      logApiAction(telegramId, "expense_add_structured", { categoryId: body.categoryId, amount: body.amount });
+      return c.json({ ok: true, data: result });
+    }
+
+    // Text input: natural language
+    if (body.text?.trim()) {
+      const result = await addExpenseFromText(
+        telegramId,
+        initData.user.username ?? null,
+        initData.user.first_name,
+        initData.user.last_name ?? null,
+        false,
+        body.text.trim()
+      );
+      logApiAction(telegramId, "expense_add_text", { text: body.text.trim() });
+      return c.json({ ok: true, data: result });
+    }
+
+    return c.json({ ok: false, error: "text or categoryId+amount is required" }, 400);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to add expense";
     return c.json({ ok: false, error: msg }, 500);
@@ -132,6 +157,21 @@ app.get("/report", async (c) => {
     return c.json({ ok: true, data: report });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get report";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/expenses/year — year report (monthly totals) */
+app.get("/year", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const year = parseInt(c.req.query("year") ?? String(new Date().getFullYear()), 10);
+
+  try {
+    const data = await getYearReport(telegramId, year);
+    return c.json({ ok: true, data });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get year report";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

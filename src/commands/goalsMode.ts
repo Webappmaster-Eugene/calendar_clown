@@ -41,6 +41,7 @@ import { createLogger } from "../utils/logger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { logAction } from "../logging/actionLogger.js";
+import { BTN_PREV, BTN_NEXT, truncateText } from "../utils/uiKit.js";
 
 const log = createLogger("goals-mode");
 
@@ -645,7 +646,7 @@ async function showGoalSet(ctx: Context, goalSetId: number, userId: number, offs
     const incomplete = pageGoals.filter((g) => !g.isCompleted);
     if (incomplete.length > 0) {
       for (const g of incomplete) {
-        const label = g.text.length > 30 ? g.text.slice(0, 30) + "…" : g.text;
+        const label = truncateText(g.text, 30);
         buttons.push([
           Markup.button.callback(`✅ ${label}`, `goal_done:${g.id}`),
           Markup.button.callback("🗑", `goal_del:${g.id}:${goalSetId}`),
@@ -657,7 +658,7 @@ async function showGoalSet(ctx: Context, goalSetId: number, userId: number, offs
     const completed = pageGoals.filter((g) => g.isCompleted);
     if (completed.length > 0) {
       for (const g of completed) {
-        const label = g.text.length > 30 ? g.text.slice(0, 30) + "…" : g.text;
+        const label = truncateText(g.text, 30);
         buttons.push([
           Markup.button.callback(`↩️ ${label}`, `goal_done:${g.id}`),
           Markup.button.callback("🗑", `goal_del:${g.id}:${goalSetId}`),
@@ -668,10 +669,10 @@ async function showGoalSet(ctx: Context, goalSetId: number, userId: number, offs
     // Pagination
     const navRow: ReturnType<typeof Markup.button.callback>[] = [];
     if (offset > 0) {
-      navRow.push(Markup.button.callback("⬅️", `goal_page:${goalSetId}:${Math.max(0, offset - GOALS_PAGE_SIZE)}`));
+      navRow.push(Markup.button.callback(BTN_PREV, `goal_page:${goalSetId}:${Math.max(0, offset - GOALS_PAGE_SIZE)}`));
     }
     if (offset + GOALS_PAGE_SIZE < goals.length) {
-      navRow.push(Markup.button.callback("➡️", `goal_page:${goalSetId}:${offset + GOALS_PAGE_SIZE}`));
+      navRow.push(Markup.button.callback(BTN_NEXT, `goal_page:${goalSetId}:${offset + GOALS_PAGE_SIZE}`));
     }
     if (navRow.length > 0) buttons.push(navRow);
 

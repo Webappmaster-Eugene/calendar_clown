@@ -39,6 +39,7 @@ import { createLogger } from "../utils/logger.js";
 import { logAction } from "../logging/actionLogger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
+import { truncateText } from "../utils/uiKit.js";
 
 const log = createLogger("reminders-mode");
 
@@ -124,7 +125,7 @@ export async function handleMyRemindersButton(ctx: Context): Promise<void> {
   const buttons = reminders.map((r) => {
     const status = r.isActive ? "⏰" : "⏸";
     const schedDesc = formatScheduleDescription(r.schedule);
-    const label = `${status} ${r.text.length > 25 ? r.text.slice(0, 25) + "…" : r.text}`;
+    const label = `${status} ${truncateText(r.text, 25)}`;
     return [Markup.button.callback(label, `rem_view:${r.id}`)];
   });
 
@@ -354,7 +355,7 @@ export async function handleReminderTribeCallback(ctx: Context): Promise<void> {
     }
 
     const buttons = reminders.map((r) => {
-      const label = `⏰ ${r.text.length > 30 ? r.text.slice(0, 30) + "…" : r.text}`;
+      const label = `⏰ ${truncateText(r.text, 30)}`;
       return [Markup.button.callback(label, `rem_tribe_view:${r.id}`)];
     });
 
@@ -645,7 +646,7 @@ export async function handleRemindersVoice(
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
-  const safeTranscript = escapeMarkdown(transcript.length > 300 ? transcript.slice(0, 300) + "…" : transcript);
+  const safeTranscript = escapeMarkdown(truncateText(transcript, 300));
 
   try {
     // If in awaiting_schedule step, use transcript as schedule input

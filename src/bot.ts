@@ -106,8 +106,6 @@ import {
   handleNewSearchButton,
   handleHistoryButton,
   handleHistoryPageCallback,
-  handleHistoryFilterCallback,
-  handleHistorySearchCallback,
   handleViewSearchCallback,
   handleOsintConfirmCallback,
   handleOsintReenterCallback,
@@ -403,8 +401,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^osint_reenter$/, handleOsintReenterCallback);
   bot.action(/^osint_cancel$/, handleOsintCancelCallback);
   bot.action(/^osint_hist:/, handleHistoryPageCallback);
-  bot.action(/^osint_hist_filter:/, handleHistoryFilterCallback);
-  bot.action(/^osint_hist_search$/, handleHistorySearchCallback);
   bot.action(/^osint_view:/, handleViewSearchCallback);
 
   // Summarizer callbacks

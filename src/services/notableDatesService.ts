@@ -148,7 +148,7 @@ export async function createDate(
 export async function editDate(
   telegramId: number,
   dateId: number,
-  fields: Partial<{ name: string; dateMonth: number; dateDay: number; description: string | null }>
+  fields: Partial<{ name: string; dateMonth: number; dateDay: number; description: string | null; eventType: string; emoji: string; isPriority: boolean }>
 ): Promise<NotableDateDto | null> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);

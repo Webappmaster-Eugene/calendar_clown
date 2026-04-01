@@ -28,6 +28,7 @@ import { createLogger } from "../utils/logger.js";
 import { logAction } from "../logging/actionLogger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
+import { truncateText, BTN_CANCEL } from "../utils/uiKit.js";
 import * as chrono from "chrono-node";
 
 const log = createLogger("tasks-mode");
@@ -233,7 +234,7 @@ export async function handleTaskWorkCallback(ctx: Context): Promise<void> {
       "Удалить проект со всеми задачами? Это действие необратимо.",
       Markup.inlineKeyboard([
         [Markup.button.callback("🗑 Да, удалить", `tw_del_yes:${workId}`)],
-        [Markup.button.callback("Отмена", "noop")],
+        [Markup.button.callback(BTN_CANCEL, "noop")],
       ]),
     );
     return;
@@ -344,7 +345,7 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
       Markup.inlineKeyboard([
         [Markup.button.callback("📝 Изменить текст", `ti_edt:${itemId}:${workId}`)],
         [Markup.button.callback("⏰ Изменить дедлайн", `ti_edl:${itemId}:${workId}`)],
-        [Markup.button.callback("Отмена", "noop")],
+        [Markup.button.callback(BTN_CANCEL, "noop")],
       ]),
     );
     return;
@@ -692,7 +693,7 @@ async function showWorkDetail(
 
     for (const task of activeTasks) {
       buttons.push([
-        Markup.button.callback(`✅ ${task.text.substring(0, 30)}`, `ti_done:${task.id}:${workId}`),
+        Markup.button.callback(`✅ ${truncateText(task.text, 30)}`, `ti_done:${task.id}:${workId}`),
         Markup.button.callback("✏️", `ti_edit:${task.id}:${workId}`),
         Markup.button.callback("🗑", `ti_del:${task.id}:${workId}`),
       ]);

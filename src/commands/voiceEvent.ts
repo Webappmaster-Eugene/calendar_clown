@@ -31,6 +31,7 @@ import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
 import type { DbUser } from "../expenses/types.js";
 import { createLogger } from "../utils/logger.js";
+import { truncateText } from "../utils/uiKit.js";
 import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("voice");
@@ -318,7 +319,7 @@ async function handleVoiceInCalendarMode(
     }
   }
 
-  const safeTranscript = escapeMarkdown(transcript.length > 500 ? transcript.slice(0, 500) + "…" : transcript);
+  const safeTranscript = escapeMarkdown(truncateText(transcript, 500));
   const transcriptLine = `🎤 Расшифровка: "${safeTranscript}"\n\n`;
 
   const intent = await extractVoiceIntent(transcript);

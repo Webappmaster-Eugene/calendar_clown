@@ -18,6 +18,7 @@ export function NutritionistPage() {
   const [caption, setCaption] = useState("");
   const [lastResult, setLastResult] = useState<NutritionAnalysisDto | null>(null);
   const [offset, setOffset] = useState(0);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const { data: historyData, isLoading } = useQuery({
     queryKey: ["nutritionist", offset],
@@ -79,7 +80,6 @@ export function NutritionistPage() {
           ref={fileInputRef}
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={handleFileChange}
           style={{ display: "none" }}
         />
@@ -168,34 +168,50 @@ export function NutritionistPage() {
 
       {analyses.length > 0 && (
         <div className="list">
-          {analyses.map((a) => (
-            <div key={a.id} className="card">
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span className="card-hint">
-                  {a.status === "completed" ? "✅" : a.status === "failed" ? "❌" : "⏳"}{" "}
-                  {a.dishType}
-                </span>
-                <span className="card-hint">
-                  {new Date(a.createdAt).toLocaleString("ru-RU")}
-                </span>
-              </div>
-              {a.status === "completed" ? (
-                <AnalysisCard analysis={a} compact />
-              ) : a.status === "failed" ? (
-                <div className="error-msg">{a.errorMessage ?? "Ошибка"}</div>
-              ) : null}
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-                <button
-                  className="btn btn-icon btn-danger"
-                  onClick={() => deleteMutation.mutate(a.id)}
-                  disabled={deleteMutation.isPending}
-                  title="Удалить"
+          {analyses.map((a) => {
+            const isExpanded = expandedId === a.id;
+            return (
+              <div key={a.id} className="card">
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: 4,
+                    cursor: a.status === "completed" ? "pointer" : undefined,
+                  }}
+                  onClick={() => a.status === "completed" && setExpandedId(isExpanded ? null : a.id)}
                 >
-                  🗑️
-                </button>
+                  <span className="card-hint" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+                    {a.status === "completed" ? "✅" : a.status === "failed" ? "❌" : "⏳"}{" "}
+                    {a.dishType}
+                    {a.status === "completed" && confidenceBadge(a.confidence)}
+                    {a.status === "completed" && (
+                      <span style={{ fontSize: 11, opacity: 0.6 }}>{isExpanded ? "▲" : "▼"}</span>
+                    )}
+                  </span>
+                  <span className="card-hint" style={{ whiteSpace: "nowrap", marginLeft: 8 }}>
+                    {new Date(a.createdAt).toLocaleString("ru-RU")}
+                  </span>
+                </div>
+                {a.status === "completed" ? (
+                  <AnalysisCard analysis={a} compact={!isExpanded} />
+                ) : a.status === "failed" ? (
+                  <div className="error-msg">{a.errorMessage ?? "Ошибка"}</div>
+                ) : null}
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+                  <button
+                    className="btn btn-icon btn-danger"
+                    onClick={() => deleteMutation.mutate(a.id)}
+                    disabled={deleteMutation.isPending}
+                    title="Удалить"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -204,7 +220,7 @@ export function NutritionistPage() {
           <button
             className="btn btn-small"
             disabled={offset === 0}
-            onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+            onClick={() => { setOffset((o) => Math.max(0, o - PAGE_SIZE)); setExpandedId(null); }}
           >
             ←
           </button>
@@ -214,13 +230,35 @@ export function NutritionistPage() {
           <button
             className="btn btn-small"
             disabled={offset + PAGE_SIZE >= total}
-            onClick={() => setOffset((o) => o + PAGE_SIZE)}
+            onClick={() => { setOffset((o) => o + PAGE_SIZE); setExpandedId(null); }}
           >
             →
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+function confidenceBadge(confidence: "high" | "medium" | "low") {
+  const map = {
+    high: { label: "высокая", color: "#4CAF50" },
+    medium: { label: "средняя", color: "#FF9800" },
+    low: { label: "низкая", color: "#e53935" },
+  } as const;
+  const { label, color } = map[confidence];
+  return (
+    <span style={{
+      display: "inline-block",
+      fontSize: 11,
+      fontWeight: 500,
+      padding: "2px 8px",
+      borderRadius: 6,
+      background: `${color}20`,
+      color,
+    }}>
+      {label}
+    </span>
   );
 }
 
@@ -256,6 +294,11 @@ function AnalysisCard({ analysis, compact = false }: { analysis: NutritionAnalys
         Итого: {analysis.total.weightG}г — {analysis.total.calories} ккал |
         Б {analysis.total.proteinsG}г | Ж {analysis.total.fatsG}г | У {analysis.total.carbsG}г
       </div>
+      {!compact && (
+        <div style={{ marginTop: 6 }}>
+          {confidenceBadge(analysis.confidence)}
+        </div>
+      )}
       {!compact && analysis.mealAssessment && (
         <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.5, opacity: 0.85 }}>
           💡 {analysis.mealAssessment}

@@ -8,6 +8,7 @@ import {
   countTodaySearches,
   createSearch,
 } from "../osint/repository.js";
+import { runOsintSearch } from "../osint/searchOrchestrator.js";
 import { parseSearchSubject } from "../osint/queryParser.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -121,6 +122,12 @@ export async function initiateSearch(
   }
 
   const search = await createSearch(dbUser.id, queryText, inputMethod);
+
+  // Fire-and-forget: run the search pipeline in the background.
+  // The Mini App polls GET /api/osint/:id to track progress.
+  runOsintSearch(dbUser.id, queryText, inputMethod, {
+    existingSearchId: search.id,
+  }).catch((err) => log.error("Background OSINT search failed:", err));
 
   return {
     id: search.id,

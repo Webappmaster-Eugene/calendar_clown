@@ -10,13 +10,16 @@ const MONTHS = [
   "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек",
 ];
 
-type DateTab = "upcoming" | "all";
+const PAGE_SIZE = 10;
+
+type DateTab = "upcoming" | "week" | "month" | "all";
 
 export function NotableDatesPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
   const { showConfirm } = useTelegram();
   const [tab, setTab] = useState<DateTab>("upcoming");
+  const [offset, setOffset] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState("");
@@ -25,36 +28,64 @@ export function NotableDatesPage() {
   const [eventType, setEventType] = useState("birthday");
   const [description, setDescription] = useState("");
 
+  // ─── Queries ──────────────────────────────────────────────────
+
   const { data: upcomingDates, isLoading: upcomingLoading } = useQuery({
     queryKey: ["notable-dates", "upcoming"],
     queryFn: () => api.get<NotableDateDto[]>("/api/notable-dates/upcoming"),
     enabled: tab === "upcoming",
   });
 
-  const { data: allDatesResponse, isLoading: allLoading } = useQuery({
-    queryKey: ["notable-dates", "all"],
-    queryFn: () => api.get<{ dates: NotableDateDto[]; total: number }>("/api/notable-dates"),
+  const { data: weekResponse, isLoading: weekLoading } = useQuery({
+    queryKey: ["notable-dates", "week"],
+    queryFn: () => api.get<{ dates: NotableDateDto[]; total: number }>("/api/notable-dates?filter=week"),
+    enabled: tab === "week",
+  });
+
+  const { data: monthResponse, isLoading: monthLoading } = useQuery({
+    queryKey: ["notable-dates", "month"],
+    queryFn: () => api.get<{ dates: NotableDateDto[]; total: number }>("/api/notable-dates?filter=month"),
+    enabled: tab === "month",
+  });
+
+  const { data: allResponse, isLoading: allLoading } = useQuery({
+    queryKey: ["notable-dates", "all", offset],
+    queryFn: () => api.get<{ dates: NotableDateDto[]; total: number }>(
+      `/api/notable-dates?limit=${PAGE_SIZE}&offset=${offset}`
+    ),
     enabled: tab === "all",
   });
 
-  const dates = tab === "upcoming" ? upcomingDates : allDatesResponse?.dates;
-  const isLoading = tab === "upcoming" ? upcomingLoading : allLoading;
+  const dates = tab === "upcoming" ? upcomingDates
+    : tab === "week" ? weekResponse?.dates
+    : tab === "month" ? monthResponse?.dates
+    : allResponse?.dates;
+  const total = tab === "all" ? (allResponse?.total ?? 0) : 0;
+  const isLoading = tab === "upcoming" ? upcomingLoading
+    : tab === "week" ? weekLoading
+    : tab === "month" ? monthLoading
+    : allLoading;
+
+  // ─── Mutations ────────────────────────────────────────────────
 
   const createMutation = useMutation({
     mutationFn: (data: CreateNotableDateRequest) =>
       api.post<NotableDateDto>("/api/notable-dates", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notable-dates"] });
-      setShowForm(false);
-      setName("");
-      setDay(1);
-      setDescription("");
+      resetForm();
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: { id: number; name?: string; dateMonth?: number; dateDay?: number; description?: string | null }) =>
-      api.put<NotableDateDto>(`/api/notable-dates/${id}`, data),
+    mutationFn: ({ id, ...data }: {
+      id: number;
+      name?: string;
+      dateMonth?: number;
+      dateDay?: number;
+      description?: string | null;
+      eventType?: string;
+    }) => api.put<NotableDateDto>(`/api/notable-dates/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notable-dates"] });
       resetForm();
@@ -67,6 +98,16 @@ export function NotableDatesPage() {
       queryClient.invalidateQueries({ queryKey: ["notable-dates"] });
     },
   });
+
+  const togglePriorityMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.put<{ toggled: boolean }>(`/api/notable-dates/${id}/toggle`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notable-dates"] });
+    },
+  });
+
+  // ─── Handlers ─────────────────────────────────────────────────
 
   const handleDelete = (id: number, dateName: string) => {
     showConfirm(`Удалить "${dateName}"?`, (confirmed) => {
@@ -102,6 +143,7 @@ export function NotableDatesPage() {
         name: name.trim(),
         dateMonth: month,
         dateDay: day,
+        eventType,
         description: description.trim() || null,
       });
     } else {
@@ -115,15 +157,28 @@ export function NotableDatesPage() {
     }
   };
 
+  const switchTab = (newTab: DateTab) => {
+    setTab(newTab);
+    setOffset(0);
+  };
+
+  // ─── Render ───────────────────────────────────────────────────
+
   return (
     <div className="page">
       <h1 className="page-title">Памятные даты</h1>
 
-      <div className="tabs">
-        <button className={`tab ${tab === "upcoming" ? "active" : ""}`} onClick={() => setTab("upcoming")}>
+      <div className="tabs tabs--scroll">
+        <button className={`tab ${tab === "upcoming" ? "active" : ""}`} onClick={() => switchTab("upcoming")}>
           Ближайшие
         </button>
-        <button className={`tab ${tab === "all" ? "active" : ""}`} onClick={() => setTab("all")}>
+        <button className={`tab ${tab === "week" ? "active" : ""}`} onClick={() => switchTab("week")}>
+          На неделе
+        </button>
+        <button className={`tab ${tab === "month" ? "active" : ""}`} onClick={() => switchTab("month")}>
+          За месяц
+        </button>
+        <button className={`tab ${tab === "all" ? "active" : ""}`} onClick={() => switchTab("all")}>
           Все даты
         </button>
       </div>
@@ -134,7 +189,10 @@ export function NotableDatesPage() {
         <div className="empty-state">
           <div className="empty-state-emoji">🎂</div>
           <div className="empty-state-text">
-            {tab === "upcoming" ? "Нет ближайших дат" : "Нет памятных дат"}
+            {tab === "upcoming" ? "Нет ближайших дат"
+              : tab === "week" ? "Нет дат на этой неделе"
+              : tab === "month" ? "Нет дат в этом месяце"
+              : "Нет памятных дат"}
           </div>
         </div>
       )}
@@ -155,6 +213,14 @@ export function NotableDatesPage() {
                 )}
               </div>
               <div className="list-item-actions">
+                <button
+                  className="btn btn-icon"
+                  onClick={() => togglePriorityMutation.mutate(d.id)}
+                  disabled={togglePriorityMutation.isPending}
+                  title={d.isPriority ? "Убрать приоритет" : "Сделать приоритетной"}
+                >
+                  {d.isPriority ? "🔔" : "🔕"}
+                </button>
                 <button className="btn btn-icon" onClick={() => startEdit(d)} title="Редактировать">✏️</button>
                 <button
                   className="btn btn-icon btn-danger"
@@ -166,6 +232,28 @@ export function NotableDatesPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === "all" && total > PAGE_SIZE && (
+        <div className="form-row" style={{ marginTop: 12, justifyContent: "center" }}>
+          <button
+            className="btn btn-small"
+            disabled={offset === 0}
+            onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+          >
+            ←
+          </button>
+          <span className="card-hint" style={{ padding: "0 8px" }}>
+            {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} из {total}
+          </span>
+          <button
+            className="btn btn-small"
+            disabled={offset + PAGE_SIZE >= total}
+            onClick={() => setOffset((o) => o + PAGE_SIZE)}
+          >
+            →
+          </button>
         </div>
       )}
 

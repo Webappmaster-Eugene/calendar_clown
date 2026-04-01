@@ -202,6 +202,11 @@ export interface UpdateExpenseRequest {
   subcategory?: string | null;
 }
 
+export interface YearReportMonthDto {
+  month: number;
+  total: number;
+}
+
 // ─── Gandalf (Knowledge Base) ─────────────────────────────────
 
 export interface GandalfCategoryDto {
@@ -428,6 +433,16 @@ export interface CreateNotableDateRequest {
   eventType?: string;
   description?: string;
   emoji?: string;
+  isPriority?: boolean;
+}
+
+export interface UpdateNotableDateRequest {
+  name?: string;
+  dateMonth?: number;
+  dateDay?: number;
+  eventType?: string;
+  emoji?: string;
+  description?: string | null;
   isPriority?: boolean;
 }
 

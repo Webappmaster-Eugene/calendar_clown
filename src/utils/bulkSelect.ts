@@ -6,6 +6,7 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { createLogger } from "./logger.js";
+import { truncateText, BTN_PREV, BTN_NEXT } from "./uiKit.js";
 
 const log = createLogger("bulk-select");
 
@@ -83,7 +84,7 @@ async function sendBulkPage(
   // Item toggle buttons
   for (const item of pageItems) {
     const check = item.selected ? "☑️" : "⬜";
-    const label = `${check} ${item.label}`.slice(0, 60);
+    const label = truncateText(`${check} ${item.label}`, 60);
     rows.push([Markup.button.callback(label, `bulk:tog:${item.id}`)]);
   }
 
@@ -94,10 +95,10 @@ async function sendBulkPage(
   // Pagination
   const paginationRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (state.page > 0) {
-    paginationRow.push(Markup.button.callback("⬅️", `bulk:pg:${state.page - 1}`));
+    paginationRow.push(Markup.button.callback(BTN_PREV, `bulk:pg:${state.page - 1}`));
   }
   if (state.page < totalPages - 1) {
-    paginationRow.push(Markup.button.callback("➡️", `bulk:pg:${state.page + 1}`));
+    paginationRow.push(Markup.button.callback(BTN_NEXT, `bulk:pg:${state.page + 1}`));
   }
   if (paginationRow.length > 0) {
     rows.push(paginationRow);

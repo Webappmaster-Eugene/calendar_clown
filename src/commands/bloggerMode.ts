@@ -38,6 +38,7 @@ import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { logAction } from "../logging/actionLogger.js";
 import { createLogger } from "../utils/logger.js";
+import { truncateText, BTN_PREV, BTN_NEXT, BTN_BACK, btnBackTo } from "../utils/uiKit.js";
 
 const log = createLogger("blogger-mode");
 
@@ -234,7 +235,7 @@ export async function handleMyPostsButton(ctx: Context): Promise<void> {
 
     const buttons = posts.map((p) => {
       const icon = statusIcon(p.status);
-      const topicSlice = p.topic.length > 40 ? p.topic.slice(0, 40) + "…" : p.topic;
+      const topicSlice = truncateText(p.topic, 40);
       return [Markup.button.callback(`${icon} ${topicSlice}`, `blog_post:${p.id}`)];
     });
 
@@ -814,7 +815,7 @@ async function showChannelPosts(
           parse_mode: "Markdown",
           ...Markup.inlineKeyboard([
             [Markup.button.callback("✍️ Новый пост", `blog_new_post:${channelId}`)],
-            [Markup.button.callback("« Назад", `blog_ch:${channelId}`)],
+            [Markup.button.callback(BTN_BACK, `blog_ch:${channelId}`)],
           ]),
         }
       );
@@ -826,21 +827,21 @@ async function showChannelPosts(
 
   const buttons = posts.map((p) => {
     const icon = statusIcon(p.status);
-    const topicSlice = p.topic.length > 40 ? p.topic.slice(0, 40) + "…" : p.topic;
+    const topicSlice = truncateText(p.topic, 40);
     return [Markup.button.callback(`${icon} ${topicSlice}`, `blog_post:${p.id}`)];
   });
 
   // Pagination
   const navRow: ReturnType<typeof Markup.button.callback>[] = [];
   if (offset > 0) {
-    navRow.push(Markup.button.callback("⬅️", `blog_ch_posts:${channelId}:${Math.max(0, offset - PAGE_SIZE)}`));
+    navRow.push(Markup.button.callback(BTN_PREV, `blog_ch_posts:${channelId}:${Math.max(0, offset - PAGE_SIZE)}`));
   }
   if (posts.length === PAGE_SIZE) {
-    navRow.push(Markup.button.callback("➡️", `blog_ch_posts:${channelId}:${offset + PAGE_SIZE}`));
+    navRow.push(Markup.button.callback(BTN_NEXT, `blog_ch_posts:${channelId}:${offset + PAGE_SIZE}`));
   }
   if (navRow.length > 0) buttons.push(navRow);
 
-  buttons.push([Markup.button.callback("« Назад", `blog_ch:${channelId}`)]);
+  buttons.push([Markup.button.callback(BTN_BACK, `blog_ch:${channelId}`)]);
 
   try {
     await ctx.editMessageText(
@@ -931,7 +932,7 @@ async function showSources(ctx: Context, postId: number, userId: number): Promis
     try {
       await ctx.editMessageText("📋 Источников пока нет.", {
         ...Markup.inlineKeyboard([
-          [Markup.button.callback("« Назад к посту", `blog_post:${postId}`)],
+          [Markup.button.callback(btnBackTo("посту"), `blog_post:${postId}`)],
         ]),
       });
     } catch {
@@ -951,14 +952,14 @@ async function showSources(ctx: Context, postId: number, userId: number): Promis
   const lines = sources.map((s, i) => {
     const label = typeLabels[s.sourceType] ?? "📄 Источник";
     const title = s.title ? ` — ${s.title}` : "";
-    const preview = s.content.length > 60 ? s.content.slice(0, 60) + "…" : s.content;
+    const preview = truncateText(s.content, 60);
     return `${i + 1}. ${label}${title}\n   ${preview}`;
   });
 
   const buttons = sources.map((s, i) => [
     Markup.button.callback(`🗑 Удалить #${i + 1}`, `blog_src_del:${s.id}`),
   ]);
-  buttons.push([Markup.button.callback("« Назад к посту", `blog_post:${postId}`)]);
+  buttons.push([Markup.button.callback(btnBackTo("посту"), `blog_post:${postId}`)]);
 
   const text = `📋 *Источники (${sources.length}):*\n\n${lines.join("\n\n")}`;
 

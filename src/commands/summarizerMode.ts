@@ -28,6 +28,7 @@ import {
 import { SUMMARIZER_MODEL, MAX_ACHIEVEMENT_LENGTH } from "../constants.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { logAction } from "../logging/actionLogger.js";
+import { BTN_PREV, BTN_NEXT, BTN_BACK } from "../utils/uiKit.js";
 
 const log = createLogger("summarizer-mode");
 
@@ -582,7 +583,7 @@ async function showAchievementsList(
         {
           parse_mode: "Markdown",
           ...Markup.inlineKeyboard([
-            [Markup.button.callback("« Назад", `sum_wp:${workplaceId}`)],
+            [Markup.button.callback(BTN_BACK, `sum_wp:${workplaceId}`)],
           ]),
         }
       );
@@ -614,18 +615,18 @@ async function showAchievementsList(
   const navRow: ReturnType<typeof Markup.button.callback>[] = [];
   if (offset > 0) {
     navRow.push(
-      Markup.button.callback("⬅️", `sum_list:${workplaceId}:${Math.max(0, offset - PAGE_SIZE)}`)
+      Markup.button.callback(BTN_PREV, `sum_list:${workplaceId}:${Math.max(0, offset - PAGE_SIZE)}`)
     );
   }
   if (offset + PAGE_SIZE < totalCount) {
     navRow.push(
-      Markup.button.callback("➡️", `sum_list:${workplaceId}:${offset + PAGE_SIZE}`)
+      Markup.button.callback(BTN_NEXT, `sum_list:${workplaceId}:${offset + PAGE_SIZE}`)
     );
   }
   if (navRow.length > 0) buttons.push(navRow);
 
   // Back button
-  buttons.push([Markup.button.callback("« Назад", `sum_wp:${workplaceId}`)]);
+  buttons.push([Markup.button.callback(BTN_BACK, `sum_wp:${workplaceId}`)]);
 
   try {
     await ctx.editMessageText(text, {

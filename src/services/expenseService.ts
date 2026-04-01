@@ -154,6 +154,72 @@ export async function addExpenseFromText(
 }
 
 /**
+ * Add expense from structured input (categoryId + amount).
+ * Used by Mini App form when user selects category from dropdown.
+ */
+export async function addExpenseStructured(
+  telegramId: number,
+  username: string | null,
+  firstName: string,
+  lastName: string | null,
+  isAdmin: boolean,
+  categoryId: number,
+  amount: number,
+  subcategory?: string
+): Promise<AddExpenseResult> {
+  requireDb();
+
+  const dbUser = await ensureUser(telegramId, username, firstName, lastName, isAdmin);
+  if (!dbUser.tribeId) throw new Error("Расходы доступны только для участников трайба.");
+
+  const cats = await getCategories();
+  const cat = cats.find((c) => c.id === categoryId);
+  if (!cat) throw new Error("Категория не найдена.");
+
+  const expense = await addExpense(
+    dbUser.id,
+    dbUser.tribeId,
+    categoryId,
+    amount,
+    subcategory ?? null,
+    "text"
+  );
+
+  const { year, month } = getMskNow();
+  const total = await getMonthTotal(dbUser.tribeId, year, month);
+  const limit = getMonthLimit();
+
+  const confirmation = formatExpenseConfirmation(
+    cat.emoji,
+    cat.name,
+    subcategory ?? null,
+    amount,
+    expense.createdAt,
+    dbUser.firstName || firstName || "Пользователь",
+    total,
+    limit,
+    monthName(month)
+  );
+
+  return {
+    expense: {
+      id: expense.id,
+      categoryId,
+      categoryName: cat.name,
+      categoryEmoji: cat.emoji,
+      subcategory: subcategory ?? null,
+      amount,
+      inputMethod: "text",
+      createdAt: expense.createdAt.toISOString(),
+    },
+    monthTotal: total,
+    monthlyLimit: limit,
+    month,
+    confirmation,
+  };
+}
+
+/**
  * Add multiple expenses from multi-line text.
  */
 export async function addMultipleExpenses(

@@ -16,12 +16,22 @@ import { tryParseJson } from "../utils/parseJson.js";
 import { createLogger } from "../utils/logger.js";
 import { parseSearchSubject, generateSearchQueries } from "./queryParser.js";
 import { tavilySearchMulti, tavilyExtract } from "./searchClient.js";
-import { createSearch, updateSearchStatus, countTodaySearches } from "./repository.js";
+import { createSearch, updateSearchStatus, countTodaySearches, getSearchById } from "./repository.js";
 import { formatReport } from "./reportFormatter.js";
 import { splitMessage } from "../utils/telegram.js";
 import type { OsintParsedSubject, OsintSearch, TavilyResult, TavilyImage, IntermediateAnalysis } from "./types.js";
 
 const log = createLogger("osint-orchestrator");
+
+/** Callback for reporting pipeline progress (optional). */
+export type ProgressCallback = (text: string) => Promise<void>;
+
+export interface OrchestratorOptions {
+  /** If set, skip DB record creation and rate-limit check (record already exists). */
+  existingSearchId?: number;
+  /** Optional callback for progress updates (e.g. editing a Telegram message). */
+  onProgress?: ProgressCallback;
+}
 
 export interface OrchestratorResult {
   success: boolean;
@@ -34,30 +44,44 @@ export interface OrchestratorResult {
  * Run the full two-phase OSINT search pipeline with progress updates.
  * Phase 1: Broad discovery (30-35 queries, raw content)
  * Phase 2: Deep extraction (follow-up queries + profile extraction)
+ *
+ * When `options.existingSearchId` is provided, uses the existing DB record
+ * instead of creating a new one (used by API/Mini App flow).
  */
 export async function runOsintSearch(
-  ctx: Context,
-  chatId: number,
-  statusMsgId: number,
   userId: number,
   queryText: string,
-  inputMethod: "text" | "voice"
+  inputMethod: "text" | "voice",
+  options?: OrchestratorOptions
 ): Promise<OrchestratorResult> {
-  // 1. Rate limit check
-  const todayCount = await countTodaySearches(userId);
-  if (todayCount >= OSINT_DAILY_LIMIT) {
-    return {
-      success: false,
-      error: `⚠️ Достигнут дневной лимит поисков (${OSINT_DAILY_LIMIT}/${OSINT_DAILY_LIMIT}). Попробуйте завтра.`,
-    };
-  }
+  const onProgress = options?.onProgress;
+  let search: OsintSearch;
 
-  // 2. Create DB record
-  const search = await createSearch(userId, queryText, inputMethod);
+  if (options?.existingSearchId) {
+    // API flow: record already created by initiateSearch(), verify it's still pending
+    const existing = await getSearchById(options.existingSearchId, userId);
+    if (!existing) {
+      return { success: false, error: "Поиск не найден." };
+    }
+    if (existing.status !== "pending") {
+      return { success: false, error: "Поиск уже запущен или завершён." };
+    }
+    search = existing;
+  } else {
+    // Bot flow: check rate limit and create record
+    const todayCount = await countTodaySearches(userId);
+    if (todayCount >= OSINT_DAILY_LIMIT) {
+      return {
+        success: false,
+        error: `⚠️ Достигнут дневной лимит поисков (${OSINT_DAILY_LIMIT}/${OSINT_DAILY_LIMIT}). Попробуйте завтра.`,
+      };
+    }
+    search = await createSearch(userId, queryText, inputMethod);
+  }
 
   try {
     // 3. Parse subject
-    await editStatus(ctx, chatId, statusMsgId, "🔍 Анализирую запрос...");
+    await onProgress?.("🔍 Анализирую запрос...");
     const parseResult = await parseSearchSubject(queryText);
 
     if (!parseResult.sufficient || !parseResult.subject) {
@@ -76,7 +100,7 @@ export async function runOsintSearch(
     });
 
     // 4. Generate search queries
-    await editStatus(ctx, chatId, statusMsgId, "🔍 Формирую поисковые запросы...");
+    await onProgress?.("🔍 Формирую поисковые запросы...");
     const queries = await generateSearchQueries(parseResult.subject);
 
     await updateSearchStatus(search.id, "searching", {
@@ -84,7 +108,7 @@ export async function runOsintSearch(
     });
 
     // 5. Phase 1: Broad discovery
-    await editStatus(ctx, chatId, statusMsgId, `🔍 Фаза 1: поиск по ${queries.length} запросам...`);
+    await onProgress?.(`🔍 Фаза 1: поиск по ${queries.length} запросам...`);
 
     if (!process.env.TAVILY_API_KEY) {
       await updateSearchStatus(search.id, "failed", {
@@ -119,7 +143,7 @@ export async function runOsintSearch(
       allImages.push(...fallbackResult.images);
     }
 
-    await editStatus(ctx, chatId, statusMsgId, `🔍 Фаза 1: найдено ${allResults.length} источников, углубляю поиск...`);
+    await onProgress?.(`🔍 Фаза 1: найдено ${allResults.length} источников, углубляю поиск...`);
 
     // 6. Phase 1 intermediate analysis
     let phase1Findings: string | undefined;
@@ -134,10 +158,7 @@ export async function runOsintSearch(
       const extractCount = Math.min(intermediate.profileUrls.length, OSINT_EXTRACT_URLS_LIMIT);
 
       if (followUpCount > 0 || extractCount > 0) {
-        await editStatus(
-          ctx,
-          chatId,
-          statusMsgId,
+        await onProgress?.(
           `🔍 Фаза 2: ${followUpCount} доп. запросов + извлечение ${extractCount} профилей...`
         );
 
@@ -182,7 +203,7 @@ export async function runOsintSearch(
     });
 
     // 8. Final analysis
-    await editStatus(ctx, chatId, statusMsgId, `🧠 Анализирую ${allResults.length} источников...`);
+    await onProgress?.(`🧠 Анализирую ${allResults.length} источников...`);
     const report = await analyzeResults(parseResult.subject, allResults, allImages, queryText, phase1Findings);
 
     // 9. Save completed
@@ -246,14 +267,6 @@ export async function sendReport(
     } catch {
       await ctx.telegram.sendMessage(chatId, chunks[i].replace(/[*_`\[\]\\]/g, ""));
     }
-  }
-}
-
-async function editStatus(ctx: Context, chatId: number, msgId: number, text: string): Promise<void> {
-  try {
-    await ctx.telegram.editMessageText(chatId, msgId, undefined, text);
-  } catch {
-    // Ignore edit errors (message not modified, etc.)
   }
 }
 
