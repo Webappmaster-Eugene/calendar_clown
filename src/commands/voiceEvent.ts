@@ -239,7 +239,12 @@ async function handleVoiceInExpenseMode(
 ): Promise<void> {
   const categories = await getCategories();
   const categoriesList = categories
-    .map((c) => `- ${c.name}`)
+    .map((c) => {
+      const aliasStr = c.aliases.length > 0
+        ? ` (aliases: ${c.aliases.join(", ")})`
+        : "";
+      return `- ${c.name}${aliasStr}`;
+    })
     .join("\n");
 
   const result = await extractExpenseIntent(transcript, categoriesList);

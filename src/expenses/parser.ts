@@ -17,8 +17,15 @@ export async function parseExpenseText(text: string): Promise<ParsedExpense | nu
   if (!textWithoutAmount) return null;
 
   const categories = await getCategories();
-  const match = findCategory(textWithoutAmount, categories);
-  if (!match) return null;
+  let match = findCategory(textWithoutAmount, categories);
+  if (!match) {
+    const fallback = categories.find((c) => c.name === "Другое");
+    if (fallback) {
+      match = { category: fallback, matchedText: "", score: 0 };
+    } else {
+      return null;
+    }
+  }
 
   const subcategory = extractSubcategory(textWithoutAmount, match.matchedText);
 
@@ -183,5 +190,21 @@ export async function getCategoriesList(): Promise<string> {
   const categories = await getCategories();
   return categories
     .map((c) => `${c.emoji} ${c.name}`)
+    .join("\n");
+}
+
+/**
+ * Get formatted categories list WITH aliases for AI prompts.
+ * Format: "- CategoryName (aliases: alias1, alias2)"
+ */
+export async function getCategoriesListWithAliases(): Promise<string> {
+  const categories = await getCategories();
+  return categories
+    .map((c) => {
+      const aliasStr = c.aliases.length > 0
+        ? ` (aliases: ${c.aliases.join(", ")})`
+        : "";
+      return `- ${c.name}${aliasStr}`;
+    })
     .join("\n");
 }

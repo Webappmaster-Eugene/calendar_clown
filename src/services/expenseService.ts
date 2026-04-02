@@ -2,7 +2,7 @@
  * Expense business logic extracted from command handlers.
  * Used by both Telegraf bot handlers and REST API routes.
  */
-import { parseExpenseText, parseMultipleExpenses, getCategoriesList } from "../expenses/parser.js";
+import { parseExpenseText, parseMultipleExpenses, getCategoriesList, getCategoriesListWithAliases } from "../expenses/parser.js";
 import {
   addExpense,
   ensureUser,
@@ -254,6 +254,7 @@ export async function addMultipleExpenses(
 
 /**
  * Add expense from voice input.
+ * Uses direct category lookup instead of re-parsing through text pipeline.
  */
 export async function addExpenseFromVoice(
   telegramId: number,
@@ -267,18 +268,42 @@ export async function addExpenseFromVoice(
 ): Promise<AddExpenseResult> {
   requireDb();
 
-  const parsed = await parseExpenseText(`${categoryName} ${subcategory || ""} ${amount}`);
-  if (!parsed) throw new Error("Не удалось определить категорию из голосового сообщения.");
+  // Direct category lookup by name (no re-parsing through text pipeline)
+  const categories = await getCategories();
+  const normalizedName = categoryName.toLowerCase().trim();
+  let cat = categories.find((c) => c.name.toLowerCase() === normalizedName);
+
+  // If AI returned a name that doesn't exactly match, try alias matching
+  if (!cat) {
+    cat = categories.find((c) =>
+      c.aliases.some((a) => a.toLowerCase() === normalizedName)
+    );
+  }
+
+  // Final fallback to "Другое"
+  if (!cat) {
+    cat = categories.find((c) => c.name === "Другое");
+  }
+
+  if (!cat) {
+    throw new Error("Не удалось определить категорию из голосового сообщения.");
+  }
 
   const dbUser = await ensureUser(telegramId, username, firstName, lastName, isAdmin);
   if (!dbUser.tribeId) throw new Error("Расходы доступны только для участников трайба.");
 
+  // If we fell back to "Другое" and there's no subcategory, preserve the original AI category guess
+  const effectiveSubcategory =
+    cat.name === "Другое" && !subcategory && categoryName !== "Другое"
+      ? categoryName
+      : subcategory;
+
   const expense = await addExpense(
     dbUser.id,
     dbUser.tribeId,
-    parsed.categoryId,
-    parsed.amount,
-    parsed.subcategory,
+    cat.id,
+    amount,
+    effectiveSubcategory,
     "voice"
   );
 
@@ -287,10 +312,10 @@ export async function addExpenseFromVoice(
   const limit = getMonthLimit();
 
   const confirmation = formatExpenseConfirmation(
-    parsed.categoryEmoji,
-    parsed.categoryName,
-    parsed.subcategory,
-    parsed.amount,
+    cat.emoji,
+    cat.name,
+    effectiveSubcategory,
+    amount,
     expense.createdAt,
     dbUser.firstName || firstName || "Пользователь",
     total,
@@ -301,11 +326,11 @@ export async function addExpenseFromVoice(
   return {
     expense: {
       id: expense.id,
-      categoryId: parsed.categoryId,
-      categoryName: parsed.categoryName,
-      categoryEmoji: parsed.categoryEmoji,
-      subcategory: parsed.subcategory,
-      amount: parsed.amount,
+      categoryId: cat.id,
+      categoryName: cat.name,
+      categoryEmoji: cat.emoji,
+      subcategory: effectiveSubcategory,
+      amount,
       inputMethod: "voice",
       createdAt: expense.createdAt.toISOString(),
     },
@@ -512,6 +537,14 @@ export async function editExpense(
 export async function getCategoriesListFormatted(): Promise<string> {
   requireDb();
   return getCategoriesList();
+}
+
+/**
+ * Get expense category list with aliases for AI prompts.
+ */
+export async function getCategoriesListWithAliasesFormatted(): Promise<string> {
+  requireDb();
+  return getCategoriesListWithAliases();
 }
 
 /**

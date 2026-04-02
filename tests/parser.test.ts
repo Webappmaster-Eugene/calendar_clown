@@ -63,9 +63,17 @@ describe("parseExpenseText", () => {
     assert.equal(result, null);
   });
 
-  it("returns null for just a number", async () => {
+  it("returns null for just a number (no category text)", async () => {
     const result = await parseExpenseText("12345");
     assert.equal(result, null);
+  });
+
+  it("falls back to 'Другое' for unrecognized category text", async () => {
+    const result = await parseExpenseText("xyzthing 1000");
+    assert.notEqual(result, null);
+    assert.equal(result!.categoryName, "Другое");
+    assert.equal(result!.amount, 1000);
+    assert.equal(result!.subcategory, "xyzthing");
   });
 
   it("handles amount with 'руб' suffix", async () => {

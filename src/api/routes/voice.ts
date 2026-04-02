@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { transcribeAudio, extractIntent } from "../../services/voiceService.js";
 import { extractExpenseIntent } from "../../voice/extractExpenseIntent.js";
-import { getCategoriesListFormatted, addExpenseFromVoice } from "../../services/expenseService.js";
+import { getCategoriesListWithAliasesFormatted, addExpenseFromVoice } from "../../services/expenseService.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { createLogger } from "../../utils/logger.js";
@@ -122,7 +122,7 @@ app.post("/expense", async (c) => {
     const { transcript } = await transcribeAudio(tempPath);
 
     // Step 2: Extract expense intent via DeepSeek AI (same as bot)
-    const categoriesList = await getCategoriesListFormatted();
+    const categoriesList = await getCategoriesListWithAliasesFormatted();
     const intent = await extractExpenseIntent(transcript, categoriesList);
 
     if (intent.type !== "expense") {

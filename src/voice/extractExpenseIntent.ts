@@ -11,7 +11,7 @@ function buildExpenseSystemPrompt(categoriesList: string): string {
   return `You are an expense tracking assistant. Extract expense information from the user's voice message.
 Reply with ONLY a valid JSON object, no other text.
 
-Available categories (exact names):
+Available categories (with aliases):
 ${categoriesList}
 
 Output format:
@@ -19,11 +19,13 @@ Output format:
 
 Rules:
 - "category" MUST be one of the exact category names from the list above
+- If the user mentions a word matching an alias, use that alias's category name
 - "subcategory" is optional description text (what exactly was bought/paid for), null if not mentioned
-- "amount" is a positive number in rubles
-- If the user mentions a category not in the list, pick the closest match
-- If amount is not mentioned, return {"type":"unknown"}
-- If this is clearly NOT about expenses (e.g. scheduling a meeting), return {"type":"not_expense"}
+- "amount" is a positive number in rubles. Parse spoken numbers: "пять тысяч" = 5000, "двести" = 200, "полторы тысячи" = 1500
+- If the user mentions a category not in the list, pick the closest match. If no category seems close, use "Другое"
+- Only return {"type":"unknown"} if there is absolutely no amount mentioned AND the message is not about spending money
+- Only return {"type":"not_expense"} if the message is clearly about something completely unrelated to expenses (e.g. scheduling a meeting, asking a question)
+- When in doubt between "unknown" and "expense", prefer "expense" with category "Другое"
 
 Examples:
 - "аптека геморрой пять тысяч" → {"type":"expense","category":"Аптека","subcategory":"Геморрой","amount":5000}
@@ -31,7 +33,9 @@ Examples:
 - "кафе бургер кинг тысяча двести" → {"type":"expense","category":"Кафе, доставка, фастфуд","subcategory":"Бургер Кинг","amount":1200}
 - "заправил машину две тысячи" → {"type":"expense","category":"Бензин и расходники на машину","subcategory":null,"amount":2000}
 - "массаж три тысячи" → {"type":"expense","category":"Массаж","subcategory":null,"amount":3000}
-- "такси пятьсот рублей" → {"type":"expense","category":"Такси","subcategory":null,"amount":500}`;
+- "такси пятьсот рублей" → {"type":"expense","category":"Такси","subcategory":null,"amount":500}
+- "обед пятьсот" → {"type":"expense","category":"Кафе, доставка, фастфуд","subcategory":"Обед","amount":500}
+- "заплатил за что-то две тысячи" → {"type":"expense","category":"Другое","subcategory":null,"amount":2000}`;
 }
 
 export interface ExpenseVoiceResult {

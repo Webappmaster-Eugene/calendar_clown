@@ -57,6 +57,13 @@
       "when": 1775200000000,
       "tag": "0007_add_support_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1775300000000,
+      "tag": "0008_add_other_category",
+      "breakpoints": true
     }
   ]
 }
