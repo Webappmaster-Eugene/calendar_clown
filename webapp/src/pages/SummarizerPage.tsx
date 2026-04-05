@@ -11,6 +11,7 @@ import type {
   SummaryDto,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { MessageBubble } from "../components/ui/MessageBubble";
 
 export function SummarizerPage() {
   useClosingConfirmation();
@@ -236,7 +237,15 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
       {generateMutation.error && <div className="error-msg">{(generateMutation.error as Error).message}</div>}
 
       {summary && (
-        <div className="report-text" style={{ marginBottom: 16 }}>{summary}</div>
+        <div style={{ marginBottom: 16 }}>
+          <MessageBubble
+            role="assistant"
+            markdown
+            content={summary}
+            actions={["copy", "share"]}
+            style={{ maxWidth: "100%" }}
+          />
+        </div>
       )}
 
       <div className="section-title">Достижения</div>

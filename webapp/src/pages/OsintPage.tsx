@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import type { OsintSearchDto, OsintSearchHistoryResponse, StartOsintSearchRequest } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { MessageBubble } from "../components/ui/MessageBubble";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Ожидание",
@@ -173,11 +174,23 @@ function OsintReport({ searchId, onBack }: { searchId: number; onBack: () => voi
           </div>
 
           {search.status === "pending" || search.status === "searching" || search.status === "analyzing" ? (
-            <div className="loading">Обработка...</div>
+            <MessageBubble role="assistant" pending content="" meta="Обработка…" />
           ) : search.status === "failed" ? (
-            <div className="error-msg">{search.errorMessage ?? "Поиск не удался"}</div>
+            <MessageBubble
+              role="assistant"
+              errored
+              markdown={false}
+              content={search.errorMessage ?? "Поиск не удался"}
+            />
           ) : search.report ? (
-            <div className="report-text">{search.report}</div>
+            <MessageBubble
+              role="assistant"
+              markdown
+              content={search.report}
+              actions={["copy", "share"]}
+              meta={`${search.sourcesCount} источников`}
+              style={{ maxWidth: "100%" }}
+            />
           ) : (
             <div className="empty-state"><div className="empty-state-text">Отчёт не сформирован</div></div>
           )}

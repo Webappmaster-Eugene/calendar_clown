@@ -14,6 +14,10 @@ export {
   MAX_POST_LENGTH,
   MAX_SIMPLIFIER_INPUT_LENGTH,
   NUTRITIONIST_DAILY_LIMIT,
+  NUTRITION_MAX_PRODUCTS_PER_USER,
+  NUTRITION_PRODUCT_CATALOG_PROMPT_LIMIT,
+  NUTRITION_PRODUCT_NAME_MAX_LENGTH,
+  NUTRITION_PRODUCT_DESCRIPTION_MAX_LENGTH,
 } from "./shared/constants.js";
 
 // ─── Backend-only constants ───────────────────────────────────────
@@ -100,6 +104,12 @@ export const NEURO_VISION_MODEL = process.env.NEURO_VISION_MODEL || "google/gemi
 
 /** Nutritionist: vision model for food photo analysis. */
 export const NUTRITIONIST_VISION_MODEL = process.env.NUTRITIONIST_MODEL || "google/gemini-2.0-flash-001";
+
+/** Nutritionist: max size of a product package photo uploaded by user (webapp or bot). */
+export const NUTRITION_PRODUCT_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+
+/** Nutritionist: directory for storing user product package photos. */
+export const NUTRITION_PRODUCTS_DIR = "./data/nutritionist-products";
 
 /** Neuro: debounce delay after last message before flushing batch. */
 export const NEURO_BATCH_DEBOUNCE_MS = 3_000;

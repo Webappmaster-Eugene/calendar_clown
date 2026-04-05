@@ -15,13 +15,13 @@ import {
 } from "../src/shared/constants.js";
 
 const ALL_MODES = [
-  "calendar", "expenses", "transcribe", "digest", "gandalf", "neuro",
+  "calendar", "expenses", "transcribe", "simplifier", "digest", "gandalf", "neuro",
   "goals", "reminders", "wishlist", "notable_dates", "osint",
-  "summarizer", "blogger", "broadcast", "admin",
+  "summarizer", "blogger", "broadcast", "admin", "tasks", "nutritionist",
 ];
 
 describe("MODE_LABELS", () => {
-  it("contains all 15 modes", () => {
+  it("contains all known modes", () => {
     for (const mode of ALL_MODES) {
       assert.ok(MODE_LABELS[mode], `Missing MODE_LABELS entry for: ${mode}`);
     }

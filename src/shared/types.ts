@@ -888,6 +888,13 @@ export interface NutritionFoodItemDto {
   fatsG: number;
   carbsG: number;
   cookingMethod: string;
+  /**
+   * Set when an item on the plate was matched to a product in the user's
+   * catalog (either by the AI or by the server-side fuzzy-name fallback).
+   * The macros in this item are then derived from the catalog entry
+   * scaled to the estimated portion weight.
+   */
+  matchedProductId?: number;
 }
 
 export interface NutritionTotalDto {
@@ -922,6 +929,32 @@ export interface NutritionDailySummaryDto {
   mealsCount: number;
   total: NutritionTotalDto;
   analyses: NutritionAnalysisDto[];
+}
+
+// ─── Nutritionist: User Product Catalog ──────────────────────────────────
+
+export type NutritionProductUnit = "g" | "ml";
+
+export interface NutritionProductDto {
+  id: number;
+  name: string;
+  description: string | null;
+  unit: NutritionProductUnit;
+  caloriesPer100: number;
+  proteinsPer100G: number;
+  fatsPer100G: number;
+  carbsPer100G: number;
+  hasPackagePhoto: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NutritionProductsListResponse {
+  products: NutritionProductDto[];
+  total: number;
+  limit: number;
+  offset: number;
+  maxAllowed: number;
 }
 
 // ─── Action Logs Viewer ──────────────────────────────────────

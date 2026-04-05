@@ -167,12 +167,48 @@ async function streamRequest(
   return doneEvent;
 }
 
+/**
+ * Fetch a binary response (e.g. a protected image) with InitData auth and
+ * return the raw Blob. Used for rendering authenticated images via
+ * URL.createObjectURL — a plain <img src=...> tag cannot attach the
+ * Authorization header that our API middleware requires.
+ */
+async function getBlob(path: string, timeoutMs = 30_000): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  if (initDataRaw) {
+    headers["Authorization"] = `tma ${initDataRaw}`;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(path, { method: "GET", headers, signal: controller.signal });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(0, "TIMEOUT", `Request timed out`);
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
+
+  if (!res.ok) {
+    throw new ApiError(res.status, undefined, `Failed to fetch ${path} (status ${res.status})`);
+  }
+  return res.blob();
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
+  patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
   upload: <T>(path: string, formData: FormData) => request<T>("POST", path, formData, 120_000),
+  uploadPatch: <T>(path: string, formData: FormData) => request<T>("PATCH", path, formData, 120_000),
+  getBlob,
   stream: streamRequest,
 };
 

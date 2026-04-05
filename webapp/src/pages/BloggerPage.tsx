@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { MessageBubble } from "../components/ui/MessageBubble";
 import type {
   BloggerChannelDto,
   BloggerPostDto,
@@ -260,11 +261,13 @@ function ChannelPosts({ channelId, onBack }: { channelId: number; onBack: () => 
                 {p.generatedAt ? ` \u00b7 ${new Date(p.generatedAt).toLocaleDateString("ru-RU")}` : ""}
               </div>
               {p.generatedText && (
-                <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                  {p.generatedText.length > 300
-                    ? p.generatedText.slice(0, 300) + "..."
-                    : p.generatedText}
-                </div>
+                <MessageBubble
+                  role="assistant"
+                  markdown
+                  content={p.generatedText}
+                  actions={["copy", "share"]}
+                  style={{ maxWidth: "100%" }}
+                />
               )}
             </div>
           ))}

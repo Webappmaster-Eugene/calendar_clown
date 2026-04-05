@@ -5,6 +5,7 @@ import { TelegramProvider } from "./hooks/useTelegram";
 import { ReminderAudioProvider } from "./hooks/useReminderAudio";
 import { AppShell } from "./components/layout/AppShell";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ToastProvider } from "./components/ui/ToastProvider";
 
 // Eager-load the mode selector (first screen, always needed)
 import { ModeSelectorPage } from "./pages/ModeSelectorPage";
@@ -56,6 +57,7 @@ export function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <TelegramProvider>
+          <ToastProvider>
           <BrowserRouter>
             <ReminderAudioProvider>
             <AppShell>
@@ -86,6 +88,7 @@ export function App() {
             </AppShell>
             </ReminderAudioProvider>
           </BrowserRouter>
+          </ToastProvider>
         </TelegramProvider>
       </QueryClientProvider>
     </ErrorBoundary>

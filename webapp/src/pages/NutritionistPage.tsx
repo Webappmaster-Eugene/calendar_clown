@@ -6,13 +6,48 @@ import type {
   NutritionAnalysisDto,
   NutritionDailySummaryDto,
   NutritionFoodItemDto,
+  NutritionProductsListResponse,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { NutritionistCatalog } from "./NutritionistCatalog";
+import { CopyButton } from "../components/ui/CopyButton";
+import { ShareButton } from "../components/ui/ShareButton";
 
 const PAGE_SIZE = 10;
 
+type NutritionistTab = "analyze" | "catalog";
+
 export function NutritionistPage() {
   useClosingConfirmation();
+  const [tab, setTab] = useState<NutritionistTab>("analyze");
+
+  return (
+    <div className="page">
+      <h1 className="page-title">Нутрициолог</h1>
+
+      <div className="tabs" style={{ marginBottom: 12 }}>
+        <button
+          className={`tab ${tab === "analyze" ? "tab-active" : ""}`}
+          onClick={() => setTab("analyze")}
+          type="button"
+        >
+          📷 Анализ
+        </button>
+        <button
+          className={`tab ${tab === "catalog" ? "tab-active" : ""}`}
+          onClick={() => setTab("catalog")}
+          type="button"
+        >
+          📦 Каталог
+        </button>
+      </div>
+
+      {tab === "analyze" ? <AnalyzeSection onGoToCatalog={() => setTab("catalog")} /> : <NutritionistCatalog />}
+    </div>
+  );
+}
+
+function AnalyzeSection({ onGoToCatalog }: { onGoToCatalog: () => void }) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [caption, setCaption] = useState("");
@@ -30,6 +65,13 @@ export function NutritionistPage() {
   const { data: dailySummary } = useQuery({
     queryKey: ["nutritionist-daily"],
     queryFn: () => api.get<NutritionDailySummaryDto>("/api/nutritionist/daily"),
+  });
+
+  // Lightweight catalog count — one extra request but keeps the hint fresh.
+  const { data: catalogCount } = useQuery({
+    queryKey: ["nutritionistProductsCount"],
+    queryFn: () =>
+      api.get<NutritionProductsListResponse>("/api/nutritionist/products?limit=1&offset=0"),
   });
 
   const analyses = historyData?.analyses ?? [];
@@ -70,9 +112,23 @@ export function NutritionistPage() {
 
   if (isLoading) return <div className="loading">Загрузка...</div>;
 
+  const productsTotal = catalogCount?.total ?? 0;
+
   return (
-    <div className="page">
-      <h1 className="page-title">Нутрициолог</h1>
+    <div>
+      {/* Catalog hint */}
+      {productsTotal > 0 && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div className="card-hint" style={{ fontSize: 13 }}>
+              📦 {productsTotal} продуктов в каталоге — используются при анализе
+            </div>
+            <button className="btn btn-small" onClick={onGoToCatalog}>
+              Открыть →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Photo upload */}
       <div className="card" style={{ marginBottom: 16 }}>
@@ -266,13 +322,32 @@ function AnalysisCard({ analysis, compact = false }: { analysis: NutritionAnalys
   const items = analysis.items;
   const showItems = compact ? items.slice(0, 3) : items;
   const hasMore = compact && items.length > 3;
+  const hasMatched = items.some((i) => i.matchedProductId);
 
   return (
     <div>
       {showItems.map((item: NutritionFoodItemDto, i: number) => (
         <div key={i} style={{ marginBottom: 6 }}>
-          <div style={{ fontWeight: 500, fontSize: 14 }}>
-            {item.name} ({item.cookingMethod}) — {item.weightG}г
+          <div style={{ fontWeight: 500, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span>
+              {item.name} ({item.cookingMethod}) — {item.weightG}г
+            </span>
+            {item.matchedProductId != null && (
+              <span
+                style={{
+                  display: "inline-block",
+                  fontSize: 10,
+                  fontWeight: 500,
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  background: "#2e7d3220",
+                  color: "#2e7d32",
+                }}
+                title="Совпадение с продуктом из вашего каталога"
+              >
+                🎯 из каталога
+              </span>
+            )}
           </div>
           <div className="card-hint" style={{ fontSize: 13 }}>
             🔥 {item.calories} ккал | Б {item.proteinsG}г | Ж {item.fatsG}г | У {item.carbsG}г
@@ -299,11 +374,72 @@ function AnalysisCard({ analysis, compact = false }: { analysis: NutritionAnalys
           {confidenceBadge(analysis.confidence)}
         </div>
       )}
+      {!compact && hasMatched && (
+        <div className="card-hint" style={{ marginTop: 4, fontSize: 11 }}>
+          🎯 — продукт из вашего каталога
+        </div>
+      )}
       {!compact && analysis.mealAssessment && (
         <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.5, opacity: 0.85 }}>
           💡 {analysis.mealAssessment}
         </div>
       )}
+      {!compact && (
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            marginTop: 10,
+            paddingTop: 8,
+            borderTop: "1px solid var(--tg-theme-hint-color, #eee)",
+          }}
+        >
+          <CopyButton text={serializeAnalysis(analysis)} size="sm" />
+          <ShareButton text={serializeAnalysis(analysis)} size="sm" />
+        </div>
+      )}
     </div>
   );
+}
+
+/**
+ * Serialize a nutrition analysis to a copyable plain-text block that mirrors
+ * the format used by the Telegram bot (formatAnalysisMessage in
+ * src/commands/nutritionistMode.ts), so pasting into Telegram produces the
+ * same readable output.
+ */
+function serializeAnalysis(a: NutritionAnalysisDto): string {
+  const lines: string[] = [];
+  lines.push("🥗 Анализ еды");
+  lines.push("");
+  lines.push(`Блюдо: ${a.dishType}`);
+  const confLabel =
+    a.confidence === "high" ? "высокая" : a.confidence === "medium" ? "средняя" : "низкая";
+  lines.push(`Уверенность: ${confLabel}`);
+  lines.push("");
+  lines.push("📦 Продукты:");
+  a.items.forEach((item, i) => {
+    const matched = item.matchedProductId ? " 🎯" : "";
+    lines.push(
+      `${i + 1}. ${item.name}${matched} (${item.cookingMethod}) — ${item.weightG}г`,
+    );
+    lines.push(
+      `   🔥 ${item.calories} ккал | Б ${item.proteinsG}г | Ж ${item.fatsG}г | У ${item.carbsG}г`,
+    );
+  });
+  lines.push("");
+  lines.push("━━━━━━━━━━━━━━━━━━━");
+  lines.push(`📊 Итого: ${a.total.weightG}г`);
+  lines.push(
+    `🔥 ${a.total.calories} ккал | Б ${a.total.proteinsG}г | Ж ${a.total.fatsG}г | У ${a.total.carbsG}г`,
+  );
+  if (a.items.some((i) => i.matchedProductId)) {
+    lines.push("");
+    lines.push("🎯 — продукт из каталога");
+  }
+  if (a.mealAssessment) {
+    lines.push("");
+    lines.push(`💡 ${a.mealAssessment}`);
+  }
+  return lines.join("\n");
 }

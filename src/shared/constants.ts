@@ -69,5 +69,11 @@ export const MAX_TASKS_PER_WORK = 50;
 /** Nutritionist */
 export const NUTRITIONIST_DAILY_LIMIT = 20;
 
+/** Nutritionist: user product catalog */
+export const NUTRITION_MAX_PRODUCTS_PER_USER = 200;
+export const NUTRITION_PRODUCT_CATALOG_PROMPT_LIMIT = 60;
+export const NUTRITION_PRODUCT_NAME_MAX_LENGTH = 200;
+export const NUTRITION_PRODUCT_DESCRIPTION_MAX_LENGTH = 1000;
+
 /** Admin-only modes */
 export const ADMIN_MODES = ["broadcast", "admin"] as const;

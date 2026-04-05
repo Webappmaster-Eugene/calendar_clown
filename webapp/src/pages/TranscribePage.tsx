@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import type { TranscribeHistoryResponse } from "@shared/types";
+import { MessageBubble } from "../components/ui/MessageBubble";
+import { CopyButton } from "../components/ui/CopyButton";
 
 const PAGE_SIZE = 10;
 
@@ -61,15 +63,14 @@ export function TranscribePage() {
           </div>
         </div>
         {lastTranscript && (
-          <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--tg-theme-bg-color, #fff)", borderRadius: 8, fontSize: 14 }}>
-            {lastTranscript}
-            <button
-              className="btn btn-small"
-              style={{ marginTop: 6, display: "block" }}
-              onClick={() => { navigator.clipboard.writeText(lastTranscript); }}
-            >
-              Копировать
-            </button>
+          <div style={{ marginTop: 10 }}>
+            <MessageBubble
+              role="assistant"
+              markdown={false}
+              content={lastTranscript}
+              actions={["copy", "share"]}
+              style={{ maxWidth: "100%" }}
+            />
           </div>
         )}
       </div>
@@ -103,24 +104,27 @@ export function TranscribePage() {
                 </div>
               )}
               {t.transcript ? (
-                <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", userSelect: "text", WebkitUserSelect: "text" }}>
                   {t.transcript}
                 </div>
               ) : t.status === "failed" ? (
                 <div className="error-msg">{t.errorMessage ?? "Ошибка транскрибации"}</div>
               ) : null}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 6 }}>
                 <span className="card-hint">
                   {new Date(t.createdAt).toLocaleString("ru-RU")}
                 </span>
-                <button
-                  className="btn btn-icon btn-danger"
-                  onClick={() => deleteMutation.mutate(t.id)}
-                  disabled={deleteMutation.isPending}
-                  title="Удалить"
-                >
-                  🗑️
-                </button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {t.transcript && <CopyButton text={t.transcript} size="sm" />}
+                  <button
+                    className="btn btn-icon btn-danger"
+                    onClick={() => deleteMutation.mutate(t.id)}
+                    disabled={deleteMutation.isPending}
+                    title="Удалить"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             </div>
           ))}

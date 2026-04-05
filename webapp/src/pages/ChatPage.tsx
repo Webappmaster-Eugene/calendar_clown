@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import { useTelegram } from "../hooks/useTelegram";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { MessageBubble } from "../components/ui/MessageBubble";
 import type {
   ChatDialogDto,
   ChatMessageDto,
@@ -229,26 +230,29 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
         Назад
       </button>
 
-      <div className="chat-messages">
+      <div className="chat-messages" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {displayMessages.map((msg) => (
-          <div key={msg.id} className={`chat-bubble ${msg.role}`}>
-            {msg.content}
-          </div>
+          <MessageBubble
+            key={msg.id}
+            role={msg.role === "user" ? "user" : "assistant"}
+            content={msg.content}
+            markdown={msg.role !== "user"}
+            actions={msg.role !== "user" ? ["copy", "share"] : undefined}
+          />
         ))}
         {pendingUserMessage && (
-          <div className="chat-bubble user">
-            {pendingUserMessage}
-          </div>
+          <MessageBubble role="user" markdown={false} content={pendingUserMessage} />
         )}
         {isSending && !streamingContent && (
-          <div className="chat-bubble assistant" style={{ opacity: 0.6 }}>
-            ...
-          </div>
+          <MessageBubble role="assistant" pending content="" />
         )}
         {streamingContent && (
-          <div className="chat-bubble assistant">
-            {streamingContent}
-          </div>
+          <MessageBubble
+            role="assistant"
+            markdown
+            content={streamingContent}
+            actions={["copy", "share"]}
+          />
         )}
         <div ref={messagesEndRef} />
       </div>

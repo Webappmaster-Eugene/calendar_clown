@@ -183,6 +183,7 @@ import {
   handleNutritionistDailyButton,
   handleNutritionistHistoryButton,
   handleNutritionistCallback,
+  handleNutritionistProductsButton,
 } from "./commands/nutritionistMode.js";
 
 export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
@@ -630,6 +631,12 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     const tid = ctx.from?.id;
     if (tid != null && await isNutritionistMode(tid)) {
       await handleNutritionistDailyButton(ctx);
+    }
+  });
+  bot.hears("📦 Продукты", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleNutritionistProductsButton(ctx);
     }
   });
 

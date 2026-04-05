@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import type { SimplifierHistoryResponse, SimplificationDto } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { MessageBubble } from "../components/ui/MessageBubble";
 
 const PAGE_SIZE = 10;
 
@@ -108,19 +109,13 @@ export function SimplifierPage() {
 
       {/* Last result */}
       {lastResult && lastResult.simplifiedText && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 500, marginBottom: 8 }}>Результат:</div>
-          <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-            {lastResult.simplifiedText}
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button
-              className="btn btn-small"
-              onClick={() => { navigator.clipboard.writeText(lastResult.simplifiedText!); }}
-            >
-              Копировать
-            </button>
-          </div>
+        <div style={{ marginBottom: 16, display: "flex", flexDirection: "column" }}>
+          <MessageBubble
+            role="assistant"
+            markdown={false}
+            content={lastResult.simplifiedText}
+            actions={["copy", "share"]}
+          />
           {lastResult.originalText && (
             <details style={{ marginTop: 8 }}>
               <summary className="card-hint" style={{ cursor: "pointer" }}>
@@ -146,7 +141,7 @@ export function SimplifierPage() {
         <div className="list">
           {simplifications.map((s) => (
             <div key={s.id} className="card">
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span className="card-hint">
                   {s.inputType === "voice" ? "🎙" : s.inputType === "mixed" ? "🎙📝" : "📝"}{" "}
                   {s.status === "completed" ? "Готово" : s.status === "failed" ? "Ошибка" : "Обработка..."}
@@ -156,9 +151,13 @@ export function SimplifierPage() {
                 </span>
               </div>
               {s.simplifiedText ? (
-                <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                  {s.simplifiedText}
-                </div>
+                <MessageBubble
+                  role="assistant"
+                  markdown={false}
+                  content={s.simplifiedText}
+                  actions={["copy", "share"]}
+                  style={{ maxWidth: "100%" }}
+                />
               ) : s.status === "failed" ? (
                 <div className="error-msg">{s.errorMessage ?? "Ошибка"}</div>
               ) : null}
@@ -172,15 +171,7 @@ export function SimplifierPage() {
                   </div>
                 </details>
               )}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
-                {s.simplifiedText && (
-                  <button
-                    className="btn btn-small"
-                    onClick={() => { navigator.clipboard.writeText(s.simplifiedText!); }}
-                  >
-                    Копировать
-                  </button>
-                )}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
                 <button
                   className="btn btn-icon btn-danger"
                   onClick={() => deleteMutation.mutate(s.id)}

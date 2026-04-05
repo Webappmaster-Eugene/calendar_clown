@@ -13,10 +13,15 @@ import { TIMEZONE_MSK } from "../../constants.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { createLogger } from "../../utils/logger.js";
+import productsRoutes from "./nutritionist-products.js";
 
 const log = createLogger("nutritionist-route");
 
 const app = new Hono<ApiEnv>();
+
+// Mount the product catalog sub-router FIRST so its paths win over the
+// generic /:id analysis routes below.
+app.route("/products", productsRoutes);
 
 /** GET /api/nutritionist — analysis history */
 app.get("/", async (c) => {

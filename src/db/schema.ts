@@ -1005,6 +1005,55 @@ export const nutritionAnalyses = pgTable(
   ],
 );
 
+// ─── Nutrition Products (User Catalog) ────────────────────────────────
+//
+// Stores user-defined products with macros per 100g/100ml. Used as reference
+// data: injected as text into the AI system-prompt during meal-photo analysis
+// so the model can match plate items to the user's specific products and use
+// the user-provided nutritional values instead of generic estimates.
+
+export const nutritionProducts = pgTable(
+  "nutrition_products",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 200 }).notNull(),
+    description: text("description"),
+    unit: varchar("unit", { length: 4 }).notNull().default("g"),
+    caloriesPer100: numeric("calories_per_100", { precision: 8, scale: 2 }).notNull(),
+    proteinsPer100G: numeric("proteins_per_100_g", { precision: 8, scale: 2 }).notNull(),
+    fatsPer100G: numeric("fats_per_100_g", { precision: 8, scale: 2 }).notNull(),
+    carbsPer100G: numeric("carbs_per_100_g", { precision: 8, scale: 2 }).notNull(),
+    packagePhotoPath: varchar("package_photo_path", { length: 500 }),
+    packagePhotoMime: varchar("package_photo_mime", { length: 64 }),
+    packageTelegramFileId: varchar("package_telegram_file_id", { length: 255 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_nutrition_products_user").on(table.userId, table.name),
+    check("nutrition_products_unit_check", sql`${table.unit} IN ('g', 'ml')`),
+    check(
+      "nutrition_products_calories_range",
+      sql`${table.caloriesPer100} >= 0 AND ${table.caloriesPer100} <= 900`,
+    ),
+    check(
+      "nutrition_products_proteins_range",
+      sql`${table.proteinsPer100G} >= 0 AND ${table.proteinsPer100G} <= 100`,
+    ),
+    check(
+      "nutrition_products_fats_range",
+      sql`${table.fatsPer100G} >= 0 AND ${table.fatsPer100G} <= 100`,
+    ),
+    check(
+      "nutrition_products_carbs_range",
+      sql`${table.carbsPer100G} >= 0 AND ${table.carbsPer100G} <= 100`,
+    ),
+  ],
+);
+
 // ─── Support Reports ────────────────────────────────────────────────────────
 
 export const supportReports = pgTable(

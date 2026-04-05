@@ -64,6 +64,13 @@
       "when": 1775300000000,
       "tag": "0008_add_other_category",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1775400000000,
+      "tag": "0009_add_nutrition_products",
+      "breakpoints": true
     }
   ]
 }
