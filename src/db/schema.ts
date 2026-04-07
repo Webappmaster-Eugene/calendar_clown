@@ -991,6 +991,7 @@ export const nutritionAnalyses = pgTable(
     summaryText: text("summary_text"),
     modelUsed: varchar("model_used", { length: 100 }),
     status: varchar("status", { length: 20 }).notNull().default("pending"),
+    source: varchar("source", { length: 20 }).notNull().default("photo"),
     errorMessage: text("error_message"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     analyzedAt: timestamp("analyzed_at", { withTimezone: true }),

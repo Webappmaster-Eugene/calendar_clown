@@ -12,6 +12,7 @@ import { handleExpenseText } from "./commands/addExpense.js";
 import { handleReportButton, handleReportCallback, handleComparisonButton, handleStatsButton } from "./commands/expenseReport.js";
 import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.js";
 import { handleUndoCallback } from "./commands/expenseUndo.js";
+import { handleRecentButton, handleRecentCallback } from "./commands/expenseRecent.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput, handleOnboardRequest } from "./commands/admin.js";
 import { handleStatsCommand } from "./commands/adminStats.js";
 import { handleSummaryCallback } from "./commands/adminSummary.js";
@@ -257,6 +258,9 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^excel:/, handleExcelCallback);
   bot.action(/^admin:/, handleAdminCallback);
   bot.action(/^undo:/, handleUndoCallback);
+  bot.action(/^rdel:/, handleRecentCallback);
+  bot.action(/^rdel_y:/, handleRecentCallback);
+  bot.action("recent:refresh", handleRecentCallback);
   bot.action(/^cancel_recurring:/, handleCancelRecurringCallback);
   bot.action(/^notable_page:/, handleNotableDatesPageCallback);
   bot.action(/^notable_delete:/, handleNotableDateDeleteCallback);
@@ -604,6 +608,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("📋 Категории", expenseOnlyHandler(handleCategoriesButton));
   bot.hears("📈 Сравнение", expenseOnlyHandler(handleComparisonButton));
   bot.hears("👥 Статистика", expenseOnlyHandler(handleStatsButton));
+  bot.hears("🕐 Последние", expenseOnlyHandler(handleRecentButton));
 
   // Digest mode buttons
   bot.hears("📋 Мои рубрики", handleRubricsButton);

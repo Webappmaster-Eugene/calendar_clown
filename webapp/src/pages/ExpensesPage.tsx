@@ -9,6 +9,7 @@ import type {
   MonthComparisonDto,
   UserTotalDto,
   YearReportMonthDto,
+  RecentExpenseDto,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
@@ -19,7 +20,7 @@ const RU_MONTHS = [
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
 
-type ExpenseTab = "report" | "comparison" | "stats" | "year";
+type ExpenseTab = "report" | "comparison" | "stats" | "year" | "recent";
 
 interface DrilldownExpense {
   id: number;
@@ -73,6 +74,12 @@ export function ExpensesPage() {
     queryKey: ["expenses", "year", yearForYearTab],
     queryFn: () => api.get<YearReportMonthDto[]>(`/api/expenses/year?year=${yearForYearTab}`),
     enabled: tab === "year",
+  });
+
+  const { data: recentData, isLoading: recentLoading } = useQuery({
+    queryKey: ["expenses", "recent"],
+    queryFn: () => api.get<RecentExpenseDto[]>("/api/expenses/recent?limit=15"),
+    enabled: tab === "recent",
   });
 
   // ─── Mutations ────────────────────────────────────────────
@@ -131,7 +138,7 @@ export function ExpensesPage() {
     );
   }
 
-  if (reportLoading && tab !== "year") return <div className="loading">Загрузка...</div>;
+  if (reportLoading && tab !== "year" && tab !== "recent") return <div className="loading">Загрузка...</div>;
   if (reportError) return <div className="page"><div className="error-msg">{(reportError as Error).message}</div></div>;
 
   const total = report?.total ?? 0;
@@ -177,19 +184,19 @@ export function ExpensesPage() {
 
       {/* Tabs */}
       <div className="tabs tabs--scroll">
-        {(["report", "comparison", "stats", "year"] as const).map((t) => (
+        {(["report", "comparison", "stats", "year", "recent"] as const).map((t) => (
           <button
             key={t}
             className={`tab${tab === t ? " active" : ""}`}
             onClick={() => setTab(t)}
           >
-            {t === "report" ? "Отчёт" : t === "comparison" ? "Сравнение" : t === "stats" ? "Статистика" : "За год"}
+            {t === "report" ? "Отчёт" : t === "comparison" ? "Сравнение" : t === "stats" ? "Статистика" : t === "year" ? "За год" : "Последние"}
           </button>
         ))}
       </div>
 
       {/* Month navigator (for report/comparison/stats) */}
-      {tab !== "year" && (
+      {tab !== "year" && tab !== "recent" && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <button className="btn btn-small" onClick={() => goMonth(-1)}>◀</button>
           <span style={{ fontWeight: 600, fontSize: 15 }}>
@@ -230,6 +237,9 @@ export function ExpensesPage() {
           onMonthClick={(m) => { setMonth(m); setYear(yearForYearTab); setTab("report"); }}
           currentYear={now.getFullYear()}
         />
+      )}
+      {tab === "recent" && (
+        <RecentView data={recentData ?? []} isLoading={recentLoading} />
       )}
 
       {/* FAB form */}
@@ -558,6 +568,75 @@ function YearView({
         </>
       )}
     </>
+  );
+}
+
+// ─── Recent View ────────────────────────────────────────────
+
+function RecentView({
+  data,
+  isLoading,
+}: {
+  data: RecentExpenseDto[];
+  isLoading: boolean;
+}) {
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.del<void>(`/api/expenses/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    },
+  });
+
+  if (isLoading) return <div className="loading">Загрузка...</div>;
+
+  if (data.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-text">Нет записей</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="list">
+      {data.map((exp) => (
+        <div key={exp.id} className="list-item">
+          <span className="list-item-emoji">{exp.categoryEmoji}</span>
+          <div className="list-item-content">
+            <div className="list-item-title">
+              {exp.amount.toLocaleString("ru-RU")} ₽
+              {exp.subcategory ? ` — ${exp.subcategory}` : ""}
+            </div>
+            <div className="list-item-hint">
+              {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU", {
+                day: "2-digit",
+                month: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </div>
+          </div>
+          {exp.isOwn && (
+            <div className="list-item-actions">
+              <button
+                className="btn btn-icon btn-danger"
+                onClick={() => {
+                  if (confirm("Удалить эту запись?")) {
+                    deleteMutation.mutate(exp.id);
+                  }
+                }}
+                disabled={deleteMutation.isPending}
+                title="Удалить"
+              >
+                🗑️
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 

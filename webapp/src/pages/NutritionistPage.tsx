@@ -10,12 +10,13 @@ import type {
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import { NutritionistCatalog } from "./NutritionistCatalog";
+import { NutritionistCalculator } from "./NutritionistCalculator";
 import { CopyButton } from "../components/ui/CopyButton";
 import { ShareButton } from "../components/ui/ShareButton";
 
 const PAGE_SIZE = 10;
 
-type NutritionistTab = "analyze" | "catalog";
+type NutritionistTab = "analyze" | "catalog" | "calculator";
 
 export function NutritionistPage() {
   useClosingConfirmation();
@@ -27,22 +28,31 @@ export function NutritionistPage() {
 
       <div className="tabs" style={{ marginBottom: 12 }}>
         <button
-          className={`tab ${tab === "analyze" ? "tab-active" : ""}`}
+          className={`tab ${tab === "analyze" ? "active" : ""}`}
           onClick={() => setTab("analyze")}
           type="button"
         >
           📷 Анализ
         </button>
         <button
-          className={`tab ${tab === "catalog" ? "tab-active" : ""}`}
+          className={`tab ${tab === "catalog" ? "active" : ""}`}
           onClick={() => setTab("catalog")}
           type="button"
         >
           📦 Каталог
         </button>
+        <button
+          className={`tab ${tab === "calculator" ? "active" : ""}`}
+          onClick={() => setTab("calculator")}
+          type="button"
+        >
+          🧮 Калькулятор
+        </button>
       </div>
 
-      {tab === "analyze" ? <AnalyzeSection onGoToCatalog={() => setTab("catalog")} /> : <NutritionistCatalog />}
+      {tab === "analyze" && <AnalyzeSection onGoToCatalog={() => setTab("catalog")} />}
+      {tab === "catalog" && <NutritionistCatalog />}
+      {tab === "calculator" && <NutritionistCalculator onGoToCatalog={() => setTab("catalog")} />}
     </div>
   );
 }
@@ -239,9 +249,9 @@ function AnalyzeSection({ onGoToCatalog }: { onGoToCatalog: () => void }) {
                   onClick={() => a.status === "completed" && setExpandedId(isExpanded ? null : a.id)}
                 >
                   <span className="card-hint" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
-                    {a.status === "completed" ? "✅" : a.status === "failed" ? "❌" : "⏳"}{" "}
+                    {a.status === "completed" ? (a.source === "manual" ? "🧮" : "✅") : a.status === "failed" ? "❌" : "⏳"}{" "}
                     {a.dishType}
-                    {a.status === "completed" && confidenceBadge(a.confidence)}
+                    {a.status === "completed" && a.source !== "manual" && confidenceBadge(a.confidence)}
                     {a.status === "completed" && (
                       <span style={{ fontSize: 11, opacity: 0.6 }}>{isExpanded ? "▲" : "▼"}</span>
                     )}
@@ -330,7 +340,7 @@ function AnalysisCard({ analysis, compact = false }: { analysis: NutritionAnalys
         <div key={i} style={{ marginBottom: 6 }}>
           <div style={{ fontWeight: 500, fontSize: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span>
-              {item.name} ({item.cookingMethod}) — {item.weightG}г
+              {item.name}{analysis.source !== "manual" ? ` (${item.cookingMethod})` : ""} — {item.weightG}г
             </span>
             {item.matchedProductId != null && (
               <span
@@ -366,10 +376,18 @@ function AnalysisCard({ analysis, compact = false }: { analysis: NutritionAnalys
         fontWeight: 600,
         fontSize: 14,
       }}>
-        Итого: {analysis.total.weightG}г — {analysis.total.calories} ккал |
+        {analysis.servings && analysis.servings > 1 && analysis.totalBeforeDivision && (
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>
+            <span className="card-hint">Всего ({analysis.servings} порций):</span>{" "}
+            {analysis.totalBeforeDivision.weightG}г — {analysis.totalBeforeDivision.calories} ккал |
+            Б {analysis.totalBeforeDivision.proteinsG}г | Ж {analysis.totalBeforeDivision.fatsG}г | У {analysis.totalBeforeDivision.carbsG}г
+          </div>
+        )}
+        {analysis.servings && analysis.servings > 1 ? "На 1 порцию: " : "Итого: "}
+        {analysis.total.weightG}г — {analysis.total.calories} ккал |
         Б {analysis.total.proteinsG}г | Ж {analysis.total.fatsG}г | У {analysis.total.carbsG}г
       </div>
-      {!compact && (
+      {!compact && analysis.source !== "manual" && (
         <div style={{ marginTop: 6 }}>
           {confidenceBadge(analysis.confidence)}
         </div>
@@ -409,19 +427,25 @@ function AnalysisCard({ analysis, compact = false }: { analysis: NutritionAnalys
  * same readable output.
  */
 function serializeAnalysis(a: NutritionAnalysisDto): string {
+  const isManual = a.source === "manual";
   const lines: string[] = [];
-  lines.push("🥗 Анализ еды");
+  lines.push(isManual ? `🧮 ${a.dishType}` : "🥗 Анализ еды");
   lines.push("");
-  lines.push(`Блюдо: ${a.dishType}`);
-  const confLabel =
-    a.confidence === "high" ? "высокая" : a.confidence === "medium" ? "средняя" : "низкая";
-  lines.push(`Уверенность: ${confLabel}`);
-  lines.push("");
-  lines.push("📦 Продукты:");
+
+  if (!isManual) {
+    lines.push(`Блюдо: ${a.dishType}`);
+    const confLabel =
+      a.confidence === "high" ? "высокая" : a.confidence === "medium" ? "средняя" : "низкая";
+    lines.push(`Уверенность: ${confLabel}`);
+    lines.push("");
+  }
+
+  lines.push(isManual ? "Продукты:" : "📦 Продукты:");
   a.items.forEach((item, i) => {
     const matched = item.matchedProductId ? " 🎯" : "";
+    const method = isManual ? "" : ` (${item.cookingMethod})`;
     lines.push(
-      `${i + 1}. ${item.name}${matched} (${item.cookingMethod}) — ${item.weightG}г`,
+      `${i + 1}. ${item.name}${matched}${method} — ${item.weightG}г`,
     );
     lines.push(
       `   🔥 ${item.calories} ккал | Б ${item.proteinsG}г | Ж ${item.fatsG}г | У ${item.carbsG}г`,
@@ -429,7 +453,17 @@ function serializeAnalysis(a: NutritionAnalysisDto): string {
   });
   lines.push("");
   lines.push("━━━━━━━━━━━━━━━━━━━");
-  lines.push(`📊 Итого: ${a.total.weightG}г`);
+
+  if (a.servings && a.servings > 1 && a.totalBeforeDivision) {
+    lines.push(`📊 Всего (${a.servings} порций): ${a.totalBeforeDivision.weightG}г`);
+    lines.push(
+      `🔥 ${a.totalBeforeDivision.calories} ккал | Б ${a.totalBeforeDivision.proteinsG}г | Ж ${a.totalBeforeDivision.fatsG}г | У ${a.totalBeforeDivision.carbsG}г`,
+    );
+    lines.push("");
+    lines.push(`📊 На 1 порцию: ${a.total.weightG}г`);
+  } else {
+    lines.push(`📊 Итого: ${a.total.weightG}г`);
+  }
   lines.push(
     `🔥 ${a.total.calories} ккал | Б ${a.total.proteinsG}г | Ж ${a.total.fatsG}г | У ${a.total.carbsG}г`,
   );

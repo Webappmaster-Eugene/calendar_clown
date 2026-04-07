@@ -9,6 +9,7 @@ import {
   addExpenseFromText,
   addExpenseStructured,
   getCategoryDrilldown,
+  getRecentExpenses,
 } from "../../services/expenseService.js";
 import type { UpdateExpenseRequest } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
@@ -231,6 +232,21 @@ app.get("/categories", async (c) => {
     return c.json({ ok: true, data: categories });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get categories";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/expenses/recent — last N expenses across tribe */
+app.get("/recent", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "15", 10), 50);
+
+  try {
+    const data = await getRecentExpenses(telegramId, limit);
+    return c.json({ ok: true, data });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get recent expenses";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

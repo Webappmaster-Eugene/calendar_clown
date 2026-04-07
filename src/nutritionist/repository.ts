@@ -15,6 +15,7 @@ export interface NutritionAnalysis {
   summaryText: string | null;
   modelUsed: string | null;
   status: string;
+  source: string;
   errorMessage: string | null;
   createdAt: Date;
   analyzedAt: Date | null;
@@ -29,6 +30,7 @@ interface NutritionAnalysisRow {
   summary_text: string | null;
   model_used: string | null;
   status: string;
+  source: string;
   error_message: string | null;
   created_at: Date;
   analyzed_at: Date | null;
@@ -44,6 +46,7 @@ function mapRow(row: NutritionAnalysisRow): NutritionAnalysis {
     summaryText: row.summary_text,
     modelUsed: row.model_used,
     status: row.status,
+    source: row.source,
     errorMessage: row.error_message,
     createdAt: row.created_at,
     analyzedAt: row.analyzed_at,
@@ -108,6 +111,22 @@ export async function markAnalysisFailed(
   );
 }
 
+/** Insert a completed manual calculation (no AI, no pending phase). */
+export async function createManualAnalysis(
+  userId: number,
+  nutritionData: Record<string, unknown>,
+  summaryText: string,
+): Promise<NutritionAnalysis> {
+  const { rows } = await query<NutritionAnalysisRow>(
+    `INSERT INTO nutrition_analyses
+       (user_id, source, status, nutrition_data, summary_text, analyzed_at)
+     VALUES ($1, 'manual', 'completed', $2, $3, NOW())
+     RETURNING *`,
+    [userId, JSON.stringify(nutritionData), summaryText],
+  );
+  return mapRow(rows[0]);
+}
+
 // ─── History Queries ────────────────────────────────────────────
 
 /** Get paginated analyses for a user (newest first). */
@@ -135,11 +154,13 @@ export async function countAnalyses(userId: number): Promise<number> {
   return parseInt(rows[0].count, 10);
 }
 
-/** Count analyses for a user created today (MSK timezone). */
+/** Count photo-based analyses for a user created today (MSK timezone).
+ *  Manual calculations are excluded — they don't consume the daily AI limit. */
 export async function countAnalysesToday(userId: number): Promise<number> {
   const { rows } = await query<{ count: string }>(
     `SELECT COUNT(*) AS count FROM nutrition_analyses
      WHERE user_id = $1
+       AND source = 'photo'
        AND created_at >= (NOW() AT TIME ZONE 'Europe/Moscow')::date AT TIME ZONE 'Europe/Moscow'`,
     [userId],
   );

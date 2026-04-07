@@ -8,7 +8,9 @@ import {
   removeAnalysis,
   analyzePhoto,
   getDailySummary,
+  saveManualCalculation,
 } from "../../services/nutritionistService.js";
+import type { ManualCalcRequest } from "../../shared/types.js";
 import { TIMEZONE_MSK } from "../../constants.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
@@ -52,6 +54,26 @@ app.get("/daily", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get daily summary";
     return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** POST /api/nutritionist/manual — save manual KBZHU calculation */
+app.post("/manual", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  try {
+    const body = await c.req.json<ManualCalcRequest>();
+    const result = await saveManualCalculation(telegramId, body);
+    logApiAction(telegramId, "nutritionist_manual_calc", {
+      itemsCount: body.items.length,
+      servings: body.servings ?? 1,
+    });
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Ошибка при сохранении расчёта";
+    log.error("Manual calc error for user %d: %s", telegramId, msg);
+    return c.json({ ok: false, error: msg }, 400);
   }
 });
 

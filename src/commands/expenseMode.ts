@@ -189,7 +189,7 @@ export function getExpenseKeyboard(isAdmin: boolean) {
   return Markup.keyboard([
     ["📊 Отчёт", "📥 Excel"],
     ["📋 Категории", "📈 Сравнение"],
-    ["👥 Статистика"],
+    ["👥 Статистика", "🕐 Последние"],
     ...getModeButtons(isAdmin),
   ]).resize();
 }

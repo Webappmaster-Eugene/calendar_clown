@@ -4,6 +4,7 @@
  */
 import {
   createAnalysis,
+  createManualAnalysis,
   markAnalysisProcessing,
   markAnalysisCompleted,
   markAnalysisFailed,
@@ -52,12 +53,14 @@ import {
 import { createLogger } from "../utils/logger.js";
 import type {
   NutritionAnalysisDto,
+  NutritionAnalysisSource,
   NutritionistHistoryResponse,
   NutritionDailySummaryDto,
   NutritionFoodItemDto,
   NutritionTotalDto,
   NutritionProductDto,
   NutritionProductsListResponse,
+  ManualCalcRequest,
 } from "../shared/types.js";
 
 const log = createLogger("nutritionist-service");
@@ -147,16 +150,30 @@ function normalizeForMatch(value: string): string {
   return value.trim().toLowerCase().replace(/[«»"'`]/g, "").replace(/\s+/g, " ");
 }
 
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
 function toDto(row: {
   id: number;
   nutritionData: Record<string, unknown> | null;
   summaryText: string | null;
   status: string;
+  source?: string;
   errorMessage: string | null;
   createdAt: Date;
   analyzedAt: Date | null;
 }): NutritionAnalysisDto {
-  const data = (row.nutritionData ?? {}) as unknown as NutritionResult;
+  const data = (row.nutritionData ?? {}) as unknown as NutritionResult & {
+    servings?: number;
+    total_before_division?: {
+      weight_g: number;
+      calories: number;
+      proteins_g: number;
+      fats_g: number;
+      carbs_g: number;
+    };
+  };
   const parsed = nutritionResultToDto({
     items: Array.isArray(data.items) ? data.items : [],
     total: data.total ?? { weight_g: 0, calories: 0, proteins_g: 0, fats_g: 0, carbs_g: 0 },
@@ -164,6 +181,20 @@ function toDto(row: {
     meal_assessment: data.meal_assessment ?? "",
     confidence: data.confidence ?? "medium",
   });
+
+  const source: NutritionAnalysisSource = row.source === "manual" ? "manual" : "photo";
+  const servings = typeof data.servings === "number" && data.servings > 1
+    ? data.servings
+    : undefined;
+  const totalBeforeDivision = servings && data.total_before_division
+    ? {
+        weightG: data.total_before_division.weight_g,
+        calories: data.total_before_division.calories,
+        proteinsG: data.total_before_division.proteins_g,
+        fatsG: data.total_before_division.fats_g,
+        carbsG: data.total_before_division.carbs_g,
+      }
+    : undefined;
 
   return {
     id: row.id,
@@ -173,6 +204,9 @@ function toDto(row: {
     errorMessage: row.errorMessage,
     createdAt: row.createdAt.toISOString(),
     analyzedAt: row.analyzedAt?.toISOString() ?? null,
+    source,
+    ...(servings ? { servings } : {}),
+    ...(totalBeforeDivision ? { totalBeforeDivision } : {}),
   };
 }
 
@@ -631,6 +665,118 @@ export async function getProductPhoto(
   }
 }
 
+// ─── Manual Calculator ──────────────────────────────────────────
+
+/** Save a manual KBZHU calculation (no AI). */
+export async function saveManualCalculation(
+  telegramId: number,
+  input: ManualCalcRequest,
+): Promise<NutritionAnalysisDto> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+
+  // ── Validation ──
+  if (!input.items || input.items.length === 0) {
+    throw new Error("Нужно добавить хотя бы один продукт.");
+  }
+  if (input.items.length > 50) {
+    throw new Error("Максимум 50 продуктов в одном расчёте.");
+  }
+
+  const servings = input.servings ?? 1;
+  if (!Number.isInteger(servings) || servings < 1 || servings > 999) {
+    throw new Error("Количество порций должно быть целым числом от 1 до 999.");
+  }
+
+  for (const item of input.items) {
+    if (!item.name || item.name.trim().length === 0) {
+      throw new Error("Название продукта обязательно.");
+    }
+    if (!Number.isFinite(item.weightG) || item.weightG <= 0 || item.weightG > 10000) {
+      throw new Error(`Некорректный вес для "${item.name.trim()}". Допустимо: 0.1–10000г.`);
+    }
+    if (!Number.isFinite(item.caloriesPer100) || item.caloriesPer100 < 0 || item.caloriesPer100 > 900) {
+      throw new Error(`Некорректные калории для "${item.name.trim()}". Допустимо: 0–900.`);
+    }
+    if (!Number.isFinite(item.proteinsPer100G) || item.proteinsPer100G < 0 || item.proteinsPer100G > 100) {
+      throw new Error(`Некорректные белки для "${item.name.trim()}". Допустимо: 0–100.`);
+    }
+    if (!Number.isFinite(item.fatsPer100G) || item.fatsPer100G < 0 || item.fatsPer100G > 100) {
+      throw new Error(`Некорректные жиры для "${item.name.trim()}". Допустимо: 0–100.`);
+    }
+    if (!Number.isFinite(item.carbsPer100G) || item.carbsPer100G < 0 || item.carbsPer100G > 100) {
+      throw new Error(`Некорректные углеводы для "${item.name.trim()}". Допустимо: 0–100.`);
+    }
+  }
+
+  // ── Calculate KBZHU per item ──
+  const items: FoodItem[] = input.items.map((item) => {
+    const factor = item.weightG / 100;
+    return {
+      name: item.name.trim(),
+      weight_g: round1(item.weightG),
+      calories: Math.round(item.caloriesPer100 * factor),
+      proteins_g: round1(item.proteinsPer100G * factor),
+      fats_g: round1(item.fatsPer100G * factor),
+      carbs_g: round1(item.carbsPer100G * factor),
+      cooking_method: "—",
+      ...(item.catalogProductId !== undefined
+        ? { matched_product_id: item.catalogProductId }
+        : {}),
+    };
+  });
+
+  // ── Totals ──
+  const fullTotal = {
+    weight_g: round1(items.reduce((s, i) => s + i.weight_g, 0)),
+    calories: items.reduce((s, i) => s + i.calories, 0),
+    proteins_g: round1(items.reduce((s, i) => s + i.proteins_g, 0)),
+    fats_g: round1(items.reduce((s, i) => s + i.fats_g, 0)),
+    carbs_g: round1(items.reduce((s, i) => s + i.carbs_g, 0)),
+  };
+
+  const perServingTotal = servings > 1
+    ? {
+        weight_g: round1(fullTotal.weight_g / servings),
+        calories: Math.round(fullTotal.calories / servings),
+        proteins_g: round1(fullTotal.proteins_g / servings),
+        fats_g: round1(fullTotal.fats_g / servings),
+        carbs_g: round1(fullTotal.carbs_g / servings),
+      }
+    : fullTotal;
+
+  const mealName = input.mealName?.trim() || "Ручной расчёт";
+
+  const nutritionData: Record<string, unknown> = {
+    items,
+    total: perServingTotal,
+    dish_type: mealName,
+    meal_assessment: "",
+    confidence: "high",
+    servings,
+    ...(servings > 1 ? { total_before_division: fullTotal } : {}),
+  };
+
+  const summaryText = formatManualSummaryText(
+    items,
+    perServingTotal,
+    fullTotal,
+    servings,
+    mealName,
+  );
+
+  const record = await createManualAnalysis(dbUser.id, nutritionData, summaryText);
+
+  return toDto({
+    ...record,
+    nutritionData,
+    summaryText,
+    status: "completed",
+    source: "manual",
+    analyzedAt: new Date(),
+  });
+}
+
 // ─── Formatting ─────────────────────────────────────────────────
 
 /** Format a human-readable summary of the nutrition analysis. */
@@ -658,6 +804,50 @@ function formatSummaryText(result: NutritionResult): string {
   );
   lines.push("");
   lines.push(result.meal_assessment);
+
+  return lines.join("\n");
+}
+
+/** Format a human-readable summary of a manual KBZHU calculation. */
+function formatManualSummaryText(
+  items: FoodItem[],
+  perServingTotal: NutritionResult["total"],
+  fullTotal: NutritionResult["total"],
+  servings: number,
+  mealName: string,
+): string {
+  const lines: string[] = [];
+  lines.push(`🧮 ${mealName}`);
+  lines.push("");
+
+  for (const item of items) {
+    lines.push(
+      `• ${item.name} — ${item.weight_g}г: ` +
+      `${item.calories} ккал | Б ${item.proteins_g}г | Ж ${item.fats_g}г | У ${item.carbs_g}г`,
+    );
+  }
+
+  lines.push("");
+
+  if (servings > 1) {
+    lines.push(
+      `Всего (${servings} порций): ${fullTotal.weight_g}г — ` +
+      `${fullTotal.calories} ккал | Б ${fullTotal.proteins_g}г | ` +
+      `Ж ${fullTotal.fats_g}г | У ${fullTotal.carbs_g}г`,
+    );
+    lines.push("");
+    lines.push(
+      `На 1 порцию: ${perServingTotal.weight_g}г — ` +
+      `${perServingTotal.calories} ккал | Б ${perServingTotal.proteins_g}г | ` +
+      `Ж ${perServingTotal.fats_g}г | У ${perServingTotal.carbs_g}г`,
+    );
+  } else {
+    lines.push(
+      `Итого: ${perServingTotal.weight_g}г — ` +
+      `${perServingTotal.calories} ккал | Б ${perServingTotal.proteins_g}г | ` +
+      `Ж ${perServingTotal.fats_g}г | У ${perServingTotal.carbs_g}г`,
+    );
+  }
 
   return lines.join("\n");
 }

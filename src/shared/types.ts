@@ -202,6 +202,18 @@ export interface UpdateExpenseRequest {
   subcategory?: string | null;
 }
 
+export interface RecentExpenseDto {
+  id: number;
+  categoryId: number;
+  categoryName: string;
+  categoryEmoji: string;
+  subcategory: string | null;
+  amount: number;
+  firstName: string;
+  createdAt: string;
+  isOwn: boolean;
+}
+
 export interface YearReportMonthDto {
   month: number;
   total: number;
@@ -879,6 +891,7 @@ export interface SimplifierHistoryResponse {
 // ─── Nutritionist ──────────────────────────────────────────────
 
 export type NutritionAnalysisStatus = "pending" | "processing" | "completed" | "failed";
+export type NutritionAnalysisSource = "photo" | "manual";
 
 export interface NutritionFoodItemDto {
   name: string;
@@ -917,6 +930,11 @@ export interface NutritionAnalysisDto {
   errorMessage: string | null;
   createdAt: string;
   analyzedAt: string | null;
+  source: NutritionAnalysisSource;
+  /** Number of servings (recipe mode). Only present when > 1. */
+  servings?: number;
+  /** Full recipe totals before division by servings. Only present when servings > 1. */
+  totalBeforeDivision?: NutritionTotalDto;
 }
 
 export interface NutritionistHistoryResponse {
@@ -955,6 +973,24 @@ export interface NutritionProductsListResponse {
   limit: number;
   offset: number;
   maxAllowed: number;
+}
+
+// ─── Nutritionist: Manual Calculator ────────────────────────────────
+
+export interface ManualCalcItemInput {
+  name: string;
+  weightG: number;
+  caloriesPer100: number;
+  proteinsPer100G: number;
+  fatsPer100G: number;
+  carbsPer100G: number;
+  catalogProductId?: number;
+}
+
+export interface ManualCalcRequest {
+  mealName?: string;
+  items: ManualCalcItemInput[];
+  servings?: number;
 }
 
 // ─── Action Logs Viewer ──────────────────────────────────────

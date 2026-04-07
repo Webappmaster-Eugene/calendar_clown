@@ -20,6 +20,7 @@ import {
   getCategories,
   updateExpense,
   getExpenseById,
+  getExpensesPaginated,
 } from "../expenses/repository.js";
 import {
   formatExpenseConfirmation,
@@ -42,6 +43,7 @@ import type {
   UserTotalDto,
   MonthComparisonDto,
   ExpenseReportDto,
+  RecentExpenseDto,
 } from "../shared/types.js";
 
 const log = createLogger("expense-service");
@@ -603,4 +605,31 @@ export async function getCategoryDrilldown(
     categoryName: cat?.categoryName ?? "Категория",
     categoryEmoji: cat?.categoryEmoji ?? "📦",
   };
+}
+
+/**
+ * Get the most recent expenses across the entire tribe (regardless of month/category).
+ */
+export async function getRecentExpenses(
+  telegramId: number,
+  limit: number = 15
+): Promise<RecentExpenseDto[]> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  if (!dbUser.tribeId) throw new Error("Нет трайба.");
+
+  const clamped = Math.min(Math.max(limit, 1), 50);
+  const expenses = await getExpensesPaginated(dbUser.tribeId, clamped, 0);
+
+  return expenses.map((e) => ({
+    id: e.id,
+    categoryId: e.categoryId,
+    categoryName: e.categoryName,
+    categoryEmoji: e.categoryEmoji,
+    subcategory: e.subcategory,
+    amount: e.amount,
+    firstName: e.firstName,
+    createdAt: e.createdAt.toISOString(),
+    isOwn: e.userId === dbUser.id,
+  }));
 }
