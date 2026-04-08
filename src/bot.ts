@@ -185,6 +185,11 @@ import {
   handleNutritionistHistoryButton,
   handleNutritionistCallback,
   handleNutritionistProductsButton,
+  handleNutritionistSubModeSwitch,
+  handleCalcAddManual,
+  handleCalcAddFromCatalog,
+  handleCalcShowTotals,
+  handleCalcSave,
 } from "./commands/nutritionistMode.js";
 
 export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
@@ -631,6 +636,26 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
   });
 
+  // Nutritionist sub-mode tabs
+  bot.hears("📷 Анализ", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleNutritionistSubModeSwitch(ctx, "analysis");
+    }
+  });
+  bot.hears("📦 Каталог", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleNutritionistSubModeSwitch(ctx, "catalog");
+    }
+  });
+  bot.hears("🧮 Калькулятор", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleNutritionistSubModeSwitch(ctx, "calculator");
+    }
+  });
+
   // Nutritionist mode buttons
   bot.hears("📊 За сегодня", async (ctx) => {
     const tid = ctx.from?.id;
@@ -642,6 +667,32 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     const tid = ctx.from?.id;
     if (tid != null && await isNutritionistMode(tid)) {
       await handleNutritionistProductsButton(ctx);
+    }
+  });
+
+  // Nutritionist calculator buttons
+  bot.hears("➕ Добавить вручную", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleCalcAddManual(ctx);
+    }
+  });
+  bot.hears("📦 Из каталога", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleCalcAddFromCatalog(ctx);
+    }
+  });
+  bot.hears("📊 Итого", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleCalcShowTotals(ctx);
+    }
+  });
+  bot.hears("💾 Сохранить", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNutritionistMode(tid)) {
+      await handleCalcSave(ctx);
     }
   });
 
