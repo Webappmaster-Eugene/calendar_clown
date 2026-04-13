@@ -198,7 +198,11 @@ async function main(): Promise<void> {
 
   // Configure bot commands and menu button before launch() —
   // launch() may block while connecting through proxy
-  await bot.telegram.setMyCommands(commands);
+  try {
+    await bot.telegram.setMyCommands(commands);
+  } catch (err) {
+    log.warn("Failed to set bot commands: %s", err instanceof Error ? err.message : err);
+  }
 
   const webappUrl = process.env.WEBAPP_URL?.trim();
   if (webappUrl) {
@@ -214,8 +218,28 @@ async function main(): Promise<void> {
     log.warn("WEBAPP_URL not set — Mini App menu button and addToHomeScreen() will not work.");
   }
 
-  await bot.launch();
-  log.info("Bot started (long polling)");
+  const MAX_RETRIES = 5;
+  const BASE_DELAY_MS = 5_000;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await bot.launch();
+      log.info("Bot started (long polling)");
+      break;
+    } catch (err) {
+      if (attempt === MAX_RETRIES) {
+        throw err;
+      }
+      const delay = BASE_DELAY_MS * 2 ** (attempt - 1);
+      log.warn(
+        "Bot launch attempt %d/%d failed: %s. Retrying in %ds...",
+        attempt, MAX_RETRIES,
+        err instanceof Error ? err.message : err,
+        delay / 1000,
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
 
   const shutdown = async (signal: string) => {
     log.info(`${signal} received, shutting down...`);
