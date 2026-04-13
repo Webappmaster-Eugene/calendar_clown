@@ -1,11 +1,11 @@
 import { TIMEZONE_MSK } from "../constants.js";
 
-/** Get current year and month in Moscow timezone. */
-export function getMskNow(): { year: number; month: number } {
+/** Get current year, month, and day in Moscow timezone. */
+export function getMskNow(): { year: number; month: number; day: number } {
   const now = new Date();
   const mskStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
-  const [year, month] = mskStr.split("-").map(Number);
-  return { year, month };
+  const [year, month, day] = mskStr.split("-").map(Number);
+  return { year, month, day };
 }
 
 /** Get Date range for a given month: [from, to). */

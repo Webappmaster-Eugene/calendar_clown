@@ -44,6 +44,7 @@ import type {
   MonthComparisonDto,
   ExpenseReportDto,
   RecentExpenseDto,
+  ComparisonDrilldownDto,
 } from "../shared/types.js";
 
 const log = createLogger("expense-service");
@@ -355,6 +356,10 @@ export async function getMonthReport(
   const dbUser = await requireDbUser(telegramId);
   if (!dbUser.tribeId) throw new Error("Нет трайба.");
 
+  const mskNow = getMskNow();
+  const isCurrentMonth = year === mskNow.year && month === mskNow.month;
+  const comparisonDay = isCurrentMonth ? mskNow.day : undefined;
+
   const { from, to } = getMonthRange(year, month);
   const [totals, userTotals, prevComparison] = await Promise.all([
     getCategoryTotals(dbUser.tribeId, from, to),
@@ -364,7 +369,8 @@ export async function getMonthReport(
       month === 1 ? year - 1 : year,
       month === 1 ? 12 : month - 1,
       year,
-      month
+      month,
+      comparisonDay
     ),
   ]);
 
@@ -396,6 +402,7 @@ export async function getMonthReport(
       currTotal: c.currTotal,
       diff: c.diff,
     })),
+    comparisonDay,
   };
 }
 
@@ -604,6 +611,67 @@ export async function getCategoryDrilldown(
     total,
     categoryName: cat?.categoryName ?? "Категория",
     categoryEmoji: cat?.categoryEmoji ?? "📦",
+  };
+}
+
+/**
+ * Get comparison drilldown: individual expenses for a category from both current and previous month.
+ */
+export async function getComparisonDrilldown(
+  telegramId: number,
+  categoryId: number,
+  year: number,
+  month: number,
+  pageSize: number = 20,
+  offset: number = 0
+): Promise<ComparisonDrilldownDto> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  if (!dbUser.tribeId) throw new Error("Нет трайба.");
+
+  const mskNow = getMskNow();
+  const isCurrentMonth = year === mskNow.year && month === mskNow.month;
+  const comparisonDay = isCurrentMonth ? mskNow.day : undefined;
+
+  const prevYear = month === 1 ? year - 1 : year;
+  const prevMonth = month === 1 ? 12 : month - 1;
+
+  const currFrom = new Date(Date.UTC(year, month - 1, 1));
+  const currTo = comparisonDay
+    ? new Date(Date.UTC(year, month - 1, comparisonDay + 1))
+    : new Date(Date.UTC(year, month, 1));
+
+  const prevFrom = new Date(Date.UTC(prevYear, prevMonth - 1, 1));
+  const prevTo = comparisonDay
+    ? new Date(Date.UTC(prevYear, prevMonth - 1, comparisonDay + 1))
+    : new Date(Date.UTC(prevYear, prevMonth, 1));
+
+  const [prevCount, currCount, prevExpenses, currExpenses, cats] = await Promise.all([
+    countExpensesByCategory(dbUser.tribeId, categoryId, prevFrom, prevTo),
+    countExpensesByCategory(dbUser.tribeId, categoryId, currFrom, currTo),
+    getExpensesByCategory(dbUser.tribeId, categoryId, prevFrom, prevTo, pageSize, offset),
+    getExpensesByCategory(dbUser.tribeId, categoryId, currFrom, currTo, pageSize, offset),
+    getCategoryTotals(dbUser.tribeId, currFrom, currTo),
+  ]);
+
+  const cat = cats.find((c) => c.categoryId === categoryId);
+  const mapExpenses = (list: typeof prevExpenses) =>
+    list.map((e) => ({
+      id: e.id,
+      subcategory: e.subcategory,
+      amount: e.amount,
+      firstName: e.firstName,
+      createdAt: e.createdAt.toISOString(),
+    }));
+
+  return {
+    categoryName: cat?.categoryName ?? "Категория",
+    categoryEmoji: cat?.categoryEmoji ?? "📦",
+    prevExpenses: mapExpenses(prevExpenses),
+    currExpenses: mapExpenses(currExpenses),
+    prevCount,
+    currCount,
+    comparisonDay,
   };
 }
 

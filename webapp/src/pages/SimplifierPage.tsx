@@ -87,24 +87,20 @@ export function SimplifierPage() {
 
       {/* Voice input */}
       <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <VoiceButton
-            mode="simplifier"
-            endpoint="/api/simplifier/voice"
-            onResult={(_transcript, data) => {
-              const fullData = data as { simplification?: SimplificationDto } | undefined;
-              if (fullData?.simplification) {
-                setLastResult(fullData.simplification);
-              }
-              setOffset(0);
-              queryClient.invalidateQueries({ queryKey: ["simplifications"] });
-            }}
-          />
-          <div>
-            <div style={{ fontWeight: 500 }}>Записать голос</div>
-            <div className="card-hint">Расшифрую и упрощу</div>
-          </div>
-        </div>
+        <VoiceButton
+          mode="simplifier"
+          endpoint="/api/simplifier/voice"
+          label="Записать голос"
+          hint="Расшифрую и упрощу"
+          onResult={(_transcript, data) => {
+            const fullData = data as { simplification?: SimplificationDto } | undefined;
+            if (fullData?.simplification) {
+              setLastResult(fullData.simplification);
+            }
+            setOffset(0);
+            queryClient.invalidateQueries({ queryKey: ["simplifications"] });
+          }}
+        />
       </div>
 
       {/* Last result */}

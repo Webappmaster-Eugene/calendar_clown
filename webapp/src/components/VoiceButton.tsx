@@ -26,9 +26,13 @@ interface VoiceButtonProps {
    * The endpoint must return `{ ok: true, data: { transcript: string, ... } }`.
    */
   endpoint?: string;
+  /** When provided, renders a full card row (button + label/hint) with stable layout across states. */
+  label?: string;
+  /** Hint text shown below the label in idle state. */
+  hint?: string;
 }
 
-export function VoiceButton({ onResult, onError, mode, endpoint }: VoiceButtonProps) {
+export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: VoiceButtonProps) {
   const { isRecording, isSupported, startRecording, stopRecording, cancelRecording, releaseStream, duration } = useVoiceRecorder();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -93,6 +97,56 @@ export function VoiceButton({ onResult, onError, mode, endpoint }: VoiceButtonPr
     const sec = s % 60;
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
+
+  // ─── Card row mode (with label/hint) — stable layout across states ───
+
+  if (label) {
+    if (isProcessing) {
+      return (
+        <div className="voice-row">
+          <div className="voice-row-icon voice-row-icon--processing">
+            <span className="voice-spinner" />
+          </div>
+          <div className="voice-row-content">
+            <div className="voice-row-label">Обработка...</div>
+          </div>
+        </div>
+      );
+    }
+
+    if (isRecording) {
+      return (
+        <div className="voice-row">
+          <button className="voice-row-icon voice-row-icon--recording" onClick={handleStop} title="Отправить">
+            <span className="voice-dot" />
+          </button>
+          <div className="voice-row-content">
+            <div className="voice-row-label">
+              Запись <span className="voice-duration">{formatDuration(duration)}</span>
+            </div>
+            <div className="voice-row-actions">
+              <button className="voice-row-send" onClick={handleStop}>Отправить</button>
+              <button className="voice-row-cancel" onClick={handleCancel}>Отмена</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="voice-row">
+        <button className="voice-row-icon" onClick={handleStart} title="Голосовой ввод">
+          🎙
+        </button>
+        <div className="voice-row-content" onClick={handleStart} style={{ cursor: "pointer" }}>
+          <div className="voice-row-label">{label}</div>
+          {hint && <div className="voice-row-hint">{hint}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Inline mode (no label) — compact button for input rows ───
 
   if (isProcessing) {
     return (

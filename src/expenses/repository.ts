@@ -714,18 +714,20 @@ export async function getUserTotals(
   }));
 }
 
-/** Compare category totals between two months (for trend analysis). */
+/** Compare category totals between two months (for trend analysis).
+ *  When `day` is provided, both ranges are capped to 1..day (partial-month comparison). */
 export async function getMonthComparison(
   tribeId: number,
   year1: number,
   month1: number,
   year2: number,
-  month2: number
+  month2: number,
+  day?: number
 ): Promise<MonthComparison[]> {
   const prevFrom = new Date(year1, month1 - 1, 1);
-  const prevTo = new Date(year1, month1, 1);
+  const prevTo = day ? new Date(year1, month1 - 1, day + 1) : new Date(year1, month1, 1);
   const currFrom = new Date(year2, month2 - 1, 1);
-  const currTo = new Date(year2, month2, 1);
+  const currTo = day ? new Date(year2, month2 - 1, day + 1) : new Date(year2, month2, 1);
 
   const { rows } = await query<{
     category_id: number;

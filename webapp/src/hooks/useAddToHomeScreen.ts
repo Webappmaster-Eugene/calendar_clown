@@ -113,7 +113,7 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
       setStatus("idle");
     }
 
-    // Event listeners.
+    // Event listeners (guarded — these throw outside Mini Apps).
     const handleAdded = () => {
       log("event: added");
       setStatus("added");
@@ -128,12 +128,22 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
       restoreClosingConfirmation();
     };
 
-    onAddedToHomeScreen(handleAdded);
-    onAddToHomeScreenFailed(handleFailed);
+    let listenersBound = false;
+    try {
+      onAddedToHomeScreen(handleAdded);
+      onAddToHomeScreenFailed(handleFailed);
+      listenersBound = true;
+    } catch {
+      log("event listeners not available");
+    }
 
     return () => {
-      offAddedToHomeScreen(handleAdded);
-      offAddToHomeScreenFailed(handleFailed);
+      if (listenersBound) {
+        try {
+          offAddedToHomeScreen(handleAdded);
+          offAddToHomeScreenFailed(handleFailed);
+        } catch { /* cleanup best-effort */ }
+      }
       clearTimeout(timeoutRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

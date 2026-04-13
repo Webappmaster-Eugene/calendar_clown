@@ -48,20 +48,16 @@ export function TranscribePage() {
       <h1 className="page-title">Транскрипции</h1>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <VoiceButton
-            mode="transcribe"
-            onResult={(transcript) => {
-              setLastTranscript(transcript);
-              setOffset(0);
-              queryClient.invalidateQueries({ queryKey: ["transcriptions"] });
-            }}
-          />
-          <div>
-            <div style={{ fontWeight: 500 }}>Записать голос</div>
-            <div className="card-hint">Нажмите для записи и транскрибации</div>
-          </div>
-        </div>
+        <VoiceButton
+          mode="transcribe"
+          label="Записать голос"
+          hint="Нажмите для записи и транскрибации"
+          onResult={(transcript) => {
+            setLastTranscript(transcript);
+            setOffset(0);
+            queryClient.invalidateQueries({ queryKey: ["transcriptions"] });
+          }}
+        />
         {lastTranscript && (
           <div style={{ marginTop: 10 }}>
             <MessageBubble

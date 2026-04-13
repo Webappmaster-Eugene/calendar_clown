@@ -188,6 +188,17 @@ export interface ExpenseReportDto {
   total: number;
   monthlyLimit: number;
   comparison: MonthComparisonDto[];
+  comparisonDay?: number;
+}
+
+export interface ComparisonDrilldownDto {
+  categoryName: string;
+  categoryEmoji: string;
+  prevExpenses: Array<{ id: number; subcategory: string | null; amount: number; firstName: string; createdAt: string }>;
+  currExpenses: Array<{ id: number; subcategory: string | null; amount: number; firstName: string; createdAt: string }>;
+  prevCount: number;
+  currCount: number;
+  comparisonDay?: number;
 }
 
 export interface AddExpenseRequest {

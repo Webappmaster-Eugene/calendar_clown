@@ -7,6 +7,7 @@ import type {
   ExpenseReportDto,
   AddExpenseRequest,
   MonthComparisonDto,
+  ComparisonDrilldownDto,
   UserTotalDto,
   YearReportMonthDto,
   RecentExpenseDto,
@@ -57,6 +58,7 @@ export function ExpensesPage() {
   const [voiceText, setVoiceText] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [drilldownCategoryId, setDrilldownCategoryId] = useState<number | null>(null);
+  const [comparisonDrilldownCategoryId, setComparisonDrilldownCategoryId] = useState<number | null>(null);
 
   // ─── Queries ──────────────────────────────────────────────
 
@@ -126,6 +128,17 @@ export function ExpensesPage() {
   const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear();
 
   // ─── Drilldown ────────────────────────────────────────────
+
+  if (comparisonDrilldownCategoryId !== null) {
+    return (
+      <ComparisonDrilldownView
+        categoryId={comparisonDrilldownCategoryId}
+        year={year}
+        month={month}
+        onBack={() => setComparisonDrilldownCategoryId(null)}
+      />
+    );
+  }
 
   if (drilldownCategoryId !== null) {
     return (
@@ -223,7 +236,14 @@ export function ExpensesPage() {
         />
       )}
       {tab === "comparison" && (
-        <ComparisonView comparison={report?.comparison ?? []} total={total} />
+        <ComparisonView
+          comparison={report?.comparison ?? []}
+          total={total}
+          comparisonDay={report?.comparisonDay}
+          month={month}
+          year={year}
+          onDrilldown={setComparisonDrilldownCategoryId}
+        />
       )}
       {tab === "stats" && (
         <StatsView byUser={report?.byUser ?? []} total={total} />
@@ -361,12 +381,25 @@ function ReportView({
 
 // ─── Comparison View ─────────────────────────────────────────
 
+const RU_MONTHS_GENITIVE = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+];
+
 function ComparisonView({
   comparison,
   total,
+  comparisonDay,
+  month,
+  year,
+  onDrilldown,
 }: {
   comparison: MonthComparisonDto[];
   total: number;
+  comparisonDay?: number;
+  month: number;
+  year: number;
+  onDrilldown: (catId: number) => void;
 }) {
   if (comparison.length === 0) {
     return (
@@ -377,10 +410,21 @@ function ComparisonView({
   }
 
   const totalPrev = comparison.reduce((s, c) => s + c.prevTotal, 0);
-  const totalDiff = total - totalPrev;
+  // When partial-month comparison, use comparison currTotals (partial) instead of full-month total
+  const totalCurr = comparisonDay ? comparison.reduce((s, c) => s + c.currTotal, 0) : total;
+  const totalDiff = totalCurr - totalPrev;
+
+  const prevMonth = month === 1 ? 12 : month - 1;
 
   return (
     <>
+      {/* Partial-month label */}
+      {comparisonDay && (
+        <div style={{ fontSize: 13, color: "var(--tg-theme-hint-color, #999)", marginBottom: 10, textAlign: "center" }}>
+          1–{comparisonDay} {RU_MONTHS_GENITIVE[month - 1]} vs 1–{comparisonDay} {RU_MONTHS_GENITIVE[prevMonth - 1]}
+        </div>
+      )}
+
       {/* Summary card */}
       <div className="stat-row">
         <div className="stat-card">
@@ -389,7 +433,7 @@ function ComparisonView({
         </div>
         <div className="stat-card">
           <div className="card-hint">Текущий</div>
-          <div style={{ fontSize: 20, fontWeight: 700 }}>{total.toLocaleString("ru-RU")}</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{totalCurr.toLocaleString("ru-RU")}</div>
         </div>
         <div className="stat-card">
           <div className="card-hint">Разница</div>
@@ -412,7 +456,12 @@ function ComparisonView({
             const isDown = c.diff < 0;
 
             return (
-              <div key={c.categoryId} className="list-item">
+              <div
+                key={c.categoryId}
+                className="list-item"
+                style={{ cursor: "pointer" }}
+                onClick={() => onDrilldown(c.categoryId)}
+              >
                 <span className="list-item-emoji">{c.categoryEmoji}</span>
                 <div className="list-item-content">
                   <div className="list-item-title">{c.categoryName}</div>
@@ -636,6 +685,135 @@ function RecentView({
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Comparison Drilldown ────────────────────────────────────
+
+function ComparisonDrilldownView({
+  categoryId,
+  year,
+  month,
+  onBack,
+}: {
+  categoryId: number;
+  year: number;
+  month: number;
+  onBack: () => void;
+}) {
+  const [page, setPage] = useState(1);
+  const LIMIT = 20;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["expenses", "comparison-drilldown", categoryId, year, month, page],
+    queryFn: () =>
+      api.get<ComparisonDrilldownDto>(
+        `/api/expenses/comparison-drilldown?categoryId=${categoryId}&year=${year}&month=${month}&page=${page}&limit=${LIMIT}`
+      ),
+  });
+
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+  const hasMorePrev = data ? page * LIMIT < data.prevCount : false;
+  const hasMoreCurr = data ? page * LIMIT < data.currCount : false;
+
+  const renderExpenseList = (expenses: ComparisonDrilldownDto["prevExpenses"]) =>
+    expenses.map((exp) => (
+      <div key={exp.id} className="list-item">
+        <div className="list-item-content">
+          <div className="list-item-title">
+            {exp.amount.toLocaleString("ru-RU")} ₽
+            {exp.subcategory ? ` — ${exp.subcategory}` : ""}
+          </div>
+          <div className="list-item-hint">
+            {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU")}
+          </div>
+        </div>
+      </div>
+    ));
+
+  return (
+    <div className="page">
+      <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>
+        Назад
+      </button>
+
+      {data && (
+        <h2 className="page-title" style={{ fontSize: 18 }}>
+          {data.categoryEmoji} {data.categoryName}
+        </h2>
+      )}
+
+      {data?.comparisonDay && (
+        <div style={{ fontSize: 13, color: "var(--tg-theme-hint-color, #999)", marginBottom: 12 }}>
+          Сравнение за 1–{data.comparisonDay} число
+        </div>
+      )}
+
+      {isLoading && <div className="loading">Загрузка...</div>}
+
+      {data && (
+        <>
+          {/* Current month */}
+          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+            {RU_MONTHS[month - 1]} {year}
+            {data.currExpenses.length > 0 && (
+              <span style={{ fontWeight: 400, color: "var(--tg-theme-hint-color, #999)", marginLeft: 8 }}>
+                ({data.currCount})
+              </span>
+            )}
+          </h3>
+          {data.currExpenses.length > 0 ? (
+            <div className="list" style={{ marginBottom: 16 }}>
+              {renderExpenseList(data.currExpenses)}
+            </div>
+          ) : (
+            <div style={{ fontSize: 14, color: "var(--tg-theme-hint-color, #999)", marginBottom: 16 }}>
+              Нет расходов
+            </div>
+          )}
+
+          {/* Previous month */}
+          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+            {RU_MONTHS[prevMonth - 1]} {prevYear}
+            {data.prevExpenses.length > 0 && (
+              <span style={{ fontWeight: 400, color: "var(--tg-theme-hint-color, #999)", marginLeft: 8 }}>
+                ({data.prevCount})
+              </span>
+            )}
+          </h3>
+          {data.prevExpenses.length > 0 ? (
+            <div className="list" style={{ marginBottom: 16 }}>
+              {renderExpenseList(data.prevExpenses)}
+            </div>
+          ) : (
+            <div style={{ fontSize: 14, color: "var(--tg-theme-hint-color, #999)", marginBottom: 16 }}>
+              Нет расходов
+            </div>
+          )}
+
+          {/* Pagination */}
+          {(hasMorePrev || hasMoreCurr || page > 1) && (
+            <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 8 }}>
+              <button
+                className="btn btn-small"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                Назад
+              </button>
+              <button
+                className="btn btn-small"
+                disabled={!hasMorePrev && !hasMoreCurr}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Ещё
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

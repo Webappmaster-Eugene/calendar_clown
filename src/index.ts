@@ -218,29 +218,8 @@ async function main(): Promise<void> {
     log.warn("WEBAPP_URL not set — Mini App menu button and addToHomeScreen() will not work.");
   }
 
-  const MAX_RETRIES = 5;
-  const BASE_DELAY_MS = 5_000;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      await bot.launch();
-      log.info("Bot started (long polling)");
-      break;
-    } catch (err) {
-      if (attempt === MAX_RETRIES) {
-        throw err;
-      }
-      const delay = BASE_DELAY_MS * 2 ** (attempt - 1);
-      log.warn(
-        "Bot launch attempt %d/%d failed: %s. Retrying in %ds...",
-        attempt, MAX_RETRIES,
-        err instanceof Error ? err.message : err,
-        delay / 1000,
-      );
-      await new Promise((r) => setTimeout(r, delay));
-    }
-  }
-
+  // Register shutdown handlers BEFORE bot.launch() —
+  // Telegraf 4.16 awaits the polling loop inside launch(), so code after it never executes
   const shutdown = async (signal: string) => {
     log.info(`${signal} received, shutting down...`);
     bot.stop(signal);
@@ -261,6 +240,38 @@ async function main(): Promise<void> {
 
   process.once("SIGINT", () => shutdown("SIGINT"));
   process.once("SIGTERM", () => shutdown("SIGTERM"));
+
+  const MAX_RETRIES = 5;
+  const BASE_DELAY_MS = 5_000;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      // bot.launch() in Telegraf 4.16 never resolves (awaits polling loop).
+      // Use the onLaunch callback to know when the bot is ready.
+      await new Promise<void>((resolve, reject) => {
+        let started = false;
+        bot.launch({}, () => { started = true; resolve(); })
+          .catch((err) => {
+            if (!started) reject(err);
+            else log.error("Bot polling error: %s", err instanceof Error ? err.message : err);
+          });
+      });
+      log.info("Bot started (long polling)");
+      break;
+    } catch (err) {
+      if (attempt === MAX_RETRIES) {
+        throw err;
+      }
+      const delay = BASE_DELAY_MS * 2 ** (attempt - 1);
+      log.warn(
+        "Bot launch attempt %d/%d failed: %s. Retrying in %ds...",
+        attempt, MAX_RETRIES,
+        err instanceof Error ? err.message : err,
+        delay / 1000,
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
 }
 
 main().catch((err) => {
