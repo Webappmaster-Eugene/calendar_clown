@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { useDragScroll } from "../hooks/useDragScroll";
 import { useTelegram } from "../hooks/useTelegram";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import type { NotableDateDto, CreateNotableDateRequest } from "@shared/types";
@@ -29,6 +30,7 @@ export function NotableDatesPage() {
   const [description, setDescription] = useState("");
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const tabsRef = useDragScroll<HTMLDivElement>();
 
   // ─── Queries ──────────────────────────────────────────────────
 
@@ -182,7 +184,7 @@ export function NotableDatesPage() {
     <div className="page">
       <h1 className="page-title">Памятные даты</h1>
 
-      <div className="tabs tabs--scroll" onWheel={(e) => { if (e.deltaY) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); } }}>
+      <div className="tabs tabs--scroll" ref={tabsRef}>
         <button className={`tab ${tab === "upcoming" ? "active" : ""}`} onClick={() => switchTab("upcoming")}>
           Ближайшие
         </button>

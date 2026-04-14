@@ -24,6 +24,7 @@ import { isBootstrapAdmin } from "../../middleware/auth.js";
 import { getActionLogs, getDistinctActions, logApiAction } from "../../logging/actionLogger.js";
 import type { SummaryPeriod } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import { BUILD_COMMIT, BUILD_DATE, COMMIT_DATE } from "../../buildInfo.js";
 
 const VALID_SUMMARY_PERIODS = new Set<string>(["today", "yesterday", "week", "month", "year"]);
 
@@ -504,13 +505,33 @@ app.get("/logs/actions", async (c) => {
   }
 });
 
-/** GET /api/admin/build-info — build version */
+/** GET /api/admin/build-info — build & runtime diagnostics */
 app.get("/build-info", async (c) => {
-  const commitHash = process.env.COMMIT_HASH ?? process.env.SOURCE_COMMIT ?? "unknown";
-  const buildDate = process.env.BUILD_DATE ?? new Date().toISOString();
+  const uptimeSeconds = Math.floor(process.uptime());
+  const hours = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+
+  const memUsage = process.memoryUsage();
+
   return c.json({
     ok: true,
-    data: { commitHash, buildDate },
+    data: {
+      commitHash: BUILD_COMMIT,
+      buildDate: BUILD_DATE,
+      commitDate: COMMIT_DATE,
+      nodeVersion: process.version,
+      uptime: `${hours}ч ${minutes}м`,
+      uptimeSeconds,
+      memoryMb: {
+        rss: Math.round(memUsage.rss / 1024 / 1024),
+        heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+      },
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid,
+      env: process.env.NODE_ENV ?? "production",
+    },
   });
 });
 

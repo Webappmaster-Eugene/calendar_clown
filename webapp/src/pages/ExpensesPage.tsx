@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
+import { useDragScroll } from "../hooks/useDragScroll";
 import type {
   CategoryDto,
   ExpenseReportDto,
@@ -59,6 +60,7 @@ export function ExpensesPage() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [drilldownCategoryId, setDrilldownCategoryId] = useState<number | null>(null);
   const [comparisonDrilldownCategoryId, setComparisonDrilldownCategoryId] = useState<number | null>(null);
+  const tabsRef = useDragScroll<HTMLDivElement>();
 
   // ─── Queries ──────────────────────────────────────────────
 
@@ -196,7 +198,7 @@ export function ExpensesPage() {
       {addTextMutation.isPending && <div className="card-hint" style={{ marginBottom: 8 }}>Добавление...</div>}
 
       {/* Tabs */}
-      <div className="tabs tabs--scroll" onWheel={(e) => { if (e.deltaY) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); } }}>
+      <div className="tabs tabs--scroll" ref={tabsRef}>
         {(["report", "comparison", "stats", "year", "recent"] as const).map((t) => (
           <button
             key={t}

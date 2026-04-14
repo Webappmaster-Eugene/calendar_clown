@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useTelegram } from "../hooks/useTelegram";
+import { useDragScroll } from "../hooks/useDragScroll";
 import type {
   AdminUserDto,
   TribeDto,
@@ -17,12 +18,13 @@ type AdminTab = "stats" | "summary" | "users" | "pending" | "tribes" | "data" | 
 
 export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("stats");
+  const tabsRef = useDragScroll<HTMLDivElement>();
 
   return (
     <div className="page">
       <h1 className="page-title">Админ-панель</h1>
 
-      <div className="tabs tabs--scroll" onWheel={(e) => { if (e.deltaY) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); } }}>
+      <div className="tabs tabs--scroll" ref={tabsRef}>
         {(["stats", "summary", "users", "pending", "tribes", "data", "logs", "reports"] as const).map((t) => {
           const labels: Record<AdminTab, string> = {
             stats: "Статистика",
@@ -64,9 +66,24 @@ function StatsTab() {
     queryFn: () => api.get<AdminStatsDto>("/api/admin/stats"),
   });
 
+  interface BuildInfo {
+    commitHash: string;
+    buildDate: string;
+    commitDate: string;
+    nodeVersion: string;
+    uptime: string;
+    uptimeSeconds: number;
+    memoryMb: { rss: number; heapUsed: number; heapTotal: number };
+    platform: string;
+    arch: string;
+    pid: number;
+    env: string;
+  }
+
   const { data: buildInfo } = useQuery({
     queryKey: ["admin", "build-info"],
-    queryFn: () => api.get<{ commitHash: string; buildDate: string }>("/api/admin/build-info"),
+    queryFn: () => api.get<BuildInfo>("/api/admin/build-info"),
+    refetchInterval: 30_000,
   });
 
   if (isLoading) return <div className="loading">Загрузка...</div>;
@@ -110,10 +127,43 @@ function StatsTab() {
         </div>
       </div>
       {buildInfo && (
-        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.6, textAlign: "center" }}>
-          Сборка: {buildInfo.commitHash.substring(0, 8)} &middot; {new Date(buildInfo.buildDate).toLocaleDateString("ru-RU")}
+        <div className="card" style={{ marginTop: 16, fontSize: 13 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>Система</div>
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px" }}>
+            <span className="card-hint">Коммит</span>
+            <span style={{ fontFamily: "monospace" }}>{buildInfo.commitHash}</span>
+            <span className="card-hint">Собрано</span>
+            <span>{buildInfo.buildDate}</span>
+            <span className="card-hint">Аптайм</span>
+            <span>{buildInfo.uptime}</span>
+            <span className="card-hint">Node</span>
+            <span>{buildInfo.nodeVersion}</span>
+            <span className="card-hint">Память</span>
+            <span>{buildInfo.memoryMb.heapUsed}/{buildInfo.memoryMb.heapTotal} MB (RSS {buildInfo.memoryMb.rss} MB)</span>
+            <span className="card-hint">Платформа</span>
+            <span>{buildInfo.platform}/{buildInfo.arch} · PID {buildInfo.pid}</span>
+            <span className="card-hint">Режим</span>
+            <span>{buildInfo.env}</span>
+          </div>
         </div>
       )}
+
+      {/* Client diagnostics */}
+      <div className="card" style={{ marginTop: 12, fontSize: 13 }}>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>Клиент</div>
+        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px" }}>
+          <span className="card-hint">Платформа</span>
+          <span>{navigator.platform}</span>
+          <span className="card-hint">Экран</span>
+          <span>{window.screen.width}×{window.screen.height} · {window.devicePixelRatio}x</span>
+          <span className="card-hint">Viewport</span>
+          <span>{window.innerWidth}×{window.innerHeight}</span>
+          <span className="card-hint">Язык</span>
+          <span>{navigator.language}</span>
+          <span className="card-hint">UserAgent</span>
+          <span style={{ wordBreak: "break-all", fontSize: 11, opacity: 0.7 }}>{navigator.userAgent}</span>
+        </div>
+      </div>
     </>
   );
 }
