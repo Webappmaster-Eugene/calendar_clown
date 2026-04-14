@@ -8,6 +8,7 @@ import {
   getTranscriptionByIdForUser,
   deleteTranscriptionForUser,
   getPendingForUser,
+  markUserPendingAsFailed,
 } from "../transcribe/repository.js";
 import { getQueueStatus } from "../transcribe/queue.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
@@ -117,6 +118,15 @@ export async function getPending(telegramId: number): Promise<TranscriptionDto[]
   const dbUser = await requireDbUser(telegramId);
   const pending = await getPendingForUser(dbUser.id);
   return pending.map(transcriptionToDto);
+}
+
+/**
+ * Clear user's pending/processing transcriptions.
+ */
+export async function clearUserQueue(telegramId: number): Promise<number> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  return markUserPendingAsFailed(dbUser.id, "Очищено пользователем");
 }
 
 /**

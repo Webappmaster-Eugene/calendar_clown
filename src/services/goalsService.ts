@@ -233,6 +233,51 @@ export async function getFriendsGoalSets(
 }
 
 /**
+ * Get viewers for a goal set.
+ */
+export async function getGoalSetViewers(
+  telegramId: number,
+  goalSetId: number
+): Promise<Array<{ userId: number; firstName: string }>> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  const gs = await getGoalSetById(goalSetId);
+  if (!gs || gs.userId !== dbUser.id) throw new Error("Набор целей не найден.");
+  const viewers = await getViewersByGoalSet(goalSetId);
+  return viewers.map((v) => ({ userId: v.viewerUserId, firstName: v.viewerName ?? "" }));
+}
+
+/**
+ * Add a viewer to a goal set.
+ */
+export async function addGoalSetViewer(
+  telegramId: number,
+  goalSetId: number,
+  viewerUserId: number
+): Promise<void> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  const gs = await getGoalSetById(goalSetId);
+  if (!gs || gs.userId !== dbUser.id) throw new Error("Набор целей не найден.");
+  await addViewer(goalSetId, viewerUserId);
+}
+
+/**
+ * Remove a viewer from a goal set.
+ */
+export async function removeGoalSetViewer(
+  telegramId: number,
+  goalSetId: number,
+  viewerUserId: number
+): Promise<void> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  const gs = await getGoalSetById(goalSetId);
+  if (!gs || gs.userId !== dbUser.id) throw new Error("Набор целей не найден.");
+  await removeViewer(goalSetId, viewerUserId);
+}
+
+/**
  * Get goal set progress.
  */
 export async function getProgress(goalSetId: number): Promise<{ completed: number; total: number; formatted: string }> {

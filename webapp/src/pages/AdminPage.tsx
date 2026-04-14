@@ -22,7 +22,7 @@ export function AdminPage() {
     <div className="page">
       <h1 className="page-title">Админ-панель</h1>
 
-      <div className="tabs tabs--scroll">
+      <div className="tabs tabs--scroll" onWheel={(e) => { if (e.deltaY) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); } }}>
         {(["stats", "summary", "users", "pending", "tribes", "data", "logs", "reports"] as const).map((t) => {
           const labels: Record<AdminTab, string> = {
             stats: "Статистика",

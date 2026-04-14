@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
-import type { TranscribeHistoryResponse } from "@shared/types";
+import type { TranscribeHistoryResponse, TranscriptionDto } from "@shared/types";
 import { MessageBubble } from "../components/ui/MessageBubble";
 import { CopyButton } from "../components/ui/CopyButton";
 
@@ -30,11 +30,30 @@ export function TranscribePage() {
     ),
   });
 
+  // Pending queue — poll every 5s while there are pending items
+  const { data: pendingData } = useQuery({
+    queryKey: ["transcriptions", "pending"],
+    queryFn: () => api.get<TranscriptionDto[]>("/api/transcribe/pending"),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data && data.length > 0 ? 5000 : false;
+    },
+  });
+
+  const pendingItems = pendingData ?? [];
+
   const transcriptions = historyData?.transcriptions ?? [];
   const total = historyData?.total ?? 0;
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.del<void>(`/api/transcribe/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transcriptions"] });
+    },
+  });
+
+  const clearQueueMutation = useMutation({
+    mutationFn: () => api.del<{ cleared: number }>("/api/transcribe/queue"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transcriptions"] });
     },
@@ -74,6 +93,33 @@ export function TranscribePage() {
       <p className="page-subtitle">
         Или отправьте голосовое сообщение боту в Telegram.
       </p>
+
+      {/* Pending queue */}
+      {pendingItems.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontWeight: 500, fontSize: 14 }}>Очередь ({pendingItems.length})</span>
+            <button
+              className="btn btn-small"
+              onClick={() => { if (confirm("Очистить очередь?")) clearQueueMutation.mutate(); }}
+              disabled={clearQueueMutation.isPending}
+              style={{ fontSize: 12 }}
+            >
+              Очистить
+            </button>
+          </div>
+          {pendingItems.map((item, index) => (
+            <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 13 }}>
+              <span style={{ color: "var(--tg-theme-hint-color, #999)", minWidth: 20 }}>#{index + 1}</span>
+              <span>{item.status === "processing" ? "🔄" : "⏳"}</span>
+              <span style={{ flex: 1 }}>{formatStatus(item.status)}</span>
+              {item.durationSeconds > 0 && (
+                <span className="card-hint">{Math.floor(item.durationSeconds / 60)}:{String(item.durationSeconds % 60).padStart(2, "0")}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {transcriptions.length === 0 && !isLoading && (
         <div className="empty-state">

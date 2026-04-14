@@ -7,6 +7,7 @@ import {
   editDate,
   removeDate,
   togglePriority,
+  importDatesFromCsv,
 } from "../../services/notableDatesService.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
@@ -162,6 +163,29 @@ app.delete("/:id", async (c) => {
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete date";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** POST /api/notable-dates/import — import dates from CSV file */
+app.post("/import", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  const body = await c.req.parseBody();
+  const file = body["file"];
+
+  if (!file || !(file instanceof File)) {
+    return c.json({ ok: false, error: "CSV file is required" }, 400);
+  }
+
+  try {
+    const csvContent = await file.text();
+    const result = await importDatesFromCsv(telegramId, csvContent);
+    logApiAction(telegramId, "notable_dates_csv_import", { imported: result.imported, skipped: result.skipped });
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to import CSV";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

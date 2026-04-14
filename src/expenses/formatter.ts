@@ -66,11 +66,13 @@ export function formatComparisonReport(
   year1: number,
   month1: number,
   year2: number,
-  month2: number
+  month2: number,
+  day?: number
 ): string {
   const m1 = monthName(month1);
   const m2 = monthName(month2);
-  const header = `📈 *Сравнение: ${m1} → ${m2} ${year2}*`;
+  const periodSuffix = day ? ` (1–${day})` : "";
+  const header = `📈 *Сравнение: ${m1} → ${m2} ${year2}${periodSuffix}*`;
   const separator = "━━━━━━━━━━━━━━━━━━━━━━━";
 
   if (comparisons.length === 0) {

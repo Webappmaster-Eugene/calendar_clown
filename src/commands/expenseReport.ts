@@ -168,8 +168,12 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     const month1 = month2 === 1 ? 12 : month2 - 1;
     const year1 = month2 === 1 ? year2 - 1 : year2;
 
-    const comparisons = await getMonthComparison(dbUser.tribeId!, year1, month1, year2, month2);
-    const text = formatComparisonReport(comparisons, year1, month1, year2, month2);
+    const mskNow = getMskNow();
+    const isCurrentMonth = year2 === mskNow.year && month2 === mskNow.month;
+    const comparisonDay = isCurrentMonth ? mskNow.day : undefined;
+
+    const comparisons = await getMonthComparison(dbUser.tribeId!, year1, month1, year2, month2, comparisonDay);
+    const text = formatComparisonReport(comparisons, year1, month1, year2, month2, comparisonDay);
 
     await ctx.editMessageText(text, {
       parse_mode: "Markdown",
@@ -278,12 +282,12 @@ export async function handleComparisonButton(ctx: Context): Promise<void> {
     return;
   }
 
-  const { year, month } = getMskNow();
+  const { year, month, day } = getMskNow();
   const prevMonth = month === 1 ? 12 : month - 1;
   const prevYear = month === 1 ? year - 1 : year;
 
-  const comparisons = await getMonthComparison(dbUser.tribeId!, prevYear, prevMonth, year, month);
-  const text = formatComparisonReport(comparisons, prevYear, prevMonth, year, month);
+  const comparisons = await getMonthComparison(dbUser.tribeId!, prevYear, prevMonth, year, month, day);
+  const text = formatComparisonReport(comparisons, prevYear, prevMonth, year, month, day);
 
   await ctx.replyWithMarkdown(text);
 }

@@ -4,6 +4,8 @@ import {
   getTranscription,
   getQueueInfo,
   removeTranscription,
+  getPending,
+  clearUserQueue,
 } from "../../services/transcribeService.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
@@ -33,6 +35,35 @@ app.get("/queue/status", async (c) => {
     return c.json({ ok: true, data: status });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get queue status";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/transcribe/pending — user's pending transcriptions */
+app.get("/pending", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  try {
+    const pending = await getPending(telegramId);
+    return c.json({ ok: true, data: pending });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get pending transcriptions";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/transcribe/queue — clear user's pending queue */
+app.delete("/queue", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  try {
+    const cleared = await clearUserQueue(telegramId);
+    logApiAction(telegramId, "transcribe_clear_queue", { cleared });
+    return c.json({ ok: true, data: { cleared } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to clear queue";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

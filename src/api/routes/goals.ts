@@ -8,6 +8,11 @@ import {
   editGoalText,
   removeGoalSet,
   removeGoal,
+  updateGoalSetProps,
+  getFriendsGoalSets,
+  getGoalSetViewers,
+  addGoalSetViewer,
+  removeGoalSetViewer,
 } from "../../services/goalsService.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
@@ -24,6 +29,20 @@ app.get("/", async (c) => {
     return c.json({ ok: true, data: goalSets });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get goal sets";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/goals/shared — friends' public goal sets */
+app.get("/shared", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+
+  try {
+    const sets = await getFriendsGoalSets(telegramId);
+    return c.json({ ok: true, data: sets });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get shared goals";
     return c.json({ ok: false, error: msg }, 500);
   }
 });
@@ -71,6 +90,92 @@ app.get("/:id", async (c) => {
     return c.json({ ok: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get goal set";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/goals/:id — update goal set (name, emoji, visibility) */
+app.put("/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const goalSetId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(goalSetId)) {
+    return c.json({ ok: false, error: "Invalid goal set ID" }, 400);
+  }
+
+  const body = await c.req.json<{ name?: string; emoji?: string; visibility?: "public" | "private" }>();
+
+  try {
+    const updated = await updateGoalSetProps(telegramId, goalSetId, body);
+    if (!updated) {
+      return c.json({ ok: false, error: "Goal set not found" }, 404);
+    }
+    logApiAction(telegramId, "goal_set_update", { goalSetId, ...body });
+    return c.json({ ok: true, data: updated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update goal set";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** GET /api/goals/:id/viewers — list viewers */
+app.get("/:id/viewers", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const goalSetId = parseInt(c.req.param("id"), 10);
+
+  if (isNaN(goalSetId)) {
+    return c.json({ ok: false, error: "Invalid goal set ID" }, 400);
+  }
+
+  try {
+    const viewers = await getGoalSetViewers(telegramId, goalSetId);
+    return c.json({ ok: true, data: viewers });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get viewers";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** POST /api/goals/:id/viewers — add viewer */
+app.post("/:id/viewers", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const goalSetId = parseInt(c.req.param("id"), 10);
+  const body = await c.req.json<{ userId: number }>();
+
+  if (isNaN(goalSetId) || !body.userId) {
+    return c.json({ ok: false, error: "goalSetId and userId are required" }, 400);
+  }
+
+  try {
+    await addGoalSetViewer(telegramId, goalSetId, body.userId);
+    logApiAction(telegramId, "goal_viewer_add", { goalSetId, viewerUserId: body.userId });
+    return c.json({ ok: true, data: null });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to add viewer";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** DELETE /api/goals/:id/viewers/:userId — remove viewer */
+app.delete("/:id/viewers/:userId", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const goalSetId = parseInt(c.req.param("id"), 10);
+  const viewerUserId = parseInt(c.req.param("userId"), 10);
+
+  if (isNaN(goalSetId) || isNaN(viewerUserId)) {
+    return c.json({ ok: false, error: "Invalid IDs" }, 400);
+  }
+
+  try {
+    await removeGoalSetViewer(telegramId, goalSetId, viewerUserId);
+    logApiAction(telegramId, "goal_viewer_remove", { goalSetId, viewerUserId });
+    return c.json({ ok: true, data: null });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to remove viewer";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

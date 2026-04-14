@@ -75,7 +75,7 @@ test.describe("VoiceButton — Card Row Mode (Simplifier)", () => {
 
   test("shows label and hint specific to simplifier", async ({ appPage }) => {
     await expect(appPage.locator(".voice-row-label")).toContainText("Записать голос");
-    await expect(appPage.locator(".voice-row-hint")).toContainText("Расшифрую и упрощу");
+    await expect(appPage.locator(".voice-row-hint")).toContainText("Расшифрую и добавлю в буфер");
   });
 
   test("icon is clickable", async ({ appPage }) => {

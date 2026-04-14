@@ -196,7 +196,7 @@ export function ExpensesPage() {
       {addTextMutation.isPending && <div className="card-hint" style={{ marginBottom: 8 }}>Добавление...</div>}
 
       {/* Tabs */}
-      <div className="tabs tabs--scroll">
+      <div className="tabs tabs--scroll" onWheel={(e) => { if (e.deltaY) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); } }}>
         {(["report", "comparison", "stats", "year", "recent"] as const).map((t) => (
           <button
             key={t}

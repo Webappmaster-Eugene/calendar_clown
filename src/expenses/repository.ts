@@ -642,8 +642,8 @@ export async function getLastExpense(userId: number): Promise<ExpenseWithCategor
 
 /** Calculate total expenses for a tribe in a given month. */
 export async function getMonthTotal(tribeId: number, year: number, month: number): Promise<number> {
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 1);
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
   const { rows } = await query<{ total: string | null }>(
     `SELECT COALESCE(SUM(amount), 0) AS total
      FROM expenses
@@ -724,10 +724,10 @@ export async function getMonthComparison(
   month2: number,
   day?: number
 ): Promise<MonthComparison[]> {
-  const prevFrom = new Date(year1, month1 - 1, 1);
-  const prevTo = day ? new Date(year1, month1 - 1, day + 1) : new Date(year1, month1, 1);
-  const currFrom = new Date(year2, month2 - 1, 1);
-  const currTo = day ? new Date(year2, month2 - 1, day + 1) : new Date(year2, month2, 1);
+  const prevFrom = new Date(Date.UTC(year1, month1 - 1, 1));
+  const prevTo = day ? new Date(Date.UTC(year1, month1 - 1, day + 1)) : new Date(Date.UTC(year1, month1, 1));
+  const currFrom = new Date(Date.UTC(year2, month2 - 1, 1));
+  const currTo = day ? new Date(Date.UTC(year2, month2 - 1, day + 1)) : new Date(Date.UTC(year2, month2, 1));
 
   const { rows } = await query<{
     category_id: number;

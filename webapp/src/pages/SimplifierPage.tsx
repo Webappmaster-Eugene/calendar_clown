@@ -12,6 +12,7 @@ export function SimplifierPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
+  const [buffer, setBuffer] = useState<string[]>([]);
   const [lastResult, setLastResult] = useState<SimplificationDto | null>(null);
   const [offset, setOffset] = useState(0);
 
@@ -31,6 +32,7 @@ export function SimplifierPage() {
     onSuccess: (data) => {
       setLastResult(data);
       setText("");
+      setBuffer([]);
       setOffset(0);
       queryClient.invalidateQueries({ queryKey: ["simplifications"] });
     },
@@ -42,6 +44,29 @@ export function SimplifierPage() {
       queryClient.invalidateQueries({ queryKey: ["simplifications"] });
     },
   });
+
+  const handleAddToBuffer = () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setBuffer((prev) => [...prev, trimmed]);
+    setText("");
+  };
+
+  const handleSimplify = () => {
+    if (buffer.length > 0) {
+      // Buffer mode: join all buffered texts + current textarea
+      const parts = [...buffer];
+      const trimmed = text.trim();
+      if (trimmed) parts.push(trimmed);
+      simplifyMutation.mutate(parts.join("\n\n"));
+    } else {
+      // Direct mode: current textarea only
+      const trimmed = text.trim();
+      if (trimmed) simplifyMutation.mutate(trimmed);
+    }
+  };
+
+  const canSimplify = buffer.length > 0 || text.trim().length > 0;
 
   if (isLoading) return <div className="loading">Загрузка...</div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
@@ -69,14 +94,48 @@ export function SimplifierPage() {
             boxSizing: "border-box",
           }}
         />
-        <button
-          className="btn"
-          style={{ marginTop: 8, width: "100%" }}
-          onClick={() => { if (text.trim()) simplifyMutation.mutate(text.trim()); }}
-          disabled={!text.trim() || simplifyMutation.isPending}
-        >
-          {simplifyMutation.isPending ? "Упрощаю..." : "🧹 Упростить"}
-        </button>
+
+        {/* Buffer indicator */}
+        {buffer.length > 0 && (
+          <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: "var(--tg-theme-secondary-bg-color, #f0f0f0)", fontSize: 13 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>📝 В буфере: {buffer.length} {buffer.length === 1 ? "сообщение" : buffer.length < 5 ? "сообщения" : "сообщений"}</span>
+              <button
+                className="btn btn-small"
+                onClick={() => setBuffer([])}
+                style={{ fontSize: 12, padding: "3px 8px" }}
+              >
+                Очистить
+              </button>
+            </div>
+            <div style={{ marginTop: 4, color: "var(--tg-theme-hint-color, #999)", fontSize: 12 }}>
+              {buffer.map((b, i) => (
+                <div key={i} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {i + 1}. {b.substring(0, 60)}{b.length > 60 ? "..." : ""}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button
+            className="btn"
+            style={{ flex: 1 }}
+            onClick={handleAddToBuffer}
+            disabled={!text.trim()}
+          >
+            + В буфер
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ flex: 1 }}
+            onClick={handleSimplify}
+            disabled={!canSimplify || simplifyMutation.isPending}
+          >
+            {simplifyMutation.isPending ? "Упрощаю..." : "🧹 Упростить"}
+          </button>
+        </div>
 
         {simplifyMutation.isError && (
           <div className="error-msg" style={{ marginTop: 8 }}>
@@ -89,16 +148,13 @@ export function SimplifierPage() {
       <div className="card" style={{ marginBottom: 16 }}>
         <VoiceButton
           mode="simplifier"
-          endpoint="/api/simplifier/voice"
+          endpoint="/api/voice/transcribe"
           label="Записать голос"
-          hint="Расшифрую и упрощу"
-          onResult={(_transcript, data) => {
-            const fullData = data as { simplification?: SimplificationDto } | undefined;
-            if (fullData?.simplification) {
-              setLastResult(fullData.simplification);
+          hint="Расшифрую и добавлю в буфер"
+          onResult={(transcript) => {
+            if (transcript.trim()) {
+              setBuffer((prev) => [...prev, transcript.trim()]);
             }
-            setOffset(0);
-            queryClient.invalidateQueries({ queryKey: ["simplifications"] });
           }}
         />
       </div>

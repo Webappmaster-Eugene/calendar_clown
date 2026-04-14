@@ -174,3 +174,95 @@ export async function togglePriority(telegramId: number, dateId: number): Promis
   const dbUser = await requireDbUser(telegramId);
   return toggleNotableDatePriority(dateId, dbUser.tribeId!);
 }
+
+/** Simple CSV line parser that handles quoted fields. */
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+/**
+ * Import notable dates from Google Calendar CSV export.
+ * CSV format: Subject,Start Date,Start Time,End Date,End Time,Description
+ */
+export async function importDatesFromCsv(
+  telegramId: number,
+  csvContent: string
+): Promise<{ imported: number; skipped: number; errors: string[] }> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+
+  const lines = csvContent.split("\n").filter((l) => l.trim());
+  const dataLines = lines.slice(1); // Skip header
+
+  let imported = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  for (const line of dataLines) {
+    try {
+      const parts = parseCSVLine(line);
+      if (parts.length < 6) { skipped++; continue; }
+
+      const [subject, startDate, , , , description] = parts;
+
+      const birthdayMatch = subject.match(/День рождения:\s*(.+)/);
+      const anniversaryMatch = !birthdayMatch ? subject.match(/Годовщина\s+(.+)/i) : null;
+
+      let name: string;
+      let eventType: string;
+      let emoji: string;
+
+      if (birthdayMatch) {
+        name = birthdayMatch[1].trim();
+        eventType = "birthday";
+        emoji = "🎂";
+      } else if (anniversaryMatch) {
+        name = subject.replace(/^[^\p{L}]*/u, "").trim();
+        eventType = "anniversary";
+        emoji = "💍";
+      } else {
+        name = subject.replace(/^[^\p{L}]*/u, "").trim();
+        if (!name) { skipped++; continue; }
+        eventType = "other";
+        emoji = "📌";
+      }
+
+      const dateMatch = startDate.match(/^(\d{1,2})\/(\d{1,2})\/\d{4}$/);
+      if (!dateMatch) { skipped++; continue; }
+      const month = parseInt(dateMatch[1], 10);
+      const day = parseInt(dateMatch[2], 10);
+
+      await addNotableDate({
+        tribeId: dbUser.tribeId!,
+        addedByUserId: dbUser.id,
+        name,
+        dateMonth: month,
+        dateDay: day,
+        eventType,
+        description: description?.trim() || null,
+        emoji,
+      });
+      imported++;
+    } catch {
+      skipped++;
+      errors.push(`Ошибка в строке: ${line.substring(0, 80)}`);
+    }
+  }
+
+  return { imported, skipped, errors };
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useTelegram } from "../hooks/useTelegram";
@@ -27,6 +27,8 @@ export function NotableDatesPage() {
   const [day, setDay] = useState(1);
   const [eventType, setEventType] = useState("birthday");
   const [description, setDescription] = useState("");
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ─── Queries ──────────────────────────────────────────────────
 
@@ -95,6 +97,18 @@ export function NotableDatesPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.del<void>(`/api/notable-dates/${id}`),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notable-dates"] });
+    },
+  });
+
+  const importMutation = useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      return api.upload<{ imported: number; skipped: number; errors: string[] }>("/api/notable-dates/import", formData);
+    },
+    onSuccess: (data) => {
+      setImportResult(data);
       queryClient.invalidateQueries({ queryKey: ["notable-dates"] });
     },
   });
@@ -168,7 +182,7 @@ export function NotableDatesPage() {
     <div className="page">
       <h1 className="page-title">Памятные даты</h1>
 
-      <div className="tabs tabs--scroll">
+      <div className="tabs tabs--scroll" onWheel={(e) => { if (e.deltaY) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); } }}>
         <button className={`tab ${tab === "upcoming" ? "active" : ""}`} onClick={() => switchTab("upcoming")}>
           Ближайшие
         </button>
@@ -308,7 +322,44 @@ export function NotableDatesPage() {
         </div>
       )}
 
-      {!showForm && <button className="fab" onClick={() => setShowForm(true)}>+</button>}
+      {/* CSV import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) importMutation.mutate(file);
+          e.target.value = "";
+        }}
+      />
+
+      {importResult && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 14 }}>
+            Импортировано: <strong>{importResult.imported}</strong>, пропущено: {importResult.skipped}
+          </div>
+          <button className="btn btn-small" style={{ marginTop: 6 }} onClick={() => setImportResult(null)}>Ок</button>
+        </div>
+      )}
+      {importMutation.isError && (
+        <div className="error-msg" style={{ marginBottom: 12 }}>{(importMutation.error as Error).message}</div>
+      )}
+
+      {!showForm && (
+        <>
+          <button
+            className="btn btn-small"
+            style={{ position: "fixed", bottom: "calc(24px + env(safe-area-inset-bottom, 0px))", left: 20 }}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importMutation.isPending}
+          >
+            {importMutation.isPending ? "Импорт..." : "📥 CSV"}
+          </button>
+          <button className="fab" onClick={() => setShowForm(true)}>+</button>
+        </>
+      )}
     </div>
   );
 }
