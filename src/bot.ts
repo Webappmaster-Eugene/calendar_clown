@@ -263,6 +263,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^excel:/, handleExcelCallback);
   bot.action(/^admin:/, handleAdminCallback);
   bot.action(/^undo:/, handleUndoCallback);
+  bot.action(/^rcnt:/, handleRecentCallback);
   bot.action(/^rdel:/, handleRecentCallback);
   bot.action(/^rdel_y:/, handleRecentCallback);
   bot.action("recent:refresh", handleRecentCallback);

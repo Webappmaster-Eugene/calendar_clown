@@ -1,75 +1,129 @@
 import { getCategories } from "./repository.js";
 import type { Category, ParsedExpense } from "./types.js";
 
+/** Minimum allowed expense amount (aligned with repository validation). */
+const MIN_AMOUNT = 1;
+
 /**
  * Parse expense text in format: "Категория [Описание] Сумма"
- * Amount can be anywhere but is typically at the end.
- * Category is matched by fuzzy search against known categories and aliases.
+ * Amount can be anywhere (end, start, or middle).
+ * Category is matched by fuzzy search against known categories and aliases,
+ * with AI fallback for low-confidence matches.
  */
 export async function parseExpenseText(text: string): Promise<ParsedExpense | null> {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  const amount = extractAmount(trimmed);
-  if (amount === null) return null;
+  const extracted = extractAndRemoveAmount(trimmed);
+  if (!extracted) return null;
 
-  const textWithoutAmount = removeAmount(trimmed).trim();
+  const { amount, textWithoutAmount } = extracted;
   if (!textWithoutAmount) return null;
 
   const categories = await getCategories();
-  let match = findCategory(textWithoutAmount, categories);
-  if (!match) {
-    const fallback = categories.find((c) => c.name === "Другое");
-    if (fallback) {
-      match = { category: fallback, matchedText: "", score: 0 };
-    } else {
-      return null;
-    }
+  const match = findCategory(textWithoutAmount, categories);
+
+  // High-confidence fuzzy match — use directly (fast path)
+  if (match && match.score >= 40) {
+    const subcategory = extractSubcategory(textWithoutAmount, match.matchedText);
+    return {
+      categoryId: match.category.id,
+      categoryName: match.category.name,
+      categoryEmoji: match.category.emoji,
+      subcategory: subcategory || null,
+      amount,
+    };
   }
 
-  const subcategory = extractSubcategory(textWithoutAmount, match.matchedText);
+  // Low confidence or no match — try AI categorization
+  try {
+    const { categorizeExpenseText } = await import("./categorizeWithAI.js");
+    const aiResult = await categorizeExpenseText(trimmed, categories);
+    if (aiResult) return aiResult;
+  } catch {
+    // AI failed — fall through to fuzzy fallback
+  }
 
+  // Final fallback: use fuzzy match result (low score) or "Другое"
+  let finalMatch = match;
+  if (!finalMatch) {
+    const fallback = categories.find((c) => c.name === "Другое");
+    if (!fallback) return null;
+    finalMatch = { category: fallback, matchedText: "", score: 0 };
+  }
+
+  const subcategory = extractSubcategory(textWithoutAmount, finalMatch.matchedText);
   return {
-    categoryId: match.category.id,
-    categoryName: match.category.name,
-    categoryEmoji: match.category.emoji,
+    categoryId: finalMatch.category.id,
+    categoryName: finalMatch.category.name,
+    categoryEmoji: finalMatch.category.emoji,
     subcategory: subcategory || null,
     amount,
   };
 }
 
+interface AmountExtractionResult {
+  amount: number;
+  textWithoutAmount: string;
+}
+
 /**
- * Extract the numeric amount from text.
- * Handles formats: "5000", "5 000", "5000.50", "5000,50"
- * Takes the last number found in the text.
+ * Pre-process text to normalize amount formats.
+ * Expands abbreviations (5к → 5000, 5тыс → 5000) and normalizes comma-separated thousands (5,000 → 5000).
  */
-function extractAmount(text: string): number | null {
-  const patterns = [
+function normalizeAmountFormats(text: string): string {
+  return text
+    // Abbreviations: 5к, 5K, 5тыс, 1.5к, 1,5к
+    .replace(/(\d+(?:[.,]\d+)?)\s*(?:к|k|К|K|тыс\.?)\b/g, (_, num: string) => {
+      const n = parseFloat(num.replace(",", "."));
+      return String(Math.round(n * 1000));
+    })
+    // Comma as thousands separator: 5,000 → 5000, 10,000 → 10000
+    // Only when exactly 3 digits follow the comma (not 1-2 digits = decimal)
+    .replace(/(\d{1,3}),(\d{3})(?!\d)/g, "$1$2");
+}
+
+/**
+ * Extract amount and remove it from text in a single coordinated pass.
+ * Handles: "5000", "5 000", "5000.50", "5,000", "5к", "5тыс", "500₽", "500 руб"
+ * Returns the amount and remaining text, or null if no valid amount found.
+ */
+function extractAndRemoveAmount(text: string): AmountExtractionResult | null {
+  const normalized = normalizeAmountFormats(text);
+
+  // Patterns in order of preference: end-of-string first, then start, then anywhere
+  const patterns: RegExp[] = [
+    // End: multi-digit with spaces, optional currency suffix
     /(\d[\d\s]*[\d](?:[.,]\d{1,2})?)\s*(?:р(?:уб)?\.?|₽)?\s*$/,
+    // End: simple number, optional currency suffix
     /(\d+(?:[.,]\d{1,2})?)\s*(?:р(?:уб)?\.?|₽)?\s*$/,
+    // Start: multi-digit with spaces
+    /^(\d[\d\s]*[\d](?:[.,]\d{1,2})?)\s+/,
+    // Start: simple number followed by space
+    /^(\d+(?:[.,]\d{1,2})?)\s+/,
+    // Anywhere: multi-digit with spaces (not followed by decimal)
     /(\d[\d\s]*\d)(?![.,]\d)/,
+    // Anywhere: any standalone number
     /(\d+)/,
   ];
 
   for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) {
+    const match = normalized.match(pattern);
+    if (match != null && match.index !== undefined) {
       const raw = match[1].replace(/\s/g, "").replace(",", ".");
       const num = parseFloat(raw);
-      if (!isNaN(num) && num > 0) return num;
+      if (!isNaN(num) && num >= MIN_AMOUNT) {
+        const before = normalized.slice(0, match.index);
+        const after = normalized.slice(match.index + match[0].length);
+        return {
+          amount: num,
+          textWithoutAmount: (before + " " + after).replace(/\s+/g, " ").trim(),
+        };
+      }
     }
   }
-  return null;
-}
 
-/**
- * Remove the amount (last number) from text.
- */
-function removeAmount(text: string): string {
-  return text
-    .replace(/\s*(\d[\d\s]*[\d](?:[.,]\d{1,2})?)\s*(?:р(?:уб)?\.?|₽)?\s*$/, "")
-    .replace(/\s*(\d+(?:[.,]\d{1,2})?)\s*(?:р(?:уб)?\.?|₽)?\s*$/, "")
-    .trim();
+  return null;
 }
 
 interface CategoryMatch {

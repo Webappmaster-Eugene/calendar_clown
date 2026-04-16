@@ -124,7 +124,9 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
     let sttContext: TranscribeContext = "calendar";
     if (telegramId != null) {
       const currentMode = await getUserMode(telegramId);
-      if (currentMode !== "calendar" && currentMode !== "expenses") {
+      if (currentMode === "expenses") {
+        sttContext = "expense";
+      } else if (currentMode !== "calendar") {
         sttContext = "general";
       }
     }

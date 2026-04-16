@@ -207,6 +207,24 @@ export interface AddExpenseRequest {
   subcategory?: string;
 }
 
+/** API response for adding a single expense. */
+export interface AddExpenseResultDto {
+  expense: ExpenseDto;
+  monthTotal: number;
+  monthlyLimit: number;
+  month: number;
+  confirmation: string;
+}
+
+/** API response for adding multiple expenses (multi-line). */
+export interface AddMultipleExpenseResultDto {
+  expenses: Array<{ emoji: string; name: string; sub: string | null; amount: number }>;
+  monthTotal: number;
+  monthlyLimit: number;
+  month: number;
+  totalAmount: number;
+}
+
 export interface UpdateExpenseRequest {
   amount?: number;
   categoryId?: number;
@@ -223,6 +241,13 @@ export interface RecentExpenseDto {
   firstName: string;
   createdAt: string;
   isOwn: boolean;
+}
+
+export interface RecentExpensesResponse {
+  items: RecentExpenseDto[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 export interface YearReportMonthDto {

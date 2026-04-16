@@ -26,7 +26,7 @@ export const MAX_SINGLE_FILE_BYTES = 20 * 1024 * 1024;
  * Approximate bytes per second for OGG Opus audio (~4 KB/s at typical bitrates).
  * Used to estimate duration when ffprobe is unavailable.
  */
-export const OGG_OPUS_BYTES_PER_SEC = 4_000;
+export const OGG_OPUS_BYTES_PER_SEC = 6_000;
 
 /** Timeout for ffprobe calls (15 seconds). */
 const FFPROBE_TIMEOUT_MS = 15_000;
@@ -140,7 +140,7 @@ export async function compressToOggIfNeeded(filePath: string): Promise<{ path: s
     await execFileAsync("ffmpeg", [
       "-i", filePath,
       "-c:a", "libopus",
-      "-b:a", "48k",
+      "-b:a", "96k",
       "-v", "quiet",
       "-y",
       outputPath,

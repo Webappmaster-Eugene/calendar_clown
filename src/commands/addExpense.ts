@@ -74,16 +74,26 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
     log.error("Error adding expense:", err);
     const msg = err instanceof Error ? err.message : "Ошибка";
     if (msg === "Не удалось разобрать трату.") {
+      // Provide specific hints based on what's missing
+      const hasDigit = /\d/.test(text);
+      const hasText = /[а-яёa-z]/i.test(text);
+      let hint = "";
+      if (!hasDigit) {
+        hint = "Не найдена сумма. Добавьте число.\n";
+      } else if (!hasText) {
+        hint = "Не найдена категория. Добавьте название.\n";
+      }
       await ctx.reply(
-        "❌ Не удалось разобрать трату.\n\n" +
+        `❌ Не удалось разобрать трату.\n\n${hint}` +
         "Формат: Категория Описание Сумма\n" +
         "Пример: Аптека Геморрой 5000\n\n" +
         "Нажмите 📋 Категории для списка.",
         { ...getExpenseKeyboard(isAdmin) }
       );
     } else {
-      await ctx.reply(`❌ Ошибка при сохранении: ${msg}`);
+      await ctx.reply(`❌ Ошибка при сохранении: ${msg}`, { ...getExpenseKeyboard(isAdmin) });
     }
+    logAction(null, telegramId, "expense_parse_failed", { text, error: msg });
   }
 }
 

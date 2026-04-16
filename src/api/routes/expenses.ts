@@ -7,6 +7,7 @@ import {
   undoExpense,
   editExpense,
   addExpenseFromText,
+  addMultipleExpenses,
   addExpenseStructured,
   getCategoryDrilldown,
   getComparisonDrilldown,
@@ -64,17 +65,34 @@ app.post("/", async (c) => {
       return c.json({ ok: true, data: result });
     }
 
-    // Text input: natural language
+    // Text input: natural language (supports multi-line for bulk entry)
     if (body.text?.trim()) {
+      const text = body.text.trim();
+
+      // Try multi-line parsing first (same as bot)
+      const multiResult = await addMultipleExpenses(
+        telegramId,
+        initData.user.username ?? null,
+        initData.user.first_name,
+        initData.user.last_name ?? null,
+        false,
+        text
+      );
+      if (multiResult) {
+        logApiAction(telegramId, "expense_add_text_multi", { count: multiResult.expenses.length, totalAmount: multiResult.totalAmount });
+        return c.json({ ok: true, data: multiResult });
+      }
+
+      // Single expense
       const result = await addExpenseFromText(
         telegramId,
         initData.user.username ?? null,
         initData.user.first_name,
         initData.user.last_name ?? null,
         false,
-        body.text.trim()
+        text
       );
-      logApiAction(telegramId, "expense_add_text", { text: body.text.trim() });
+      logApiAction(telegramId, "expense_add_text", { text });
       return c.json({ ok: true, data: result });
     }
 
@@ -262,14 +280,15 @@ app.get("/categories", async (c) => {
   }
 });
 
-/** GET /api/expenses/recent — last N expenses across tribe */
+/** GET /api/expenses/recent — paginated expenses across tribe */
 app.get("/recent", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
-  const limit = Math.min(parseInt(c.req.query("limit") ?? "15", 10), 50);
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "10", 10), 50);
+  const page = Math.max(parseInt(c.req.query("page") ?? "1", 10), 1);
 
   try {
-    const data = await getRecentExpenses(telegramId, limit);
+    const data = await getRecentExpenses(telegramId, limit, page);
     return c.json({ ok: true, data });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get recent expenses";

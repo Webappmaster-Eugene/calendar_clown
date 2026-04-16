@@ -21,6 +21,7 @@ import {
   updateExpense,
   getExpenseById,
   getExpensesPaginated,
+  countExpenses,
 } from "../expenses/repository.js";
 import {
   formatExpenseConfirmation,
@@ -44,6 +45,7 @@ import type {
   MonthComparisonDto,
   ExpenseReportDto,
   RecentExpenseDto,
+  RecentExpensesResponse,
   ComparisonDrilldownDto,
 } from "../shared/types.js";
 
@@ -676,28 +678,41 @@ export async function getComparisonDrilldown(
 }
 
 /**
- * Get the most recent expenses across the entire tribe (regardless of month/category).
+ * Get the most recent expenses across the entire tribe (regardless of month/category)
+ * with pagination support.
  */
 export async function getRecentExpenses(
   telegramId: number,
-  limit: number = 15
-): Promise<RecentExpenseDto[]> {
+  limit: number = 10,
+  page: number = 1
+): Promise<RecentExpensesResponse> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   if (!dbUser.tribeId) throw new Error("Нет трайба.");
 
   const clamped = Math.min(Math.max(limit, 1), 50);
-  const expenses = await getExpensesPaginated(dbUser.tribeId, clamped, 0);
+  const safePage = Math.max(page, 1);
+  const offset = (safePage - 1) * clamped;
 
-  return expenses.map((e) => ({
-    id: e.id,
-    categoryId: e.categoryId,
-    categoryName: e.categoryName,
-    categoryEmoji: e.categoryEmoji,
-    subcategory: e.subcategory,
-    amount: e.amount,
-    firstName: e.firstName,
-    createdAt: e.createdAt.toISOString(),
-    isOwn: e.userId === dbUser.id,
-  }));
+  const [expenses, total] = await Promise.all([
+    getExpensesPaginated(dbUser.tribeId, clamped, offset),
+    countExpenses(dbUser.tribeId),
+  ]);
+
+  return {
+    items: expenses.map((e) => ({
+      id: e.id,
+      categoryId: e.categoryId,
+      categoryName: e.categoryName,
+      categoryEmoji: e.categoryEmoji,
+      subcategory: e.subcategory,
+      amount: e.amount,
+      firstName: e.firstName,
+      createdAt: e.createdAt.toISOString(),
+      isOwn: e.userId === dbUser.id,
+    })),
+    total,
+    page: safePage,
+    limit: clamped,
+  };
 }

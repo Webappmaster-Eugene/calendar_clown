@@ -12,6 +12,8 @@ import type {
   UserTotalDto,
   YearReportMonthDto,
   RecentExpenseDto,
+  RecentExpensesResponse,
+  AddExpenseResultDto,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 
@@ -58,8 +60,10 @@ export function ExpensesPage() {
   const [amount, setAmount] = useState("");
   const [voiceText, setVoiceText] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [drilldownCategoryId, setDrilldownCategoryId] = useState<number | null>(null);
   const [comparisonDrilldownCategoryId, setComparisonDrilldownCategoryId] = useState<number | null>(null);
+  const [recentPage, setRecentPage] = useState(1);
   const tabsRef = useDragScroll<HTMLDivElement>();
 
   // ─── Queries ──────────────────────────────────────────────
@@ -80,31 +84,46 @@ export function ExpensesPage() {
     enabled: tab === "year",
   });
 
+  const RECENT_LIMIT = 10;
   const { data: recentData, isLoading: recentLoading } = useQuery({
-    queryKey: ["expenses", "recent"],
-    queryFn: () => api.get<RecentExpenseDto[]>("/api/expenses/recent?limit=15"),
+    queryKey: ["expenses", "recent", recentPage],
+    queryFn: () => api.get<RecentExpensesResponse>(`/api/expenses/recent?limit=${RECENT_LIMIT}&page=${recentPage}`),
     enabled: tab === "recent",
   });
 
   // ─── Mutations ────────────────────────────────────────────
 
+  const showSuccess = (msg: string) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
   const addMutation = useMutation({
     mutationFn: (data: AddExpenseRequest) =>
-      api.post<void>("/api/expenses", data),
-    onSuccess: () => {
+      api.post<AddExpenseResultDto>("/api/expenses", data),
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       setShowForm(false);
       setAmount("");
       setCategoryId(null);
+      if (result?.confirmation) {
+        showSuccess(result.confirmation);
+      }
     },
   });
 
   const addTextMutation = useMutation({
     mutationFn: (text: string) =>
-      api.post<void>("/api/expenses", { text }),
-    onSuccess: () => {
+      api.post<AddExpenseResultDto & { expenses?: Array<{ emoji: string; name: string; amount: number }> }>("/api/expenses", { text }),
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       setVoiceText("");
+      if (result?.confirmation) {
+        showSuccess(result.confirmation);
+      } else if (result?.expenses && Array.isArray(result.expenses)) {
+        const total = result.expenses.reduce((s, e) => s + e.amount, 0);
+        showSuccess(`Записано ${result.expenses.length} трат на ${total.toLocaleString("ru-RU")} ₽`);
+      }
     },
   });
 
@@ -193,6 +212,7 @@ export function ExpensesPage() {
           onError={(err) => setVoiceError(err)}
         />
       </div>
+      {successMsg && <div className="success-msg" style={{ marginBottom: 8, color: "var(--tg-theme-link-color, #2481cc)", fontSize: 13 }}>{successMsg}</div>}
       {voiceError && <div className="error-msg" style={{ marginBottom: 8 }}>{voiceError}</div>}
       {addTextMutation.error && <div className="error-msg">{(addTextMutation.error as Error).message}</div>}
       {addTextMutation.isPending && <div className="card-hint" style={{ marginBottom: 8 }}>Добавление...</div>}
@@ -261,7 +281,7 @@ export function ExpensesPage() {
         />
       )}
       {tab === "recent" && (
-        <RecentView data={recentData ?? []} isLoading={recentLoading} />
+        <RecentView data={recentData} isLoading={recentLoading} page={recentPage} onPageChange={setRecentPage} />
       )}
 
       {/* FAB form */}
@@ -627,9 +647,13 @@ function YearView({
 function RecentView({
   data,
   isLoading,
+  page,
+  onPageChange,
 }: {
-  data: RecentExpenseDto[];
+  data: RecentExpensesResponse | undefined;
   isLoading: boolean;
+  page: number;
+  onPageChange: (page: number) => void;
 }) {
   const queryClient = useQueryClient();
 
@@ -642,7 +666,13 @@ function RecentView({
 
   if (isLoading) return <div className="loading">Загрузка...</div>;
 
-  if (data.length === 0) {
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const limit = data?.limit ?? 10;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const hasMore = page < totalPages;
+
+  if (items.length === 0 && page === 1) {
     return (
       <div className="empty-state">
         <div className="empty-state-text">Нет записей</div>
@@ -651,43 +681,68 @@ function RecentView({
   }
 
   return (
-    <div className="list">
-      {data.map((exp) => (
-        <div key={exp.id} className="list-item">
-          <span className="list-item-emoji">{exp.categoryEmoji}</span>
-          <div className="list-item-content">
-            <div className="list-item-title">
-              {exp.amount.toLocaleString("ru-RU")} ₽
-              {exp.subcategory ? ` — ${exp.subcategory}` : ""}
+    <>
+      {total > 0 && (
+        <div className="card-hint" style={{ textAlign: "center", marginBottom: 8 }}>
+          Всего: {total} записей
+        </div>
+      )}
+      <div className="list">
+        {items.map((exp) => (
+          <div key={exp.id} className="list-item">
+            <span className="list-item-emoji">{exp.categoryEmoji}</span>
+            <div className="list-item-content">
+              <div className="list-item-title">
+                {exp.amount.toLocaleString("ru-RU")} ₽
+                {exp.subcategory ? ` — ${exp.subcategory}` : ""}
+              </div>
+              <div className="list-item-hint">
+                {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </div>
             </div>
-            <div className="list-item-hint">
-              {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU", {
-                day: "2-digit",
-                month: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </div>
+            {exp.isOwn && (
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-icon btn-danger"
+                  onClick={() => {
+                    if (confirm("Удалить эту запись?")) {
+                      deleteMutation.mutate(exp.id);
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                  title="Удалить"
+                >
+                  🗑️
+                </button>
+              </div>
+            )}
           </div>
-          {exp.isOwn && (
-            <div className="list-item-actions">
-              <button
-                className="btn btn-icon btn-danger"
-                onClick={() => {
-                  if (confirm("Удалить эту запись?")) {
-                    deleteMutation.mutate(exp.id);
-                  }
-                }}
-                disabled={deleteMutation.isPending}
-                title="Удалить"
-              >
-                🗑️
-              </button>
-            </div>
+        ))}
+      </div>
+      {/* Pagination controls */}
+      {(page > 1 || hasMore) && (
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12, paddingBottom: 12 }}>
+          {page > 1 && (
+            <button className="btn btn-small" onClick={() => onPageChange(page - 1)}>
+              Назад
+            </button>
+          )}
+          <span style={{ lineHeight: "32px", fontSize: 13, color: "var(--tg-theme-hint-color, #999)" }}>
+            {page} / {totalPages}
+          </span>
+          {hasMore && (
+            <button className="btn btn-small btn-primary" onClick={() => onPageChange(page + 1)}>
+              Далее
+            </button>
           )}
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 }
 

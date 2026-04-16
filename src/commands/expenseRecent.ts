@@ -11,28 +11,39 @@ import { escapeMarkdown } from "../utils/markdown.js";
 
 const log = createLogger("expense-recent");
 
+const RECENT_PAGE_SIZE = 10;
+
 /**
- * Build the recent expenses message text + inline keyboard.
+ * Build the recent expenses message text + inline keyboard for a given page.
  * Returns null if user not found / no tribe.
  */
-async function buildRecentMessage(telegramId: number): Promise<{
+async function buildRecentMessage(telegramId: number, page: number = 1): Promise<{
   text: string;
   keyboard: ReturnType<typeof Markup.inlineKeyboard>;
 } | null> {
-  let expenses;
+  let result;
   try {
-    expenses = await getRecentExpenses(telegramId, 15);
+    result = await getRecentExpenses(telegramId, RECENT_PAGE_SIZE, page);
   } catch {
     return null;
   }
 
-  if (expenses.length === 0) {
+  const { items: expenses, total } = result;
+  const totalPages = Math.max(1, Math.ceil(total / RECENT_PAGE_SIZE));
+
+  if (expenses.length === 0 && page === 1) {
     return {
       text: "🕐 *Последние записи*\n\nЗаписей пока нет.",
       keyboard: Markup.inlineKeyboard([]),
     };
   }
 
+  // Page beyond data after deletion — fall back to page 1
+  if (expenses.length === 0 && page > 1) {
+    return buildRecentMessage(telegramId, 1);
+  }
+
+  const startIdx = (page - 1) * RECENT_PAGE_SIZE;
   const lines = expenses.map((e, i) => {
     const date = new Date(e.createdAt).toLocaleString("ru-RU", {
       day: "2-digit",
@@ -42,17 +53,17 @@ async function buildRecentMessage(telegramId: number): Promise<{
       timeZone: TIMEZONE_MSK,
     });
     const sub = e.subcategory ? ` — ${escapeMarkdown(e.subcategory)}` : "";
-    return `${i + 1}. ${e.categoryEmoji} ${formatMoney(e.amount)}${sub}\n   👤 ${escapeMarkdown(e.firstName)} | ${date}`;
+    return `${startIdx + i + 1}. ${e.categoryEmoji} ${formatMoney(e.amount)}${sub}\n   👤 ${escapeMarkdown(e.firstName)} | ${date}`;
   });
 
-  const text = `🕐 *Последние ${expenses.length} записей*\n\n${lines.join("\n\n")}`;
+  const text = `🕐 *Последние записи* (${page}/${totalPages}, всего: ${total})\n\n${lines.join("\n\n")}`;
 
   // Delete buttons — only for expenses owned by current user
   const deleteButtons = expenses
     .map((e, idx) => ({ e, idx }))
     .filter(({ e }) => e.isOwn)
     .map(({ e, idx }) =>
-      Markup.button.callback(`🗑 #${idx + 1}`, `rdel:${e.id}`)
+      Markup.button.callback(`🗑 #${startIdx + idx + 1}`, `rdel:${e.id}:${page}`)
     );
 
   // Arrange delete buttons in rows of 4
@@ -60,13 +71,23 @@ async function buildRecentMessage(telegramId: number): Promise<{
   for (let i = 0; i < deleteButtons.length; i += 4) {
     rows.push(deleteButtons.slice(i, i + 4));
   }
-  rows.push([Markup.button.callback("🔄 Обновить", "recent:refresh")]);
+
+  // Navigation row
+  const navRow: Array<ReturnType<typeof Markup.button.callback>> = [];
+  if (page > 1) {
+    navRow.push(Markup.button.callback("⬅️ Назад", `rcnt:${page - 1}`));
+  }
+  navRow.push(Markup.button.callback("🔄", `rcnt:${page}`));
+  if (page < totalPages) {
+    navRow.push(Markup.button.callback("Вперёд ➡️", `rcnt:${page + 1}`));
+  }
+  rows.push(navRow);
 
   return { text, keyboard: Markup.inlineKeyboard(rows) };
 }
 
 /**
- * Handle "🕐 Последние" keyboard button — show last 15 expenses.
+ * Handle "🕐 Последние" keyboard button — show recent expenses (page 1).
  */
 export async function handleRecentButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
@@ -97,7 +118,12 @@ export async function handleRecentButton(ctx: Context): Promise<void> {
 }
 
 /**
- * Handle recent expense callbacks: rdel:<id>, rdel_y:<id>, recent:refresh.
+ * Handle recent expense callbacks:
+ * - rcnt:<page> — navigate to page
+ * - rdel:<id>:<page> — request delete confirmation
+ * - rdel_y:<id>:<page> — confirm delete
+ * - recent:refresh — legacy refresh (page 1)
+ * - rdel:<id> / rdel_y:<id> — legacy (no page, defaults to 1)
  */
 export async function handleRecentCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
@@ -110,11 +136,13 @@ export async function handleRecentCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // Refresh list
-  if (data === "recent:refresh") {
+  // Page navigation: rcnt:<page>
+  const pageMatch = data.match(/^rcnt:(\d+)$/);
+  if (pageMatch) {
+    const page = parseInt(pageMatch[1], 10);
     await ctx.answerCbQuery();
     try {
-      const result = await buildRecentMessage(telegramId);
+      const result = await buildRecentMessage(telegramId, page);
       if (!result) return;
       await ctx.editMessageText(result.text, {
         parse_mode: "Markdown",
@@ -126,10 +154,27 @@ export async function handleRecentCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // Delete confirmation: rdel:<expenseId>
-  const delMatch = data.match(/^rdel:(\d+)$/);
+  // Legacy refresh (backward compat with old inline keyboards in chat)
+  if (data === "recent:refresh") {
+    await ctx.answerCbQuery();
+    try {
+      const result = await buildRecentMessage(telegramId, 1);
+      if (!result) return;
+      await ctx.editMessageText(result.text, {
+        parse_mode: "Markdown",
+        ...result.keyboard,
+      });
+    } catch {
+      // Message may be unchanged
+    }
+    return;
+  }
+
+  // Delete confirmation: rdel:<expenseId>:<page> or rdel:<expenseId> (legacy)
+  const delMatch = data.match(/^rdel:(\d+)(?::(\d+))?$/);
   if (delMatch) {
     const expenseId = parseInt(delMatch[1], 10);
+    const page = delMatch[2] ? parseInt(delMatch[2], 10) : 1;
     if (isNaN(expenseId)) return;
 
     await ctx.answerCbQuery("Подтвердите удаление");
@@ -137,8 +182,8 @@ export async function handleRecentCallback(ctx: Context): Promise<void> {
       await ctx.editMessageReplyMarkup({
         inline_keyboard: [
           [
-            { text: "✅ Удалить", callback_data: `rdel_y:${expenseId}` },
-            { text: "❌ Отмена", callback_data: "recent:refresh" },
+            { text: "✅ Удалить", callback_data: `rdel_y:${expenseId}:${page}` },
+            { text: "❌ Отмена", callback_data: `rcnt:${page}` },
           ],
         ],
       });
@@ -148,10 +193,11 @@ export async function handleRecentCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // Confirmed delete: rdel_y:<expenseId>
-  const delConfirmMatch = data.match(/^rdel_y:(\d+)$/);
+  // Confirmed delete: rdel_y:<expenseId>:<page> or rdel_y:<expenseId> (legacy)
+  const delConfirmMatch = data.match(/^rdel_y:(\d+)(?::(\d+))?$/);
   if (delConfirmMatch) {
     const expenseId = parseInt(delConfirmMatch[1], 10);
+    const page = delConfirmMatch[2] ? parseInt(delConfirmMatch[2], 10) : 1;
     if (isNaN(expenseId)) return;
 
     try {
@@ -164,8 +210,8 @@ export async function handleRecentCallback(ctx: Context): Promise<void> {
         logAction(null, telegramId, "expense_delete_recent", { expenseId });
       }
 
-      // Refresh list after delete (or failed delete)
-      const result = await buildRecentMessage(telegramId);
+      // Refresh list at same page
+      const result = await buildRecentMessage(telegramId, page);
       if (result) {
         await ctx.editMessageText(result.text, {
           parse_mode: "Markdown",

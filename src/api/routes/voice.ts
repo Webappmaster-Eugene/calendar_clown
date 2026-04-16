@@ -117,9 +117,9 @@ app.post("/expense", async (c) => {
       return c.json({ ok: false, error: "audio file is required (multipart field 'audio')" }, 400);
     }
 
-    // Step 1: Transcribe audio to text
+    // Step 1: Transcribe audio to text (expense-specific STT prompt for better number recognition)
     tempPath = await saveAudioToTemp(audioFile, telegramId);
-    const { transcript } = await transcribeAudio(tempPath);
+    const { transcript } = await transcribeAudio(tempPath, "expense");
 
     // Step 2: Extract expense intent via DeepSeek AI (same as bot)
     const categoriesList = await getCategoriesListWithAliasesFormatted();
