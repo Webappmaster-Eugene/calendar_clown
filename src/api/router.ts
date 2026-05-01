@@ -37,8 +37,16 @@ export function createApiApp(): Hono<ApiEnv> {
   const api = new Hono<ApiEnv>().basePath("/api");
 
   // ── Global middleware ───────────────────────────────────────
+  // CORS: lock to WEBAPP_URL when set; fall back to wildcard for local dev.
+  // The Authorization header is what carries the Telegram InitData, so leaving
+  // the origin open in production lets any site relay an init-data they obtained
+  // and is unsafe.
+  const corsOrigin = process.env.WEBAPP_URL?.trim() ?? "*";
+  if (corsOrigin === "*" && process.env.NODE_ENV === "production") {
+    log.warn("CORS origin is '*' in production — set WEBAPP_URL to lock it down");
+  }
   api.use("*", cors({
-    origin: "*",
+    origin: corsOrigin,
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Authorization", "Content-Type"],
     maxAge: 86400,

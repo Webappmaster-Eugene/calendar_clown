@@ -181,6 +181,15 @@ export interface MonthComparisonDto {
   diff: number;
 }
 
+/** Single expense row used in detailed report blocks. */
+export interface ExpenseDetailItemDto {
+  id: number;
+  subcategory: string | null;
+  amount: number;
+  firstName: string;
+  createdAt: string;
+}
+
 export interface ExpenseReportDto {
   month: string;
   byCategory: CategoryTotalDto[];
@@ -189,6 +198,13 @@ export interface ExpenseReportDto {
   monthlyLimit: number;
   comparison: MonthComparisonDto[];
   comparisonDay?: number;
+  /** Detailed per-category operations. Populated only when caller requests details
+   *  (e.g. bot's /expenses report). Mini App leaves this undefined to save bandwidth
+   *  and uses /api/expenses/drilldown on demand. */
+  byCategoryDetailed?: Array<{
+    categoryId: number;
+    expenses: ExpenseDetailItemDto[];
+  }>;
 }
 
 export interface ComparisonDrilldownDto {

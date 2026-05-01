@@ -1,5 +1,6 @@
 import type { CategoryTotal, MonthComparison, UserTotal } from "./types.js";
 import { TIMEZONE_MSK } from "../constants.js";
+import { escapeMarkdown } from "../utils/markdown.js";
 
 const RU_MONTHS = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -25,40 +26,6 @@ export function formatMoney(amount: number): string {
 
 export function formatMoneyShort(amount: number): string {
   return Math.round(amount).toLocaleString("ru-RU");
-}
-
-export function formatMonthReport(
-  totals: CategoryTotal[],
-  grandTotal: number,
-  monthLimit: number,
-  year: number,
-  month: number,
-  tribeName: string
-): string {
-  const header = `📊 *Расходы за ${monthName(month)} ${year}*\nТрайб: ${tribeName}`;
-  const separator = "━━━━━━━━━━━━━━━━━━━━━━━";
-
-  if (totals.length === 0) {
-    return `${header}\n${separator}\nЗа этот период расходов нет.`;
-  }
-
-  const lines = totals.map((t) => {
-    return `${t.categoryEmoji} ${t.categoryName}  ${formatMoney(t.total)}`;
-  });
-
-  const limitPercent = monthLimit > 0 ? ((grandTotal / monthLimit) * 100).toFixed(1) : "0";
-  const limitIcon = grandTotal >= monthLimit ? "🚨" : grandTotal >= monthLimit * 0.9 ? "⚠️" : "✅";
-
-  return [
-    header,
-    separator,
-    ...lines,
-    separator,
-    `💰 *Итого:* ${formatMoney(grandTotal)}`,
-    monthLimit > 0 ? `📊 *Лимит:* ${formatMoney(monthLimit)} (${limitPercent}%) ${limitIcon}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
 }
 
 export function formatComparisonReport(
@@ -198,25 +165,143 @@ export function formatYearReport(
   ].join("\n");
 }
 
-export function formatExpenseDetailList(
-  expenses: Array<{ id: number; subcategory: string | null; amount: number; firstName: string; createdAt: Date }>,
-  categoryName: string,
-  categoryEmoji: string,
-  total: number,
-  currentPage: number,
-  totalPages: number
-): string {
-  const header = `${categoryEmoji} *${categoryName}* (${currentPage}/${totalPages}, всего: ${total})`;
+/** Maximum length of a single Telegram message segment. Telegram allows 4096
+ *  characters; we keep a comfortable margin for the «(продолжение N/M)» suffix
+ *  and any client-specific quirks. */
+const MAX_SEGMENT_LENGTH = 3800;
+
+/** Subcategory text is truncated to this length to keep individual lines compact. */
+const MAX_SUBCATEGORY_DISPLAY = 60;
+
+/** Single detailed expense for the bot's per-category report block. */
+export interface DetailedReportExpense {
+  subcategory: string | null;
+  amount: number;
+  firstName: string;
+  createdAt: Date;
+}
+
+/** Per-category block for the detailed monthly report. */
+export interface DetailedReportCategory {
+  categoryEmoji: string;
+  categoryName: string;
+  total: number;
+  expenses: DetailedReportExpense[];
+}
+
+function truncateSubcategory(text: string): string {
+  if (text.length <= MAX_SUBCATEGORY_DISPLAY) return text;
+  return text.slice(0, MAX_SUBCATEGORY_DISPLAY - 1).trimEnd() + "…";
+}
+
+function formatDetailedExpenseLine(e: DetailedReportExpense): string {
+  const date = e.createdAt.toLocaleDateString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: TIMEZONE_MSK,
+  });
+  const sub = e.subcategory
+    ? ` — ${escapeMarkdown(truncateSubcategory(e.subcategory))}`
+    : "";
+  return `  • ${formatMoney(e.amount)}${sub} · ${escapeMarkdown(e.firstName)} · ${date}`;
+}
+
+/**
+ * Render the fully-detailed monthly expense report for the bot, splitting it
+ * into one or more segments each fitting into a single Telegram message.
+ *
+ * Layout per segment:
+ *   - Header: «📊 Расходы за <месяц> <год>» (with «(продолжение N/M)» on later parts)
+ *   - Per-category blocks: «<emoji> <name> — <total>» followed by every operation
+ *   - Trailing footer (only on the last segment): grand total and limit progress
+ *
+ * The function packs lines greedily, allowing a category block to span multiple
+ * segments when it alone exceeds the per-message budget. Lines are atomic — a
+ * single line is never split mid-string.
+ */
+export function formatDetailedMonthReport(
+  categories: DetailedReportCategory[],
+  grandTotal: number,
+  monthLimit: number,
+  year: number,
+  month: number,
+  tribeName: string
+): string[] {
+  const baseHeader = `📊 *Расходы за ${monthName(month)} ${year}*\nТрайб: ${escapeMarkdown(tribeName)}`;
   const separator = "━━━━━━━━━━━━━━━━━━━━━━━";
 
-  const lines = expenses.map((e) => {
-    const date = e.createdAt.toLocaleDateString("ru-RU", {
-      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-      timeZone: TIMEZONE_MSK,
-    });
-    const sub = e.subcategory ? ` — ${e.subcategory}` : "";
-    return `${formatMoney(e.amount)}${sub}\n  👤 ${e.firstName} | ${date}`;
-  });
+  if (categories.length === 0) {
+    return [`${baseHeader}\n${separator}\nЗа этот период расходов нет.`];
+  }
 
-  return [header, separator, ...lines].join("\n");
+  const limitPercent = monthLimit > 0 ? ((grandTotal / monthLimit) * 100).toFixed(1) : "0";
+  const limitIcon = grandTotal >= monthLimit ? "🚨" : grandTotal >= monthLimit * 0.9 ? "⚠️" : "✅";
+  const footerLines: string[] = [
+    separator,
+    `💰 *Итого:* ${formatMoney(grandTotal)}`,
+  ];
+  if (monthLimit > 0) {
+    footerLines.push(`📊 *Лимит:* ${formatMoney(monthLimit)} (${limitPercent}%) ${limitIcon}`);
+  }
+  const footerBlock = footerLines.join("\n");
+
+  // Build a flat list of "atomic" lines, then pack them into segments.
+  const lines: string[] = [];
+  for (const cat of categories) {
+    lines.push(`${cat.categoryEmoji} *${escapeMarkdown(cat.categoryName)}* — ${formatMoney(cat.total)}`);
+    for (const e of cat.expenses) {
+      lines.push(formatDetailedExpenseLine(e));
+    }
+  }
+
+  // Reserve a worst-case continuation-header length so that even when the final
+  // header gets long indices like «(продолжение 99/99)», segment length stays
+  // within the budget. The actual header is computed after the total count is known.
+  const continuationHeaderPlaceholder =
+    `📊 *Расходы за ${monthName(month)} ${year}* _(продолжение 99/99)_`;
+  const continuationHeaderLen = continuationHeaderPlaceholder.length;
+
+  const PLACEHOLDER = " CONT_HEADER "; // sentinel that cannot appear in user data
+
+  const segments: string[] = [];
+  let current = `${baseHeader}\n${separator}`;
+  // Per-segment budget for current = MAX_SEGMENT_LENGTH minus any expansion at finalize.
+  // For segment 0 the header is final; for later segments we account for the
+  // delta between the placeholder length and the worst-case continuation header.
+  let placeholderDelta = 0;
+
+  const pushAndReset = () => {
+    segments.push(current);
+    current = `${PLACEHOLDER}\n${separator}`;
+    placeholderDelta = continuationHeaderLen - PLACEHOLDER.length;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const candidate = `${current}\n${line}`;
+    const isLastLine = i === lines.length - 1;
+    const reservedFooter = isLastLine ? `\n${footerBlock}`.length : 0;
+
+    if (candidate.length + placeholderDelta + reservedFooter <= MAX_SEGMENT_LENGTH) {
+      current = candidate;
+    } else {
+      pushAndReset();
+      current = `${current}\n${line}`;
+    }
+  }
+
+  // Append footer to the final (in-progress) segment before flushing it.
+  current = `${current}\n${footerBlock}`;
+  segments.push(current);
+
+  // Resolve placeholders now that we know the total segment count.
+  const total = segments.length;
+  return segments.map((seg, idx) => {
+    if (idx === 0) return seg;
+    const contHeader = `📊 *Расходы за ${monthName(month)} ${year}* _(продолжение ${idx + 1}/${total})_`;
+    return seg.replace(PLACEHOLDER, contHeader);
+  });
 }
+

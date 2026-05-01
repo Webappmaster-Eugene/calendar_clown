@@ -118,6 +118,46 @@ export async function getExpensesByCategory(
   }));
 }
 
+/** Get all expenses for a tribe in a date range, sorted by category (sortOrder) then by createdAt DESC.
+ *  Used to render the fully detailed monthly report (every operation visible per category). */
+export async function getAllExpensesForReport(
+  tribeId: number,
+  dateFrom: Date,
+  dateTo: Date
+): Promise<Array<{
+  id: number;
+  categoryId: number;
+  subcategory: string | null;
+  amount: number;
+  firstName: string;
+  createdAt: Date;
+}>> {
+  const { rows } = await query<{
+    id: number;
+    category_id: number;
+    subcategory: string | null;
+    amount: string;
+    first_name: string;
+    created_at: Date;
+  }>(
+    `SELECT e.id, e.category_id, e.subcategory, e.amount, u.first_name, e.created_at
+     FROM expenses e
+     JOIN users u ON u.id = e.user_id
+     JOIN categories c ON c.id = e.category_id
+     WHERE e.tribe_id = $1 AND e.created_at >= $2 AND e.created_at < $3
+     ORDER BY c.sort_order ASC, e.created_at DESC`,
+    [tribeId, dateFrom.toISOString(), dateTo.toISOString()]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    categoryId: r.category_id,
+    subcategory: r.subcategory,
+    amount: parseFloat(r.amount),
+    firstName: r.first_name,
+    createdAt: r.created_at,
+  }));
+}
+
 /** Count expenses in a category for a date range. */
 export async function countExpensesByCategory(
   tribeId: number,

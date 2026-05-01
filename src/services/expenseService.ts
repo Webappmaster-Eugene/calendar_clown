@@ -17,6 +17,7 @@ import {
   getExpensesForExcel,
   getExpensesByCategory,
   countExpensesByCategory,
+  getAllExpensesForReport,
   getCategories,
   updateExpense,
   getExpenseById,
@@ -25,13 +26,7 @@ import {
 } from "../expenses/repository.js";
 import {
   formatExpenseConfirmation,
-  formatMoney,
   monthName,
-  formatMonthReport,
-  formatComparisonReport,
-  formatUserStats,
-  formatYearReport,
-  formatExpenseDetailList,
 } from "../expenses/formatter.js";
 import { generateMonthlyExcel } from "../expenses/excel.js";
 import { getMskNow, getMonthRange, getMonthLimit } from "../utils/date.js";
@@ -44,6 +39,7 @@ import type {
   UserTotalDto,
   MonthComparisonDto,
   ExpenseReportDto,
+  ExpenseDetailItemDto,
   RecentExpenseDto,
   RecentExpensesResponse,
   ComparisonDrilldownDto,
@@ -348,11 +344,18 @@ export async function addExpenseFromVoice(
 
 /**
  * Get monthly expense report.
+ *
+ * @param includeDetails  When true, also fetch every operation grouped by category
+ *                        and place them into `byCategoryDetailed`. The bot's /expenses
+ *                        report uses this to render the fully detailed view. The API
+ *                        used by the Mini App leaves it false (the app pulls per-category
+ *                        details on demand via /api/expenses/drilldown).
  */
 export async function getMonthReport(
   telegramId: number,
   year: number,
-  month: number
+  month: number,
+  includeDetails: boolean = false
 ): Promise<ExpenseReportDto> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -363,7 +366,7 @@ export async function getMonthReport(
   const comparisonDay = isCurrentMonth ? mskNow.day : undefined;
 
   const { from, to } = getMonthRange(year, month);
-  const [totals, userTotals, prevComparison] = await Promise.all([
+  const [totals, userTotals, prevComparison, detailedRows] = await Promise.all([
     getCategoryTotals(dbUser.tribeId, from, to),
     getUserTotals(dbUser.tribeId, from, to),
     getMonthComparison(
@@ -374,10 +377,34 @@ export async function getMonthReport(
       month,
       comparisonDay
     ),
+    includeDetails
+      ? getAllExpensesForReport(dbUser.tribeId, from, to)
+      : Promise.resolve(null),
   ]);
 
   const grandTotal = totals.reduce((s, t) => s + t.total, 0);
   const limit = getMonthLimit();
+
+  let byCategoryDetailed: ExpenseReportDto["byCategoryDetailed"];
+  if (detailedRows) {
+    const byCat = new Map<number, ExpenseDetailItemDto[]>();
+    for (const row of detailedRows) {
+      const list = byCat.get(row.categoryId);
+      const dto: ExpenseDetailItemDto = {
+        id: row.id,
+        subcategory: row.subcategory,
+        amount: row.amount,
+        firstName: row.firstName,
+        createdAt: row.createdAt.toISOString(),
+      };
+      if (list) list.push(dto);
+      else byCat.set(row.categoryId, [dto]);
+    }
+    byCategoryDetailed = totals.map((t) => ({
+      categoryId: t.categoryId,
+      expenses: byCat.get(t.categoryId) ?? [],
+    }));
+  }
 
   return {
     month: `${year}-${String(month).padStart(2, "0")}`,
@@ -405,6 +432,7 @@ export async function getMonthReport(
       diff: c.diff,
     })),
     comparisonDay,
+    byCategoryDetailed,
   };
 }
 

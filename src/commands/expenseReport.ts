@@ -7,17 +7,15 @@ import {
   getMonthComparison,
   getUserByTelegramId,
   getTribeName,
-  getExpensesByCategory,
-  countExpensesByCategory,
+  getAllExpensesForReport,
 } from "../expenses/repository.js";
 import {
-  formatMonthReport,
   formatComparisonReport,
   formatUserStats,
   formatYearReport,
-  formatExpenseDetailList,
-  formatMoney,
+  formatDetailedMonthReport,
   monthName,
+  type DetailedReportCategory,
 } from "../expenses/formatter.js";
 import { getMskNow, getMonthRange, getMonthLimit } from "../utils/date.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -74,61 +72,84 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // report:<year>:<month>
+  // report:<year>:<month> — detailed monthly report (every operation visible).
   const reportMatch = data.match(/^report:(\d+):(\d+)$/);
   if (reportMatch) {
     const year = parseInt(reportMatch[1], 10);
     const month = parseInt(reportMatch[2], 10);
     const { from, to } = getMonthRange(year, month);
 
-    const totals = await getCategoryTotals(dbUser.tribeId!, from, to);
+    const [totals, allExpenses, tribeName] = await Promise.all([
+      getCategoryTotals(dbUser.tribeId!, from, to),
+      getAllExpensesForReport(dbUser.tribeId!, from, to),
+      getTribeName(dbUser.tribeId!),
+    ]);
+
     const grandTotal = totals.reduce((s, t) => s + t.total, 0);
     const limit = getMonthLimit();
 
-    const tribeName = await getTribeName(dbUser.tribeId!);
-    const text = formatMonthReport(totals, grandTotal, limit, year, month, tribeName);
+    // Group operations by category for the formatter (one ordered list per category).
+    const expensesByCategory = new Map<number, DetailedReportCategory["expenses"]>();
+    for (const e of allExpenses) {
+      const list = expensesByCategory.get(e.categoryId);
+      const dto = {
+        subcategory: e.subcategory,
+        amount: e.amount,
+        firstName: e.firstName,
+        createdAt: e.createdAt,
+      };
+      if (list) list.push(dto);
+      else expensesByCategory.set(e.categoryId, [dto]);
+    }
+    const detailedCategories: DetailedReportCategory[] = totals.map((t) => ({
+      categoryEmoji: t.categoryEmoji,
+      categoryName: t.categoryName,
+      total: t.total,
+      expenses: expensesByCategory.get(t.categoryId) ?? [],
+    }));
 
-    // Navigation buttons
+    const segments = formatDetailedMonthReport(
+      detailedCategories,
+      grandTotal,
+      limit,
+      year,
+      month,
+      tribeName
+    );
+
+    // Navigation buttons (period nav + Excel + comparison) attach only to the last segment.
     const prevMonth = month === 1 ? 12 : month - 1;
     const prevYear = month === 1 ? year - 1 : year;
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
+    const navMarkup = Markup.inlineKeyboard([
+      [
+        Markup.button.callback(`◀️ ${monthName(prevMonth)}`, `report:${prevYear}:${prevMonth}`),
+        Markup.button.callback(`${monthName(month)} ${year}`, `noop`),
+        Markup.button.callback(`${monthName(nextMonth)} ▶️`, `report:${nextYear}:${nextMonth}`),
+      ],
+      [
+        Markup.button.callback("📥 Скачать Excel", `excel:${year}:${month}`),
+        Markup.button.callback("📈 Сравнение", `compare:${year}:${month}`),
+      ],
+    ]);
 
-    // Кнопки категорий для drilldown (по 2 в ряд)
-    const categoryButtons: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
-    for (let i = 0; i < totals.length; i += 2) {
-      const row = [
-        Markup.button.callback(
-          `${totals[i].categoryEmoji} ${formatMoney(totals[i].total)}`,
-          `drilldown:${totals[i].categoryId}:${year}:${month}:0`
-        ),
-      ];
-      if (i + 1 < totals.length) {
-        row.push(
-          Markup.button.callback(
-            `${totals[i + 1].categoryEmoji} ${formatMoney(totals[i + 1].total)}`,
-            `drilldown:${totals[i + 1].categoryId}:${year}:${month}:0`
-          )
-        );
+    // First segment replaces the originating menu message; further segments are
+    // sent as new replies. Buttons live on the LAST segment so they remain
+    // visible after Telegram scrolls past intermediate messages.
+    for (let i = 0; i < segments.length; i++) {
+      const isFirst = i === 0;
+      const isLast = i === segments.length - 1;
+      const extra = {
+        parse_mode: "Markdown" as const,
+        ...(isLast ? navMarkup : {}),
+      };
+      if (isFirst) {
+        await ctx.editMessageText(segments[i], extra);
+      } else {
+        await ctx.reply(segments[i], extra);
       }
-      categoryButtons.push(row);
     }
-
-    await ctx.editMessageText(text, {
-      parse_mode: "Markdown",
-      ...Markup.inlineKeyboard([
-        ...categoryButtons,
-        [
-          Markup.button.callback(`◀️ ${monthName(prevMonth)}`, `report:${prevYear}:${prevMonth}`),
-          Markup.button.callback(`${monthName(month)} ${year}`, `noop`),
-          Markup.button.callback(`${monthName(nextMonth)} ▶️`, `report:${nextYear}:${nextMonth}`),
-        ],
-        [
-          Markup.button.callback("📥 Скачать Excel", `excel:${year}:${month}`),
-          Markup.button.callback("📈 Сравнение", `compare:${year}:${month}`),
-        ],
-      ]),
-    });
     await ctx.answerCbQuery();
     return;
   }
@@ -204,51 +225,6 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
       ...Markup.inlineKeyboard([
         [Markup.button.callback("◀️ Назад к отчёту", `report:${year}:${month}`)],
       ]),
-    });
-    await ctx.answerCbQuery();
-    return;
-  }
-
-  // drilldown:<categoryId>:<year>:<month>:<offset>
-  const drillMatch = data.match(/^drilldown:(\d+):(\d+):(\d+):(\d+)$/);
-  if (drillMatch) {
-    const categoryId = parseInt(drillMatch[1], 10);
-    const year = parseInt(drillMatch[2], 10);
-    const month = parseInt(drillMatch[3], 10);
-    const offset = parseInt(drillMatch[4], 10);
-    logAction(null, telegramId, "expense_drilldown", { categoryId, year, month });
-    const { from, to } = getMonthRange(year, month);
-    const PAGE_SIZE = 10;
-
-    const total = await countExpensesByCategory(dbUser.tribeId!, categoryId, from, to);
-    const expenses = await getExpensesByCategory(dbUser.tribeId!, categoryId, from, to, PAGE_SIZE, offset);
-    const totalPages = Math.ceil(total / PAGE_SIZE);
-    const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
-
-    // Get category info from totals
-    const cats = await getCategoryTotals(dbUser.tribeId!, from, to);
-    const cat = cats.find((c) => c.categoryId === categoryId);
-    const catName = cat?.categoryName ?? "Категория";
-    const catEmoji = cat?.categoryEmoji ?? "📦";
-
-    const text = formatExpenseDetailList(expenses, catName, catEmoji, total, currentPage, totalPages);
-
-    const navButtons: Array<ReturnType<typeof Markup.button.callback>> = [];
-    if (offset > 0) {
-      navButtons.push(Markup.button.callback("⬅️ Назад", `drilldown:${categoryId}:${year}:${month}:${offset - PAGE_SIZE}`));
-    }
-    if (offset + PAGE_SIZE < total) {
-      navButtons.push(Markup.button.callback("Вперёд ➡️", `drilldown:${categoryId}:${year}:${month}:${offset + PAGE_SIZE}`));
-    }
-
-    const buttons = [
-      ...navButtons.length > 0 ? [navButtons] : [],
-      [Markup.button.callback("◀️ К отчёту", `report:${year}:${month}`)],
-    ];
-
-    await ctx.editMessageText(text, {
-      parse_mode: "Markdown",
-      ...Markup.inlineKeyboard(buttons),
     });
     await ctx.answerCbQuery();
     return;

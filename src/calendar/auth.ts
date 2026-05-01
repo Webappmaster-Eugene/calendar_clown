@@ -83,8 +83,8 @@ export async function saveTokenFromCode(code: string, userId: string): Promise<v
   );
   const { tokens } = tokenResponse;
   const tokenPath = getTokenPath(userId);
-  await mkdir(dirname(tokenPath), { recursive: true });
-  await writeFile(tokenPath, JSON.stringify(tokens), "utf8");
+  await mkdir(dirname(tokenPath), { recursive: true, mode: 0o700 });
+  await writeFile(tokenPath, JSON.stringify(tokens), { encoding: "utf8", mode: 0o600 });
 }
 
 /**
@@ -125,8 +125,8 @@ export async function getAuthClient(userId: string): Promise<OAuth2Client> {
   oauth2Client.setCredentials(tokens as Parameters<OAuth2Client["setCredentials"]>[0]);
   oauth2Client.on("tokens", async (newTokens) => {
     const merged = { ...(oauth2Client.credentials as Record<string, unknown>), ...newTokens };
-    await mkdir(dirname(tokenPath), { recursive: true });
-    await writeFile(tokenPath, JSON.stringify(merged), "utf8");
+    await mkdir(dirname(tokenPath), { recursive: true, mode: 0o700 });
+    await writeFile(tokenPath, JSON.stringify(merged), { encoding: "utf8", mode: 0o600 });
   });
   return oauth2Client;
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
@@ -61,7 +61,6 @@ export function ExpensesPage() {
   const [voiceText, setVoiceText] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [drilldownCategoryId, setDrilldownCategoryId] = useState<number | null>(null);
   const [comparisonDrilldownCategoryId, setComparisonDrilldownCategoryId] = useState<number | null>(null);
   const [recentPage, setRecentPage] = useState(1);
   const tabsRef = useDragScroll<HTMLDivElement>();
@@ -161,17 +160,6 @@ export function ExpensesPage() {
     );
   }
 
-  if (drilldownCategoryId !== null) {
-    return (
-      <ExpenseDrilldown
-        categoryId={drilldownCategoryId}
-        year={year}
-        month={month}
-        onBack={() => setDrilldownCategoryId(null)}
-      />
-    );
-  }
-
   if (reportLoading && tab !== "year" && tab !== "recent") return <div className="loading">Загрузка...</div>;
   if (reportError) return <div className="page"><div className="error-msg">{(reportError as Error).message}</div></div>;
 
@@ -254,7 +242,6 @@ export function ExpensesPage() {
           progress={progress}
           month={month}
           year={year}
-          onDrilldown={setDrilldownCategoryId}
         />
       )}
       {tab === "comparison" && (
@@ -341,7 +328,6 @@ function ReportView({
   progress,
   month,
   year,
-  onDrilldown,
 }: {
   report: ExpenseReportDto | undefined;
   total: number;
@@ -349,8 +335,48 @@ function ReportView({
   progress: number;
   month: number;
   year: number;
-  onDrilldown: (catId: number) => void;
 }) {
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [excelLoading, setExcelLoading] = useState(false);
+  const [excelError, setExcelError] = useState<string | null>(null);
+
+  const toggleCategory = (id: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // When the user changes month/year, drop expanded state — different data, fresh view.
+  useEffect(() => {
+    setExpanded(new Set());
+  }, [year, month]);
+
+  const downloadExcel = async () => {
+    if (excelLoading) return;
+    setExcelLoading(true);
+    setExcelError(null);
+    try {
+      const blob = await api.getBlob(`/api/expenses/excel?month=${month}&year=${year}`);
+      const filename = `Расходы_${RU_MONTHS[month - 1]}_${year}.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Не удалось сформировать отчёт";
+      setExcelError(msg);
+    } finally {
+      setExcelLoading(false);
+    }
+  };
+
   return (
     <>
       <div className="card">
@@ -358,9 +384,10 @@ function ReportView({
           <div className="card-hint">{report?.month ?? "Текущий месяц"}</div>
           <button
             className="btn btn-small"
-            onClick={() => window.open(`/api/expenses/excel?month=${month}&year=${year}`, "_blank")}
+            onClick={downloadExcel}
+            disabled={excelLoading}
           >
-            Excel
+            {excelLoading ? "Формирую…" : "Excel"}
           </button>
         </div>
         <div style={{ fontSize: 28, fontWeight: 700 }}>
@@ -369,32 +396,158 @@ function ReportView({
         <div className="progress-bar">
           <div className="progress-fill" style={{ width: `${progress}%` }} />
         </div>
+        {excelError && (
+          <div className="error-msg" style={{ marginTop: 8 }}>{excelError}</div>
+        )}
       </div>
 
       <div className="section-title">По категориям</div>
       {report?.byCategory && report.byCategory.length > 0 ? (
         <div className="list">
           {report.byCategory.map((cat) => (
-            <div
+            <CategoryAccordion
               key={cat.categoryId}
-              className="list-item"
-              style={{ cursor: "pointer" }}
-              onClick={() => onDrilldown(cat.categoryId)}
-            >
-              <span className="list-item-emoji">{cat.categoryEmoji}</span>
-              <div className="list-item-content">
-                <div className="list-item-title">{cat.categoryName}</div>
-                <div className="list-item-hint">Детали &rarr;</div>
-              </div>
-              <div style={{ fontWeight: 600 }}>
-                {cat.total.toLocaleString("ru-RU")}
-              </div>
-            </div>
+              categoryId={cat.categoryId}
+              categoryEmoji={cat.categoryEmoji}
+              categoryName={cat.categoryName}
+              total={cat.total}
+              year={year}
+              month={month}
+              isExpanded={expanded.has(cat.categoryId)}
+              onToggle={() => toggleCategory(cat.categoryId)}
+            />
           ))}
         </div>
       ) : (
         <div className="empty-state">
           <div className="empty-state-text">Нет расходов за этот месяц</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Category Accordion (inline drilldown) ───────────────────
+
+function CategoryAccordion({
+  categoryId,
+  categoryEmoji,
+  categoryName,
+  total,
+  year,
+  month,
+  isExpanded,
+  onToggle,
+}: {
+  categoryId: number;
+  categoryEmoji: string;
+  categoryName: string;
+  total: number;
+  year: number;
+  month: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [page, setPage] = useState(1);
+  const LIMIT = 20;
+
+  // Reset pagination when the user collapses the row.
+  useEffect(() => {
+    if (!isExpanded) setPage(1);
+  }, [isExpanded]);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["expenses", "drilldown", categoryId, year, month, page],
+    queryFn: () =>
+      api.get<DrilldownResponse>(
+        `/api/expenses/drilldown?categoryId=${categoryId}&year=${year}&month=${month}&page=${page}&limit=${LIMIT}`
+      ),
+    enabled: isExpanded,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.del<void>(`/api/expenses/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    },
+  });
+
+  const expenses = data?.expenses ?? [];
+  const totalCount = data?.total ?? 0;
+  const hasMore = page * LIMIT < totalCount;
+
+  return (
+    <>
+      <div
+        className="list-item"
+        style={{ cursor: "pointer" }}
+        onClick={onToggle}
+      >
+        <span className="list-item-emoji">{categoryEmoji}</span>
+        <div className="list-item-content">
+          <div className="list-item-title">{categoryName}</div>
+          <div className="list-item-hint">
+            {isExpanded ? "Скрыть детали ▲" : "Детали ▼"}
+          </div>
+        </div>
+        <div style={{ fontWeight: 600 }}>
+          {total.toLocaleString("ru-RU")}
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div style={{ paddingLeft: 16, paddingBottom: 8 }}>
+          {isLoading && <div className="card-hint" style={{ padding: "8px 0" }}>Загрузка…</div>}
+          {!isLoading && expenses.length === 0 && (
+            <div className="card-hint" style={{ padding: "8px 0" }}>Операций нет</div>
+          )}
+          {expenses.map((exp) => (
+            <div key={exp.id} className="list-item" style={{ paddingLeft: 0 }}>
+              <div className="list-item-content">
+                <div className="list-item-title">
+                  {exp.amount.toLocaleString("ru-RU")} ₽
+                  {exp.subcategory ? ` — ${exp.subcategory}` : ""}
+                </div>
+                <div className="list-item-hint">
+                  {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
+              </div>
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-icon btn-danger"
+                  onClick={() => {
+                    if (confirm("Удалить эту запись?")) {
+                      deleteMutation.mutate(exp.id);
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                  title="Удалить"
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+          ))}
+          {(page > 1 || hasMore) && (
+            <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 8 }}>
+              {page > 1 && (
+                <button className="btn btn-small" onClick={() => setPage((p) => p - 1)}>
+                  Назад
+                </button>
+              )}
+              {hasMore && (
+                <button className="btn btn-small btn-primary" onClick={() => setPage((p) => p + 1)}>
+                  Показать ещё
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </>
@@ -875,101 +1028,3 @@ function ComparisonDrilldownView({
   );
 }
 
-// ─── Drilldown ───────────────────────────────────────────────
-
-function ExpenseDrilldown({
-  categoryId,
-  year,
-  month,
-  onBack,
-}: {
-  categoryId: number;
-  year: number;
-  month: number;
-  onBack: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const LIMIT = 20;
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["expenses", "drilldown", categoryId, year, month, page],
-    queryFn: () =>
-      api.get<DrilldownResponse>(
-        `/api/expenses/drilldown?categoryId=${categoryId}&year=${year}&month=${month}&page=${page}&limit=${LIMIT}`
-      ),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.del<void>(`/api/expenses/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
-    },
-  });
-
-  const expenses = data?.expenses ?? [];
-  const total = data?.total ?? 0;
-  const hasMore = page * LIMIT < total;
-
-  return (
-    <div className="page">
-      <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>
-        Назад
-      </button>
-
-      {data && (
-        <h2 className="page-title" style={{ fontSize: 18 }}>
-          {data.categoryEmoji} {data.categoryName}
-        </h2>
-      )}
-
-      {isLoading && <div className="loading">Загрузка...</div>}
-
-      {expenses.length === 0 && !isLoading && (
-        <div className="empty-state">
-          <div className="empty-state-text">Нет расходов в этой категории</div>
-        </div>
-      )}
-
-      {expenses.length > 0 && (
-        <>
-          <div className="list">
-            {expenses.map((exp) => (
-              <div key={exp.id} className="list-item">
-                <div className="list-item-content">
-                  <div className="list-item-title">
-                    {exp.amount.toLocaleString("ru-RU")} ₽
-                    {exp.subcategory ? ` — ${exp.subcategory}` : ""}
-                  </div>
-                  <div className="list-item-hint">
-                    {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU")}
-                  </div>
-                </div>
-                <div className="list-item-actions">
-                  <button
-                    className="btn btn-icon btn-danger"
-                    onClick={() => deleteMutation.mutate(exp.id)}
-                    disabled={deleteMutation.isPending}
-                    title="Удалить"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12 }}>
-            {page > 1 && (
-              <button className="btn btn-small" onClick={() => setPage((p) => p - 1)}>Назад</button>
-            )}
-            {hasMore && (
-              <button className="btn btn-small btn-primary" onClick={() => setPage((p) => p + 1)}>
-                Далее
-              </button>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
