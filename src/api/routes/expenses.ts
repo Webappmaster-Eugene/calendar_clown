@@ -19,6 +19,24 @@ import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
+/** Build a Content-Disposition value safe for Node's HTTP layer.
+ *
+ *  Node rejects header values containing bytes outside ISO-8859-1 with
+ *  ERR_INVALID_CHAR — so a raw Cyrillic (or any non-latin1) filename throws
+ *  500 at the Hono `c.body(...)` step. Per RFC 5987 we ship two filenames:
+ *  an ASCII-only `filename=` for legacy clients, and `filename*=UTF-8''…`
+ *  with percent-encoded UTF-8 for everyone else (modern browsers, Telegram
+ *  WebView, curl, etc.). The output is guaranteed to be ASCII. */
+export function buildExcelDispositionHeader(
+  filename: string,
+  year: number,
+  month: number
+): string {
+  const asciiFallback = `expenses-${year}-${String(month).padStart(2, "0")}.xlsx`;
+  const utf8Encoded = encodeURIComponent(filename);
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${utf8Encoded}`;
+}
+
 /** GET /api/expenses — list expenses (monthly report by category) */
 app.get("/", async (c) => {
   const initData = c.get("initData");
@@ -211,7 +229,7 @@ app.get("/excel", async (c) => {
     }
 
     c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    c.header("Content-Disposition", `attachment; filename="${result.filename}"`);
+    c.header("Content-Disposition", buildExcelDispositionHeader(result.filename, year, month));
     return c.body(result.buffer as unknown as ArrayBuffer);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to generate Excel";
