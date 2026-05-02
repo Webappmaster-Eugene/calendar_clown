@@ -16,6 +16,7 @@ import type {
   AddExpenseResultDto,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { useTelegram } from "../hooks/useTelegram";
 
 // ─── Constants ─────────────────────────────────────────────────
 
@@ -339,6 +340,7 @@ function ReportView({
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [excelLoading, setExcelLoading] = useState(false);
   const [excelError, setExcelError] = useState<string | null>(null);
+  const { platform } = useTelegram();
 
   const toggleCategory = (id: number) => {
     setExpanded((prev) => {
@@ -365,10 +367,19 @@ function ReportView({
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
+      // iOS Telegram (WKWebView) ignores the `download` attribute on blob URLs.
+      // Opening in a new view lets the user reach the share/Save-to-Files sheet.
+      // On Desktop/Android `target="_blank"` is harmless when `download` is honored.
+      if (platform === "ios") {
+        a.target = "_blank";
+        a.rel = "noopener";
+      }
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Defer revoke so iOS has time to finish reading the blob (large files,
+      // share-sheet preview, etc.). 60s is generous for any realistic xlsx.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Не удалось сформировать отчёт";
       setExcelError(msg);

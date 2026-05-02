@@ -1,1 +1,27 @@
-npm run build
+#!/bin/sh
+# Fast safety net before every commit. ~10–15 seconds total.
+# Blocks the commit if types are broken or a secret file is staged.
+set -e
+
+echo "🔍 Pre-commit checks..."
+
+echo "  → Backend typecheck"
+npm run typecheck
+
+echo "  → Webapp typecheck"
+( cd webapp && npm run typecheck )
+
+echo "  → Secret scan (staged files)"
+# Block .env / .env.local / .env.deploy / *.pem / *.key / deploy_key.
+# Intentionally allows .env.example (tracked, no secrets).
+SECRET_PATTERN='(^|/)\.env(\.local|\.deploy)?$|\.pem$|\.key$|deploy_key'
+SECRETS=$(git diff --cached --name-only --diff-filter=ACMR | grep -E "$SECRET_PATTERN" || true)
+if [ -n "$SECRETS" ]; then
+  echo ""
+  echo "  ❌ Potential secret files staged for commit:"
+  echo "$SECRETS" | sed 's/^/     /'
+  echo "  Remove them with: git rm --cached <file>"
+  exit 1
+fi
+
+echo "✅ Pre-commit OK"

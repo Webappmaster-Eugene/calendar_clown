@@ -94,6 +94,34 @@ export const MOCK_SIMPLIFICATIONS = {
   total: 1,
 };
 
+/** Drilldown response for /api/expenses/drilldown — used by the inline
+ *  accordion in the report tab. Mirrors getCategoryDrilldown's shape. */
+export const MOCK_DRILLDOWN_GROCERIES = {
+  categoryName: "Продукты",
+  categoryEmoji: "🛒",
+  total: 3,
+  expenses: [
+    { id: 301, subcategory: "Молоко", amount: 130, firstName: "Тестов", createdAt: "2026-04-10T10:00:00.000Z" },
+    { id: 302, subcategory: "Яйца", amount: 150, firstName: "Тестов", createdAt: "2026-04-08T09:00:00.000Z" },
+    { id: 303, subcategory: "Сыр", amount: 340, firstName: "Аня", createdAt: "2026-04-06T14:00:00.000Z" },
+  ],
+};
+
+/** Larger drilldown response that exercises the "Show more" pagination path. */
+export const MOCK_DRILLDOWN_GROCERIES_PAGED = {
+  categoryName: "Продукты",
+  categoryEmoji: "🛒",
+  total: 25,
+  // 20 items match the LIMIT in CategoryAccordion — "Show more" should appear.
+  expenses: Array.from({ length: 20 }, (_, i) => ({
+    id: 400 + i,
+    subcategory: `Покупка ${i + 1}`,
+    amount: 100 + i,
+    firstName: "Тестов",
+    createdAt: "2026-04-10T10:00:00.000Z",
+  })),
+};
+
 export const MOCK_COMPARISON_DRILLDOWN = {
   categoryName: "Продукты",
   categoryEmoji: "🛒",

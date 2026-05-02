@@ -1,20 +1,36 @@
 #!/bin/sh
+# Full smoke before pushing. ~25–40 seconds total.
+# Blocks the push if anything is broken — TS errors, build failures, unit tests, or tracked secrets.
+# DB-backed integration tests and Playwright e2e are NOT in this hook on purpose
+# (they need a live PostgreSQL / browser binaries). They run in CI.
+set -e
 
-echo "🔍 Running pre-push smoke tests..."
+echo "🔍 Pre-push smoke tests..."
 
-# Build check
-echo "  Building..."
-npm run build || exit 1
+echo "  → Backend typecheck"
+npm run typecheck
 
-# TypeScript type check (warnings only — pre-existing TS errors may exist)
-echo "  Type checking..."
-npx tsc --noEmit 2>&1 || echo "  ⚠️  TypeScript warnings (non-blocking)"
+echo "  → Backend build"
+npm run build
 
-# Check for secrets in staged files
-echo "  Checking for secrets..."
-if git diff --cached --name-only | grep -qE '\.env$|\.env\.local$|\.pem$|\.key$|deploy_key'; then
-  echo "  ❌ Potential secret file detected in commit!"
+echo "  → Backend unit tests"
+npm run test:unit
+
+echo "  → Webapp typecheck"
+( cd webapp && npm run typecheck )
+
+echo "  → Webapp build"
+( cd webapp && npm run build )
+
+echo "  → Tracked-secret scan"
+SECRET_PATTERN='(^|/)\.env(\.local|\.deploy)?$|\.pem$|\.key$|deploy_key'
+SECRETS=$(git ls-files | grep -E "$SECRET_PATTERN" || true)
+if [ -n "$SECRETS" ]; then
+  echo ""
+  echo "  ❌ Secret files are tracked in git:"
+  echo "$SECRETS" | sed 's/^/     /'
+  echo "  Untrack them with: git rm --cached <file> && git commit -m 'untrack secrets'"
   exit 1
 fi
 
-echo "✅ Pre-push checks passed"
+echo "✅ Pre-push smoke passed"
