@@ -233,6 +233,82 @@ select.input {
   gap: 6px;
 }
 
+/* ─── Expense Category Accordion ──────────────────────────── */
+/* One card per category. The header looks like a `.list-item`; when expanded,
+   operations render as flat rows inside the same card, separated by hairlines.
+   This keeps each category visually unified instead of fragmenting into many
+   top-level cards. */
+
+.expense-cat {
+  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.expense-cat-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.expense-cat-header:active {
+  background: color-mix(in srgb, var(--tg-theme-secondary-bg-color, #f5f5f5) 70%, var(--tg-theme-text-color, #000) 30%);
+}
+
+.expense-cat-body {
+  border-top: 1px solid color-mix(in srgb, var(--tg-theme-text-color, #000) 8%, transparent);
+}
+
+.expense-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 24px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-text-color, #000) 6%, transparent);
+}
+
+.expense-row:last-child {
+  border-bottom: none;
+}
+
+.expense-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.expense-row-title {
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: break-word;
+}
+
+.expense-row-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--tg-theme-hint-color, #999);
+}
+
+.expense-row-actions {
+  flex-shrink: 0;
+}
+
+.expense-row-empty {
+  padding: 12px 14px 12px 24px;
+  font-size: 13px;
+  color: var(--tg-theme-hint-color, #999);
+}
+
+.expense-row-pagination {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid color-mix(in srgb, var(--tg-theme-text-color, #000) 6%, transparent);
+}
+
 /* ─── Mode Grid ───────────────────────────────────────────── */
 
 .mode-grid {

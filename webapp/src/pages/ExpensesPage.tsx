@@ -320,6 +320,28 @@ export function ExpensesPage() {
   );
 }
 
+// ─── Download helpers ────────────────────────────────────────
+
+/** Read a Blob as a base64 `data:` URL (in-process, doesn't leak to OS). */
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Programmatic <a download> click. Caller controls the href (blob: or data:). */
+function triggerDownload(href: string, filename: string): void {
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 // ─── Report View ─────────────────────────────────────────────
 
 function ReportView({
@@ -363,23 +385,26 @@ function ReportView({
     try {
       const blob = await api.getBlob(`/api/expenses/excel?month=${month}&year=${year}`);
       const filename = `Расходы_${RU_MONTHS[month - 1]}_${year}.xlsx`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      // iOS Telegram (WKWebView) ignores the `download` attribute on blob URLs.
-      // Opening in a new view lets the user reach the share/Save-to-Files sheet.
-      // On Desktop/Android `target="_blank"` is harmless when `download` is honored.
-      if (platform === "ios") {
-        a.target = "_blank";
-        a.rel = "noopener";
+
+      // Apple-platform Telegram clients (`ios` and `macos`) use WKWebView, which
+      // does NOT keep blob: URLs inside the webview when used as the `href` of
+      // a downloadable <a>. The URL leaks to the OS opener — on iOS that means
+      // the share sheet at best, on macOS the user gets a Finder "no app can
+      // open this URL" dialog. Data URLs are handled in-process and don't
+      // leak, so we encode the blob to base64 and point the link there.
+      // For Android, Telegram Desktop (Qt) and the web build, the standard
+      // blob URL + `<a download>` path is faster and works correctly.
+      const isApple = platform === "ios" || platform === "macos";
+
+      if (isApple) {
+        const dataUrl = await blobToDataUrl(blob);
+        triggerDownload(dataUrl, filename);
+      } else {
+        const url = URL.createObjectURL(blob);
+        triggerDownload(url, filename);
+        // Defer revoke so the browser has time to start the download stream.
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
       }
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      // Defer revoke so iOS has time to finish reading the blob (large files,
-      // share-sheet preview, etc.). 60s is generous for any realistic xlsx.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Не удалось сформировать отчёт";
       setExcelError(msg);
@@ -489,12 +514,8 @@ function CategoryAccordion({
   const hasMore = page * LIMIT < totalCount;
 
   return (
-    <>
-      <div
-        className="list-item"
-        style={{ cursor: "pointer" }}
-        onClick={onToggle}
-      >
+    <div className="expense-cat">
+      <div className="expense-cat-header" onClick={onToggle}>
         <span className="list-item-emoji">{categoryEmoji}</span>
         <div className="list-item-content">
           <div className="list-item-title">{categoryName}</div>
@@ -508,19 +529,19 @@ function CategoryAccordion({
       </div>
 
       {isExpanded && (
-        <div style={{ paddingLeft: 16, paddingBottom: 8 }}>
-          {isLoading && <div className="card-hint" style={{ padding: "8px 0" }}>Загрузка…</div>}
+        <div className="expense-cat-body">
+          {isLoading && <div className="expense-row-empty">Загрузка…</div>}
           {!isLoading && expenses.length === 0 && (
-            <div className="card-hint" style={{ padding: "8px 0" }}>Операций нет</div>
+            <div className="expense-row-empty">Операций нет</div>
           )}
           {expenses.map((exp) => (
-            <div key={exp.id} className="list-item" style={{ paddingLeft: 0 }}>
-              <div className="list-item-content">
-                <div className="list-item-title">
+            <div key={exp.id} className="expense-row">
+              <div className="expense-row-content">
+                <div className="expense-row-title">
                   {exp.amount.toLocaleString("ru-RU")} ₽
                   {exp.subcategory ? ` — ${exp.subcategory}` : ""}
                 </div>
-                <div className="list-item-hint">
+                <div className="expense-row-meta">
                   {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU", {
                     day: "2-digit",
                     month: "2-digit",
@@ -529,7 +550,7 @@ function CategoryAccordion({
                   })}
                 </div>
               </div>
-              <div className="list-item-actions">
+              <div className="expense-row-actions">
                 <button
                   className="btn btn-icon btn-danger"
                   onClick={() => {
@@ -546,7 +567,7 @@ function CategoryAccordion({
             </div>
           ))}
           {(page > 1 || hasMore) && (
-            <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 8 }}>
+            <div className="expense-row-pagination">
               {page > 1 && (
                 <button className="btn btn-small" onClick={() => setPage((p) => p - 1)}>
                   Назад
@@ -561,7 +582,7 @@ function CategoryAccordion({
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }
 

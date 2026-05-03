@@ -26,9 +26,9 @@ test.describe("Expenses — Inline Accordion (Report tab)", () => {
 
   test("a category row starts collapsed showing only the summary", async ({ appPage }) => {
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
-    const grocery = appPage.locator(".list-item", { hasText: "Продукты" }).first();
+    const grocery = appPage.locator(".expense-cat-header", { hasText: "Продукты" }).first();
     await expect(grocery).toContainText("Детали ▼");
     // None of the drilldown subcategories should be visible yet.
     await expect(appPage.locator("text=Молоко")).toHaveCount(0);
@@ -36,9 +36,9 @@ test.describe("Expenses — Inline Accordion (Report tab)", () => {
 
   test("clicking a category expands it inline and shows all its operations", async ({ appPage }) => {
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
-    const grocery = appPage.locator(".list-item", { hasText: "Продукты" }).first();
+    const grocery = appPage.locator(".expense-cat-header", { hasText: "Продукты" }).first();
     await grocery.click();
 
     // The header switches to the collapsed-state hint.
@@ -52,9 +52,9 @@ test.describe("Expenses — Inline Accordion (Report tab)", () => {
 
   test("clicking an expanded category collapses it again", async ({ appPage }) => {
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
-    const grocery = appPage.locator(".list-item", { hasText: "Продукты" }).first();
+    const grocery = appPage.locator(".expense-cat-header", { hasText: "Продукты" }).first();
     await grocery.click();
     await expect(appPage.locator("text=Молоко")).toBeVisible();
 
@@ -72,10 +72,10 @@ test.describe("Expenses — Inline Accordion (Report tab)", () => {
       },
     });
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
-    const grocery = appPage.locator(".list-item", { hasText: "Продукты" }).first();
-    const cafe = appPage.locator(".list-item", { hasText: "Кафе, доставка, фастфуд" }).first();
+    const grocery = appPage.locator(".expense-cat-header", { hasText: "Продукты" }).first();
+    const cafe = appPage.locator(".expense-cat-header", { hasText: "Кафе, доставка, фастфуд" }).first();
 
     await grocery.click();
     await cafe.click();
@@ -86,9 +86,9 @@ test.describe("Expenses — Inline Accordion (Report tab)", () => {
 
   test("operation rows render amount and 🗑 delete affordance", async ({ appPage }) => {
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
-    await appPage.locator(".list-item", { hasText: "Продукты" }).first().click();
+    await appPage.locator(".expense-cat-header", { hasText: "Продукты" }).first().click();
     // Drilldown items render with " ₽" and the matching subcategory.
     await expect(appPage.locator("text=/130\\s*₽\\s*[—\\-]\\s*Молоко/")).toBeVisible();
     // At least one delete button (🗑️) shown for the expanded operations.
@@ -102,18 +102,18 @@ test.describe("Expenses — Inline Accordion (Report tab)", () => {
       },
     });
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
-    await appPage.locator(".list-item", { hasText: "Продукты" }).first().click();
+    await appPage.locator(".expense-cat-header", { hasText: "Продукты" }).first().click();
 
     await expect(appPage.locator("button", { hasText: "Показать ещё" })).toBeVisible();
   });
 
   test("changing the month collapses every previously expanded category", async ({ appPage }) => {
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
-    await appPage.locator(".list-item", { hasText: "Продукты" }).first().click();
+    await appPage.locator(".expense-cat-header", { hasText: "Продукты" }).first().click();
     await expect(appPage.locator("text=Молоко")).toBeVisible();
 
     await appPage.locator("button", { hasText: "◀" }).click();
@@ -126,7 +126,7 @@ test.describe("Expenses — Inline Accordion (Report tab)", () => {
 test.describe("Expenses — Excel button (authenticated download)", () => {
   test("clicking Excel issues an authenticated request, not a window.open redirect", async ({ appPage }) => {
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
     // We will capture the API request that the click triggers and assert it
     // carries the Authorization header that proves we did NOT take the
@@ -159,7 +159,7 @@ test.describe("Expenses — Excel button (authenticated download)", () => {
 
   test("button enters loading state while the request is in-flight", async ({ appPage }) => {
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
     // Hold the response so we can observe the in-flight state.
     let release: (() => void) | null = null;
@@ -188,7 +188,7 @@ test.describe("Expenses — Excel button (authenticated download)", () => {
 
   test("API failure surfaces an inline error and re-enables the button", async ({ appPage }) => {
     await appPage.goto("/expenses");
-    await appPage.waitForSelector(".list-item");
+    await appPage.waitForSelector(".expense-cat-header");
 
     await appPage.route("**/api/expenses/excel*", async (route) => {
       await route.fulfill({

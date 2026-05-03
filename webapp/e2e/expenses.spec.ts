@@ -51,18 +51,18 @@ test.describe("Expenses — Report View", () => {
   });
 
   test("shows category list with emoji and totals", async ({ appPage }) => {
-    const items = appPage.locator(".list-item");
-    expect(await items.count()).toBeGreaterThan(0);
+    const headers = appPage.locator(".expense-cat-header");
+    expect(await headers.count()).toBeGreaterThan(0);
 
     // First category (Продукты)
-    const first = items.first();
+    const first = headers.first();
     await expect(first.locator(".list-item-emoji")).toContainText("🛒");
     await expect(first.locator(".list-item-title")).toContainText("Продукты");
   });
 
   test("category rows are clickable for drilldown", async ({ appPage }) => {
-    const firstItem = appPage.locator(".list-item").first();
-    const cursor = await firstItem.evaluate((el) => window.getComputedStyle(el).cursor);
+    const firstHeader = appPage.locator(".expense-cat-header").first();
+    const cursor = await firstHeader.evaluate((el) => window.getComputedStyle(el).cursor);
     expect(cursor).toBe("pointer");
   });
 

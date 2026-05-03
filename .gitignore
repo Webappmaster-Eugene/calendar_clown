@@ -34,5 +34,9 @@ src/buildInfo.ts
 # Test coverage
 coverage/
 
+# Playwright artifacts (HTML reports, traces, screenshots, error contexts)
+webapp/test-results/
+webapp/playwright-report/
+
 # OS files
 Thumbs.db
