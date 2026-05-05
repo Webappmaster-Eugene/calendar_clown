@@ -16,13 +16,17 @@ export function getInitData(): string {
 }
 
 class ApiError extends Error {
+  /** Optional payload included in error responses (e.g. partial data like a transcript). */
+  public data: unknown;
   constructor(
     public status: number,
     public code: string | undefined,
-    message: string
+    message: string,
+    data?: unknown
   ) {
     super(message);
     this.name = "ApiError";
+    this.data = data;
   }
 }
 
@@ -31,6 +35,7 @@ async function request<T>(
   path: string,
   body?: unknown,
   timeoutMs = 30_000,
+  externalSignal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = {};
 
@@ -42,8 +47,15 @@ async function request<T>(
     headers["Content-Type"] = "application/json";
   }
 
+  // Compose the timeout-driven controller with an optional caller-provided signal
+  // so the caller can cancel (e.g. user pressed "Отмена" while uploading audio).
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
 
   let res: Response;
   try {
@@ -55,7 +67,11 @@ async function request<T>(
     });
   } catch (err) {
     clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", onExternalAbort);
     if (err instanceof DOMException && err.name === "AbortError") {
+      if (externalSignal?.aborted) {
+        throw new ApiError(0, "ABORTED", "Запрос отменён");
+      }
       const timeoutSec = Math.round(timeoutMs / 1000);
       throw new ApiError(0, "TIMEOUT", `Request timed out after ${timeoutSec} seconds`);
     }
@@ -63,11 +79,12 @@ async function request<T>(
   }
 
   clearTimeout(timeoutId);
+  externalSignal?.removeEventListener("abort", onExternalAbort);
 
   const json = (await res.json()) as ApiResult<T>;
 
   if (!json.ok) {
-    throw new ApiError(res.status, json.code, json.error);
+    throw new ApiError(res.status, json.code, json.error, json.data);
   }
 
   return json.data;
@@ -206,7 +223,8 @@ export const api = {
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
-  upload: <T>(path: string, formData: FormData) => request<T>("POST", path, formData, 120_000),
+  upload: <T>(path: string, formData: FormData, signal?: AbortSignal) =>
+    request<T>("POST", path, formData, 120_000, signal),
   uploadPatch: <T>(path: string, formData: FormData) => request<T>("PATCH", path, formData, 120_000),
   getBlob,
   stream: streamRequest,

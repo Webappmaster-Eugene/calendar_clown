@@ -6,6 +6,9 @@
 import { DEEPSEEK_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("extract-expense-intent");
 
 function buildExpenseSystemPrompt(categoriesList: string): string {
   return `You are an expense tracking assistant. Extract expense information from the user's voice message.
@@ -66,12 +69,19 @@ export async function extractExpenseIntent(
       { role: "user", content: transcript },
     ],
   });
-  if (!content) return { type: "unknown" };
+  if (!content) {
+    log.warn("Empty response from DeepSeek for transcript: %j", transcript);
+    return { type: "unknown" };
+  }
 
   const json = tryParseJson(content);
-  if (!json || typeof json.type !== "string") return { type: "unknown" };
+  if (!json || typeof json.type !== "string") {
+    log.warn("Unparseable DeepSeek response (transcript=%j, raw=%j)", transcript, content);
+    return { type: "unknown" };
+  }
 
   if (json.type === "not_expense") {
+    log.info("Voice marked as not_expense (transcript=%j)", transcript);
     return { type: "not_expense" };
   }
 
@@ -81,12 +91,14 @@ export async function extractExpenseIntent(
     const amount = typeof json.amount === "number" ? json.amount : parseFloat(String(json.amount));
 
     if (!category || isNaN(amount) || amount <= 0) {
+      log.warn("Incomplete expense intent (transcript=%j, category=%j, amount=%j)", transcript, category, amount);
       return { type: "unknown" };
     }
 
     return { type: "expense", category, subcategory, amount };
   }
 
+  log.warn("Unknown intent type %j (transcript=%j)", json.type, transcript);
   return { type: "unknown" };
 }
 

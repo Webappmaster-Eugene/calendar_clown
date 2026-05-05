@@ -15,6 +15,8 @@ export interface ApiError {
   ok: false;
   error: string;
   code?: string;
+  /** Optional payload sent alongside an error (e.g. partial data like a transcript). */
+  data?: unknown;
 }
 
 export type ApiResult<T> = ApiResponse<T> | ApiError;
@@ -221,6 +223,8 @@ export interface AddExpenseRequest {
   categoryId: number;
   amount: number;
   subcategory?: string;
+  /** Optional ISO date (YYYY-MM-DD) to backdate the expense. */
+  date?: string;
 }
 
 /** API response for adding a single expense. */
@@ -245,6 +249,29 @@ export interface UpdateExpenseRequest {
   amount?: number;
   categoryId?: number;
   subcategory?: string | null;
+  /** Optional ISO date (YYYY-MM-DD) to move the expense to a different day/month. */
+  date?: string;
+}
+
+/** GET /api/expenses/limit response payload. */
+export interface MonthlyLimitDto {
+  year: number;
+  month: number;
+  /** Resolved limit for the month: override → tribe default → ENV fallback. */
+  limit: number;
+  /** True iff the value comes from a per-month override row. */
+  isCustom: boolean;
+  /** Tribe-wide default that would apply absent any override. */
+  defaultLimit: number;
+}
+
+/** PUT /api/expenses/limit request body. */
+export interface SetMonthlyLimitRequest {
+  year: number;
+  month: number;
+  amount: number;
+  /** When true, also set tribes.monthly_limit and clear overrides for this month and later. */
+  applyToFuture: boolean;
 }
 
 export interface RecentExpenseDto {

@@ -545,14 +545,19 @@ export async function getTribeName(tribeId: number): Promise<string> {
 
 // ─── Expenses CRUD ────────────────────────────────────────────────────
 
-/** Insert a new expense. Validates amount range and subcategory length. */
+/**
+ * Insert a new expense. Validates amount range and subcategory length.
+ * `createdAt` is optional: when omitted, PostgreSQL `NOW()` is used (current month).
+ * When provided, it overrides the timestamp — used by Mini App to backdate expenses.
+ */
 export async function addExpense(
   userId: number,
   tribeId: number,
   categoryId: number,
   amount: number,
   subcategory: string | null,
-  inputMethod: "text" | "voice"
+  inputMethod: "text" | "voice",
+  createdAt?: Date | null
 ): Promise<Expense> {
   // Anti-abuse validation
   if (amount < MIN_EXPENSE_AMOUNT || amount > MAX_EXPENSE_AMOUNT) {
@@ -575,10 +580,10 @@ export async function addExpense(
     input_method: string;
     created_at: Date;
   }>(
-    `INSERT INTO expenses (user_id, tribe_id, category_id, subcategory, amount, input_method)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO expenses (user_id, tribe_id, category_id, subcategory, amount, input_method, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
      RETURNING id, user_id, tribe_id, category_id, subcategory, amount, input_method, created_at`,
-    [userId, tribeId, categoryId, sanitizedSub, amount, inputMethod]
+    [userId, tribeId, categoryId, sanitizedSub, amount, inputMethod, createdAt ?? null]
   );
   const r = rows[0];
   return {
@@ -865,7 +870,7 @@ export async function countExpenses(tribeId: number): Promise<number> {
 /** Admin: update expense fields (no ownership check). */
 export async function updateExpense(
   expenseId: number,
-  fields: { amount?: number; categoryId?: number; subcategory?: string | null }
+  fields: { amount?: number; categoryId?: number; subcategory?: string | null; createdAt?: Date }
 ): Promise<boolean> {
   const sets: string[] = [];
   const params: unknown[] = [];
@@ -883,8 +888,14 @@ export async function updateExpense(
     sets.push(`subcategory = $${idx++}`);
     params.push(fields.subcategory);
   }
+  if (fields.createdAt !== undefined) {
+    sets.push(`created_at = $${idx++}`);
+    params.push(fields.createdAt);
+  }
 
   if (sets.length === 0) return false;
+  // updated_at always tracks the moment of edit
+  sets.push(`updated_at = NOW()`);
   params.push(expenseId);
 
   const { rowCount } = await query(
@@ -993,4 +1004,109 @@ export async function getExpensesForExcel(
     createdAt: r.created_at,
     sortOrder: r.sort_order,
   }));
+}
+
+// ─── Monthly limit overrides ──────────────────────────────────────────
+
+/**
+ * Resolve the effective monthly spending limit for a tribe in a given month.
+ * Lookup order:
+ *   1. tribe_monthly_limits override for (tribe, year, month)
+ *   2. tribes.monthly_limit (tribe-wide default)
+ *   3. fallback (passed by caller, typically the ENV-based DEFAULT_MONTHLY_LIMIT)
+ */
+export async function getEffectiveMonthLimit(
+  tribeId: number,
+  year: number,
+  month: number,
+  fallback: number
+): Promise<number> {
+  const { rows } = await query<{ override: string | null; tribe_default: string | null }>(
+    `SELECT
+        (SELECT limit_amount FROM tribe_monthly_limits
+           WHERE tribe_id = $1 AND year = $2 AND month = $3) AS override,
+        (SELECT monthly_limit FROM tribes WHERE id = $1) AS tribe_default`,
+    [tribeId, year, month]
+  );
+  const r = rows[0];
+  if (r?.override != null) {
+    const v = parseFloat(r.override);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  if (r?.tribe_default != null) {
+    const v = parseFloat(r.tribe_default);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return fallback;
+}
+
+/** Whether a tribe has an explicit override for the given month. */
+export async function isMonthLimitOverridden(
+  tribeId: number,
+  year: number,
+  month: number
+): Promise<boolean> {
+  const { rows } = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM tribe_monthly_limits
+       WHERE tribe_id = $1 AND year = $2 AND month = $3
+     ) AS exists`,
+    [tribeId, year, month]
+  );
+  return rows[0]?.exists === true;
+}
+
+/** Returns the tribe-wide default limit (tribes.monthly_limit), or null if unset. */
+export async function getTribeDefaultLimit(tribeId: number): Promise<number | null> {
+  const { rows } = await query<{ monthly_limit: string | null }>(
+    "SELECT monthly_limit FROM tribes WHERE id = $1",
+    [tribeId]
+  );
+  const raw = rows[0]?.monthly_limit;
+  if (raw == null) return null;
+  const v = parseFloat(raw);
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/**
+ * Set the monthly spending limit.
+ * - applyToFuture=false: UPSERT a single (tribe, year, month) override.
+ * - applyToFuture=true:  set tribes.monthly_limit AND drop overrides for (year, month) and later
+ *   so the new default takes effect for all future months.
+ */
+export async function setEffectiveMonthLimit(
+  tribeId: number,
+  year: number,
+  month: number,
+  amount: number,
+  applyToFuture: boolean
+): Promise<void> {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Лимит должен быть положительным числом.");
+  }
+  if (month < 1 || month > 12) {
+    throw new Error("Некорректный месяц.");
+  }
+
+  if (applyToFuture) {
+    await query(
+      `UPDATE tribes SET monthly_limit = $2 WHERE id = $1`,
+      [tribeId, amount]
+    );
+    // Remove overrides for this month and any later month so the new default applies cleanly.
+    await query(
+      `DELETE FROM tribe_monthly_limits
+       WHERE tribe_id = $1 AND (year > $2 OR (year = $2 AND month >= $3))`,
+      [tribeId, year, month]
+    );
+    return;
+  }
+
+  await query(
+    `INSERT INTO tribe_monthly_limits (tribe_id, year, month, limit_amount, updated_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (tribe_id, year, month)
+     DO UPDATE SET limit_amount = EXCLUDED.limit_amount, updated_at = NOW()`,
+    [tribeId, year, month, amount]
+  );
 }

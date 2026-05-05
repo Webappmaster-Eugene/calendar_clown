@@ -1,5 +1,18 @@
 import { OPENROUTER_URL, OPENROUTER_REFERER } from "../constants.js";
 
+/**
+ * Hard upper bound for any single non-streaming OpenRouter call. Without this, a
+ * stuck upstream (DeepSeek, etc.) silently wedges request handlers — and on the
+ * Mini App side leaves the voice button frozen on "Обработка…" beyond the
+ * client-side 120s timeout. Tunable via env for staging/debugging.
+ */
+const OPENROUTER_TIMEOUT_MS = (() => {
+  const raw = process.env.OPENROUTER_TIMEOUT_MS?.trim();
+  if (!raw) return 30_000;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000;
+})();
+
 /** Content part for multimodal messages (text + images). */
 export type ContentPart =
   | { type: "text"; text: string }
@@ -7,6 +20,22 @@ export type ContentPart =
 
 /** Message content: plain string or multimodal array. */
 export type MessageContent = string | ContentPart[];
+
+/** Run `fetch` with a hard AbortController-driven timeout. */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`OpenRouter request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** Send a chat completion request to OpenRouter and return the text content, or null. */
 export async function callOpenRouter(options: {
@@ -20,20 +49,24 @@ export async function callOpenRouter(options: {
     throw new Error("OPENROUTER_API_KEY is not set");
   }
 
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": OPENROUTER_REFERER,
+  const res = await fetchWithTimeout(
+    OPENROUTER_URL,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": OPENROUTER_REFERER,
+      },
+      body: JSON.stringify({
+        model: options.model,
+        messages: options.messages,
+        ...(options.temperature != null ? { temperature: options.temperature } : {}),
+        ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
+      }),
     },
-    body: JSON.stringify({
-      model: options.model,
-      messages: options.messages,
-      ...(options.temperature != null ? { temperature: options.temperature } : {}),
-      ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
-    }),
-  });
+    OPENROUTER_TIMEOUT_MS
+  );
 
   if (!res.ok) {
     const errText = await res.text();
@@ -60,20 +93,24 @@ export async function callOpenRouterWithUsage(options: {
     throw new Error("OPENROUTER_API_KEY is not set");
   }
 
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": OPENROUTER_REFERER,
+  const res = await fetchWithTimeout(
+    OPENROUTER_URL,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": OPENROUTER_REFERER,
+      },
+      body: JSON.stringify({
+        model: options.model,
+        messages: options.messages,
+        ...(options.temperature != null ? { temperature: options.temperature } : {}),
+        ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
+      }),
     },
-    body: JSON.stringify({
-      model: options.model,
-      messages: options.messages,
-      ...(options.temperature != null ? { temperature: options.temperature } : {}),
-      ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
-    }),
-  });
+    OPENROUTER_TIMEOUT_MS
+  );
 
   if (!res.ok) {
     const errText = await res.text();

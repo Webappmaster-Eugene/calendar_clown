@@ -2,9 +2,14 @@
  * Hold-to-record voice button.
  * Records audio via MediaRecorder and sends to backend for transcription.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import { api } from "../api/client";
+
+/** Hard upper bound on `isProcessing`. WebView timers can pause when the app is
+ *  backgrounded — this watchdog guarantees the UI always recovers, so the
+ *  voice button can never get permanently stuck on "Обработка…". */
+const PROCESSING_WATCHDOG_MS = 150_000;
 
 /** Derive correct file extension from the actual MIME type of the recording. */
 function getExtFromMime(mimeType: string): string {
@@ -17,7 +22,9 @@ function getExtFromMime(mimeType: string): string {
 interface VoiceButtonProps {
   /** Called with the transcript (and optional intent/extra data) when processing succeeds. */
   onResult: (transcript: string, data?: unknown) => void;
-  onError?: (error: string) => void;
+  /** Error callback. The optional `data` carries the API's error payload — for the
+   *  expense voice endpoint that includes the transcript, useful for autofill UX. */
+  onError?: (error: string, data?: unknown) => void;
   /** Mode hint sent to the backend (e.g. "expenses", "goals"). */
   mode?: string;
   /**
@@ -35,10 +42,23 @@ interface VoiceButtonProps {
 export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: VoiceButtonProps) {
   const { isRecording, isSupported, startRecording, stopRecording, cancelRecording, releaseStream, duration } = useVoiceRecorder();
   const [isProcessing, setIsProcessing] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Release microphone stream when component unmounts
+  const clearWatchdog = () => {
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  };
+
+  // Release microphone stream when component unmounts; abort any in-flight upload.
   useEffect(() => {
-    return () => { releaseStream(); };
+    return () => {
+      releaseStream();
+      abortRef.current?.abort();
+      clearWatchdog();
+    };
   }, [releaseStream]);
 
   if (!isSupported) return null;
@@ -69,6 +89,21 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
     }
 
     setIsProcessing(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let settled = false;
+
+    // Force-reset processing if the upload silently outlives the in-app browser
+    // (WebView timers pause on backgrounding → the inner fetch timeout may not fire).
+    // The `settled` guard prevents the watchdog from clobbering an already-completed
+    // success/error path if the timer somehow fires concurrently with finally.
+    watchdogRef.current = setTimeout(() => {
+      if (settled) return;
+      controller.abort();
+      setIsProcessing(false);
+      onError?.("Сервис не ответил вовремя. Попробуйте ещё раз.");
+    }, PROCESSING_WATCHDOG_MS);
+
     try {
       const ext = getExtFromMime(blob.type);
       const formData = new FormData();
@@ -78,18 +113,36 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
       const url = endpoint ?? "/api/voice/transcribe";
       const result = await api.upload<{ transcript: string; [key: string]: unknown }>(
         url,
-        formData
+        formData,
+        controller.signal
       );
       onResult(result.transcript, result);
     } catch (err) {
-      onError?.((err as Error).message || "Ошибка транскрибации");
+      // Aborted by the user → silent (UI already reset by handleAbortProcessing).
+      if (controller.signal.aborted && (err as { code?: string }).code === "ABORTED") {
+        return;
+      }
+      const e = err as { message?: string; data?: unknown };
+      onError?.(e.message || "Ошибка транскрибации", e.data);
     } finally {
+      settled = true;
+      clearWatchdog();
+      if (abortRef.current === controller) abortRef.current = null;
       setIsProcessing(false);
     }
   };
 
   const handleCancel = () => {
     cancelRecording();
+  };
+
+  /** Cancel an in-flight upload from the "Обработка…" state. */
+  const handleAbortProcessing = () => {
+    // controller.abort() makes the in-flight request reject as ApiError("ABORTED");
+    // handleStop's catch swallows that branch and finally sets isProcessing=false.
+    abortRef.current?.abort();
+    clearWatchdog();
+    setIsProcessing(false);
   };
 
   const formatDuration = (s: number) => {
@@ -109,6 +162,9 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
           </div>
           <div className="voice-row-content">
             <div className="voice-row-label">Обработка...</div>
+            <div className="voice-row-actions">
+              <button className="voice-row-cancel" onClick={handleAbortProcessing}>Отмена</button>
+            </div>
           </div>
         </div>
       );
@@ -150,9 +206,13 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
 
   if (isProcessing) {
     return (
-      <button className="btn voice-btn processing" disabled>
-        Обработка...
-      </button>
+      <div className="voice-recording">
+        <span className="voice-spinner" />
+        <span className="voice-row-label">Обработка...</span>
+        <button className="btn voice-btn-cancel" onClick={handleAbortProcessing}>
+          Отмена
+        </button>
+      </div>
     );
   }
 

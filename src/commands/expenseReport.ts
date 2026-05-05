@@ -8,6 +8,7 @@ import {
   getUserByTelegramId,
   getTribeName,
   getAllExpensesForReport,
+  getEffectiveMonthLimit,
 } from "../expenses/repository.js";
 import {
   formatComparisonReport,
@@ -86,7 +87,7 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     ]);
 
     const grandTotal = totals.reduce((s, t) => s + t.total, 0);
-    const limit = getMonthLimit();
+    const limit = await getEffectiveMonthLimit(dbUser.tribeId!, year, month, getMonthLimit());
 
     // Group operations by category for the formatter (one ordered list per category).
     const expensesByCategory = new Map<number, DetailedReportCategory["expenses"]>();

@@ -5,6 +5,7 @@ import {
   getExpensesForExcel,
   getUserByTelegramId,
   getTribeName,
+  getEffectiveMonthLimit,
 } from "../expenses/repository.js";
 import { generateMonthlyExcel } from "../expenses/excel.js";
 import { monthName } from "../expenses/formatter.js";
@@ -94,7 +95,7 @@ async function sendExcel(
       return;
     }
 
-    const limit = getMonthLimit();
+    const limit = await getEffectiveMonthLimit(tribeId, year, month, getMonthLimit());
     const tribeName = await getTribeName(tribeId);
     const buffer = await generateMonthlyExcel(
       categoryTotals,

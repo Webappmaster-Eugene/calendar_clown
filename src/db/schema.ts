@@ -1079,3 +1079,24 @@ export const supportReports = pgTable(
     index("idx_support_reports_user").on(table.userId),
   ],
 );
+
+// ─── Tribe Monthly Limits ────────────────────────────────────────────────────
+
+export const tribeMonthlyLimits = pgTable(
+  "tribe_monthly_limits",
+  {
+    id: serial("id").primaryKey(),
+    tribeId: integer("tribe_id")
+      .notNull()
+      .references(() => tribes.id),
+    year: integer("year").notNull(),
+    month: smallint("month").notNull(),
+    limitAmount: numeric("limit_amount", { precision: 12, scale: 2 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_tribe_monthly_limits_unique").on(table.tribeId, table.year, table.month),
+    check("tribe_monthly_limits_month_range", sql`${table.month} BETWEEN 1 AND 12`),
+    check("tribe_monthly_limits_amount_positive", sql`${table.limitAmount} > 0`),
+  ],
+);

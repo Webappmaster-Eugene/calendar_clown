@@ -14,9 +14,21 @@ import type {
   RecentExpenseDto,
   RecentExpensesResponse,
   AddExpenseResultDto,
+  MonthlyLimitDto,
+  SetMonthlyLimitRequest,
+  ExpenseDto,
+  UpdateExpenseRequest,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import { useTelegram } from "../hooks/useTelegram";
+
+/** Format Date as YYYY-MM-DD for `<input type="date">`. */
+function toIsoDay(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 // ─── Constants ─────────────────────────────────────────────────
 
@@ -59,6 +71,7 @@ export function ExpensesPage() {
   const [showForm, setShowForm] = useState(false);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
+  const [date, setDate] = useState<string>(toIsoDay(now));
   const [voiceText, setVoiceText] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -106,6 +119,7 @@ export function ExpensesPage() {
       setShowForm(false);
       setAmount("");
       setCategoryId(null);
+      setDate(toIsoDay(new Date()));
       if (result?.confirmation) {
         showSuccess(result.confirmation);
       }
@@ -132,8 +146,16 @@ export function ExpensesPage() {
     if (categoryId === null || !amount.trim()) return;
     const parsed = parseFloat(amount);
     if (isNaN(parsed) || parsed <= 0) return;
-    addMutation.mutate({ categoryId, amount: parsed });
+    const today = toIsoDay(new Date());
+    const payload: AddExpenseRequest = { categoryId, amount: parsed };
+    if (date && date !== today) payload.date = date;
+    addMutation.mutate(payload);
   };
+
+  // Allow backdating up to 5 years; cap at tomorrow (Telegram clients can present
+  // tomorrow as "today" depending on TZ — server validates the real range).
+  const maxDate = toIsoDay(new Date(now.getTime() + 24 * 60 * 60 * 1000));
+  const minDate = toIsoDay(new Date(now.getFullYear() - 5, 0, 1));
 
   // ─── Month navigation ─────────────────────────────────────
 
@@ -198,7 +220,16 @@ export function ExpensesPage() {
               setTimeout(() => setVoiceText(""), 3000);
             }
           }}
-          onError={(err) => setVoiceError(err)}
+          onError={(err, data) => {
+            setVoiceError(err);
+            // When recognition succeeded but expense extraction failed, the API
+            // returns the raw transcript so the user can edit it manually instead
+            // of re-recording.
+            const d = data as { transcript?: unknown } | null | undefined;
+            if (d && typeof d.transcript === "string" && d.transcript.trim()) {
+              setVoiceText(d.transcript);
+            }
+          }}
         />
       </div>
       {successMsg && <div className="success-msg" style={{ marginBottom: 8, color: "var(--tg-theme-link-color, #2481cc)", fontSize: 13 }}>{successMsg}</div>}
@@ -302,6 +333,20 @@ export function ExpensesPage() {
                 placeholder="0"
               />
             </div>
+            <div className="form-group">
+              <label className="form-label">Дата</label>
+              <input
+                className="input"
+                type="date"
+                value={date}
+                min={minDate}
+                max={maxDate}
+                onChange={(e) => setDate(e.target.value)}
+              />
+              <div className="card-hint" style={{ marginTop: 4, fontSize: 12 }}>
+                По умолчанию — сегодня. Можно выбрать прошлый день для записи задним числом.
+              </div>
+            </div>
             {addMutation.error && <div className="error-msg">{(addMutation.error as Error).message}</div>}
             <div className="form-row">
               <button type="button" className="btn" onClick={() => setShowForm(false)}>Отмена</button>
@@ -359,9 +404,12 @@ function ReportView({
   month: number;
   year: number;
 }) {
+  const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [excelLoading, setExcelLoading] = useState(false);
   const [excelError, setExcelError] = useState<string | null>(null);
+  const [excelSuccess, setExcelSuccess] = useState<string | null>(null);
+  const [editLimitOpen, setEditLimitOpen] = useState(false);
   const { platform } = useTelegram();
 
   const toggleCategory = (id: number) => {
@@ -376,33 +424,55 @@ function ReportView({
   // When the user changes month/year, drop expanded state — different data, fresh view.
   useEffect(() => {
     setExpanded(new Set());
+    setExcelError(null);
+    setExcelSuccess(null);
   }, [year, month]);
 
-  const downloadExcel = async () => {
+  /**
+   * Deliver Excel through the bot DM. `<a download>` clicks inside Telegram WebView
+   * (especially WKWebView on iOS/macOS) frequently produce no UI feedback at all —
+   * the user reports "ничего не происходит". Sending the document via Bot API to the
+   * user's chat with the bot is the only delivery path that works reliably across
+   * platforms (mobile, desktop, web). For desktop platforms we still offer a direct
+   * download as a quick path; for everything else we go straight through the bot.
+   */
+  const sendExcelViaBot = async () => {
     if (excelLoading) return;
     setExcelLoading(true);
     setExcelError(null);
+    setExcelSuccess(null);
+    try {
+      await api.post<{ filename: string }>("/api/expenses/excel/send", { year, month });
+      setExcelSuccess("📥 Файл отправлен в чат с ботом");
+      setTimeout(() => setExcelSuccess(null), 5000);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Не удалось отправить файл";
+      setExcelError(msg);
+    } finally {
+      setExcelLoading(false);
+    }
+  };
+
+  /**
+   * Direct download path for desktop Telegram and the web build, where
+   * `<a download>` works reliably. Apple WebViews go through `data:` URLs to
+   * avoid blob-URL leakage to the OS opener.
+   */
+  const downloadExcelDirect = async () => {
+    if (excelLoading) return;
+    setExcelLoading(true);
+    setExcelError(null);
+    setExcelSuccess(null);
     try {
       const blob = await api.getBlob(`/api/expenses/excel?month=${month}&year=${year}`);
       const filename = `Расходы_${RU_MONTHS[month - 1]}_${year}.xlsx`;
-
-      // Apple-platform Telegram clients (`ios` and `macos`) use WKWebView, which
-      // does NOT keep blob: URLs inside the webview when used as the `href` of
-      // a downloadable <a>. The URL leaks to the OS opener — on iOS that means
-      // the share sheet at best, on macOS the user gets a Finder "no app can
-      // open this URL" dialog. Data URLs are handled in-process and don't
-      // leak, so we encode the blob to base64 and point the link there.
-      // For Android, Telegram Desktop (Qt) and the web build, the standard
-      // blob URL + `<a download>` path is faster and works correctly.
       const isApple = platform === "ios" || platform === "macos";
-
       if (isApple) {
         const dataUrl = await blobToDataUrl(blob);
         triggerDownload(dataUrl, filename);
       } else {
         const url = URL.createObjectURL(blob);
         triggerDownload(url, filename);
-        // Defer revoke so the browser has time to start the download stream.
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       }
     } catch (e) {
@@ -413,6 +483,13 @@ function ReportView({
     }
   };
 
+  // Bot delivery is the default — `<a download>` is unreliable in Telegram WebViews
+  // (WKWebView on iOS/macOS especially). Only tdesktop and the web build get the
+  // direct path because they're real browsers/Chromium-based shells.
+  const isDesktopOrWeb =
+    platform === "tdesktop" || platform === "web" || platform === "weba" || platform === "webk";
+  const handleExcelClick = isDesktopOrWeb ? downloadExcelDirect : sendExcelViaBot;
+
   return (
     <>
       <div className="card">
@@ -420,22 +497,46 @@ function ReportView({
           <div className="card-hint">{report?.month ?? "Текущий месяц"}</div>
           <button
             className="btn btn-small"
-            onClick={downloadExcel}
+            onClick={handleExcelClick}
             disabled={excelLoading}
           >
-            {excelLoading ? "Формирую…" : "Excel"}
+            {excelLoading ? "Отправляю…" : "Excel"}
           </button>
         </div>
-        <div style={{ fontSize: 28, fontWeight: 700 }}>
-          {total.toLocaleString("ru-RU")} / {limit.toLocaleString("ru-RU")}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 28, fontWeight: 700 }}>
+          <span>{total.toLocaleString("ru-RU")} / {limit.toLocaleString("ru-RU")}</span>
+          <button
+            className="btn btn-small"
+            onClick={() => setEditLimitOpen(true)}
+            title="Изменить лимит"
+            style={{ fontSize: 14, padding: "2px 8px" }}
+          >
+            ✏️
+          </button>
         </div>
         <div className="progress-bar">
           <div className="progress-fill" style={{ width: `${progress}%` }} />
         </div>
+        {excelSuccess && (
+          <div className="card-hint" style={{ marginTop: 8, color: "var(--tg-theme-link-color, #2481cc)" }}>{excelSuccess}</div>
+        )}
         {excelError && (
           <div className="error-msg" style={{ marginTop: 8 }}>{excelError}</div>
         )}
       </div>
+
+      {editLimitOpen && (
+        <LimitEditDialog
+          year={year}
+          month={month}
+          currentLimit={limit}
+          onClose={() => setEditLimitOpen(false)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ["expenses"] });
+            setEditLimitOpen(false);
+          }}
+        />
+      )}
 
       <div className="section-title">По категориям</div>
       {report?.byCategory && report.byCategory.length > 0 ? (
@@ -509,6 +610,13 @@ function CategoryAccordion({
     },
   });
 
+  const { data: categories } = useQuery({
+    queryKey: ["expenses", "categories"],
+    queryFn: () => api.get<CategoryDto[]>("/api/expenses/categories"),
+  });
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+
   const expenses = data?.expenses ?? [];
   const totalCount = data?.total ?? 0;
   const hasMore = page * LIMIT < totalCount;
@@ -534,38 +642,66 @@ function CategoryAccordion({
           {!isLoading && expenses.length === 0 && (
             <div className="expense-row-empty">Операций нет</div>
           )}
-          {expenses.map((exp) => (
-            <div key={exp.id} className="expense-row">
-              <div className="expense-row-content">
-                <div className="expense-row-title">
-                  {exp.amount.toLocaleString("ru-RU")} ₽
-                  {exp.subcategory ? ` — ${exp.subcategory}` : ""}
+          {expenses.map((exp) =>
+            editingId === exp.id ? (
+              <EditExpenseRow
+                key={exp.id}
+                expense={{
+                  id: exp.id,
+                  amount: exp.amount,
+                  subcategory: exp.subcategory,
+                  createdAt: exp.createdAt,
+                  // The drilldown response is filtered by categoryId so we know it.
+                  categoryId,
+                }}
+                categories={categories ?? []}
+                onCancel={() => setEditingId(null)}
+                onSaved={() => {
+                  setEditingId(null);
+                  queryClient.invalidateQueries({ queryKey: ["expenses"] });
+                }}
+              />
+            ) : (
+              <div key={exp.id} className="expense-row">
+                <div className="expense-row-content">
+                  <div className="expense-row-title">
+                    {exp.amount.toLocaleString("ru-RU")} ₽
+                    {exp.subcategory ? ` — ${exp.subcategory}` : ""}
+                  </div>
+                  <div className="expense-row-meta">
+                    {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
                 </div>
-                <div className="expense-row-meta">
-                  {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                <div className="expense-row-actions">
+                  <button
+                    className="btn btn-icon"
+                    onClick={() => setEditingId(exp.id)}
+                    disabled={deleteMutation.isPending}
+                    title="Редактировать"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    className="btn btn-icon btn-danger"
+                    onClick={() => {
+                      if (confirm("Удалить эту запись?")) {
+                        deleteMutation.mutate(exp.id);
+                      }
+                    }}
+                    disabled={deleteMutation.isPending}
+                    title="Удалить"
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
-              <div className="expense-row-actions">
-                <button
-                  className="btn btn-icon btn-danger"
-                  onClick={() => {
-                    if (confirm("Удалить эту запись?")) {
-                      deleteMutation.mutate(exp.id);
-                    }
-                  }}
-                  disabled={deleteMutation.isPending}
-                  title="Удалить"
-                >
-                  🗑️
-                </button>
-              </div>
-            </div>
-          ))}
+            )
+          )}
           {(page > 1 || hasMore) && (
             <div className="expense-row-pagination">
               {page > 1 && (
@@ -583,6 +719,223 @@ function CategoryAccordion({
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Edit Expense Row (inline form) ──────────────────────────
+
+function EditExpenseRow({
+  expense,
+  categories,
+  onCancel,
+  onSaved,
+}: {
+  expense: { id: number; amount: number; subcategory: string | null; createdAt: string; categoryId: number };
+  categories: CategoryDto[];
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [amount, setAmount] = useState(String(expense.amount));
+  const [categoryId, setCategoryId] = useState(expense.categoryId);
+  const [subcategory, setSubcategory] = useState(expense.subcategory ?? "");
+  const [date, setDate] = useState(toIsoDay(new Date(expense.createdAt)));
+
+  const editMutation = useMutation({
+    mutationFn: (body: UpdateExpenseRequest) =>
+      api.put<ExpenseDto>(`/api/expenses/${expense.id}`, body),
+    onSuccess: onSaved,
+  });
+
+  const submit = () => {
+    const parsedAmount = parseFloat(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return;
+    if (!categoryId) return;
+    const body: UpdateExpenseRequest = {};
+    if (parsedAmount !== expense.amount) body.amount = parsedAmount;
+    if (categoryId !== expense.categoryId) body.categoryId = categoryId;
+    const trimmedSub = subcategory.trim();
+    const origSub = expense.subcategory ?? "";
+    if (trimmedSub !== origSub) body.subcategory = trimmedSub || null;
+    if (date !== toIsoDay(new Date(expense.createdAt))) body.date = date;
+    if (Object.keys(body).length === 0) {
+      onCancel();
+      return;
+    }
+    editMutation.mutate(body);
+  };
+
+  const today = toIsoDay(new Date());
+  const maxDate = toIsoDay(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  const minDate = toIsoDay(new Date(new Date().getFullYear() - 5, 0, 1));
+
+  return (
+    <div className="expense-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">Категория</label>
+        <select
+          className="input"
+          value={categoryId}
+          onChange={(e) => setCategoryId(Number(e.target.value))}
+        >
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">Сумма</label>
+        <input
+          className="input"
+          type="number"
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+        />
+      </div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">Описание</label>
+        <input
+          className="input"
+          value={subcategory}
+          onChange={(e) => setSubcategory(e.target.value)}
+          placeholder="опционально"
+        />
+      </div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">Дата</label>
+        <input
+          className="input"
+          type="date"
+          value={date}
+          min={minDate}
+          max={maxDate}
+          onChange={(e) => setDate(e.target.value)}
+        />
+        {date !== today && (
+          <div className="card-hint" style={{ marginTop: 4, fontSize: 12 }}>
+            Запись будет перенесена на выбранную дату.
+          </div>
+        )}
+      </div>
+      {editMutation.error && (
+        <div className="error-msg">{(editMutation.error as Error).message}</div>
+      )}
+      <div className="form-row">
+        <button type="button" className="btn" onClick={onCancel} disabled={editMutation.isPending}>
+          Отмена
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={submit}
+          disabled={editMutation.isPending}
+        >
+          {editMutation.isPending ? "Сохранение…" : "Сохранить"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Limit Edit Dialog ───────────────────────────────────────
+
+function LimitEditDialog({
+  year,
+  month,
+  currentLimit,
+  onClose,
+  onSaved,
+}: {
+  year: number;
+  month: number;
+  currentLimit: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [amount, setAmount] = useState(String(currentLimit));
+  const [error, setError] = useState<string | null>(null);
+
+  const saveMutation = useMutation({
+    mutationFn: (body: SetMonthlyLimitRequest) =>
+      api.put<MonthlyLimitDto>("/api/expenses/limit", body),
+    onSuccess: onSaved,
+    onError: (err) => setError((err as Error).message),
+  });
+
+  const submit = (applyToFuture: boolean) => {
+    setError(null);
+    const parsed = parseFloat(amount);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setError("Введите положительное число.");
+      return;
+    }
+    if (parsed > 100_000_000) {
+      setError("Слишком большая сумма.");
+      return;
+    }
+    saveMutation.mutate({ year, month, amount: parsed, applyToFuture });
+  };
+
+  return (
+    <>
+      <div
+        // Backdrop: blocks clicks below and dismisses on tap-outside.
+        onClick={() => { if (!saveMutation.isPending) onClose(); }}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.35)",
+          zIndex: 99,
+        }}
+      />
+      <div
+        className="card"
+        // Stop propagation so clicks inside the dialog don't bubble to the backdrop.
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 100,
+          width: "min(90vw, 360px)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+        }}
+      >
+      <div className="card-hint" style={{ marginBottom: 8 }}>
+        Лимит на {RU_MONTHS[month - 1]} {year}
+      </div>
+      <input
+        className="input"
+        type="number"
+        inputMode="decimal"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="350000"
+        autoFocus
+      />
+      {error && <div className="error-msg" style={{ marginTop: 8 }}>{error}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+        <button
+          className="btn btn-primary"
+          onClick={() => submit(false)}
+          disabled={saveMutation.isPending}
+        >
+          Только этот месяц
+        </button>
+        <button
+          className="btn btn-primary"
+          onClick={() => submit(true)}
+          disabled={saveMutation.isPending}
+        >
+          С этого месяца и далее
+        </button>
+        <button className="btn" onClick={onClose} disabled={saveMutation.isPending}>
+          Отмена
+        </button>
+      </div>
+      </div>
+    </>
   );
 }
 

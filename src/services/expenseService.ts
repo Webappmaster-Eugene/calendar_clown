@@ -23,13 +23,17 @@ import {
   getExpenseById,
   getExpensesPaginated,
   countExpenses,
+  getEffectiveMonthLimit,
+  isMonthLimitOverridden,
+  getTribeDefaultLimit,
+  setEffectiveMonthLimit,
 } from "../expenses/repository.js";
 import {
   formatExpenseConfirmation,
   monthName,
 } from "../expenses/formatter.js";
 import { generateMonthlyExcel } from "../expenses/excel.js";
-import { getMskNow, getMonthRange, getMonthLimit } from "../utils/date.js";
+import { getMskNow, getMskYmd, getMonthRange, getMonthLimit } from "../utils/date.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { createLogger } from "../utils/logger.js";
 import type {
@@ -92,6 +96,7 @@ async function requireDbUser(telegramId: number) {
 
 /**
  * Add a single expense from text input.
+ * Optional `createdAt` allows backdating the expense (used by Mini App for past months).
  */
 export async function addExpenseFromText(
   telegramId: number,
@@ -99,7 +104,8 @@ export async function addExpenseFromText(
   firstName: string,
   lastName: string | null,
   isAdmin: boolean,
-  text: string
+  text: string,
+  createdAt?: Date | null
 ): Promise<AddExpenseResult> {
   requireDb();
 
@@ -117,12 +123,13 @@ export async function addExpenseFromText(
     parsed.categoryId,
     parsed.amount,
     parsed.subcategory,
-    "text"
+    "text",
+    createdAt ?? null
   );
 
-  const { year, month } = getMskNow();
-  const total = await getMonthTotal(dbUser.tribeId, year, month);
-  const limit = getMonthLimit();
+  const { year: reportYear, month: reportMonth } = getMskYmd(expense.createdAt);
+  const total = await getMonthTotal(dbUser.tribeId, reportYear, reportMonth);
+  const limit = await getEffectiveMonthLimit(dbUser.tribeId, reportYear, reportMonth, getMonthLimit());
 
   const confirmation = formatExpenseConfirmation(
     parsed.categoryEmoji,
@@ -133,7 +140,7 @@ export async function addExpenseFromText(
     dbUser.firstName || firstName || "Пользователь",
     total,
     limit,
-    monthName(month)
+    monthName(reportMonth)
   );
 
   return {
@@ -149,7 +156,7 @@ export async function addExpenseFromText(
     },
     monthTotal: total,
     monthlyLimit: limit,
-    month,
+    month: reportMonth,
     confirmation,
   };
 }
@@ -157,6 +164,7 @@ export async function addExpenseFromText(
 /**
  * Add expense from structured input (categoryId + amount).
  * Used by Mini App form when user selects category from dropdown.
+ * Optional `createdAt` allows backdating to any past month.
  */
 export async function addExpenseStructured(
   telegramId: number,
@@ -166,7 +174,8 @@ export async function addExpenseStructured(
   isAdmin: boolean,
   categoryId: number,
   amount: number,
-  subcategory?: string
+  subcategory?: string,
+  createdAt?: Date | null
 ): Promise<AddExpenseResult> {
   requireDb();
 
@@ -183,12 +192,13 @@ export async function addExpenseStructured(
     categoryId,
     amount,
     subcategory ?? null,
-    "text"
+    "text",
+    createdAt ?? null
   );
 
-  const { year, month } = getMskNow();
-  const total = await getMonthTotal(dbUser.tribeId, year, month);
-  const limit = getMonthLimit();
+  const { year: reportYear, month: reportMonth } = getMskYmd(expense.createdAt);
+  const total = await getMonthTotal(dbUser.tribeId, reportYear, reportMonth);
+  const limit = await getEffectiveMonthLimit(dbUser.tribeId, reportYear, reportMonth, getMonthLimit());
 
   const confirmation = formatExpenseConfirmation(
     cat.emoji,
@@ -199,7 +209,7 @@ export async function addExpenseStructured(
     dbUser.firstName || firstName || "Пользователь",
     total,
     limit,
-    monthName(month)
+    monthName(reportMonth)
   );
 
   return {
@@ -215,7 +225,7 @@ export async function addExpenseStructured(
     },
     monthTotal: total,
     monthlyLimit: limit,
-    month,
+    month: reportMonth,
     confirmation,
   };
 }
@@ -247,7 +257,7 @@ export async function addMultipleExpenses(
 
   const { year, month } = getMskNow();
   const total = await getMonthTotal(dbUser.tribeId, year, month);
-  const limit = getMonthLimit();
+  const limit = await getEffectiveMonthLimit(dbUser.tribeId, year, month, getMonthLimit());
   const totalAmount = savedExpenses.reduce((s, e) => s + e.amount, 0);
 
   return { expenses: savedExpenses, monthTotal: total, monthlyLimit: limit, month, totalAmount };
@@ -310,7 +320,7 @@ export async function addExpenseFromVoice(
 
   const { year, month } = getMskNow();
   const total = await getMonthTotal(dbUser.tribeId, year, month);
-  const limit = getMonthLimit();
+  const limit = await getEffectiveMonthLimit(dbUser.tribeId, year, month, getMonthLimit());
 
   const confirmation = formatExpenseConfirmation(
     cat.emoji,
@@ -383,7 +393,7 @@ export async function getMonthReport(
   ]);
 
   const grandTotal = totals.reduce((s, t) => s + t.total, 0);
-  const limit = getMonthLimit();
+  const limit = await getEffectiveMonthLimit(dbUser.tribeId, year, month, getMonthLimit());
 
   let byCategoryDetailed: ExpenseReportDto["byCategoryDetailed"];
   if (detailedRows) {
@@ -477,7 +487,7 @@ export async function generateExcel(
 
   if (categoryTotals.length === 0) return null;
 
-  const limit = getMonthLimit();
+  const limit = await getEffectiveMonthLimit(dbUser.tribeId, year, month, getMonthLimit());
   const tribeName = await getTribeName(dbUser.tribeId);
   const buffer = await generateMonthlyExcel(categoryTotals, detailedRows, year, month, tribeName, limit);
   const filename = `Расходы_${monthName(month)}_${year}.xlsx`;
@@ -529,7 +539,7 @@ export async function undoExpense(telegramId: number, expenseId: number): Promis
 export async function editExpense(
   telegramId: number,
   expenseId: number,
-  updates: { amount?: number; categoryId?: number; subcategory?: string | null }
+  updates: { amount?: number; categoryId?: number; subcategory?: string | null; createdAt?: Date }
 ): Promise<ExpenseDto | null> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -544,7 +554,8 @@ export async function editExpense(
   if (
     updates.amount === undefined &&
     updates.categoryId === undefined &&
-    updates.subcategory === undefined
+    updates.subcategory === undefined &&
+    updates.createdAt === undefined
   ) {
     return null;
   }
@@ -743,4 +754,57 @@ export async function getRecentExpenses(
     page: safePage,
     limit: clamped,
   };
+}
+
+// ─── Monthly limit management ─────────────────────────────────────────
+
+/**
+ * Get the spending limit details for a specific month, including the resolved value
+ * and whether it comes from a per-month override.
+ */
+export async function getMonthLimitInfo(
+  telegramId: number,
+  year: number,
+  month: number
+): Promise<{ year: number; month: number; limit: number; isCustom: boolean; defaultLimit: number }> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  if (!dbUser.tribeId) throw new Error("Нет трайба.");
+
+  const envDefault = getMonthLimit();
+  const [limit, isCustom, tribeDefault] = await Promise.all([
+    getEffectiveMonthLimit(dbUser.tribeId, year, month, envDefault),
+    isMonthLimitOverridden(dbUser.tribeId, year, month),
+    getTribeDefaultLimit(dbUser.tribeId),
+  ]);
+
+  return {
+    year,
+    month,
+    limit,
+    isCustom,
+    defaultLimit: tribeDefault ?? envDefault,
+  };
+}
+
+/**
+ * Set the monthly spending limit. When applyToFuture is true, also writes the new value
+ * as the tribe-wide default and clears overrides for this month and later.
+ */
+export async function setMonthLimit(
+  telegramId: number,
+  year: number,
+  month: number,
+  amount: number,
+  applyToFuture: boolean
+): Promise<{ year: number; month: number; limit: number; isCustom: boolean; defaultLimit: number }> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  if (!dbUser.tribeId) throw new Error("Нет трайба.");
+
+  await setEffectiveMonthLimit(dbUser.tribeId, year, month, amount, applyToFuture);
+  log.info(
+    `Tribe ${dbUser.tribeId} limit set: year=${year} month=${month} amount=${amount} applyToFuture=${applyToFuture} by user ${telegramId}`
+  );
+  return getMonthLimitInfo(telegramId, year, month);
 }

@@ -1,11 +1,15 @@
 import { TIMEZONE_MSK } from "../constants.js";
 
-/** Get current year, month, and day in Moscow timezone. */
-export function getMskNow(): { year: number; month: number; day: number } {
-  const now = new Date();
-  const mskStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
+/** Get year/month/day for a given Date in Moscow timezone. */
+export function getMskYmd(date: Date): { year: number; month: number; day: number } {
+  const mskStr = date.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
   const [year, month, day] = mskStr.split("-").map(Number);
   return { year, month, day };
+}
+
+/** Get current year, month, and day in Moscow timezone. */
+export function getMskNow(): { year: number; month: number; day: number } {
+  return getMskYmd(new Date());
 }
 
 /** Get Date range for a given month: [from, to). */
@@ -22,4 +26,45 @@ export function getMonthLimit(): number {
   if (!raw) return 350_000;
   const parsed = parseFloat(raw);
   return isNaN(parsed) ? 350_000 : parsed;
+}
+
+/**
+ * Parse an ISO date string (YYYY-MM-DD) chosen by the user as a moment in Moscow time.
+ * Returns a Date object at 12:00 MSK (09:00 UTC) on that day, ensuring UTC and MSK
+ * agree on the day-of-month for downstream filtering.
+ *
+ * Throws on invalid input or out-of-range dates (older than 5 years, or more than
+ * 1 day in the future relative to MSK now).
+ */
+export function parseMskCalendarDate(dateStr: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+  if (!m) {
+    throw new Error("Некорректная дата. Ожидается YYYY-MM-DD.");
+  }
+  const year = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  const day = parseInt(m[3], 10);
+
+  // 09:00 UTC on the same calendar day equals 12:00 MSK (UTC+3, no DST).
+  // Storing at noon MSK keeps UTC/MSK day boundaries consistent for filtering.
+  const date = new Date(Date.UTC(year, month - 1, day, 9, 0, 0));
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new Error("Несуществующая дата.");
+  }
+
+  const FIVE_YEARS_MS = 5 * 365 * 24 * 60 * 60 * 1000;
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  if (date.getTime() < now - FIVE_YEARS_MS) {
+    throw new Error("Дата слишком давняя (более 5 лет назад).");
+  }
+  if (date.getTime() > now + ONE_DAY_MS) {
+    throw new Error("Дата не может быть в будущем.");
+  }
+  return date;
 }
