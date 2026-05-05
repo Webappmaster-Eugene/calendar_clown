@@ -969,6 +969,7 @@ export async function getExpensesForExcel(
   dateFrom: Date,
   dateTo: Date
 ): Promise<Array<{
+  categoryId: number;
   categoryName: string;
   categoryEmoji: string;
   subcategory: string | null;
@@ -978,6 +979,7 @@ export async function getExpensesForExcel(
   sortOrder: number;
 }>> {
   const { rows } = await query<{
+    category_id: number;
     category_name: string;
     category_emoji: string;
     subcategory: string | null;
@@ -986,8 +988,8 @@ export async function getExpensesForExcel(
     created_at: Date;
     sort_order: number;
   }>(
-    `SELECT c.name AS category_name, c.emoji AS category_emoji, e.subcategory,
-            e.amount, u.first_name, e.created_at, c.sort_order
+    `SELECT c.id AS category_id, c.name AS category_name, c.emoji AS category_emoji,
+            e.subcategory, e.amount, u.first_name, e.created_at, c.sort_order
      FROM expenses e
      JOIN categories c ON c.id = e.category_id
      JOIN users u ON u.id = e.user_id
@@ -996,6 +998,7 @@ export async function getExpensesForExcel(
     [tribeId, dateFrom.toISOString(), dateTo.toISOString()]
   );
   return rows.map((r) => ({
+    categoryId: r.category_id,
     categoryName: r.category_name,
     categoryEmoji: r.category_emoji,
     subcategory: r.subcategory,
@@ -1003,6 +1006,37 @@ export async function getExpensesForExcel(
     firstName: r.first_name,
     createdAt: r.created_at,
     sortOrder: r.sort_order,
+  }));
+}
+
+/**
+ * For yearly pivot reports: returns per-(month, category) totals across the year.
+ * One SQL roundtrip instead of 12×N. Months returned use 1..12.
+ *
+ * Month bucketing is done in UTC to stay consistent with `getMonthTotal` and
+ * the rest of the reports — those treat a "month" as `[UTC(y, m-1, 1), UTC(y, m, 1))`.
+ */
+export async function getMonthlyCategoryTotalsForYear(
+  tribeId: number,
+  year: number
+): Promise<Array<{ month: number; categoryId: number; total: number }>> {
+  const start = new Date(Date.UTC(year, 0, 1));
+  const end = new Date(Date.UTC(year + 1, 0, 1));
+  const { rows } = await query<{ month: string; category_id: number; total: string }>(
+    `SELECT EXTRACT(MONTH FROM (e.created_at AT TIME ZONE 'UTC'))::int AS month,
+            e.category_id,
+            COALESCE(SUM(e.amount), 0) AS total
+     FROM expenses e
+     WHERE e.tribe_id = $1
+       AND e.created_at >= $2
+       AND e.created_at < $3
+     GROUP BY month, e.category_id`,
+    [tribeId, start.toISOString(), end.toISOString()]
+  );
+  return rows.map((r) => ({
+    month: typeof r.month === "string" ? parseInt(r.month, 10) : r.month,
+    categoryId: r.category_id,
+    total: parseFloat(r.total),
   }));
 }
 

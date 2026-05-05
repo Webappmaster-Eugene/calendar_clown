@@ -3,6 +3,7 @@ import {
   getMonthReport,
   getYearReport,
   generateExcel,
+  generateYearExcel,
   getCategoryDtos,
   undoExpense,
   editExpense,
@@ -37,9 +38,12 @@ const app = new Hono<ApiEnv>();
 export function buildExcelDispositionHeader(
   filename: string,
   year: number,
-  month: number
+  month?: number
 ): string {
-  const asciiFallback = `expenses-${year}-${String(month).padStart(2, "0")}.xlsx`;
+  const asciiFallback =
+    month != null
+      ? `expenses-${year}-${String(month).padStart(2, "0")}.xlsx`
+      : `expenses-${year}.xlsx`;
   const utf8Encoded = encodeURIComponent(filename);
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${utf8Encoded}`;
 }
@@ -225,17 +229,22 @@ app.post("/excel/send", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
 
-  const body: { year?: number; month?: number } = await c.req
-    .json<{ year?: number; month?: number }>()
+  const body: { year?: number; month?: number; period?: "month" | "year" } = await c.req
+    .json<{ year?: number; month?: number; period?: "month" | "year" }>()
     .catch(() => ({}));
-  const month = typeof body.month === "number" ? body.month : new Date().getMonth() + 1;
+  const period = body.period === "year" ? "year" : "month";
   const year = typeof body.year === "number" ? body.year : new Date().getFullYear();
 
-  if (!Number.isFinite(month) || month < 1 || month > 12) {
-    return c.json({ ok: false, error: "Invalid month" }, 400);
-  }
   if (!Number.isFinite(year) || year < 2000 || year > 2100) {
     return c.json({ ok: false, error: "Invalid year" }, 400);
+  }
+
+  let month = 0;
+  if (period === "month") {
+    month = typeof body.month === "number" ? body.month : new Date().getMonth() + 1;
+    if (!Number.isFinite(month) || month < 1 || month > 12) {
+      return c.json({ ok: false, error: "Invalid month" }, 400);
+    }
   }
 
   const sendDocument = getBotSendDocument();
@@ -244,9 +253,13 @@ app.post("/excel/send", async (c) => {
   }
 
   try {
-    const result = await generateExcel(telegramId, year, month);
+    const result =
+      period === "year"
+        ? await generateYearExcel(telegramId, year)
+        : await generateExcel(telegramId, year, month);
     if (!result) {
-      return c.json({ ok: false, error: "За этот месяц нет трат" }, 404);
+      const msg = period === "year" ? `За ${year} нет трат` : "За этот месяц нет трат";
+      return c.json({ ok: false, error: msg }, 404);
     }
 
     try {
@@ -268,7 +281,11 @@ app.post("/excel/send", async (c) => {
       return c.json({ ok: false, error: "Не удалось отправить файл через бота." }, 502);
     }
 
-    logApiAction(telegramId, "expense_excel_sent_via_bot", { year, month });
+    logApiAction(
+      telegramId,
+      period === "year" ? "expense_excel_year_sent_via_bot" : "expense_excel_sent_via_bot",
+      period === "year" ? { year } : { year, month }
+    );
     return c.json({ ok: true, data: { filename: result.filename } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to generate Excel";
@@ -388,15 +405,33 @@ app.get("/year", async (c) => {
   }
 });
 
-/** GET /api/expenses/excel — download Excel file */
+/** GET /api/expenses/excel — download Excel file (monthly or yearly via ?period=year) */
 app.get("/excel", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
 
-  const month = parseInt(c.req.query("month") ?? String(new Date().getMonth() + 1), 10);
+  const period = c.req.query("period") === "year" ? "year" : "month";
   const year = parseInt(c.req.query("year") ?? String(new Date().getFullYear()), 10);
 
+  if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+    return c.json({ ok: false, error: "Invalid year" }, 400);
+  }
+
   try {
+    if (period === "year") {
+      const result = await generateYearExcel(telegramId, year);
+      if (!result) {
+        return c.json({ ok: false, error: "No data for this period" }, 404);
+      }
+      c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      c.header("Content-Disposition", buildExcelDispositionHeader(result.filename, year));
+      return c.body(result.buffer as unknown as ArrayBuffer);
+    }
+
+    const month = parseInt(c.req.query("month") ?? String(new Date().getMonth() + 1), 10);
+    if (!Number.isFinite(month) || month < 1 || month > 12) {
+      return c.json({ ok: false, error: "Invalid month" }, 400);
+    }
     const result = await generateExcel(telegramId, year, month);
     if (!result) {
       return c.json({ ok: false, error: "No data for this period" }, 404);

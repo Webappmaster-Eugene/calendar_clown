@@ -12,12 +12,21 @@ const RU_MONTHS_GENITIVE = [
   "Июля", "Августа", "Сентября", "Октября", "Ноября", "Декабря",
 ];
 
+const RU_MONTHS_SHORT = [
+  "Янв", "Фев", "Мар", "Апр", "Май", "Июн",
+  "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек",
+];
+
 export function monthName(month: number): string {
   return RU_MONTHS[month - 1] ?? `Месяц ${month}`;
 }
 
 export function monthNameGenitive(month: number): string {
   return RU_MONTHS_GENITIVE[month - 1] ?? `Месяц ${month}`;
+}
+
+export function monthNameShort(month: number): string {
+  return RU_MONTHS_SHORT[month - 1] ?? `М${month}`;
 }
 
 export function formatMoney(amount: number): string {

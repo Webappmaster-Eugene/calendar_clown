@@ -176,6 +176,7 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
           Markup.button.callback(`${year}`, `noop`),
           Markup.button.callback(`${year + 1} ▶️`, `report_year:${year + 1}`),
         ],
+        [Markup.button.callback("📥 Excel за год", `excel_year:${year}`)],
       ]),
     });
     await ctx.answerCbQuery();

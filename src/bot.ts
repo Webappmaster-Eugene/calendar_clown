@@ -10,7 +10,7 @@ import { handleExpensesCommand, handleCalendarCommand, handleCategoriesButton, h
 import { handleCancel, handleCancelRecurringCallback } from "./commands/cancelEvent.js";
 import { handleExpenseText } from "./commands/addExpense.js";
 import { handleReportButton, handleReportCallback, handleComparisonButton, handleStatsButton } from "./commands/expenseReport.js";
-import { handleExcelButton, handleExcelCallback } from "./commands/expenseExcel.js";
+import { handleExcelButton, handleExcelCallback, handleYearExcelCallback } from "./commands/expenseExcel.js";
 import { handleUndoCallback } from "./commands/expenseUndo.js";
 import { handleRecentButton, handleRecentCallback } from "./commands/expenseRecent.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput, handleOnboardRequest } from "./commands/admin.js";
@@ -260,6 +260,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^compare:/, handleReportCallback);
   bot.action(/^stats:/, handleReportCallback);
   bot.action(/^excel:/, handleExcelCallback);
+  bot.action(/^excel_year:/, handleYearExcelCallback);
   bot.action(/^admin:/, handleAdminCallback);
   bot.action(/^undo:/, handleUndoCallback);
   bot.action(/^rcnt:/, handleRecentCallback);

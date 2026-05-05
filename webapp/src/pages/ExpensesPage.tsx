@@ -436,13 +436,14 @@ function ReportView({
    * platforms (mobile, desktop, web). For desktop platforms we still offer a direct
    * download as a quick path; for everything else we go straight through the bot.
    */
-  const sendExcelViaBot = async () => {
+  const sendExcelViaBot = async (period: "month" | "year") => {
     if (excelLoading) return;
     setExcelLoading(true);
     setExcelError(null);
     setExcelSuccess(null);
     try {
-      await api.post<{ filename: string }>("/api/expenses/excel/send", { year, month });
+      const payload = period === "year" ? { year, period } : { year, month, period };
+      await api.post<{ filename: string }>("/api/expenses/excel/send", payload);
       setExcelSuccess("📥 Файл отправлен в чат с ботом");
       setTimeout(() => setExcelSuccess(null), 5000);
     } catch (e) {
@@ -458,22 +459,29 @@ function ReportView({
    * `<a download>` works reliably. Apple WebViews go through `data:` URLs to
    * avoid blob-URL leakage to the OS opener.
    */
-  const downloadExcelDirect = async () => {
+  const downloadExcelDirect = async (period: "month" | "year") => {
     if (excelLoading) return;
     setExcelLoading(true);
     setExcelError(null);
     setExcelSuccess(null);
     try {
-      const blob = await api.getBlob(`/api/expenses/excel?month=${month}&year=${year}`);
-      const filename = `Расходы_${RU_MONTHS[month - 1]}_${year}.xlsx`;
+      const url =
+        period === "year"
+          ? `/api/expenses/excel?period=year&year=${year}`
+          : `/api/expenses/excel?month=${month}&year=${year}`;
+      const blob = await api.getBlob(url);
+      const filename =
+        period === "year"
+          ? `Расходы_${year}_год.xlsx`
+          : `Расходы_${RU_MONTHS[month - 1]}_${year}.xlsx`;
       const isApple = platform === "ios" || platform === "macos";
       if (isApple) {
         const dataUrl = await blobToDataUrl(blob);
         triggerDownload(dataUrl, filename);
       } else {
-        const url = URL.createObjectURL(blob);
-        triggerDownload(url, filename);
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        const objectUrl = URL.createObjectURL(blob);
+        triggerDownload(objectUrl, filename);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Не удалось сформировать отчёт";
@@ -488,20 +496,31 @@ function ReportView({
   // direct path because they're real browsers/Chromium-based shells.
   const isDesktopOrWeb =
     platform === "tdesktop" || platform === "web" || platform === "weba" || platform === "webk";
-  const handleExcelClick = isDesktopOrWeb ? downloadExcelDirect : sendExcelViaBot;
+  const handleExcelClick = (period: "month" | "year") =>
+    isDesktopOrWeb ? downloadExcelDirect(period) : sendExcelViaBot(period);
 
   return (
     <>
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div className="card-hint">{report?.month ?? "Текущий месяц"}</div>
-          <button
-            className="btn btn-small"
-            onClick={handleExcelClick}
-            disabled={excelLoading}
-          >
-            {excelLoading ? "Отправляю…" : "Excel"}
-          </button>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              className="btn btn-small"
+              onClick={() => handleExcelClick("month")}
+              disabled={excelLoading}
+            >
+              {excelLoading ? "…" : "Excel"}
+            </button>
+            <button
+              className="btn btn-small"
+              onClick={() => handleExcelClick("year")}
+              disabled={excelLoading}
+              title={`Excel за весь ${year}`}
+            >
+              {excelLoading ? "…" : "Excel год"}
+            </button>
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 28, fontWeight: 700 }}>
           <span>{total.toLocaleString("ru-RU")} / {limit.toLocaleString("ru-RU")}</span>

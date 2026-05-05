@@ -27,12 +27,13 @@ import {
   isMonthLimitOverridden,
   getTribeDefaultLimit,
   setEffectiveMonthLimit,
+  getMonthlyCategoryTotalsForYear,
 } from "../expenses/repository.js";
 import {
   formatExpenseConfirmation,
   monthName,
 } from "../expenses/formatter.js";
-import { generateMonthlyExcel } from "../expenses/excel.js";
+import { generateMonthlyExcel, generateYearlyExcel } from "../expenses/excel.js";
 import { getMskNow, getMskYmd, getMonthRange, getMonthLimit } from "../utils/date.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { createLogger } from "../utils/logger.js";
@@ -491,6 +492,50 @@ export async function generateExcel(
   const tribeName = await getTribeName(dbUser.tribeId);
   const buffer = await generateMonthlyExcel(categoryTotals, detailedRows, year, month, tribeName, limit);
   const filename = `Расходы_${monthName(month)}_${year}.xlsx`;
+
+  return { buffer, filename };
+}
+
+/**
+ * Generate Excel file for an entire year.
+ * Year limit = sum of effective monthly limits across the 12 months,
+ * so per-month overrides are respected.
+ */
+export async function generateYearExcel(
+  telegramId: number,
+  year: number
+): Promise<{ buffer: Buffer; filename: string } | null> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  if (!dbUser.tribeId) throw new Error("Нет трайба.");
+
+  const from = new Date(Date.UTC(year, 0, 1));
+  const to = new Date(Date.UTC(year + 1, 0, 1));
+
+  const [categoryTotals, detailedRows, pivotCells, tribeName] = await Promise.all([
+    getCategoryTotals(dbUser.tribeId, from, to),
+    getExpensesForExcel(dbUser.tribeId, from, to),
+    getMonthlyCategoryTotalsForYear(dbUser.tribeId, year),
+    getTribeName(dbUser.tribeId),
+  ]);
+
+  if (categoryTotals.length === 0) return null;
+
+  const fallback = getMonthLimit();
+  let yearLimit = 0;
+  for (let m = 1; m <= 12; m++) {
+    yearLimit += await getEffectiveMonthLimit(dbUser.tribeId, year, m, fallback);
+  }
+
+  const buffer = await generateYearlyExcel(
+    categoryTotals,
+    pivotCells,
+    detailedRows,
+    year,
+    tribeName,
+    yearLimit
+  );
+  const filename = `Расходы_${year}_год.xlsx`;
 
   return { buffer, filename };
 }
