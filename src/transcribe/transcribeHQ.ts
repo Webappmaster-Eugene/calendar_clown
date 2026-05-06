@@ -8,7 +8,7 @@
 import { unlink } from "fs/promises";
 import { join, basename, extname } from "path";
 import { callStt } from "../voice/sttClient.js";
-import { TRANSCRIBE_MODEL_HQ, TRANSCRIBE_MODEL_FALLBACK, VOICE_DIR } from "../constants.js";
+import { TRANSCRIBE_MODEL_HQ, VOICE_DIR } from "../constants.js";
 import {
   getAudioDuration,
   splitAudio,
@@ -135,29 +135,16 @@ async function transcribeSingleFile(filePath: string, durationSec: number, onPro
 
   onProgress?.(`Транскрибация (${durationStr})... 0%`);
 
-  try {
-    const result = await callStt({
-      filePath,
-      prompt: TRANSCRIBE_PROMPT,
-      timeoutMs,
-      model: TRANSCRIBE_MODEL_HQ,
-      onProgress: wrappedProgress,
-    });
-    onProgress?.(`Транскрибация завершена — 100% (${result.length} симв.)`);
-    return result;
-  } catch (primaryErr) {
-    log.warn(`Primary model failed: ${primaryErr instanceof Error ? primaryErr.message : String(primaryErr)}`);
-    onProgress?.(`Основная модель недоступна, пробую запасную...`);
-    const result = await callStt({
-      filePath,
-      prompt: TRANSCRIBE_PROMPT,
-      timeoutMs,
-      model: TRANSCRIBE_MODEL_FALLBACK,
-      onProgress: wrappedProgress,
-    });
-    onProgress?.(`Транскрибация завершена — 100% (${result.length} симв.)`);
-    return result;
-  }
+  // callStt internally walks the primary→fallbacks chain, so no extra retry needed here.
+  const result = await callStt({
+    filePath,
+    prompt: TRANSCRIBE_PROMPT,
+    timeoutMs,
+    model: TRANSCRIBE_MODEL_HQ,
+    onProgress: wrappedProgress,
+  });
+  onProgress?.(`Транскрибация завершена — 100% (${result.length} симв.)`);
+  return result;
 }
 
 /** Transcribe a long audio file by splitting into chunks via ffmpeg. */
@@ -203,6 +190,8 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
       log.info(`Transcribing chunk ${i + 1}/${chunkPaths.length}: ${chunkPath}, timeout=${chunkTimeoutMs}ms`);
       onProgress?.(`${chunkLabel} — транскрибация...`);
 
+      // callStt walks the primary→fallbacks chain itself; we only catch here so
+      // a single bad chunk doesn't abort the whole long-audio job.
       let text = "";
       try {
         text = await callStt({
@@ -214,24 +203,10 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
             ? (step: string) => onProgress(`${chunkLabel} — ${step}`)
             : undefined,
         });
-      } catch (primaryErr) {
-        log.warn(`Chunk ${i + 1} failed with primary model: ${primaryErr instanceof Error ? primaryErr.message : String(primaryErr)}`);
-        onProgress?.(`${chunkLabel} — повтор с запасной моделью...`);
-        try {
-          text = await callStt({
-            filePath: chunkPath,
-            prompt: TRANSCRIBE_PROMPT,
-            timeoutMs: chunkTimeoutMs,
-            model: TRANSCRIBE_MODEL_FALLBACK,
-            onProgress: onProgress
-              ? (step: string) => onProgress(`${chunkLabel} — ${step}`)
-              : undefined,
-          });
-        } catch (fallbackErr) {
-          log.error(`Chunk ${i + 1} fallback also failed: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`);
-          text = "[неразборчиво]";
-          failedChunks++;
-        }
+      } catch (chunkErr) {
+        log.error(`Chunk ${i + 1} failed across all models: ${chunkErr instanceof Error ? chunkErr.message : String(chunkErr)}`);
+        text = "[неразборчиво]";
+        failedChunks++;
       }
 
       if (text) {

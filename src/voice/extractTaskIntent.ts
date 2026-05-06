@@ -7,6 +7,7 @@ import { DEEPSEEK_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { TIMEZONE_MSK } from "../shared/constants.js";
+import { INSTRUCTION_GUARD, wrapUserContent } from "./promptSafety.js";
 
 function buildTaskSystemPrompt(workNames: string[], nowIso: string): string {
   const worksList = workNames.length > 0
@@ -75,8 +76,8 @@ export async function extractTaskIntent(
   const content = await callOpenRouter({
     model: DEEPSEEK_MODEL,
     messages: [
-      { role: "system", content: buildTaskSystemPrompt(workNames, nowMsk) },
-      { role: "user", content: transcript },
+      { role: "system", content: `${buildTaskSystemPrompt(workNames, nowMsk)}\n\n${INSTRUCTION_GUARD}` },
+      { role: "user", content: wrapUserContent(transcript) },
     ],
   });
   if (!content) return { type: "not_task" };

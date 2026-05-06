@@ -5,6 +5,7 @@
 import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
+import { INSTRUCTION_GUARD, wrapUserContent } from "./promptSafety.js";
 
 const WEEKDAY_TO_NUM: Record<string, number> = {
   Sunday: 0,
@@ -172,8 +173,8 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
   const content = await callOpenRouter({
     model: DEEPSEEK_MODEL,
     messages: [
-      { role: "system", content: buildSystemPrompt() },
-      { role: "user", content: transcript },
+      { role: "system", content: `${buildSystemPrompt()}\n\n${INSTRUCTION_GUARD}` },
+      { role: "user", content: wrapUserContent(transcript) },
     ],
   });
   if (!content) return { type: "unknown" };

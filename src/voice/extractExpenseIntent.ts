@@ -7,6 +7,7 @@ import { DEEPSEEK_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { createLogger } from "../utils/logger.js";
+import { INSTRUCTION_GUARD, wrapUserContent } from "./promptSafety.js";
 
 const log = createLogger("extract-expense-intent");
 
@@ -65,8 +66,8 @@ export async function extractExpenseIntent(
   const content = await callOpenRouter({
     model: DEEPSEEK_MODEL,
     messages: [
-      { role: "system", content: buildExpenseSystemPrompt(categoriesList) },
-      { role: "user", content: transcript },
+      { role: "system", content: `${buildExpenseSystemPrompt(categoriesList)}\n\n${INSTRUCTION_GUARD}` },
+      { role: "user", content: wrapUserContent(transcript) },
     ],
   });
   if (!content) {

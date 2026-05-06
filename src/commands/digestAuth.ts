@@ -48,16 +48,32 @@ interface WebAuthToken {
 }
 
 const WEB_TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const WEB_TOKEN_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 const webTokens = new Map<string, WebAuthToken>();
 
-// Periodic cleanup of expired tokens
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, data] of webTokens) {
-    if (now - data.createdAt > 15 * 60 * 1000) webTokens.delete(token);
+let webTokenCleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Start periodic cleanup of expired web auth tokens. Call once at boot. */
+export function startWebTokenCleanup(): void {
+  if (webTokenCleanupTimer) return;
+  webTokenCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [token, data] of webTokens) {
+      if (now - data.createdAt > WEB_TOKEN_TTL_MS) webTokens.delete(token);
+    }
+  }, WEB_TOKEN_CLEANUP_INTERVAL_MS);
+  // Don't keep the event loop alive solely for this cleanup.
+  webTokenCleanupTimer.unref?.();
+}
+
+/** Stop the cleanup timer (graceful shutdown). */
+export function stopWebTokenCleanup(): void {
+  if (webTokenCleanupTimer) {
+    clearInterval(webTokenCleanupTimer);
+    webTokenCleanupTimer = null;
   }
-}, 5 * 60 * 1000);
+}
 
 /* ── Web auth result type and exported functions ── */
 

@@ -7,6 +7,7 @@ import { extractCalendarEvents } from "../calendar/extractViaOpenRouter.js";
 import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import type { TranscribeContext } from "../voice/transcribe.js";
+import { SttError } from "../voice/sttClient.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
 import { getUserMode, isExpenseMode, isTranscribeMode, isBroadcastMode, isGandalfMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isNeuroMode, isSimplifierMode, isTasksMode } from "../middleware/userMode.js";
@@ -216,6 +217,16 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
   } catch (err) {
     if (filePath) await unlink(filePath).catch(() => {});
     if (err instanceof NoCalendarLinkedError) {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        statusMsg.message_id,
+        undefined,
+        err.message
+      );
+      return;
+    }
+    if (err instanceof SttError) {
+      log.error(`STT failed: model=${err.model}, status=${err.status}, raw=${err.raw}`);
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         statusMsg.message_id,

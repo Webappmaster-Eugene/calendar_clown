@@ -1,7 +1,7 @@
 import http from "http";
 import fs from "fs";
 import path from "path";
-import { saveTokenFromCode } from "./calendar/auth.js";
+import { saveTokenFromCode, verifyOAuthState } from "./calendar/auth.js";
 import { getAuthStateByToken, submitCodeViaWeb, submit2faViaWeb } from "./commands/digestAuth.js";
 import type { WebAuthResult } from "./commands/digestAuth.js";
 import { createLogger } from "./utils/logger.js";
@@ -211,13 +211,19 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
         sendHtml(res, 400, `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p>Не хватает параметров (code или state). Вернитесь в Telegram и нажмите «Войти через Google» снова.</p></body></html>`);
         return;
       }
+      const userId = verifyOAuthState(state);
+      if (!userId) {
+        log.warn("OAuth callback: invalid or expired state");
+        sendHtml(res, 400, `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p>Сессия привязки устарела или повреждена. Вернитесь в Telegram и нажмите «Войти через Google» снова.</p></body></html>`);
+        return;
+      }
       try {
-        await saveTokenFromCode(code, state);
-        log.info(`OAuth callback: success for state=${state}`);
+        await saveTokenFromCode(code, userId);
+        log.info(`OAuth callback: success for user=${userId}`);
         sendHtml(res, 200, OAUTH_SUCCESS_HTML);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        log.error(`OAuth callback: error for state=${state} - ${message}`);
+        log.error(`OAuth callback: error for user=${userId} - ${message}`);
         sendHtml(res, 500, `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p>Ошибка привязки: ${escapeHtml(message)}</p><p>Вернитесь в Telegram и попробуйте снова или отправьте /auth и код из браузера.</p></body></html>`);
       }
       return;

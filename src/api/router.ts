@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { apiAuthMiddleware, requireApproved } from "./authMiddleware.js";
 import { requestLoggerMiddleware } from "./requestLoggerMiddleware.js";
+import { rateLimit } from "./rateLimitMiddleware.js";
 import type { ApiEnv } from "./authMiddleware.js";
 import { createLogger } from "../utils/logger.js";
 
@@ -60,6 +61,20 @@ export function createApiApp(): Hono<ApiEnv> {
 
   // Audit: log every API request to action_logs
   api.use("*", requestLoggerMiddleware());
+
+  // Global per-user soft cap to prevent client loops from hammering the API.
+  api.use("*", rateLimit({ bucket: "all", windowMs: 60_000, max: 120 }));
+
+  // Tighter cap on endpoints that hit paid upstreams (LLM/STT) or do heavy work.
+  const heavyLimit = rateLimit({ bucket: "heavy", windowMs: 60_000, max: 20 });
+  api.use("/voice/*", heavyLimit);
+  api.use("/transcribe/*", heavyLimit);
+  api.use("/simplifier/*", heavyLimit);
+  api.use("/blogger/*", heavyLimit);
+  api.use("/osint/*", heavyLimit);
+  api.use("/chat/*", heavyLimit);
+  api.use("/nutritionist/*", heavyLimit);
+  api.use("/broadcast/*", heavyLimit);
 
   // ── Health check (no auth needed — registered before middleware) ──
   // Note: health is mounted on the parent, not here

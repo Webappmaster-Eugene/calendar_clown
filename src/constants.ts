@@ -40,8 +40,16 @@ export const TRANSCRIBE_MODEL = process.env.STT_MODEL || "google/gemini-2.0-flas
 /** Gemini model for high-quality voice transcription (transcribe mode). */
 export const TRANSCRIBE_MODEL_HQ = process.env.STT_MODEL_HQ || "google/gemini-2.0-flash-001";
 
-/** Fallback model for STT when primary model is geo-blocked. */
-export const TRANSCRIBE_MODEL_FALLBACK = process.env.STT_MODEL_FALLBACK || "openai/gpt-4o-mini-audio-preview";
+/** Fallback models for STT when primary model fails (tried in order). */
+export const TRANSCRIBE_MODEL_FALLBACKS: readonly string[] = (
+  process.env.STT_MODEL_FALLBACKS ?? "openai/gpt-4o-audio-preview"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+/** First fallback model — kept for backward compatibility. */
+export const TRANSCRIBE_MODEL_FALLBACK = TRANSCRIBE_MODEL_FALLBACKS[0] ?? "openai/gpt-4o-audio-preview";
 
 /** Rate limit: max expense entries per user per minute. */
 export const RATE_LIMIT_PER_MINUTE = 10;

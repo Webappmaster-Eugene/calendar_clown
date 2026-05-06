@@ -1,4 +1,5 @@
 import { createLogger } from "../utils/logger.js";
+import { assertPublicUrl, UnsafeUrlError } from "../utils/safeFetch.js";
 
 const log = createLogger("blogger-fetch");
 
@@ -7,10 +8,11 @@ interface FetchedContent {
   content: string;
 }
 
-/** Fetch readable content from a URL. Returns null on failure. */
+/** Fetch readable content from a URL. Returns null on failure or unsafe URL. */
 export async function fetchUrlContent(url: string): Promise<FetchedContent | null> {
   try {
-    const res = await fetch(url, {
+    const safeUrl = await assertPublicUrl(url);
+    const res = await fetch(safeUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; BloggerBot/1.0)",
         "Accept": "text/html,application/xhtml+xml",
@@ -38,7 +40,11 @@ export async function fetchUrlContent(url: string): Promise<FetchedContent | nul
       content: content.length > maxLen ? content.slice(0, maxLen) + "..." : content,
     };
   } catch (err) {
-    log.error(`Error fetching ${url}:`, err);
+    if (err instanceof UnsafeUrlError) {
+      log.warn(`Refused unsafe URL ${url}: ${err.message}`);
+    } else {
+      log.error(`Error fetching ${url}:`, err);
+    }
     return null;
   }
 }

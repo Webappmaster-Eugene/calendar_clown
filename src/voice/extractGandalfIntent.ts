@@ -6,6 +6,7 @@
 import { DEEPSEEK_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
+import { INSTRUCTION_GUARD, wrapUserContent } from "./promptSafety.js";
 
 function buildGandalfSystemPrompt(categoriesList: string): string {
   return `You are a structured information tracker assistant. Extract entry information from the user's voice message.
@@ -77,8 +78,8 @@ export async function extractGandalfIntent(
   const content = await callOpenRouter({
     model: DEEPSEEK_MODEL,
     messages: [
-      { role: "system", content: buildGandalfSystemPrompt(categoriesList) },
-      { role: "user", content: transcript },
+      { role: "system", content: `${buildGandalfSystemPrompt(categoriesList)}\n\n${INSTRUCTION_GUARD}` },
+      { role: "user", content: wrapUserContent(transcript) },
     ],
   });
   if (!content) return { type: "unknown" };

@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
+import { createHmac, timingSafeEqual } from "crypto";
 import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
 
@@ -39,8 +40,45 @@ function getRedirectUri(): string {
   return uri;
 }
 
+/* ── Signed OAuth state ──────────────────────────────────────────────
+ * The Google OAuth `state` round-trips through the user's browser; without a
+ * signature any attacker can hit /<oauth-callback>?code=<own>&state=<victim_id>
+ * and overwrite the victim's stored tokens. We sign state with the bot token
+ * (server-side secret) so callbacks must originate from a getAuthUrl() we issued.
+ */
+const OAUTH_STATE_TTL_SEC = 30 * 60; // 30 min — typical user delay between /auth and consent
+
+function getStateSecret(): Buffer {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error("TELEGRAM_BOT_TOKEN must be set to sign OAuth state");
+  return createHmac("sha256", "oauth-state").update(token).digest();
+}
+
+function signOAuthState(userId: string): string {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const payload = `${userId}.${issuedAt}`;
+  const sig = createHmac("sha256", getStateSecret()).update(payload).digest("hex").slice(0, 32);
+  return `${payload}.${sig}`;
+}
+
+/** Returns the trusted Telegram user id encoded in `state`, or null if invalid/expired. */
+export function verifyOAuthState(state: string): string | null {
+  const parts = state.split(".");
+  if (parts.length !== 3) return null;
+  const [userId, issuedAtStr, sig] = parts;
+  if (!userId || !issuedAtStr || !sig) return null;
+  const expected = createHmac("sha256", getStateSecret()).update(`${userId}.${issuedAtStr}`).digest("hex").slice(0, 32);
+  if (sig.length !== expected.length) return null;
+  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  const issuedAt = Number(issuedAtStr);
+  if (!Number.isFinite(issuedAt)) return null;
+  if (Math.floor(Date.now() / 1000) - issuedAt > OAUTH_STATE_TTL_SEC) return null;
+  return userId;
+}
+
 /**
- * Returns auth URL for the user to open. state = Telegram user id (for callback).
+ * Returns auth URL for the user to open. The `state` parameter is HMAC-signed
+ * with the bot token so callback handlers can recover a verified userId.
  */
 export function getAuthUrl(userId?: string): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -58,7 +96,7 @@ export function getAuthUrl(userId?: string): string {
     scope: SCOPES,
     prompt: "consent",
   };
-  if (userId) options.state = userId;
+  if (userId) options.state = signOAuthState(userId);
   return oauth2Client.generateAuthUrl(options);
 }
 

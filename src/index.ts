@@ -22,13 +22,14 @@ import { isDigestConfigured, isDigestReady } from "./digest/telegramClient.js";
 import { disconnectAll as disconnectAllMtprotoSessions } from "./digest/sessionManager.js";
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
 import { setDigestBotRef } from "./commands/digestMode.js";
-import { setAuthBotRef } from "./commands/digestAuth.js";
+import { setAuthBotRef, startWebTokenCleanup, stopWebTokenCleanup } from "./commands/digestAuth.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
 import { startRemindersScheduler, stopRemindersScheduler } from "./reminders/scheduler.js";
 import { startTasksScheduler, stopTasksScheduler } from "./tasks/scheduler.js";
 import { initProxyAgent } from "./utils/proxyAgent.js";
 import { clearAllBatches } from "./chat/messageBatcher.js";
+import { validateSttModels } from "./voice/healthCheck.js";
 import { createLogger } from "./utils/logger.js";
 
 const log = createLogger("app");
@@ -137,6 +138,7 @@ async function main(): Promise<void> {
 
   // Set bot reference for MTProto web auth notifications
   setAuthBotRef(bot);
+  startWebTokenCleanup();
 
   // Initialize digest scheduler (GramJS + cron)
   if (await isDigestReady()) {
@@ -207,6 +209,11 @@ async function main(): Promise<void> {
     log.warn("Failed to set bot commands: %s", err instanceof Error ? err.message : err);
   }
 
+  // Surface STT model deprecations at boot, not on the first user voice message.
+  void validateSttModels().catch((err) => {
+    log.debug("STT health-check threw: %s", err instanceof Error ? err.message : err);
+  });
+
   const webappUrl = process.env.WEBAPP_URL?.trim();
   if (webappUrl) {
     try {
@@ -235,6 +242,7 @@ async function main(): Promise<void> {
     stopTasksScheduler();
     stopWorkerHealthMonitor();
     stopStaleJobCleaner();
+    stopWebTokenCleanup();
     await closeTranscribeQueue();
     await closePool();
     await shutdownTelemetry();

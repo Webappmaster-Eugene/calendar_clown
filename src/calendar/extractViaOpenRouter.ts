@@ -6,6 +6,7 @@
 import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
+import { INSTRUCTION_GUARD, wrapUserContent } from "../voice/promptSafety.js";
 
 /** Build system prompt with current date so the model uses the correct year (no past dates). */
 function buildSystemPrompt(): string {
@@ -21,7 +22,9 @@ Recurring: if the user says "каждую пятницу", "каждую нед�
 Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. ${year}-03-09T10:00:00+03:00).
 IMPORTANT: Today is ${dateStr} (${weekday}), ${TIMEZONE_MSK}. Always use the current year (${year}) when the user does not specify a year. "Tomorrow", "next Monday", "today" must refer to dates in ${year} or later. No date → today. No time → 10:00. Default duration: 1 hour.
 Example: {"title":"Meeting","start":"${year}-03-09T15:00:00+03:00","end":"${year}-03-09T16:00:00+03:00"}
-Example recurring: {"title":"Массаж","start":"...","end":"...","recurrence":["RRULE:FREQ=WEEKLY;BYDAY=FR"]}`;
+Example recurring: {"title":"Массаж","start":"...","end":"...","recurrence":["RRULE:FREQ=WEEKLY;BYDAY=FR"]}
+
+${INSTRUCTION_GUARD}`;
 }
 
 export interface ExtractedEvent {
@@ -39,7 +42,7 @@ export async function extractCalendarEvents(
     model: DEEPSEEK_MODEL,
     messages: [
       { role: "system", content: buildSystemPrompt() },
-      { role: "user", content: transcript },
+      { role: "user", content: wrapUserContent(transcript) },
     ],
   });
   if (!content) return [];

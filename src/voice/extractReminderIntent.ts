@@ -7,6 +7,7 @@ import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import type { ReminderSchedule } from "../reminders/types.js";
+import { INSTRUCTION_GUARD, wrapUserContent } from "./promptSafety.js";
 
 export type ReminderIntent =
   | { type: "create_reminder"; text: string; schedule: ReminderSchedule }
@@ -71,8 +72,8 @@ export async function extractReminderIntent(transcript: string): Promise<Reminde
   const content = await callOpenRouter({
     model: DEEPSEEK_MODEL,
     messages: [
-      { role: "system", content: buildSystemPrompt() },
-      { role: "user", content: transcript },
+      { role: "system", content: `${buildSystemPrompt()}\n\n${INSTRUCTION_GUARD}` },
+      { role: "user", content: wrapUserContent(transcript) },
     ],
   });
   if (!content) return { type: "unknown" };

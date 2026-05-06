@@ -14,8 +14,14 @@ import type { UserProfile, UserMode } from "../shared/types.js";
 
 const log = createLogger("api-auth");
 
-/** Max age for initData in seconds (24 hours). 0 = no expiry check. */
-const INIT_DATA_MAX_AGE_SECONDS = 86400;
+/**
+ * Max age for initData in seconds. Telegram refreshes initData on every Mini App
+ * launch, so a tight window has no UX cost while shrinking the replay window
+ * if initData ever leaks (logs, browser extensions, etc.). Telegram's own spec
+ * recommends ≤ 5 minutes; we allow 15 to be lenient with clock skew.
+ * 0 = no expiry check (not recommended).
+ */
+const INIT_DATA_MAX_AGE_SECONDS = 900;
 
 export interface TelegramUser {
   id: number;
