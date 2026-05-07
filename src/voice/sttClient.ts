@@ -15,6 +15,14 @@ import type { OnProgressCallback } from "../transcribe/types.js";
 const log = createLogger("stt-client");
 
 /**
+ * Pin Google STT models to OpenRouter's `google-vertex` provider by default.
+ * This dodges the AI-Studio "User location is not supported" geo-block.
+ * Operators can flip `STT_PIN_VERTEX_AI=false` in `.env` to fall back to
+ * OpenRouter's default routing (which may pick `google-ai-studio`).
+ */
+const PIN_VERTEX_FOR_GOOGLE = (process.env.STT_PIN_VERTEX_AI ?? "true").toLowerCase() !== "false";
+
+/**
  * STT failure reported to the user. The `message` is human-friendly Russian text
  * safe to show in Telegram; `raw` carries the upstream body for logs/telemetry.
  */
@@ -75,8 +83,16 @@ function parseUpstreamError(body: string): ParsedUpstreamError {
   }
 }
 
-/** Detect transient/retryable upstream conditions where another model is worth trying. */
-function isRetryableUpstreamError(status: number, message: string): boolean {
+/**
+ * Detect transient/retryable upstream conditions where another model is worth trying.
+ *
+ * Includes provider-routing failures from OpenRouter — e.g. `404 "No endpoints found
+ * for <model>"` happens when the requested model+provider pair has no active endpoint
+ * for this account/region. With `provider.allow_fallbacks=false` (our default for
+ * Google models, to dodge AI-Studio geo-blocks), this is the dominant failure mode
+ * and must trigger the next model in the chain.
+ */
+export function isRetryableUpstreamError(status: number, message: string): boolean {
   if (status >= 500) return true;
   if (status === 429) return true;
   const lower = message.toLowerCase();
@@ -84,6 +100,12 @@ function isRetryableUpstreamError(status: number, message: string): boolean {
   if (lower.includes("not a valid model")) return true;
   if (lower.includes("model not found")) return true;
   if (lower.includes("no allowed providers")) return true;
+  if (lower.includes("no endpoints")) return true;
+  if (lower.includes("no providers")) return true;
+  if (lower.includes("provider returned error")) return true;
+  // 404 on a primary model is almost always a routing problem on OpenRouter
+  // (model+provider pair unavailable), not a permanent model-gone error → retry.
+  if (status === 404) return true;
   return false;
 }
 
@@ -123,17 +145,24 @@ export async function callStt(options: SttCallOptions): Promise<string> {
   const mimeType = audioMimeType(options.filePath);
 
   // Build chain: primary first, then fallbacks (de-duplicated, primary excluded).
-  // Pin vertex-ai only for Google-hosted models — it's a no-op (or worse) for OpenAI/etc.
+  // Pin google-vertex only for Google-hosted models — it's a no-op (or worse) for OpenAI/etc.
+  // The pin is gated by STT_PIN_VERTEX_AI env so operators can flip it without a rebuild.
+  const shouldPinVertex = (model: string): boolean =>
+    PIN_VERTEX_FOR_GOOGLE && model.startsWith("google/");
+
   const chain: Array<{ model: string; pinVertex: boolean }> = [
-    { model: primaryModel, pinVertex: primaryModel.startsWith("google/") },
+    { model: primaryModel, pinVertex: shouldPinVertex(primaryModel) },
   ];
   for (const m of TRANSCRIBE_MODEL_FALLBACKS) {
     if (m && m !== primaryModel && !chain.some((c) => c.model === m)) {
-      chain.push({ model: m, pinVertex: m.startsWith("google/") });
+      chain.push({ model: m, pinVertex: shouldPinVertex(m) });
     }
   }
 
-  log.info(`STT call: primary=${primaryModel}, fallbacks=[${chain.slice(1).map((c) => c.model).join(", ")}], file=${options.filePath}, size=${fileBuffer.length}b, timeout=${options.timeoutMs}ms`);
+  const chainDescription = chain
+    .map((c) => `${c.model}[${c.pinVertex ? "google-vertex" : "auto"}]`)
+    .join(" → ");
+  log.info(`STT call: chain=${chainDescription}, file=${options.filePath}, size=${fileBuffer.length}b, timeout=${options.timeoutMs}ms`);
 
   let lastErr: SttError | null = null;
   for (let i = 0; i < chain.length; i++) {
@@ -156,10 +185,13 @@ export async function callStt(options: SttCallOptions): Promise<string> {
         timeoutMs: options.timeoutMs,
         filePath: options.filePath,
         onProgress: options.onProgress,
-        // Pin vertex-ai only for the primary Gemini-style model; for fallbacks let
-        // OpenRouter pick the best route. allow_fallbacks=false avoids silent re-routing
-        // to AI Studio, which is the usual source of "User location is not supported".
-        provider: pinVertex ? { order: ["vertex-ai"], allow_fallbacks: false } : undefined,
+        // Pin OpenRouter's Vertex route for Google models; fallbacks use auto-routing.
+        // The provider slug is `google-vertex` per OpenRouter's catalogue (verified via
+        // /api/v1/models/<id>/endpoints). The earlier `"vertex-ai"` slug was wrong and
+        // caused `404 "No endpoints found"` for every voice request — see DNT-9582.
+        // allow_fallbacks=false avoids silent re-routing to AI Studio, which is the
+        // usual source of "User location is not supported" for some regions.
+        provider: pinVertex ? { order: ["google-vertex"], allow_fallbacks: false } : undefined,
       });
     } catch (err) {
       if (err instanceof SttError) {
@@ -168,14 +200,23 @@ export async function callStt(options: SttCallOptions): Promise<string> {
         const retryable = err.status == null || isRetryableUpstreamError(err.status, err.raw);
         const hasNext = i < chain.length - 1;
         if (retryable && hasNext) {
-          log.warn(`STT model=${model} failed (status=${err.status}), trying next fallback`);
+          const next = chain[i + 1];
+          log.warn(
+            `STT model=${model}[${pinVertex ? "google-vertex" : "auto"}] failed (status=${err.status}), ` +
+              `trying next fallback=${next.model}[${next.pinVertex ? "google-vertex" : "auto"}]`
+          );
           continue;
         }
         throw err;
       }
       // Non-SttError (timeout, network) — also try the next fallback if we have one.
       if (i < chain.length - 1) {
-        log.warn(`STT model=${model} threw non-HTTP error, trying next fallback: ${err instanceof Error ? err.message : String(err)}`);
+        const next = chain[i + 1];
+        log.warn(
+          `STT model=${model}[${pinVertex ? "google-vertex" : "auto"}] threw non-HTTP error, ` +
+            `trying next fallback=${next.model}[${next.pinVertex ? "google-vertex" : "auto"}]: ` +
+            `${err instanceof Error ? err.message : String(err)}`
+        );
         continue;
       }
       throw err;

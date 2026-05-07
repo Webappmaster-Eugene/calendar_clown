@@ -40,9 +40,15 @@ export const TRANSCRIBE_MODEL = process.env.STT_MODEL || "google/gemini-2.0-flas
 /** Gemini model for high-quality voice transcription (transcribe mode). */
 export const TRANSCRIBE_MODEL_HQ = process.env.STT_MODEL_HQ || "google/gemini-2.0-flash-001";
 
-/** Fallback models for STT when primary model fails (tried in order). */
+/**
+ * Fallback models for STT when primary model fails (tried in order).
+ *
+ * Reads `STT_MODEL_FALLBACKS` (comma-separated). For back-compat with deploys
+ * that still set the legacy singular `STT_MODEL_FALLBACK`, that env is used as
+ * a fallback source if the new one is unset — silent regression safety net.
+ */
 export const TRANSCRIBE_MODEL_FALLBACKS: readonly string[] = (
-  process.env.STT_MODEL_FALLBACKS ?? "openai/gpt-4o-audio-preview"
+  process.env.STT_MODEL_FALLBACKS ?? process.env.STT_MODEL_FALLBACK ?? "openai/gpt-4o-audio-preview"
 )
   .split(",")
   .map((s) => s.trim())

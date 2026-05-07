@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import { transcribeAudio, extractIntent } from "../../services/voiceService.js";
 import { extractExpenseIntent } from "../../voice/extractExpenseIntent.js";
+import { SttError } from "../../voice/sttClient.js";
 import { getCategoriesListWithAliasesFormatted, addExpenseFromVoice } from "../../services/expenseService.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import type { Context } from "hono";
 import { createLogger } from "../../utils/logger.js";
 import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
@@ -12,6 +14,26 @@ import { randomUUID } from "crypto";
 const log = createLogger("voice-route");
 
 const app = new Hono<ApiEnv>();
+
+/**
+ * Convert STT failures into a 503 with the user-friendly Russian message that
+ * `SttError` already carries. Without this branch the generic 500 path returns
+ * `"Failed to ..."` and the Mini App shows "Ошибка транскрибации" — losing the
+ * specific reason (timeout / region / model unavailable).
+ */
+function sttErrorResponse(c: Context<ApiEnv>, err: SttError, telegramId: number) {
+  log.error(
+    "STT failed for user %d: model=%s status=%s raw=%s",
+    telegramId,
+    err.model,
+    err.status,
+    err.raw
+  );
+  return c.json(
+    { ok: false, error: err.message, code: "STT_FAILED" as const },
+    503
+  );
+}
 
 /** Save uploaded audio to a temp file and return its path + cleanup function. */
 async function saveAudioToTemp(
@@ -54,6 +76,7 @@ app.post("/transcribe", async (c) => {
     logApiAction(telegramId, "voice_transcribe_api", {});
     return c.json({ ok: true, data: result });
   } catch (err) {
+    if (err instanceof SttError) return sttErrorResponse(c, err, telegramId);
     const msg = err instanceof Error ? err.message : "Failed to transcribe audio";
     log.error("Voice transcription error for user %d: %s", telegramId, msg);
     return c.json({ ok: false, error: msg }, 500);
@@ -90,6 +113,7 @@ app.post("/extract-intent", async (c) => {
 
     return c.json({ ok: true, data: { transcript, intent } });
   } catch (err) {
+    if (err instanceof SttError) return sttErrorResponse(c, err, telegramId);
     const msg = err instanceof Error ? err.message : "Failed to extract voice intent";
     log.error("Voice extract-intent error for user %d: %s", telegramId, msg);
     return c.json({ ok: false, error: msg }, 500);
@@ -161,6 +185,7 @@ app.post("/expense", async (c) => {
       },
     });
   } catch (err) {
+    if (err instanceof SttError) return sttErrorResponse(c, err, telegramId);
     const msg = err instanceof Error ? err.message : "Failed to process voice expense";
     log.error("Voice expense error for user %d: %s", telegramId, msg);
     return c.json({ ok: false, error: msg }, 500);

@@ -3,6 +3,17 @@
  * Logs a warning if a configured model is missing, so deprecations surface at
  * boot rather than on the first user voice message.
  *
+ * IMPORTANT — what this does NOT cover:
+ *   The catalogue lookup only checks that a model id exists. It does NOT verify
+ *   that any provider has an active *endpoint* for the (model, provider) pair
+ *   we actually request. With `provider: { order: ["google-vertex"],
+ *   allow_fallbacks: false }` (our default for Google models, see `sttClient.ts`),
+ *   OpenRouter can still return `404 "No endpoints found for <model>"` at
+ *   request time — the model is in the catalogue, but the pinned provider has
+ *   no endpoint for this account/region. Surfacing that here would require a
+ *   real STT round-trip at boot, which is out of scope for a non-blocking
+ *   health-check. The runtime fallback chain in `callStt` is the safety net.
+ *
  * Non-blocking: any network or auth failure is downgraded to a debug log.
  */
 
@@ -54,7 +65,10 @@ export async function validateSttModels(): Promise<void> {
 
   const missing = configured.filter((m) => !available.has(m));
   if (missing.length === 0) {
-    log.info(`STT models OK: ${configured.join(", ")}`);
+    log.info(
+      `STT models present in catalogue: ${configured.join(", ")} ` +
+        `(this does not guarantee provider endpoints — see callStt fallback chain).`
+    );
     return;
   }
   log.error(
