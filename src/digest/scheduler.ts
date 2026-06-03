@@ -75,6 +75,10 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
       );
       if (rows.length === 0) continue;
       const telegramId = Number(rows[0].telegram_id);
+      if (!Number.isFinite(telegramId) || telegramId <= 0) {
+        log.warn(`Invalid telegram_id for dbUser ${dbUserId}: ${rows[0].telegram_id}`);
+        continue;
+      }
 
       try {
         const count = await runDigestForUser(telegramId, bot);

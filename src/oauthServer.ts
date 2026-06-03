@@ -39,9 +39,12 @@ const MIME_TYPES: Record<string, string> = {
 function serveStaticFile(pathname: string, res: http.ServerResponse): boolean {
   if (!fs.existsSync(WEBAPP_DIST)) return false;
 
-  // Sanitize path to prevent directory traversal
-  const safePath = path.normalize(pathname).replace(/^(\.\.[/\\])+/, "");
-  let filePath = path.join(WEBAPP_DIST, safePath);
+  // Sanitize path to prevent directory traversal.
+  // path.join with an absolute pathname (e.g. "/etc/passwd") on POSIX ignores the
+  // base dir, so we must verify the resolved path stays inside WEBAPP_DIST.
+  const filePath = path.join(WEBAPP_DIST, path.normalize(pathname));
+  const relative = path.relative(WEBAPP_DIST, filePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
 
   // Try exact file first, then add index.html for directories
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {

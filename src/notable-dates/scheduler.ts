@@ -41,12 +41,15 @@ export function stopNotableDatesScheduler(): void {
   }
 }
 
-/** Get a future date in Moscow timezone. */
+/** Get a future date in Moscow timezone using calendar-day arithmetic (DST-safe). */
 function getMskFutureDate(daysAhead: number): { month: number; day: number } {
   const now = new Date();
-  const future = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-  const mskDate = new Date(future.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
-  return { month: mskDate.getMonth() + 1, day: mskDate.getDate() };
+  // Convert to MSK calendar date first, then add whole days.
+  // Millisecond addition on UTC time gives the right date only when the server
+  // timezone is UTC; calendar arithmetic is correct regardless of server TZ.
+  const mskNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
+  const mskFuture = new Date(mskNow.getFullYear(), mskNow.getMonth(), mskNow.getDate() + daysAhead);
+  return { month: mskFuture.getMonth() + 1, day: mskFuture.getDate() };
 }
 
 /** Format advance reminder prefix. */

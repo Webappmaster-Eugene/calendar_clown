@@ -21,12 +21,16 @@ let transcribeWorker: Worker<TranscribeJobData> | null = null;
 function parseRedisUrl(redisUrl: string): ConnectionOptions {
   const url = new URL(redisUrl);
   const db = url.pathname?.replace("/", "");
+  const dbNum = db ? parseInt(db, 10) : undefined;
+  if (dbNum !== undefined && isNaN(dbNum)) {
+    throw new Error(`Invalid Redis DB number in URL: "${db}"`);
+  }
   return {
     host: url.hostname,
     port: parseInt(url.port || "6379", 10),
     password: url.password || undefined,
     username: url.username || undefined,
-    db: db ? parseInt(db, 10) : undefined,
+    db: dbNum,
     maxRetriesPerRequest: null,
   };
 }

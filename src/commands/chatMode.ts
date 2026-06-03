@@ -41,7 +41,7 @@ const MAX_FILE_SIZE = 15 * 1024 * 1024;
 /** Max total context from search + links. */
 const MAX_AUGMENTED_CONTEXT_LENGTH = 15_000;
 
-/** MIME types that can be sent as text to DeepSeek. */
+/** MIME types treated as plain text (sent to the user's selected chat model). */
 const TEXT_MIME_TYPES = new Set([
   "text/plain",
   "text/csv",
@@ -773,7 +773,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
       result = await chatCompletion(messages, NEURO_VISION_MODEL, docSystemPrompt);
       modelUsed = NEURO_VISION_MODEL;
     } else if (isText) {
-      // Text file — read as UTF-8 and send to DeepSeek
+      // Text file — read as UTF-8 and send to the user's selected chat model
       const textContent = buffer.toString("utf-8");
       const truncated = textContent.length > 50000
         ? textContent.slice(0, 50000) + "\n\n[...файл обрезан, показаны первые 50000 символов]"

@@ -81,7 +81,12 @@ async function request<T>(
   clearTimeout(timeoutId);
   externalSignal?.removeEventListener("abort", onExternalAbort);
 
-  const json = (await res.json()) as ApiResult<T>;
+  let json: ApiResult<T>;
+  try {
+    json = (await res.json()) as ApiResult<T>;
+  } catch {
+    throw new ApiError(res.status, "PARSE_ERROR", "Invalid server response");
+  }
 
   if (!json.ok) {
     throw new ApiError(res.status, json.code, json.error, json.data);
