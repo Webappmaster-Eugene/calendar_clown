@@ -863,7 +863,7 @@ export async function handleProviderSelect(ctx: Context): Promise<void> {
   logAction(dbUser.id, telegramId, "chat_provider_select", { from: current, to: target });
 
   const labelMap: Record<ChatProvider, string> = {
-    free: "🆓 *Free* — бесплатная модель DeepSeek (rate-limited)",
+    free: "🆓 *Free* — бесплатная модель Llama (rate-limited)",
     paid: "💎 *Paid* — платная модель DeepSeek (быстрее, без лимитов)",
     uncensored: "🔥 *Без цензуры* — модель без ограничений контента",
   };

@@ -186,12 +186,13 @@ export async function callStt(options: SttCallOptions): Promise<string> {
         filePath: options.filePath,
         onProgress: options.onProgress,
         // Pin OpenRouter's Vertex route for Google models; fallbacks use auto-routing.
-        // The provider slug is `google-vertex` per OpenRouter's catalogue (verified via
-        // /api/v1/models/<id>/endpoints). The earlier `"vertex-ai"` slug was wrong and
-        // caused `404 "No endpoints found"` for every voice request — see DNT-9582.
+        // Provider order: EU first (most stable, ~99.7% uptime), then global, then base US.
+        // The "google-vertex" base endpoint can be DOWN while EU/global remain active.
         // allow_fallbacks=false avoids silent re-routing to AI Studio, which is the
         // usual source of "User location is not supported" for some regions.
-        provider: pinVertex ? { order: ["google-vertex"], allow_fallbacks: false } : undefined,
+        provider: pinVertex
+          ? { order: ["google-vertex/eu", "google-vertex/global", "google-vertex"], allow_fallbacks: false }
+          : undefined,
       });
     } catch (err) {
       if (err instanceof SttError) {

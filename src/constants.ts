@@ -28,17 +28,17 @@ export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 /** DeepSeek model for intent/expense extraction. */
 export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek/deepseek-chat-v3.1";
 
-/** DeepSeek free model via OpenRouter (rate-limited but genuinely free). */
-export const DEEPSEEK_FREE_MODEL = process.env.DEEPSEEK_FREE_MODEL || "deepseek/deepseek-chat-v3.1:free";
+/** Free model via OpenRouter (rate-limited but genuinely free). */
+export const DEEPSEEK_FREE_MODEL = process.env.DEEPSEEK_FREE_MODEL || "meta-llama/llama-3.3-70b-instruct:free";
 
 /** Uncensored model for neuro chat (via OpenRouter, no content filters). */
-export const NEURO_UNCENSORED_MODEL = process.env.NEURO_UNCENSORED_MODEL || "gryphe/mythomax-l2-13b:free";
+export const NEURO_UNCENSORED_MODEL = process.env.NEURO_UNCENSORED_MODEL || "cognitivecomputations/dolphin-mistral-24b-venice-edition:free";
 
 /** Gemini model for voice transcription (calendar/expenses modes). */
-export const TRANSCRIBE_MODEL = process.env.STT_MODEL || "google/gemini-2.0-flash-001";
+export const TRANSCRIBE_MODEL = process.env.STT_MODEL || "google/gemini-2.5-flash";
 
 /** Gemini model for high-quality voice transcription (transcribe mode). */
-export const TRANSCRIBE_MODEL_HQ = process.env.STT_MODEL_HQ || "google/gemini-2.0-flash-001";
+export const TRANSCRIBE_MODEL_HQ = process.env.STT_MODEL_HQ || "google/gemini-2.5-flash";
 
 /**
  * Fallback models for STT when primary model fails (tried in order).
@@ -48,14 +48,14 @@ export const TRANSCRIBE_MODEL_HQ = process.env.STT_MODEL_HQ || "google/gemini-2.
  * a fallback source if the new one is unset — silent regression safety net.
  */
 export const TRANSCRIBE_MODEL_FALLBACKS: readonly string[] = (
-  process.env.STT_MODEL_FALLBACKS ?? process.env.STT_MODEL_FALLBACK ?? "openai/gpt-4o-audio-preview"
+  process.env.STT_MODEL_FALLBACKS ?? process.env.STT_MODEL_FALLBACK ?? "google/gemini-2.5-flash-lite"
 )
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
 /** First fallback model — kept for backward compatibility. */
-export const TRANSCRIBE_MODEL_FALLBACK = TRANSCRIBE_MODEL_FALLBACKS[0] ?? "openai/gpt-4o-audio-preview";
+export const TRANSCRIBE_MODEL_FALLBACK = TRANSCRIBE_MODEL_FALLBACKS[0] ?? "google/gemini-2.5-flash-lite";
 
 /** Rate limit: max expense entries per user per minute. */
 export const RATE_LIMIT_PER_MINUTE = 10;
@@ -114,10 +114,10 @@ export const BLOGGER_MODEL = process.env.BLOGGER_MODEL || "anthropic/claude-sonn
 export const SIMPLIFIER_MODEL = process.env.SIMPLIFIER_MODEL || "deepseek/deepseek-chat-v3.1";
 
 /** Neuro: vision model for image/document analysis (supports images, PDF, DOCX natively). */
-export const NEURO_VISION_MODEL = process.env.NEURO_VISION_MODEL || "google/gemini-2.0-flash-001";
+export const NEURO_VISION_MODEL = process.env.NEURO_VISION_MODEL || "google/gemini-2.5-flash";
 
 /** Nutritionist: vision model for food photo analysis. */
-export const NUTRITIONIST_VISION_MODEL = process.env.NUTRITIONIST_MODEL || "google/gemini-2.0-flash-001";
+export const NUTRITIONIST_VISION_MODEL = process.env.NUTRITIONIST_MODEL || "google/gemini-2.5-flash";
 
 /** Nutritionist: max size of a product package photo uploaded by user (webapp or bot). */
 export const NUTRITION_PRODUCT_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
