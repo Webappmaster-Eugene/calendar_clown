@@ -6,20 +6,50 @@ import { isDatabaseAvailable } from "../db/connection.js";
 
 export type UserMode = "calendar" | "expenses" | "transcribe" | "simplifier" | "digest" | "broadcast" | "notable_dates" | "gandalf" | "neuro" | "wishlist" | "goals" | "reminders" | "osint" | "summarizer" | "blogger" | "nutritionist" | "admin" | "tasks";
 
-/** Get user's current mode from DB. Falls back to 'calendar'. */
+/**
+ * In-memory cache of user modes.
+ *
+ * A single incoming message triggers a chain of up to ~18 sequential
+ * `isXMode()` checks (see the text/voice routers in bot.ts). Without caching,
+ * each check is its own `SELECT mode FROM users` round-trip — brutal against a
+ * remote database (~100 ms RTT ⇒ ~2 s of pure latency per message).
+ *
+ * All bot-side writes go through `setUserMode` (write-through below). The Mini
+ * App changes the mode via `userService.switchMode`, which calls
+ * `invalidateUserModeCache`. The TTL is a safety net for any write path that
+ * bypasses both (e.g. manual DB edits): stale entries self-heal within it.
+ */
+const CACHE_TTL_MS = 60_000;
+const modeCache = new Map<number, { mode: UserMode; expiresAt: number }>();
+
+/** Drop the cached mode for a user (call after an out-of-band mode write). */
+export function invalidateUserModeCache(telegramId: number): void {
+  modeCache.delete(telegramId);
+}
+
+/** Get user's current mode from DB (cached). Falls back to 'calendar'. */
 export async function getUserMode(telegramId: number): Promise<UserMode> {
   if (!isDatabaseAvailable()) return "calendar";
+
+  const cached = modeCache.get(telegramId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.mode;
+  }
+
   try {
-    return await getDbUserMode(telegramId);
+    const mode = await getDbUserMode(telegramId);
+    modeCache.set(telegramId, { mode, expiresAt: Date.now() + CACHE_TTL_MS });
+    return mode;
   } catch {
     return "calendar";
   }
 }
 
-/** Set user's mode in DB. */
+/** Set user's mode in DB and refresh the cache (write-through). */
 export async function setUserMode(telegramId: number, mode: UserMode): Promise<void> {
   if (!isDatabaseAvailable()) return;
   await setDbUserMode(telegramId, mode);
+  modeCache.set(telegramId, { mode, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
 /** Check if user is in calendar mode. */

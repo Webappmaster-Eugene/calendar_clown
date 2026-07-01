@@ -95,11 +95,37 @@ services:
         max-size: "50m"
         max-file: "5"
     labels:
+      # Opt this container in to autoheal: restarted when /health goes unhealthy (503).
+      - "autoheal=true"
       - "traefik.enable=true"
       - "traefik.http.routers.calendar-bot.rule=Host(`oauth.podbor-minuta.ru`)"
       - "traefik.http.routers.calendar-bot.entrypoints=websecure"
       - "traefik.http.routers.calendar-bot.tls.certresolver=letsencrypt"
       - "traefik.http.services.calendar-bot.loadbalancer.server.port=18790"
+
+  # Watches Docker health status and restarts any container labelled
+  # `autoheal=true` once it reports "unhealthy". Complements the bot's own
+  # `exit(1)` self-heal: this catches the case where the poller is wedged and
+  # /health returns 503, but the process itself never exits.
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    restart: unless-stopped
+    environment:
+      # Only touch containers explicitly opted in — never sibling stacks on this host.
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=10           # seconds between health-status checks
+      - AUTOHEAL_START_PERIOD=60       # grace after container start before acting
+      - AUTOHEAL_DEFAULT_STOP_TIMEOUT=30
+      - DOCKER_SOCK=/var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - dokploy-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:

@@ -6,6 +6,7 @@ import { getAuthStateByToken, submitCodeViaWeb, submit2faViaWeb } from "./comman
 import type { WebAuthResult } from "./commands/digestAuth.js";
 import { createLogger } from "./utils/logger.js";
 import { createApiApp } from "./api/router.js";
+import { getPollHealth } from "./health/pollWatchdog.js";
 
 const log = createLogger("oauth");
 
@@ -201,8 +202,16 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
     }
 
     // ── Health check ────────────────────────────────────────
+    // Reports the Telegraf poller's liveness, not just process aliveness —
+    // returns 503 when the poller is presumed wedged so an orchestrator
+    // (Dokploy / Docker healthcheck) can react.
     if (req.method === "GET" && pathname === "/health") {
-      sendJson(res, 200, { ok: true, uptime: process.uptime() });
+      const poll = getPollHealth();
+      sendJson(res, poll.healthy ? 200 : 503, {
+        ok: poll.healthy,
+        uptime: process.uptime(),
+        polling: poll,
+      });
       return;
     }
 

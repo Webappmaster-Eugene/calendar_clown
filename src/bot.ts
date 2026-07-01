@@ -114,6 +114,7 @@ import {
 } from "./commands/osintMode.js";
 import { accessControlMiddleware, getUserMenuContext, canAccessMode } from "./middleware/auth.js";
 import { botLoggerMiddleware } from "./middleware/botLogger.js";
+import { markPollActivity } from "./health/pollWatchdog.js";
 import { createLogger } from "./utils/logger.js";
 import { isExpenseMode, isBroadcastMode, isNotableDatesMode, isTranscribeMode, isDigestMode, isGandalfMode, isNeuroMode, isWishlistMode, isGoalsMode, isRemindersMode, isOsintMode, isSummarizerMode, isBloggerMode, isCalendarMode, isSimplifierMode, isTasksMode, isNutritionistMode } from "./middleware/userMode.js";
 import {
@@ -208,6 +209,13 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     } catch {
       // ctx.reply itself can throw synchronously if context is broken
     }
+  });
+
+  // Liveness: a delivered update proves getUpdates is working. Runs first, before
+  // access control, so even ignored updates count as proof the poller is alive.
+  bot.use(async (_ctx, next) => {
+    markPollActivity();
+    return next();
   });
 
   // Access control — restrict to allowed users

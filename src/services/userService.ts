@@ -3,6 +3,7 @@
  * Extracted from middleware/auth.ts and bot.ts.
  */
 import { getUserMenuContext, canAccessMode, isBootstrapAdmin } from "../middleware/auth.js";
+import { invalidateUserModeCache } from "../middleware/userMode.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { query } from "../db/connection.js";
 import { hasToken } from "../calendar/auth.js";
@@ -78,6 +79,7 @@ export async function switchMode(telegramId: number, newMode: UserMode): Promise
   }
 
   await query("UPDATE users SET mode = $1 WHERE telegram_id = $2", [newMode, telegramId]);
+  invalidateUserModeCache(telegramId);
   log.info(`User ${telegramId} switched mode to ${newMode}`);
 }
 

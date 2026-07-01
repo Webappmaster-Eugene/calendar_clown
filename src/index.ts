@@ -28,6 +28,7 @@ import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
 import { startRemindersScheduler, stopRemindersScheduler } from "./reminders/scheduler.js";
 import { startTasksScheduler, stopTasksScheduler } from "./tasks/scheduler.js";
 import { initProxyAgent } from "./utils/proxyAgent.js";
+import { startPollWatchdog, stopPollWatchdog } from "./health/pollWatchdog.js";
 import { clearAllBatches } from "./chat/messageBatcher.js";
 import { validateSttModels } from "./voice/healthCheck.js";
 import { createLogger } from "./utils/logger.js";
@@ -232,6 +233,7 @@ async function main(): Promise<void> {
   // Telegraf 4.16 awaits the polling loop inside launch(), so code after it never executes
   const shutdown = async (signal: string) => {
     log.info(`${signal} received, shutting down...`);
+    stopPollWatchdog();
     bot.stop(signal);
     clearAllBatches();
     disconnectAllMtprotoSessions();
@@ -263,11 +265,25 @@ async function main(): Promise<void> {
         let started = false;
         bot.launch({}, () => { started = true; resolve(); })
           .catch((err) => {
-            if (!started) reject(err);
-            else log.error("Bot polling error: %s", err instanceof Error ? err.message : err);
+            if (!started) {
+              reject(err);
+            } else {
+              // Polling loop terminated after a successful start. The process
+              // would otherwise stay alive with a dead poller (HTTP server keeps
+              // it running), silently ignoring messages. Exit so Docker's
+              // `restart: unless-stopped` brings up a fresh process.
+              log.error(
+                "Bot polling loop terminated after start: %s. Exiting for restart.",
+                err instanceof Error ? err.message : err,
+              );
+              process.exit(1);
+            }
           });
       });
       log.info("Bot started (long polling)");
+      // Guard against a silently wedged poller (stale proxy sockets / stuck
+      // getUpdates) that never rejects the promise above.
+      startPollWatchdog(bot);
       break;
     } catch (err) {
       if (attempt === MAX_RETRIES) {
