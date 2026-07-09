@@ -1,6 +1,5 @@
 import type { Context } from "telegraf";
-import { Markup } from "telegraf";
-import { getAuthUrl, hasToken } from "../calendar/auth.js";
+import { hasToken } from "../calendar/auth.js";
 import { isBootstrapAdmin, getUserMenuContext } from "../middleware/auth.js";
 import { getModeKeyboard } from "./expenseMode.js";
 import { logAction } from "../logging/actionLogger.js";
@@ -94,7 +93,6 @@ export async function handleStart(ctx: Context): Promise<void> {
 
   const menuCtx = await getUserMenuContext(userId);
 
-  // Pending user — show application status
   if (menuCtx && menuCtx.status === "pending") {
     await ctx.reply(
       "⏳ *Ваша заявка на рассмотрении*\n\n" +
@@ -118,7 +116,6 @@ export async function handleStart(ctx: Context): Promise<void> {
     "Подробнее о каждом: /help\n" +
     "Сменить режим: /mode или 🏠";
 
-  // Add user status info
   if (menuCtx) {
     const roleLabel = menuCtx.role === "admin" ? "Админ" : "Пользователь";
     const statusLabel = menuCtx.status === "approved" ? "Активен" : menuCtx.status;

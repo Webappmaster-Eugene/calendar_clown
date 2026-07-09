@@ -211,14 +211,12 @@ async function saveSessionFromWeb(
   state.client.destroy().catch(() => {});
   authStates.delete(telegramId);
 
-  // Clean up all web tokens for this user
   for (const [t, d] of webTokens) {
     if (d.telegramId === telegramId) webTokens.delete(t);
   }
 
   log.info(`User ${telegramId} (db:${dbUser.id}) linked MTProto session via web (${hint})`);
 
-  // Notify user in Telegram chat
   if (botRef) {
     botRef.telegram.sendMessage(
       chatId,
@@ -267,7 +265,6 @@ export async function handleMtprotoAuthButton(ctx: Context): Promise<void> {
     return;
   }
 
-  // Check if already linked
   if (await hasActiveSession(dbUser.id)) {
     await ctx.reply(
       "✅ Telegram-аккаунт уже привязан.\n\n" +
@@ -302,7 +299,6 @@ export async function handleDigestAuthText(ctx: Context): Promise<boolean> {
 
   const text = ctx.message.text.trim();
 
-  // Allow cancelling
   if (text.toLowerCase() === "отмена" || text.toLowerCase() === "cancel") {
     clearState(telegramId);
     await ctx.reply("Авторизация отменена.");
@@ -337,7 +333,6 @@ async function handlePhoneStep(
   phone: string,
   _state: AuthFlowState
 ): Promise<boolean> {
-  // Basic phone validation
   const cleaned = phone.replace(/[\s\-()]/g, "");
   if (!/^\+?\d{10,15}$/.test(cleaned)) {
     await ctx.reply("Неверный формат номера. Введите в формате +79001234567:");
@@ -421,9 +416,4 @@ async function handlePhoneStep(
     }
   );
   return true;
-}
-
-/** Check if user is in the middle of auth flow. */
-export function isInAuthFlow(telegramId: number): boolean {
-  return authStates.has(telegramId);
 }

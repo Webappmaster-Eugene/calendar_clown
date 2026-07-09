@@ -75,7 +75,6 @@ app.put("/rubrics/:id", async (c) => {
     keywords?: string[];
   }>();
 
-  // At least one field must be provided
   const hasField =
     body.name !== undefined ||
     body.description !== undefined ||
@@ -86,7 +85,6 @@ app.put("/rubrics/:id", async (c) => {
     return c.json({ ok: false, error: "At least one field is required" }, 400);
   }
 
-  // If name is provided, it must be non-empty
   if (body.name !== undefined && !body.name.trim()) {
     return c.json({ ok: false, error: "name cannot be empty" }, 400);
   }

@@ -7,7 +7,7 @@
  * pattern and keeps row sizes small (DB holds only the relative path).
  */
 import { mkdir, rename, unlink, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { NUTRITION_PRODUCTS_DIR } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
 
@@ -88,17 +88,4 @@ export async function removePackagePhoto(relativePath: string | null): Promise<v
 /** Read a package photo back into memory. Throws if the file is missing. */
 export async function readPackagePhoto(relativePath: string): Promise<Buffer> {
   return readFile(relativePath);
-}
-
-/**
- * Ensure the base directory exists — called by storage init paths if callers
- * want to pre-create the folder before first write. Safe to call repeatedly.
- */
-export async function ensureBaseDir(): Promise<void> {
-  await mkdir(NUTRITION_PRODUCTS_DIR, { recursive: true });
-}
-
-/** Expose the parent directory helper for tests. */
-export function getDirForFile(filePath: string): string {
-  return dirname(filePath);
 }

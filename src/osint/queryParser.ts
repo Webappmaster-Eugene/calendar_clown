@@ -1,8 +1,8 @@
-import { DEEPSEEK_MODEL, OSINT_QUERIES_LIMIT, OSINT_PHASE2_QUERIES_LIMIT } from "../constants.js";
+import { DEEPSEEK_MODEL, OSINT_QUERIES_LIMIT } from "../constants.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { createLogger } from "../utils/logger.js";
-import type { OsintParsedSubject, IntermediateAnalysis } from "./types.js";
+import type { OsintParsedSubject } from "./types.js";
 
 const log = createLogger("osint-parser");
 
@@ -236,78 +236,6 @@ export async function generateSearchQueries(subject: OsintParsedSubject): Promis
   } catch (err) {
     log.error("Query generation error:", err);
     return buildFallbackQueries(subject);
-  }
-}
-
-const FOLLOW_UP_PROMPT = `Ты — OSINT-аналитик. На основе промежуточных результатов поиска сгенерируй 20-25 целевых follow-up запросов для углублённого поиска.
-
-ПРИОРИТИЗАЦИЯ запросов:
-- Высший приоритет: запросы по обнаруженным конкретным сущностям (ИНН, телефон, email, username, конкретные ФИО) — дают самые точные результаты
-- Средний приоритет: site-specific запросы по обнаруженным платформам
-- Низкий приоритет: общие тематические запросы
-
-Фокусируйся на:
-- Углублённый поиск обнаруженных связанных лиц и компаний
-- Поиск по найденным ИНН, телефонам, адресам
-- Site-specific запросы по обнаруженным профилям и платформам
-- Перекрёстная проверка ключевых фактов через альтернативные источники
-- Поиск по обнаруженным юзернеймам, никнеймам, alias'ам
-- Поиск обнаруженных родственников и членов семьи (ФИО жены/мужа, детей, родителей)
-- Поиск Telegram-каналов и чатов, связанных с объектом
-- Проверка обнаруженных email/телефонов в утечках и базах данных
-- Поиск информации о хобби, путешествиях, местах посещения
-- Поиск друзей и связей через соцсети
-- Углубленный анализ постов и комментариев объекта для выявления черт характера, ценностей, манеры общения
-- Поиск конфликтов, скандалов, жалоб, негативных отзывов с участием объекта
-- Поиск данных в известных утечках баз (Яндекс Еда, СДЭК, Wildberries, Ozon, delivery-баз) по обнаруженным email/телефонам
-- Анализ семейных отношений — развод, конфликты, совместный бизнес, алименты, раздел имущества
-- Поиск отзывов коллег, работодателей, знакомых о характере и поведении объекта
-
-Каждый запрос должен быть максимально конкретным — с именами, датами, ИНН, номерами телефонов если они известны.
-
-Верни строго JSON массив строк (без markdown):
-["запрос 1", "запрос 2", ...]`;
-
-/** Generate follow-up queries based on Phase 1 intermediate analysis. */
-export async function generateFollowUpQueries(
-  analysis: IntermediateAnalysis,
-  subject: OsintParsedSubject
-): Promise<string[]> {
-  try {
-    const context = `Объект поиска: ${JSON.stringify(subject)}
-
-Ключевые находки Фазы 1:
-${analysis.keyFindings}
-
-Обнаруженные связанные сущности: ${analysis.discoveredEntities.join(", ")}
-
-Уже найденные профили: ${analysis.profileUrls.join(", ")}`;
-
-    const raw = await callOpenRouter({
-      model: DEEPSEEK_MODEL,
-      messages: [
-        { role: "system", content: FOLLOW_UP_PROMPT },
-        { role: "user", content: context },
-      ],
-      temperature: 0.3,
-    });
-
-    if (!raw) return [];
-
-    const stripped = raw.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
-    try {
-      const queries = JSON.parse(stripped);
-      if (Array.isArray(queries) && queries.length > 0) {
-        return queries.filter((q): q is string => typeof q === "string").slice(0, OSINT_PHASE2_QUERIES_LIMIT);
-      }
-    } catch {
-      // ignore parse errors
-    }
-
-    return [];
-  } catch (err) {
-    log.error("Follow-up query generation error:", err);
-    return [];
   }
 }
 

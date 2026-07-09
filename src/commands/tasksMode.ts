@@ -18,7 +18,6 @@ import {
   toggleTask,
   removeTask,
   getCompletedHistory,
-  findWorkByName,
   updateText,
   updateDeadline,
 } from "../services/tasksService.js";
@@ -53,7 +52,7 @@ const workCreationStates = new Map<number, WorkCreationState>();
 const taskCreationStates = new Map<number, TaskCreationState>();
 
 /** Voice task creation: waiting for work selection (telegramId → { text, deadline }). */
-const voiceWorkSelection = new Map<number, { text: string; deadline: string | null }>();
+const voiceWorkSelection = new Map<number, { text: string; deadline: Date | null }>();
 
 interface TaskEditState {
   field: "text" | "deadline";
@@ -101,7 +100,6 @@ export async function handleTasksCommand(ctx: Context): Promise<void> {
   await setUserMode(telegramId, "tasks");
   await setModeMenuCommands(ctx, "tasks");
 
-  // Clear any pending states
   clearStates(telegramId);
 
   await ctx.reply(
@@ -176,7 +174,6 @@ export async function handleTasksHistoryButton(ctx: Context): Promise<void> {
       return;
     }
 
-    // Show works that have completed tasks
     const worksWithCompleted = works.filter((w) => w.completedCount > 0);
     if (worksWithCompleted.length === 0) {
       await ctx.reply("Нет выполненных задач.");
@@ -306,7 +303,6 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
         logAction(null, telegramId, "task_complete", { taskId: itemId, isCompleted: toggled.isCompleted });
         const status = toggled.isCompleted ? "✅ Задача выполнена!" : "🔄 Задача возвращена в работу.";
         await ctx.reply(status);
-        // Refresh work detail
         if (!isNaN(workId)) await showWorkDetail(ctx, telegramId, workId);
       } else {
         await ctx.reply("Задача не найдена.");
@@ -508,7 +504,6 @@ export async function handleTasksVoice(
   if (telegramId == null) return;
 
   try {
-    // Get user's work list for matching
     const works = await getUserWorks(telegramId);
     const workNames = works.map((w) => w.name);
 
@@ -525,8 +520,17 @@ export async function handleTasksVoice(
       return;
     }
 
-    // result.type === "task"
     const { work, text, deadline } = result;
+
+    // Resolve deadline once (used by both the pick-work and matched-work paths).
+    // Only when the AI DID detect a deadline but returned an unparseable value do
+    // we fall back to chrono on the transcript — never invent one from a null,
+    // else numbers in the task text ("задача 9483") could become a false deadline.
+    let deadlineDate: Date | null = null;
+    if (deadline) {
+      const parsed = new Date(deadline);
+      deadlineDate = isNaN(parsed.getTime()) ? parseDeadline(transcript) : parsed;
+    }
 
     // If no works at all, ask to create one first
     if (works.length === 0) {
@@ -542,7 +546,7 @@ export async function handleTasksVoice(
 
     // If work is not determined, ask user to pick
     if (!work) {
-      voiceWorkSelection.set(telegramId, { text, deadline });
+      voiceWorkSelection.set(telegramId, { text, deadline: deadlineDate });
 
       const buttons = works.map((w) => [
         Markup.button.callback(`${w.emoji} ${w.name}`, `tw_voice_work:${w.id}`),
@@ -571,27 +575,7 @@ export async function handleTasksVoice(
       return;
     }
 
-    // If deadline is determined, create task directly
-    if (deadline) {
-      const deadlineDate = new Date(deadline);
-      if (isNaN(deadlineDate.getTime())) {
-        // Invalid date from AI, ask user to specify
-        taskCreationStates.set(telegramId, {
-          step: "deadline",
-          workId: matchedWork.id,
-          workName: matchedWork.name,
-          text,
-        });
-        await ctx.telegram.editMessageText(
-          ctx.chat!.id,
-          statusMsgId,
-          undefined,
-          `Распознано: _${escapeMarkdown(transcript)}_\n\nЗадача: ${escapeMarkdown(text)}\nПроект: ${matchedWork.emoji} ${escapeMarkdown(matchedWork.name)}\n\nУкажите дедлайн (например: \`завтра 18:00\`):`,
-          { parse_mode: "Markdown" },
-        );
-        return;
-      }
-
+    if (deadlineDate) {
       try {
         const item = await addTask(telegramId, matchedWork.id, text, deadlineDate, "voice");
         logAction(null, telegramId, "task_add", { taskId: item.id, workId: matchedWork.id, text: item.text, inputMethod: "voice" });
@@ -616,7 +600,7 @@ export async function handleTasksVoice(
       return;
     }
 
-    // No deadline — ask user to specify
+    // No deadline anywhere — ask the user to specify it.
     taskCreationStates.set(telegramId, {
       step: "deadline",
       workId: matchedWork.id,
@@ -670,7 +654,6 @@ async function showWorkDetail(
       msg += "_Нет задач. Добавьте первую задачу._";
     }
 
-    // Show active tasks
     for (const task of activeTasks) {
       const dl = formatTaskDeadlineFull(new Date(task.deadline));
       const overdue = isOverdue(new Date(task.deadline)) ? " ⚠️" : "";
@@ -688,7 +671,6 @@ async function showWorkDetail(
       }
     }
 
-    // Build action buttons for active tasks
     const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
 
     for (const task of activeTasks) {
@@ -784,21 +766,18 @@ async function handleVoiceWorkPick(
   const { text, deadline } = pending;
 
   if (deadline) {
-    const deadlineDate = new Date(deadline);
-    if (!isNaN(deadlineDate.getTime())) {
-      try {
-        const item = await addTask(telegramId, workId, text, deadlineDate, "voice");
-        logAction(null, telegramId, "task_add", { taskId: item.id, workId, text: item.text, inputMethod: "voice" });
-        const deadlineStr = formatTaskDeadlineFull(new Date(item.deadline));
-        await ctx.reply(
-          `✅ Задача добавлена\n\n📝 ${escapeMarkdown(item.text)}\n⏰ Дедлайн: ${deadlineStr}`,
-          { parse_mode: "Markdown" },
-        );
-      } catch (err: unknown) {
-        await ctx.reply(err instanceof Error ? err.message : "Ошибка.");
-      }
-      return;
+    try {
+      const item = await addTask(telegramId, workId, text, deadline, "voice");
+      logAction(null, telegramId, "task_add", { taskId: item.id, workId, text: item.text, inputMethod: "voice" });
+      const deadlineStr = formatTaskDeadlineFull(new Date(item.deadline));
+      await ctx.reply(
+        `✅ Задача добавлена\n\n📝 ${escapeMarkdown(item.text)}\n⏰ Дедлайн: ${deadlineStr}`,
+        { parse_mode: "Markdown" },
+      );
+    } catch (err: unknown) {
+      await ctx.reply(err instanceof Error ? err.message : "Ошибка.");
     }
+    return;
   }
 
   // Need deadline — ask via text

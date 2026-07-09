@@ -219,7 +219,6 @@ async function sendHistoryPage(
 
     const text = `📋 *Транскрипции (${currentPage}/${totalPages}, всего: ${total}):*\n\n${lines.join("\n\n")}`;
 
-    // Build inline buttons: "📖 Полностью" + "🗑" per item
     const inlineRows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
     for (const t of transcriptions) {
       const idx = transcriptions.indexOf(t);
@@ -237,7 +236,6 @@ async function sendHistoryPage(
       inlineRows.push(row);
     }
 
-    // Pagination buttons
     const paginationRow: Array<ReturnType<typeof Markup.button.callback>> = [];
     if (offset > 0) {
       paginationRow.push(Markup.button.callback("⬅️ Назад", `tr_hist:${offset - HISTORY_PAGE_SIZE}`));
@@ -332,7 +330,6 @@ export async function handleQueueStatusButton(ctx: Context): Promise<void> {
     if (isAdmin) {
       const items = await getAllPending();
 
-      // BullMQ queue health
       const qs = await getQueueStatus();
       const qsText = qs
         ? `\n\n*BullMQ:* ${qs.workerRunning ? "🟢 Worker" : "🔴 Worker остановлен"}\n` +

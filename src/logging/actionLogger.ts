@@ -76,22 +76,6 @@ export function logApiAction(
 
 // ─── Read ────────────────────────────────────────────────────
 
-/** Get action statistics for a date range. */
-export async function getActionStats(
-  dateFrom: Date,
-  dateTo: Date
-): Promise<Array<{ action: string; count: number }>> {
-  const { rows } = await query<{ action: string; count: string }>(
-    `SELECT action, COUNT(*) AS count
-     FROM action_logs
-     WHERE created_at >= $1 AND created_at < $2
-     GROUP BY action
-     ORDER BY count DESC`,
-    [dateFrom.toISOString(), dateTo.toISOString()]
-  );
-  return rows.map((r) => ({ action: r.action, count: parseInt(r.count, 10) }));
-}
-
 /** Get paginated action logs with user info, supporting filters. */
 export async function getActionLogs(filters: ActionLogFilter): Promise<ActionLogsResult> {
   const conditions: string[] = [];

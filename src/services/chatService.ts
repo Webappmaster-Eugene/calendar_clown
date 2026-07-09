@@ -5,14 +5,12 @@
 import {
   saveMessage,
   getRecentMessages,
-  clearDialogHistory,
   getOrCreateActiveDialog,
   getDialogsByUser,
   createDialog,
   deleteDialog,
   getDialogById,
   setActiveDialogId,
-  getActiveDialogId,
   updateDialogTitle,
 } from "../chat/repository.js";
 import { chatCompletion, chatCompletionStream, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
@@ -76,9 +74,6 @@ function messageToDto(m: { id: number; dialogId: number; role: "user" | "assista
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get all dialogs for a user.
- */
 export async function getUserDialogs(telegramId: number): Promise<ChatDialogDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -86,19 +81,6 @@ export async function getUserDialogs(telegramId: number): Promise<ChatDialogDto[
   return dialogs.map((d) => dialogToDto(d, d.messageCount));
 }
 
-/**
- * Get the active dialog (or create one).
- */
-export async function getActiveDialog(telegramId: number): Promise<ChatDialogDto> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  const dialog = await getOrCreateActiveDialog(dbUser.id);
-  return dialogToDto(dialog);
-}
-
-/**
- * Create a new dialog.
- */
 export async function createNewDialog(telegramId: number, title?: string): Promise<ChatDialogDto> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -107,31 +89,12 @@ export async function createNewDialog(telegramId: number, title?: string): Promi
   return dialogToDto(dialog);
 }
 
-/**
- * Switch to a different dialog.
- */
-export async function switchDialog(telegramId: number, dialogId: number): Promise<ChatDialogDto | null> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  const dialog = await getDialogById(dialogId, dbUser.id);
-  if (!dialog) return null;
-
-  await setActiveDialogId(dbUser.id, dialogId);
-  return dialogToDto(dialog);
-}
-
-/**
- * Delete a dialog.
- */
 export async function removeDialog(telegramId: number, dialogId: number): Promise<void> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   await deleteDialog(dialogId, dbUser.id);
 }
 
-/**
- * Get messages for a dialog.
- */
 export async function getDialogMessages(
   telegramId: number,
   dialogId: number,
@@ -165,7 +128,6 @@ export async function sendMessage(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Get or create dialog
   let dialog;
   if (dialogId) {
     dialog = await getDialogById(dialogId, dbUser.id);
@@ -174,7 +136,6 @@ export async function sendMessage(
     dialog = await getOrCreateActiveDialog(dbUser.id);
   }
 
-  // Resolve model from user's chat provider
   const provider = await getChatProvider(dbUser.id);
   const { model, systemPrompt } = resolveModelAndPrompt(provider);
 
@@ -235,7 +196,6 @@ export async function sendMessageStream(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Get or create dialog
   let dialog;
   if (dialogId) {
     dialog = await getDialogById(dialogId, dbUser.id);
@@ -244,7 +204,6 @@ export async function sendMessageStream(
     dialog = await getOrCreateActiveDialog(dbUser.id);
   }
 
-  // Resolve model from user's chat provider
   const provider = await getChatProvider(dbUser.id);
   const { model, systemPrompt } = resolveModelAndPrompt(provider);
 
@@ -286,13 +245,4 @@ export async function sendMessageStream(
     userMessage: messageToDto(userMsg),
     assistantMessage: messageToDto(assistantMsg),
   };
-}
-
-/**
- * Clear dialog history.
- */
-export async function clearHistory(telegramId: number, dialogId: number): Promise<number> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  return clearDialogHistory(dialogId, dbUser.id);
 }

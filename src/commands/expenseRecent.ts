@@ -66,13 +66,11 @@ async function buildRecentMessage(telegramId: number, page: number = 1): Promise
       Markup.button.callback(`🗑 #${startIdx + idx + 1}`, `rdel:${e.id}:${page}`)
     );
 
-  // Arrange delete buttons in rows of 4
   const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
   for (let i = 0; i < deleteButtons.length; i += 4) {
     rows.push(deleteButtons.slice(i, i + 4));
   }
 
-  // Navigation row
   const navRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (page > 1) {
     navRow.push(Markup.button.callback("⬅️ Назад", `rcnt:${page - 1}`));
@@ -210,7 +208,6 @@ export async function handleRecentCallback(ctx: Context): Promise<void> {
         logAction(null, telegramId, "expense_delete_recent", { expenseId });
       }
 
-      // Refresh list at same page
       const result = await buildRecentMessage(telegramId, page);
       if (result) {
         await ctx.editMessageText(result.text, {

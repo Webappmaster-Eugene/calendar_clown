@@ -6,7 +6,6 @@
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { query } from "../db/connection.js";
-import { connectGramClient } from "./telegramClient.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("mtproto-session");
@@ -59,13 +58,6 @@ export async function getUserSession(
     phoneHint: rows[0].phone_hint,
     isActive: rows[0].is_active,
   };
-}
-
-export async function deactivateUserSession(userId: number): Promise<void> {
-  await query(
-    "UPDATE telegram_mtproto_sessions SET is_active = false, updated_at = NOW() WHERE user_id = $1",
-    [userId]
-  );
 }
 
 export async function hasActiveSession(userId: number): Promise<boolean> {
@@ -135,11 +127,6 @@ export async function getClientForUser(userId: number): Promise<TelegramClient> 
   }
 
   return client;
-}
-
-/** Get the admin (shared) GramJS client. Delegates to existing connectGramClient. */
-export async function getAdminClient(): Promise<TelegramClient> {
-  return connectGramClient();
 }
 
 /** Disconnect a specific user's client. Uses destroy() to stop the internal update loop. */

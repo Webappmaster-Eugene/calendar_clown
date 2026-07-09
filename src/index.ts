@@ -10,7 +10,7 @@ import { createBot } from "./bot.js";
 import { setBotSendMessage, setBotSendDocument } from "./botInstance.js";
 import { startOAuthServer } from "./oauthServer.js";
 import { runMigrations, runDrizzleMigrations } from "./db/migrate.js";
-import { closePool, setDatabaseAvailable, isDatabaseAvailable } from "./db/connection.js";
+import { query, closePool, setDatabaseAvailable, isDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
 import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, startStaleJobCleaner, stopStaleJobCleaner, startWorkerHealthMonitor, stopWorkerHealthMonitor } from "./transcribe/queue.js";
 import { createTranscribeProcessor } from "./transcribe/worker.js";
@@ -23,11 +23,12 @@ import { disconnectAll as disconnectAllMtprotoSessions } from "./digest/sessionM
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
 import { setDigestBotRef } from "./commands/digestMode.js";
 import { setAuthBotRef, startWebTokenCleanup, stopWebTokenCleanup } from "./commands/digestAuth.js";
+import { setBankPushBotRef } from "./expenses/bankPush/confirm.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
 import { startRemindersScheduler, stopRemindersScheduler } from "./reminders/scheduler.js";
 import { startTasksScheduler, stopTasksScheduler } from "./tasks/scheduler.js";
-import { initProxyAgent } from "./utils/proxyAgent.js";
+import { initProxyAgent, initOpenRouterAgent } from "./utils/proxyAgent.js";
 import { startPollWatchdog, stopPollWatchdog } from "./health/pollWatchdog.js";
 import { clearAllBatches } from "./chat/messageBatcher.js";
 import { validateSttModels } from "./voice/healthCheck.js";
@@ -44,35 +45,59 @@ if (!token) {
 async function main(): Promise<void> {
   // Initialize database if DATABASE_URL is set
   if (process.env.DATABASE_URL) {
+    // A connection failure is tolerated — the calendar keeps working without the
+    // DB. A *migration* failure is not: it means the schema is inconsistent, so we
+    // crash loud (below) instead of silently booting a half-migrated bot.
+    let dbConnected = false;
     try {
       log.info("Connecting to PostgreSQL...");
-      await runMigrations();
-      await runDrizzleMigrations();
-      log.info("Database migrations completed.");
+      await query("SELECT 1");
+      dbConnected = true;
+    } catch (err) {
+      log.error("=".repeat(60));
+      log.error("PostgreSQL connection failed — expense tracking disabled.");
+      log.error("Calendar features will continue to work normally.");
+      log.error("Error:", err instanceof Error ? err.message : err);
+      log.error("=".repeat(60));
+    }
 
-      // Auto-register bootstrap admin in DB
+    if (dbConnected) {
+      // Docker restarts the process, so a broken migration surfaces as a visible
+      // crash-loop rather than a hidden degradation that swallows schema drift.
+      try {
+        await runMigrations();
+        await runDrizzleMigrations();
+        log.info("Database migrations completed.");
+      } catch (err) {
+        log.error("=".repeat(60));
+        log.error("Database migration FAILED — refusing to start with an inconsistent schema.");
+        log.error("Error:", err instanceof Error ? err.message : err);
+        log.error("=".repeat(60));
+        process.exit(1);
+      }
+
+      setDatabaseAvailable(true);
+
+      // Auto-register bootstrap admin (best-effort; the DB is already healthy).
       const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
       if (adminId) {
         const numericId = parseInt(adminId, 10);
         if (!isNaN(numericId)) {
-          await ensureUser(numericId, null, "Admin", null, true);
-          log.info(`Bootstrap admin ${numericId} registered.`);
+          try {
+            await ensureUser(numericId, null, "Admin", null, true);
+            log.info(`Bootstrap admin ${numericId} registered.`);
+          } catch (err) {
+            log.error("Bootstrap admin registration failed:", err instanceof Error ? err.message : err);
+          }
         }
       }
-
-      setDatabaseAvailable(true);
-    } catch (err) {
-      log.error("=".repeat(60));
-      log.error("PostgreSQL initialization failed — expense tracking disabled.");
-      log.error("Calendar features will continue to work normally.");
-      log.error("Error:", err instanceof Error ? err.message : err);
-      log.error("=".repeat(60));
     }
   } else {
     log.info("DATABASE_URL not set — expense tracking disabled.");
   }
 
   const telegramAgent = await initProxyAgent();
+  await initOpenRouterAgent();
   const bot = createBot(token!, telegramAgent);
 
   // Register bot's sendMessage for API broadcast route
@@ -140,6 +165,9 @@ async function main(): Promise<void> {
   // Set bot reference for MTProto web auth notifications
   setAuthBotRef(bot);
   startWebTokenCleanup();
+
+  // Set bot reference for bank push-notification webhook confirmations
+  setBankPushBotRef(bot);
 
   // Initialize digest scheduler (GramJS + cron)
   if (await isDigestReady()) {

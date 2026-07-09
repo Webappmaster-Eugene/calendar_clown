@@ -47,12 +47,10 @@ interface PendingBuffer {
 
 const pendingMessages = new Map<number, PendingBuffer>();
 
-/** Clear the pending buffer for a user. */
 function clearBuffer(telegramId: number): void {
   pendingMessages.delete(telegramId);
 }
 
-/** Get buffer count for a user. */
 function getBufferCount(telegramId: number): number {
   return pendingMessages.get(telegramId)?.texts.length ?? 0;
 }
@@ -86,7 +84,6 @@ export async function handleSimplifierCommand(ctx: Context): Promise<void> {
     isBootstrapAdmin(telegramId),
   );
 
-  // Clear any pending buffer on mode activation
   clearBuffer(telegramId);
 
   await setUserMode(telegramId, "simplifier");
@@ -198,7 +195,6 @@ export async function handleSimplifyButton(ctx: Context): Promise<void> {
     return;
   }
 
-  // Determine input type
   const inputTypes = buffer.inputTypes;
   let inputType: string;
   if (inputTypes.has("text") && inputTypes.has("voice")) {
@@ -222,7 +218,6 @@ export async function handleSimplifyButton(ctx: Context): Promise<void> {
   // Send status message BEFORE creating DB record (need its message_id)
   const statusMsg = await ctx.reply("⏳ Упрощаю текст...");
 
-  // Create DB record with sequence tracking
   let record;
   try {
     record = await createSimplification(
@@ -384,7 +379,6 @@ async function sendHistoryPage(
 
     const text = `🧹 *Упрощения (${currentPage}/${totalPages}, всего: ${total}):*\n\n${lines.join("\n\n")}`;
 
-    // Inline buttons per item
     const inlineRows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
     for (const s of items) {
       const idx = items.indexOf(s);
@@ -402,7 +396,6 @@ async function sendHistoryPage(
       inlineRows.push(row);
     }
 
-    // Pagination
     const paginationRow: Array<ReturnType<typeof Markup.button.callback>> = [];
     if (offset > 0) {
       paginationRow.push(Markup.button.callback("⬅️ Назад", `simp_hist:${offset - HISTORY_PAGE_SIZE}`));
@@ -472,7 +465,6 @@ export async function handleSimplifierFullCallback(ctx: Context): Promise<void> 
       await ctx.reply(chunk, { parse_mode: "Markdown" });
     }
 
-    // Also show original for reference
     const origHeader = "📄 *Оригинал:*\n\n";
     const origChunks = splitMessage(origHeader + item.originalText, 4096);
     for (const chunk of origChunks) {
@@ -501,7 +493,6 @@ export async function handleSimplifierDeleteCallback(ctx: Context): Promise<void
     return;
   }
 
-  // simp_del:<id> — show confirmation
   const delMatch = data.match(/^simp_del:(\d+)$/);
   if (delMatch) {
     const id = parseInt(delMatch[1], 10);
@@ -518,7 +509,6 @@ export async function handleSimplifierDeleteCallback(ctx: Context): Promise<void
     return;
   }
 
-  // simp_del_yes:<id> — confirm delete
   const delYesMatch = data.match(/^simp_del_yes:(\d+)$/);
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);

@@ -24,11 +24,4 @@ export function btnBackTo(label: string): string {
 }
 
 /** Destructive actions */
-export const BTN_DELETE = "🗑 Удалить";
 export const BTN_CANCEL = "❌ Отмена";
-
-/** Confirmation */
-export const BTN_CONFIRM_DELETE = "✅ Да, удалить";
-
-/** Edit */
-export const BTN_EDIT = "✏️ Изменить";

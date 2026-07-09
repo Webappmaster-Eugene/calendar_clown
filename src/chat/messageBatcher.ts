@@ -88,7 +88,6 @@ export function addMessage(
         return;
       }
 
-      // Reset debounce timer
       existing.timer = setTimeout(() => flushBatch(dbUserId), NEURO_BATCH_DEBOUNCE_MS);
       ctx.sendChatAction("typing").catch(() => {});
       return;
@@ -109,7 +108,6 @@ export function addMessage(
     onFlush,
   });
 
-  // Send typing indicator
   ctx.sendChatAction("typing").catch(() => {});
 }
 

@@ -53,6 +53,11 @@ describe("isRetryableUpstreamError", () => {
     assert.equal(isRetryableUpstreamError(403, "Forbidden"), false);
   });
 
+  it("retries on edge/WAF geo-block (403 by message, not bare status)", () => {
+    assert.equal(isRetryableUpstreamError(403, "Access denied by security policy."), true);
+    assert.equal(isRetryableUpstreamError(403, "access denied"), true);
+  });
+
   it("does NOT retry on 400 with unrelated message (preserves precise client errors)", () => {
     assert.equal(isRetryableUpstreamError(400, "Malformed request body"), false);
     assert.equal(isRetryableUpstreamError(422, "Unprocessable entity"), false);

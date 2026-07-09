@@ -50,7 +50,6 @@ export async function extractCalendarEvents(
   const json = tryParseJson(content);
   if (!json) return [];
 
-  // Support both single event and array of events
   const rawEvents: Array<Record<string, unknown>> = [];
   if (Array.isArray(json.events)) {
     rawEvents.push(...(json.events as Array<Record<string, unknown>>));

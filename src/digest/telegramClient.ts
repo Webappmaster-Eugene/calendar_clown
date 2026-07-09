@@ -160,7 +160,6 @@ export async function readChannelMessages(
       channelTitle = (msg.chat as { title?: string }).title ?? null;
     }
 
-    // Count reactions
     let reactionsCount = 0;
     if (msg.reactions && "results" in msg.reactions) {
       const results = (msg.reactions as Api.MessageReactions).results;
@@ -171,7 +170,6 @@ export async function readChannelMessages(
       }
     }
 
-    // Count replies/comments
     const commentsCount = msg.replies?.replies ?? 0;
 
     posts.push({

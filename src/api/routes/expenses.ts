@@ -15,9 +15,19 @@ import {
   getRecentExpenses,
   getMonthLimitInfo,
   setMonthLimit,
+  createCategoryFromRequest,
+  updateCategoryFromRequest,
+  deactivateCategoryFromRequest,
+  CategoryServiceError,
 } from "../../services/expenseService.js";
-import type { UpdateExpenseRequest, SetMonthlyLimitRequest } from "../../shared/types.js";
+import type {
+  UpdateExpenseRequest,
+  SetMonthlyLimitRequest,
+  CreateCategoryRequest,
+  UpdateCategoryRequest,
+} from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { logApiAction } from "../../logging/actionLogger.js";
 import { parseMskCalendarDate } from "../../utils/date.js";
 import { getBotSendDocument } from "../../botInstance.js";
@@ -504,6 +514,62 @@ app.get("/categories", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get categories";
     return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** Map service errors to HTTP status; unknown errors → 500. */
+function categoryErrorResponse(err: unknown): { msg: string; status: ContentfulStatusCode } {
+  if (err instanceof CategoryServiceError) {
+    return { msg: err.message, status: err.status as ContentfulStatusCode };
+  }
+  return { msg: err instanceof Error ? err.message : "Category operation failed", status: 500 };
+}
+
+/** POST /api/expenses/categories — create category (admin) */
+app.post("/categories", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  try {
+    const body = await c.req.json<CreateCategoryRequest>();
+    const category = await createCategoryFromRequest(telegramId, body);
+    logApiAction(telegramId, "expense_category_create", { name: category.name });
+    return c.json({ ok: true, data: category });
+  } catch (err) {
+    const { msg, status } = categoryErrorResponse(err);
+    return c.json({ ok: false, error: msg }, status);
+  }
+});
+
+/** PUT /api/expenses/categories/:id — update category (admin) */
+app.put("/categories/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const categoryId = parseInt(c.req.param("id"), 10);
+  if (isNaN(categoryId)) return c.json({ ok: false, error: "Invalid category ID" }, 400);
+  try {
+    const body = await c.req.json<UpdateCategoryRequest>();
+    const category = await updateCategoryFromRequest(telegramId, categoryId, body);
+    logApiAction(telegramId, "expense_category_update", { categoryId });
+    return c.json({ ok: true, data: category });
+  } catch (err) {
+    const { msg, status } = categoryErrorResponse(err);
+    return c.json({ ok: false, error: msg }, status);
+  }
+});
+
+/** DELETE /api/expenses/categories/:id — deactivate category (admin) */
+app.delete("/categories/:id", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const categoryId = parseInt(c.req.param("id"), 10);
+  if (isNaN(categoryId)) return c.json({ ok: false, error: "Invalid category ID" }, 400);
+  try {
+    const deleted = await deactivateCategoryFromRequest(telegramId, categoryId);
+    logApiAction(telegramId, "expense_category_delete", { categoryId });
+    return c.json({ ok: true, data: { deleted } });
+  } catch (err) {
+    const { msg, status } = categoryErrorResponse(err);
+    return c.json({ ok: false, error: msg }, status);
   }
 });
 

@@ -51,14 +51,6 @@ export async function getActiveRubricsByUser(userId: number): Promise<DigestRubr
   return rows.map(mapRubric);
 }
 
-export async function getRubricById(rubricId: number): Promise<DigestRubric | null> {
-  const { rows } = await query<RubricRow>(
-    "SELECT * FROM digest_rubrics WHERE id = $1",
-    [rubricId]
-  );
-  return rows.length > 0 ? mapRubric(rows[0]) : null;
-}
-
 export async function getRubricByIdAndUser(rubricId: number, userId: number): Promise<DigestRubric | null> {
   const { rows } = await query<RubricRow>(
     "SELECT * FROM digest_rubrics WHERE id = $1 AND user_id = $2",
@@ -180,18 +172,6 @@ export async function removeChannelById(channelId: number, rubricId: number): Pr
     [channelId, rubricId]
   );
   return (rowCount ?? 0) > 0;
-}
-
-export async function updateChannelMeta(
-  channelUsername: string,
-  title: string | null,
-  subscriberCount: number | null
-): Promise<void> {
-  await query(
-    `UPDATE digest_channels SET channel_title = $1, subscriber_count = $2
-     WHERE channel_username = $3 AND is_active = true`,
-    [title, subscriberCount, channelUsername]
-  );
 }
 
 // ─── Runs ────────────────────────────────────────────────────────────────────

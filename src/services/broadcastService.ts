@@ -2,13 +2,9 @@
  * Broadcast business logic extracted from command handlers.
  * Used by both Telegraf bot handlers and REST API routes.
  */
-import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
-import type { BroadcastResult } from "../broadcast/service.js";
+import { broadcastToTribe } from "../broadcast/service.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
-import { createLogger } from "../utils/logger.js";
 import type { BroadcastResultDto } from "../shared/types.js";
-
-const log = createLogger("broadcast-service");
 
 // ─── Service Functions ────────────────────────────────────────
 
@@ -33,15 +29,4 @@ export async function sendBroadcast(
     sent: result.sent,
     failed: result.failed,
   };
-}
-
-/**
- * Format broadcast result into a user-friendly string.
- */
-export function formatResult(result: BroadcastResultDto & { total?: number }): string {
-  return formatBroadcastResult({
-    sent: result.sent,
-    failed: result.failed,
-    total: result.total ?? result.sent + result.failed,
-  });
 }

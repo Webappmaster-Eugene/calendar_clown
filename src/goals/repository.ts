@@ -43,15 +43,6 @@ export interface GoalSetViewer {
   viewerName?: string;
 }
 
-export interface GoalReminder {
-  id: number;
-  goalSetId: number;
-  remindAt: Date;
-  sent: boolean;
-  sentAt: Date | null;
-  createdAt: Date;
-}
-
 export interface PendingReminder {
   reminderId: number;
   goalSetId: number;

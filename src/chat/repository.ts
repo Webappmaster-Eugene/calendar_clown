@@ -116,7 +116,6 @@ export async function deleteDialog(
   dialogId: number,
   userId: number
 ): Promise<void> {
-  // Soft delete
   await query(
     `UPDATE chat_dialogs SET is_active = FALSE, updated_at = NOW()
      WHERE id = $1 AND user_id = $2`,
@@ -285,15 +284,6 @@ export async function clearDialogHistory(
     [dialogId, userId]
   );
   return rowCount ?? 0;
-}
-
-/** Count messages in a specific dialog. */
-export async function countDialogMessages(dialogId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM chat_messages WHERE dialog_id = $1`,
-    [dialogId]
-  );
-  return parseInt(rows[0].count, 10);
 }
 
 // ─── Admin functions ────────────────────────────────────────────────────────

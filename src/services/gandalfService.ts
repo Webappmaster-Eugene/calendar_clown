@@ -17,28 +17,18 @@ import {
   countEntriesByCategory,
   countEntriesByScope,
   getCategoryEntryCounts,
-  addFileToEntry,
   getFilesByEntry,
   getStatsByCategory,
   getStatsByYear,
   getStatsByUser,
-  getEntriesByFlag,
-  countEntriesByFlag,
-  toggleEntryFlag,
-  toggleEntryVisibility,
-  moveEntryToCategory,
 } from "../gandalf/repository.js";
 import type { GandalfEntry, GandalfScope } from "../gandalf/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { createLogger } from "../utils/logger.js";
 import type {
   GandalfCategoryDto,
   GandalfEntryDto,
-  GandalfFileDto,
 } from "../shared/types.js";
-
-const log = createLogger("gandalf-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -83,9 +73,6 @@ async function requireDbUser(telegramId: number) {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get categories for the user's scope.
- */
 export async function getCategories(telegramId: number): Promise<GandalfCategoryDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -109,9 +96,6 @@ export async function getCategories(telegramId: number): Promise<GandalfCategory
   });
 }
 
-/**
- * Create a new category.
- */
 export async function addCategory(
   telegramId: number,
   name: string,
@@ -130,18 +114,12 @@ export async function addCategory(
   };
 }
 
-/**
- * Delete (deactivate) a category.
- */
 export async function removeCategory(telegramId: number, categoryId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return deleteCategory(categoryId, dbUser.tribeId);
 }
 
-/**
- * Get entries by category with pagination.
- */
 export async function getEntriesForCategory(
   telegramId: number,
   categoryId: number,
@@ -166,9 +144,6 @@ export async function getEntriesForCategory(
   return { entries: dtos, total };
 }
 
-/**
- * Get all entries for the user's scope with pagination.
- */
 export async function getAllEntries(
   telegramId: number,
   limit: number = 10,
@@ -193,9 +168,6 @@ export async function getAllEntries(
   return { entries: dtos, total };
 }
 
-/**
- * Get a single entry by ID.
- */
 export async function getEntry(telegramId: number, entryId: number): Promise<GandalfEntryDto | null> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -210,9 +182,6 @@ export async function getEntry(telegramId: number, entryId: number): Promise<Gan
   return dto;
 }
 
-/**
- * Create a new entry.
- */
 export async function addEntry(
   telegramId: number,
   params: {
@@ -247,9 +216,6 @@ export async function addEntry(
   return entryToDto(entry);
 }
 
-/**
- * Update an existing entry's fields.
- */
 export async function editEntry(
   telegramId: number,
   entryId: number,
@@ -289,9 +255,6 @@ export async function editEntry(
   return getEntry(telegramId, entryId);
 }
 
-/**
- * Update a category's name/emoji.
- */
 export async function editCategory(
   telegramId: number,
   categoryId: number,
@@ -317,60 +280,12 @@ export async function editCategory(
   };
 }
 
-/**
- * Delete an entry.
- */
 export async function removeEntry(telegramId: number, entryId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return deleteEntry(entryId, dbUser.tribeId);
 }
 
-/**
- * Toggle important/urgent flag.
- */
-export async function toggleFlag(
-  telegramId: number,
-  entryId: number,
-  flag: "important" | "urgent"
-): Promise<boolean> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  const scope = buildScope(dbUser);
-
-  const entry = await getEntryByIdScoped(entryId, scope);
-  if (!entry) return false;
-
-  return toggleEntryFlag(entryId, dbUser.tribeId, flag);
-}
-
-/**
- * Get entries by flag (important/urgent) with pagination.
- */
-export async function getEntriesByFlagPaginated(
-  telegramId: number,
-  flag: "important" | "urgent",
-  limit: number = 10,
-  offset: number = 0
-): Promise<{ entries: GandalfEntryDto[]; total: number }> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  const scope = buildScope(dbUser);
-
-  const [entries, total] = await Promise.all([
-    getEntriesByFlag(scope, flag, limit, offset),
-    countEntriesByFlag(scope, flag),
-  ]);
-
-  return {
-    entries: entries.map(entryToDto),
-    total,
-  };
-}
-
-/**
- * Get category statistics.
- */
 export async function getStats(telegramId: number): Promise<{
   byCategory: Array<{ categoryId: number; categoryName: string; categoryEmoji: string; totalEntries: number; totalPrice: number | null }>;
   byYear: Array<{ year: number; totalEntries: number; totalPrice: number | null }>;
@@ -378,7 +293,6 @@ export async function getStats(telegramId: number): Promise<{
 }> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
-  const scope = buildScope(dbUser);
   const tribeId = dbUser.tribeId;
 
   const effectiveTribeId = tribeId ?? 0;

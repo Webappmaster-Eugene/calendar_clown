@@ -12,7 +12,6 @@ import {
   countTaskWorksByUser,
   createTaskItem,
   getTaskItemsByWork,
-  getTaskItemById,
   toggleTaskItemCompleted,
   updateTaskItemDeadline as repoUpdateDeadline,
   updateTaskItemText,
@@ -171,13 +170,11 @@ export async function addTask(
 
   const dbUser = await requireTribeMember(telegramId);
 
-  // Verify ownership
   const work = await getTaskWorkById(workId);
   if (!work || work.userId !== dbUser.id) {
     throw new Error("Проект не найден.");
   }
 
-  // Check limit
   const count = await countTaskItemsByWork(workId);
   if (count >= MAX_TASKS_PER_WORK) {
     throw new Error(`Максимум ${MAX_TASKS_PER_WORK} задач в проекте.`);
@@ -188,10 +185,8 @@ export async function addTask(
     throw new Error("Текст задачи должен быть от 1 до 500 символов.");
   }
 
-  // Create task
   const item = await createTaskItem(workId, trimmedText, deadline, inputMethod);
 
-  // Generate and store reminders
   const reminders = calculateTaskReminders(deadline);
   if (reminders.length > 0) {
     await createTaskReminders(item.id, reminders);
@@ -208,7 +203,6 @@ export async function toggleTask(
   requireDb();
   const dbUser = await requireTribeMember(telegramId);
 
-  // Verify ownership
   const ownership = await getTaskItemWithOwnership(taskItemId, dbUser.id);
   if (!ownership) return null;
 
@@ -224,15 +218,12 @@ export async function updateDeadline(
   requireDb();
   const dbUser = await requireTribeMember(telegramId);
 
-  // Verify ownership
   const ownership = await getTaskItemWithOwnership(taskItemId, dbUser.id);
   if (!ownership) return null;
 
-  // Update deadline
   const updated = await repoUpdateDeadline(taskItemId, deadline);
   if (!updated) return null;
 
-  // Regenerate reminders
   await deleteRemindersForTask(taskItemId);
   const reminders = calculateTaskReminders(deadline);
   if (reminders.length > 0) {
@@ -251,7 +242,6 @@ export async function updateText(
   requireDb();
   const dbUser = await requireTribeMember(telegramId);
 
-  // Verify ownership
   const ownership = await getTaskItemWithOwnership(taskItemId, dbUser.id);
   if (!ownership) return null;
 
@@ -271,7 +261,6 @@ export async function removeTask(
   requireDb();
   const dbUser = await requireTribeMember(telegramId);
 
-  // Verify ownership
   const ownership = await getTaskItemWithOwnership(taskItemId, dbUser.id);
   if (!ownership) return false;
 
@@ -285,7 +274,6 @@ export async function getCompletedHistory(
   requireDb();
   const dbUser = await requireTribeMember(telegramId);
 
-  // Verify ownership
   const work = await getTaskWorkById(workId);
   if (!work || work.userId !== dbUser.id) return [];
 

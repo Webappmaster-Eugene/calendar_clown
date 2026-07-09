@@ -18,27 +18,40 @@ import type {
 
 let categoriesCache: Category[] | null = null;
 
-/** Fetch all active categories (cached in memory). */
-export async function getCategories(): Promise<Category[]> {
-  if (categoriesCache) return categoriesCache;
-  const { rows } = await query<{
-    id: number;
-    name: string;
-    emoji: string;
-    aliases: string[];
-    sort_order: number;
-    is_active: boolean;
-  }>(
-    "SELECT id, name, emoji, aliases, sort_order, is_active FROM categories WHERE is_active = true ORDER BY sort_order"
-  );
-  categoriesCache = rows.map((r) => ({
+interface CategoryRow {
+  id: number;
+  name: string;
+  emoji: string;
+  aliases: string[];
+  description: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_by_user_id: number | null;
+}
+
+function mapCategoryRow(r: CategoryRow): Category {
+  return {
     id: r.id,
     name: r.name,
     emoji: r.emoji,
     aliases: r.aliases,
+    description: r.description,
     sortOrder: r.sort_order,
     isActive: r.is_active,
-  }));
+    createdByUserId: r.created_by_user_id,
+  };
+}
+
+const CATEGORY_COLUMNS =
+  "id, name, emoji, aliases, description, sort_order, is_active, created_by_user_id";
+
+/** Fetch all active categories (cached in memory). */
+export async function getCategories(): Promise<Category[]> {
+  if (categoriesCache) return categoriesCache;
+  const { rows } = await query<CategoryRow>(
+    `SELECT ${CATEGORY_COLUMNS} FROM categories WHERE is_active = true ORDER BY sort_order`
+  );
+  categoriesCache = rows.map(mapCategoryRow);
   return categoriesCache;
 }
 
@@ -47,32 +60,114 @@ export function invalidateCategoriesCache(): void {
   categoriesCache = null;
 }
 
-/** Create a new expense category (admin). */
-export async function createCategory(
-  name: string,
-  emoji: string,
-  aliases: string[] = [],
-  sortOrder: number = 0
-): Promise<Category> {
-  const { rows } = await query<{
-    id: number; name: string; emoji: string; aliases: string[]; sort_order: number; is_active: boolean;
-  }>(
-    `INSERT INTO categories (name, emoji, aliases, sort_order) VALUES ($1, $2, $3, $4) RETURNING *`,
-    [name, emoji, JSON.stringify(aliases), sortOrder]
+/** Next sort order for a new category (keeps it before the "Другое" fallback at 100). */
+async function getNextCategorySortOrder(): Promise<number> {
+  const { rows } = await query<{ next: number }>(
+    "SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM categories WHERE sort_order < 100"
   );
-  invalidateCategoriesCache();
-  const r = rows[0];
-  return { id: r.id, name: r.name, emoji: r.emoji, aliases: r.aliases, sortOrder: r.sort_order, isActive: r.is_active };
+  return rows[0]?.next ?? 1;
 }
 
-/** Rename an existing category (admin). */
-export async function renameCategory(categoryId: number, newName: string): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE categories SET name = $1 WHERE id = $2",
-    [newName, categoryId]
+/** Create a new expense category (admin). */
+export async function createCategory(input: {
+  name: string;
+  emoji: string;
+  aliases?: string[];
+  description?: string | null;
+  createdByUserId: number;
+}): Promise<Category> {
+  const sortOrder = await getNextCategorySortOrder();
+  const { rows } = await query<CategoryRow>(
+    `INSERT INTO categories (name, emoji, aliases, description, sort_order, created_by_user_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING ${CATEGORY_COLUMNS}`,
+    [
+      input.name,
+      input.emoji,
+      input.aliases ?? [],
+      input.description ?? null,
+      sortOrder,
+      input.createdByUserId,
+    ]
   );
   invalidateCategoriesCache();
-  return (rowCount ?? 0) > 0;
+  return mapCategoryRow(rows[0]);
+}
+
+/** Update an existing category (admin). Only provided fields are changed. */
+export async function updateCategory(
+  categoryId: number,
+  updates: {
+    name?: string;
+    emoji?: string;
+    aliases?: string[];
+    description?: string | null;
+  }
+): Promise<Category | null> {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  let i = 1;
+
+  if (updates.name !== undefined) {
+    sets.push(`name = $${i++}`);
+    values.push(updates.name);
+  }
+  if (updates.emoji !== undefined) {
+    sets.push(`emoji = $${i++}`);
+    values.push(updates.emoji);
+  }
+  if (updates.aliases !== undefined) {
+    sets.push(`aliases = $${i++}`);
+    values.push(updates.aliases);
+  }
+  if (updates.description !== undefined) {
+    sets.push(`description = $${i++}`);
+    values.push(updates.description);
+  }
+
+  if (sets.length === 0) {
+    const existing = (await getCategories()).find((c) => c.id === categoryId);
+    return existing ?? null;
+  }
+
+  values.push(categoryId);
+  const { rows } = await query<CategoryRow>(
+    `UPDATE categories SET ${sets.join(", ")} WHERE id = $${i} RETURNING ${CATEGORY_COLUMNS}`,
+    values
+  );
+  invalidateCategoriesCache();
+  return rows[0] ? mapCategoryRow(rows[0]) : null;
+}
+
+/** Soft-delete a category (admin). Returns the affected row, or null if not found. */
+export async function deactivateCategory(categoryId: number): Promise<Category | null> {
+  const { rows } = await query<CategoryRow>(
+    `UPDATE categories SET is_active = false WHERE id = $1 RETURNING ${CATEGORY_COLUMNS}`,
+    [categoryId]
+  );
+  invalidateCategoriesCache();
+  return rows[0] ? mapCategoryRow(rows[0]) : null;
+}
+
+/** Reassign all expenses from one category to another. Returns rows moved. */
+export async function reassignExpensesCategory(
+  fromCategoryId: number,
+  toCategoryId: number
+): Promise<number> {
+  const { rowCount } = await query(
+    "UPDATE expenses SET category_id = $1, updated_at = NOW() WHERE category_id = $2",
+    [toCategoryId, fromCategoryId]
+  );
+  return rowCount ?? 0;
+}
+
+/** Fetch a single category by id, regardless of active state. */
+export async function getCategoryById(categoryId: number): Promise<Category | null> {
+  const { rows } = await query<CategoryRow>(
+    `SELECT ${CATEGORY_COLUMNS} FROM categories WHERE id = $1`,
+    [categoryId]
+  );
+  return rows[0] ? mapCategoryRow(rows[0]) : null;
 }
 
 /** Set monthly limit for a category (stored in description-like field — here we use a lightweight approach). */

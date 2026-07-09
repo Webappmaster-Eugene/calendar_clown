@@ -50,7 +50,6 @@ async function processReminders(bot: Telegraf): Promise<void> {
 
   for (const reminder of reminders) {
     try {
-      // Check if expired → deactivate
       if (isExpired(reminder.schedule, now)) {
         await deactivateReminder(reminder.id);
         log.info(`Deactivated expired reminder ${reminder.id}`);
@@ -63,14 +62,12 @@ async function processReminders(bot: Telegraf): Promise<void> {
 
       const message = `🔔 *Напоминание*\n\n${reminder.text}`;
 
-      // Send to owner
       try {
         await bot.telegram.sendMessage(reminder.telegramId, message, { parse_mode: "Markdown" });
       } catch (sendErr) {
         log.error(`Failed to send reminder ${reminder.id} to owner ${reminder.telegramId}:`, sendErr);
       }
 
-      // Send to subscribers
       try {
         const subscribers = await getSubscribers(reminder.id);
         for (const sub of subscribers) {
@@ -86,7 +83,6 @@ async function processReminders(bot: Telegraf): Promise<void> {
         log.error(`Failed to get subscribers for reminder ${reminder.id}:`, subErr);
       }
 
-      // Update last_fired_at
       await updateLastFiredAt(reminder.id);
 
       logAction(null, reminder.telegramId, "scheduler_reminders_fire", {

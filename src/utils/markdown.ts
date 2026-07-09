@@ -13,10 +13,3 @@ export function escapeMarkdown(text: string): string {
 export function escapeMarkdownV2(text: string): string {
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
 }
-
-/**
- * Wrap text in Markdown bold with proper escaping of the inner text.
- */
-export function safeBold(text: string): string {
-  return `*${escapeMarkdown(text)}*`;
-}

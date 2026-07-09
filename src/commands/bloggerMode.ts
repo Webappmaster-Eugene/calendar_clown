@@ -7,7 +7,7 @@ import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
 import { ensureUser, getUserByTelegramId } from "../expenses/repository.js";
-import { isBootstrapAdmin, getUserMenuContext } from "../middleware/auth.js";
+import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import {
   createChannel,
@@ -29,7 +29,6 @@ import {
   countSourcesByPost,
   updateChannelStyleSamples,
 } from "../blogger/repository.js";
-import type { BloggerChannel, BloggerPost } from "../blogger/repository.js";
 import { generatePost, splitIntoMessages, searchForTopic } from "../blogger/postGenerator.js";
 import { fetchUrlContent } from "../blogger/contentFetcher.js";
 import { fetchStyleSamples } from "../blogger/styleFetcher.js";
@@ -263,14 +262,12 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
   if (!dbUser) return;
 
   try {
-    // blog_ch:<id> — show channel details
     if (data.startsWith("blog_ch:") && !data.startsWith("blog_ch_")) {
       const channelId = parseInt(data.split(":")[1], 10);
       await showChannelDetails(ctx, channelId, dbUser.id);
       return;
     }
 
-    // blog_new_post:<id> — start new post for channel
     if (data.startsWith("blog_new_post:")) {
       const channelId = parseInt(data.split(":")[1], 10);
       const channel = await getChannelById(channelId, dbUser.id);
@@ -286,7 +283,6 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // blog_ch_posts:<id>:<offset> — paginated posts for channel
     if (data.startsWith("blog_ch_posts:")) {
       const parts = data.split(":");
       const channelId = parseInt(parts[1], 10);
@@ -295,7 +291,6 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // blog_ch_del:<id> — confirm channel deletion
     if (data.startsWith("blog_ch_del:") && !data.startsWith("blog_ch_del_yes:")) {
       const channelId = parseInt(data.split(":")[1], 10);
       const channel = await getChannelById(channelId, dbUser.id);
@@ -319,7 +314,6 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // blog_ch_del_yes:<id> — delete channel
     if (data.startsWith("blog_ch_del_yes:")) {
       const channelId = parseInt(data.split(":")[1], 10);
       const deleted = await deleteChannel(channelId, dbUser.id);
@@ -331,7 +325,6 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // blog_edit_niche:<id> — start editing niche
     if (data.startsWith("blog_edit_niche:")) {
       const channelId = parseInt(data.split(":")[1], 10);
       const channel = await getChannelById(channelId, dbUser.id);
@@ -350,7 +343,6 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // blog_fetch_style:<id> — fetch style samples from channel
     if (data.startsWith("blog_fetch_style:")) {
       const channelId = parseInt(data.split(":")[1], 10);
       const channel = await getChannelById(channelId, dbUser.id);
@@ -384,56 +376,48 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // blog_post:<id> — show post details
     if (data.startsWith("blog_post:") && !data.startsWith("blog_post_")) {
       const postId = parseInt(data.split(":")[1], 10);
       await showPostDetails(ctx, postId, dbUser.id);
       return;
     }
 
-    // blog_search:<id> — search for topic via Tavily
     if (data.startsWith("blog_search:")) {
       const postId = parseInt(data.split(":")[1], 10);
       await handleSearchForPost(ctx, postId, dbUser.id);
       return;
     }
 
-    // blog_sources:<id> — list sources
     if (data.startsWith("blog_sources:")) {
       const postId = parseInt(data.split(":")[1], 10);
       await showSources(ctx, postId, dbUser.id);
       return;
     }
 
-    // blog_gen:<id> — generate post
     if (data.startsWith("blog_gen:")) {
       const postId = parseInt(data.split(":")[1], 10);
       await handleGeneratePost(ctx, postId, dbUser.id);
       return;
     }
 
-    // blog_preview:<id> — preview published post
     if (data.startsWith("blog_preview:")) {
       const postId = parseInt(data.split(":")[1], 10);
       await handlePreviewPost(ctx, postId, dbUser.id);
       return;
     }
 
-    // blog_regen:<id> — regenerate post
     if (data.startsWith("blog_regen:")) {
       const postId = parseInt(data.split(":")[1], 10);
       await handleGeneratePost(ctx, postId, dbUser.id);
       return;
     }
 
-    // blog_publish:<id> — publish post to channel
     if (data.startsWith("blog_publish:")) {
       const postId = parseInt(data.split(":")[1], 10);
       await handlePublishPost(ctx, postId, dbUser.id);
       return;
     }
 
-    // blog_post_del:<id> — delete post
     if (data.startsWith("blog_post_del:")) {
       const postId = parseInt(data.split(":")[1], 10);
       const deleted = await deletePost(postId, dbUser.id);
@@ -446,14 +430,12 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // blog_post_done:<id> — acknowledge, clear states
     if (data.startsWith("blog_post_done:")) {
       clearStates(telegramId);
       await ctx.editMessageText("✅ Готово.");
       return;
     }
 
-    // blog_src_del:<id> — delete a source
     if (data.startsWith("blog_src_del:")) {
       const sourceId = parseInt(data.split(":")[1], 10);
       await deleteSource(sourceId, dbUser.id);
@@ -519,7 +501,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
         return true;
       }
 
-      // Extract @username if present
       const title = creationState.title;
       const usernameMatch = title.match(/^@(\w+)$/);
       const channelUsername = usernameMatch ? title : undefined;
@@ -611,7 +592,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
         return true;
       }
 
-      // Check for URL
       const urlRegex = /https?:\/\/\S+/;
       const urlMatch = text.match(urlRegex);
 
@@ -633,7 +613,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
         return true;
       }
 
-      // Check for forwarded message
       const msg = ctx.message as unknown as Record<string, unknown>;
       if (msg.forward_origin || msg.forward_from || msg.forward_from_chat) {
         await addSource(collectingPostId, "forward", text, "Пересланное сообщение");
@@ -642,7 +621,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
         return true;
       }
 
-      // Plain text source
       await addSource(collectingPostId, "text", text);
       const count = await countSourcesByPost(collectingPostId);
       await ctx.reply(`✅ Текст добавлен.\n📋 Источников: ${count}/${MAX_POST_SOURCES}`);
@@ -831,7 +809,6 @@ async function showChannelPosts(
     return [Markup.button.callback(`${icon} ${topicSlice}`, `blog_post:${p.id}`)];
   });
 
-  // Pagination
   const navRow: ReturnType<typeof Markup.button.callback>[] = [];
   if (offset > 0) {
     navRow.push(Markup.button.callback(BTN_PREV, `blog_ch_posts:${channelId}:${Math.max(0, offset - PAGE_SIZE)}`));

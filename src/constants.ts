@@ -54,9 +54,6 @@ export const TRANSCRIBE_MODEL_FALLBACKS: readonly string[] = (
   .map((s) => s.trim())
   .filter(Boolean);
 
-/** First fallback model — kept for backward compatibility. */
-export const TRANSCRIBE_MODEL_FALLBACK = TRANSCRIBE_MODEL_FALLBACKS[0] ?? "google/gemini-2.5-flash-lite";
-
 /** Rate limit: max expense entries per user per minute. */
 export const RATE_LIMIT_PER_MINUTE = 10;
 

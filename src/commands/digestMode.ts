@@ -118,7 +118,6 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
 
   await setUserMode(telegramId, "digest");
 
-  // Update hamburger menu commands for digest mode
   await setModeMenuCommands(ctx, "digest");
 
   logAction(dbUser.id, telegramId, "digest_command", {});
@@ -239,14 +238,12 @@ async function handleCreateRubric(
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
 
-  // Check limit
   const count = await countRubricsByUser(dbUser.id);
   if (count >= MAX_RUBRICS_PER_USER) {
     await ctx.reply(`Достигнут лимит рубрик (${MAX_RUBRICS_PER_USER}). Удалите ненужные: /digest delete <название>`);
     return;
   }
 
-  // Parse name and description
   const separatorIdx = args.indexOf("—");
   let name: string;
   let description: string;
@@ -263,7 +260,6 @@ async function handleCreateRubric(
     return;
   }
 
-  // Check uniqueness
   const existing = await getRubricByUserAndName(dbUser.id, name);
   if (existing) {
     await ctx.reply(`Рубрика «${name}» уже существует.`);
@@ -328,14 +324,12 @@ async function handleAddChannel(
     return;
   }
 
-  // Check channel limit per rubric
   const channelCount = await countChannelsByRubric(rubric.id);
   if (channelCount >= MAX_CHANNELS_PER_RUBRIC) {
     await ctx.reply(`Достигнут лимит каналов в рубрике (${MAX_CHANNELS_PER_RUBRIC}).`);
     return;
   }
 
-  // Check global channel limit
   const totalChannels = await countTotalChannels();
   if (totalChannels >= MAX_CHANNELS_TOTAL) {
     await ctx.reply(`Достигнут общий лимит каналов (${MAX_CHANNELS_TOTAL}).`);
@@ -614,7 +608,6 @@ export async function handleRubricToggleCallback(ctx: Context): Promise<void> {
   logAction(result.dbUser.id, ctx.from!.id, "digest_rubric_toggle", { rubricId: result.rubric.id, isActive: shouldActivate });
   await ctx.answerCbQuery(shouldActivate ? "▶️ Возобновлена" : "⏸ Приостановлена");
 
-  // Refresh rubric data and show updated detail view
   const updated = await getRubricByIdAndUser(rubricId, result.dbUser.id);
   if (!updated) return;
 
@@ -667,7 +660,6 @@ export async function handleRubricDeleteConfirmCallback(ctx: Context): Promise<v
   logAction(result.dbUser.id, ctx.from!.id, "digest_rubric_delete", { rubricId, name });
   await ctx.answerCbQuery(`Рубрика «${name}» удалена`);
 
-  // Show updated list
   const rubrics = await getRubricsByUser(result.dbUser.id);
   try {
     if (rubrics.length > 0) {
@@ -802,7 +794,6 @@ export async function handleChannelAddCallback(ctx: Context): Promise<void> {
   const result = await getRubricForCallback(ctx, rubricId);
   if (!result) return;
 
-  // Check channel limits
   const channelCount = await countChannelsByRubric(rubricId);
   if (channelCount >= MAX_CHANNELS_PER_RUBRIC) {
     await ctx.answerCbQuery(`Лимит каналов (${MAX_CHANNELS_PER_RUBRIC})`);
@@ -904,7 +895,6 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
         rubricEditStates.set(telegramId, editState);
         return true;
       }
-      // Check uniqueness
       const existing = await getRubricByUserAndName(dbUser.id, text);
       if (existing && existing.id !== editState.rubricId) {
         await ctx.reply(`Рубрика «${text}» уже существует. Введите другое название:`);
@@ -941,7 +931,6 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
       return true;
     }
 
-    // Check limits
     const channelCount = await countChannelsByRubric(rubric.id);
     if (channelCount >= MAX_CHANNELS_PER_RUBRIC) {
       await ctx.reply(`Достигнут лимит каналов в рубрике (${MAX_CHANNELS_PER_RUBRIC}).`);
@@ -1216,9 +1205,6 @@ export async function handleRubricFolderImportToCallback(ctx: Context): Promise<
 }
 
 // ─── Folder import ──────────────────────────────────────────────────────
-
-/** State for folder import flow: maps telegramId → rubric name to import into. */
-const folderImportStates = new Map<number, { rubricName: string }>();
 
 /** Maps telegramId → dbUserId when user has own MTProto session for folder import. */
 const folderImportClients = new Map<number, number>();

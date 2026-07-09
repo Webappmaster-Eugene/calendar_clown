@@ -19,6 +19,7 @@
 
 import { TRANSCRIBE_MODEL, TRANSCRIBE_MODEL_HQ, TRANSCRIBE_MODEL_FALLBACKS } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
+import { openRouterRequest } from "../utils/proxyAgent.js";
 
 const log = createLogger("stt-healthcheck");
 
@@ -41,14 +42,13 @@ export async function validateSttModels(): Promise<void> {
   );
   if (configured.length === 0) return;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), HEALTHCHECK_TIMEOUT_MS);
-
   let available: Set<string>;
   try {
-    const res = await fetch(OPENROUTER_MODELS_URL, {
+    // Use the proxy path so the check matches real STT calls, not a directly-blocked one.
+    const res = await openRouterRequest(OPENROUTER_MODELS_URL, {
+      method: "GET",
       headers: { Authorization: `Bearer ${apiKey}` },
-      signal: controller.signal,
+      timeoutMs: HEALTHCHECK_TIMEOUT_MS,
     });
     if (!res.ok) {
       log.debug(`STT health-check: catalogue request returned ${res.status}, skipping.`);
@@ -59,8 +59,6 @@ export async function validateSttModels(): Promise<void> {
   } catch (err) {
     log.debug(`STT health-check: catalogue request failed (${err instanceof Error ? err.message : String(err)}), skipping.`);
     return;
-  } finally {
-    clearTimeout(timer);
   }
 
   const missing = configured.filter((m) => !available.has(m));

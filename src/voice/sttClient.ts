@@ -10,6 +10,7 @@
 import { readFile } from "fs/promises";
 import { OPENROUTER_URL, OPENROUTER_REFERER, TRANSCRIBE_MODEL, TRANSCRIBE_MODEL_FALLBACKS } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
+import { openRouterRequest } from "../utils/proxyAgent.js";
 import type { OnProgressCallback } from "../transcribe/types.js";
 
 const log = createLogger("stt-client");
@@ -103,6 +104,9 @@ export function isRetryableUpstreamError(status: number, message: string): boole
   if (lower.includes("no endpoints")) return true;
   if (lower.includes("no providers")) return true;
   if (lower.includes("provider returned error")) return true;
+  // Edge/WAF geo-block: matched by message, not bare 403, so genuine auth "Forbidden" stays non-retryable.
+  if (lower.includes("access denied")) return true;
+  if (lower.includes("security policy")) return true;
   // 404 on a primary model is almost always a routing problem on OpenRouter
   // (model+provider pair unavailable), not a permanent model-gone error → retry.
   if (status === 404) return true;
@@ -116,6 +120,9 @@ function userMessageFor(status: number | null, message: string): string {
   const lower = message.toLowerCase();
   if (lower.includes("location") && (lower.includes("not supported") || lower.includes("not available"))) {
     return "Сервис распознавания недоступен в этом регионе.";
+  }
+  if (lower.includes("access denied") || lower.includes("security policy")) {
+    return "Сервис распознавания временно недоступен (ограничение доступа). Сообщите администратору.";
   }
   if (lower.includes("not a valid model") || lower.includes("model not found")) {
     return "Модель распознавания недоступна. Сообщите администратору.";
@@ -176,7 +183,7 @@ export async function callStt(options: SttCallOptions): Promise<string> {
     }
 
     try {
-      return await callSttRaw({
+      const text = await callSttRaw({
         apiKey,
         model,
         prompt: options.prompt,
@@ -194,6 +201,18 @@ export async function callStt(options: SttCallOptions): Promise<string> {
           ? { order: ["google-vertex/eu", "google-vertex/global", "google-vertex"], allow_fallbacks: false }
           : undefined,
       });
+
+      // Empty content = soft failure (HTTP ok, model returned nothing). Try the next
+      // model; on the last one return "" to preserve the caller contract, don't throw.
+      if (text.trim().length === 0 && i < chain.length - 1) {
+        const next = chain[i + 1];
+        log.warn(
+          `STT model=${model}[${pinVertex ? "google-vertex" : "auto"}] returned empty content, ` +
+            `trying next fallback=${next.model}[${next.pinVertex ? "google-vertex" : "auto"}]`
+        );
+        continue;
+      }
+      return text;
     } catch (err) {
       if (err instanceof SttError) {
         lastErr = err;
@@ -244,8 +263,6 @@ interface SttRawOptions {
 async function callSttRaw(options: SttRawOptions): Promise<string> {
   const { apiKey, model, prompt, base64Audio, mimeType, timeoutMs, filePath, provider } = options;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const startTime = Date.now();
 
   try {
@@ -271,7 +288,8 @@ async function callSttRaw(options: SttRawOptions): Promise<string> {
       body.provider = provider;
     }
 
-    const res = await fetch(OPENROUTER_URL, {
+    // On timeout this rejects with an AbortError-named error, handled in the catch below.
+    const res = await openRouterRequest(OPENROUTER_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -279,7 +297,7 @@ async function callSttRaw(options: SttRawOptions): Promise<string> {
         "HTTP-Referer": OPENROUTER_REFERER,
       },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      timeoutMs,
     });
 
     const elapsed = Date.now() - startTime;
@@ -313,7 +331,5 @@ async function callSttRaw(options: SttRawOptions): Promise<string> {
       });
     }
     throw err;
-  } finally {
-    clearTimeout(timeout);
   }
 }

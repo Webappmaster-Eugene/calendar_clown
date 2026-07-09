@@ -85,6 +85,34 @@
       "when": 1775600000000,
       "tag": "0011_add_tribe_monthly_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775700000000,
+      "tag": "0012_add_expense_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775800000000,
+      "tag": "0013_add_category_management_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1775900000000,
+      "tag": "0014_rename_vague_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1783579413561,
+      "tag": "0015_bank_push_webhook",
+      "breakpoints": true
     }
   ]
 }

@@ -9,12 +9,27 @@ import { handleStatus } from "./commands/status.js";
 import { handleExpensesCommand, handleCalendarCommand, handleCategoriesButton, handleModeCommand } from "./commands/expenseMode.js";
 import { handleCancel, handleCancelRecurringCallback } from "./commands/cancelEvent.js";
 import { handleExpenseText } from "./commands/addExpense.js";
+import { handleBankHookCommand, handleBankHookRegenerate } from "./commands/bankHook.js";
+import {
+  handleBankPushCategoryMenu,
+  handleBankPushSetCategory,
+  handleBankPushCancel,
+  handleBankPushDelete,
+} from "./expenses/bankPush/confirm.js";
 import { handleReportButton, handleReportCallback, handleComparisonButton, handleStatsButton } from "./commands/expenseReport.js";
 import { handleExcelButton, handleExcelCallback, handleYearExcelCallback } from "./commands/expenseExcel.js";
 import { handleUndoCallback } from "./commands/expenseUndo.js";
 import { handleRecentButton, handleRecentCallback } from "./commands/expenseRecent.js";
 import { handleAdminCommand, handleAdminCallback, handleAdminTextInput, handleOnboardRequest } from "./commands/admin.js";
 import { handleStatsCommand } from "./commands/adminStats.js";
+import { handleCategoriesCommand } from "./commands/categoriesMode.js";
+import {
+  handleCategoriesWizardStart,
+  handleCategoriesWizardSkip,
+  handleCategoriesWizardCancel,
+  handleCategoriesWizardSave,
+  handleCategoriesWizardText,
+} from "./commands/categoriesWizard.js";
 import { handleSummaryCallback } from "./commands/adminSummary.js";
 import { handleTranscribeCommand, handleTranscribeHistoryButton, handleClearQueueButton, handleQueueStatusButton, handleTranscribeHistoryCallback, handleTranscribeFullCallback, handleTranscribeDeleteCallback } from "./commands/transcribeMode.js";
 import { handleAdminDataCallback, handleAdminDataTextInput } from "./commands/adminData.js";
@@ -128,7 +143,6 @@ import {
   handleGoalViewerCallback,
   handleGoalsPageCallback,
   handleGoalsText,
-  handleGoalsVoice,
 } from "./commands/goalsMode.js";
 import {
   handleRemindersCommand,
@@ -239,6 +253,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.command("expenses", handleExpensesCommand);
   bot.command("calendar", handleCalendarCommand);
   bot.command("transcribe", handleTranscribeCommand);
+  bot.command("categories", handleCategoriesCommand);
   bot.command("mode", handleModeCommand);
   bot.command("cancel", handleCancel);
   bot.command("digest", handleDigestCommand);
@@ -255,6 +270,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.command("neuro", handleNeuroCommand);
   bot.command("tasks", handleTasksCommand);
   bot.command("nutritionist", handleNutritionistCommand);
+  bot.command("bankhook", handleBankHookCommand);
 
   // Admin commands
   bot.command("admin", handleAdminCommand);
@@ -263,6 +279,17 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   // ─── Callback queries (inline buttons) ──────────────────────────────
 
   bot.action("onboard_request", handleOnboardRequest);
+
+  bot.action("catwiz:start", handleCategoriesWizardStart);
+  bot.action("catwiz:skip", handleCategoriesWizardSkip);
+  bot.action("catwiz:cancel", handleCategoriesWizardCancel);
+  bot.action("catwiz:save", handleCategoriesWizardSave);
+  // Bank push webhook: setup regeneration + per-expense confirmation controls
+  bot.action("bhregen", handleBankHookRegenerate);
+  bot.action(/^bpcat:/, handleBankPushCategoryMenu);
+  bot.action(/^bpset:/, handleBankPushSetCategory);
+  bot.action(/^bpcancel:/, handleBankPushCancel);
+  bot.action(/^bpdel:/, handleBankPushDelete);
   bot.action(/^report:/, handleReportCallback);
   bot.action(/^report_year:/, handleReportCallback);
   bot.action(/^compare:/, handleReportCallback);
@@ -864,66 +891,59 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     const telegramId = ctx.from?.id;
     if (telegramId == null) return next();
 
-    // Skip commands
     if (ctx.message.text.startsWith("/")) return next();
 
-    // Admin text input (waiting for user ID, tribe name, etc.)
     const consumed = await handleAdminTextInput(ctx);
     if (consumed) return;
 
-    // Admin data text input (edit operations)
     const consumedData = await handleAdminDataTextInput(ctx);
     if (consumedData) return;
 
-    // Neuro mode — AI chat
+    const consumedCatWizard = await handleCategoriesWizardText(ctx);
+    if (consumedCatWizard) return;
+
     if (await isNeuroMode(telegramId)) {
       await handleNeuroText(ctx);
       return;
     }
 
-    // Goals mode — text input for creating goal sets/goals
     if (await isGoalsMode(telegramId)) {
       const handled = await handleGoalsText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Tasks mode — text input for creating works/tasks
     if (await isTasksMode(telegramId)) {
       const handled = await handleTasksText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Reminders mode — text input for creating/editing reminders
     if (await isRemindersMode(telegramId)) {
       const handled = await handleRemindersText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Wishlist mode — text input for creating wishlists/items
     if (await isWishlistMode(telegramId)) {
       const handled = await handleWishlistText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Gandalf (База знаний) mode — text input for creating entries/categories
     if (await isGandalfMode(telegramId)) {
       const handled = await handleGandalfText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Notable dates mode — text input for adding dates
     if (await isNotableDatesMode(telegramId)) {
       const handled = await handleNotableDatesText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Digest mode — MTProto auth flow, then interactive rubric creation
+    // Digest mode — MTProto auth flow must run before interactive rubric creation
     if (await isDigestMode(telegramId)) {
       const authHandled = await handleDigestAuthText(ctx);
       if (authHandled) return;
@@ -932,54 +952,47 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
       return next();
     }
 
-    // OSINT mode — search from text
     if (await isOsintMode(telegramId)) {
       const handled = await handleOsintText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Summarizer mode — text input for workplaces/achievements
     if (await isSummarizerMode(telegramId)) {
       const handled = await handleSummarizerText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Blogger mode — text input for channels/posts/sources
     if (await isBloggerMode(telegramId)) {
       const handled = await handleBloggerText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Simplifier mode — accumulate text in buffer
     if (await isSimplifierMode(telegramId)) {
       const handled = await handleSimplifierText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Nutritionist mode — prompt to send photo
     if (await isNutritionistMode(telegramId)) {
       const handled = await handleNutritionistText(ctx);
       if (handled) return;
       return next();
     }
 
-    // Broadcast mode — send text to all tribe members
     if (await isBroadcastMode(telegramId)) {
       await handleBroadcastText(ctx);
       return;
     }
 
-    // Calendar mode — text input for creating events without /new prefix
+    // Calendar mode — allow creating events without the /new prefix
     if (await isCalendarMode(telegramId)) {
       await handleCalendarText(ctx);
       return;
     }
 
-    // Only process in expense mode
     if (!await isExpenseMode(telegramId)) return next();
 
     await handleExpenseText(ctx);

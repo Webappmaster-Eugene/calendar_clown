@@ -143,7 +143,6 @@ async function augmentWithLinksAndSearch(
     ? formatSearchResultsForContext(searchResults.results)
     : "";
 
-  // Truncate if total context is too large
   const totalContextLen = linksContext.length + searchContext.length;
   if (totalContextLen > MAX_AUGMENTED_CONTEXT_LENGTH) {
     const halfLimit = Math.floor(MAX_AUGMENTED_CONTEXT_LENGTH / 2);
@@ -493,7 +492,6 @@ export async function handleNeuroVoice(
 
     const fullText = prependText + transcript;
 
-    // Use pending batch's dialog if available, fall back to active dialog
     const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
       ?? await getOrCreateActiveDialog(dbUser.id);
     const provider = await getChatProvider(dbUser.id);
@@ -502,7 +500,6 @@ export async function handleNeuroVoice(
     const history = await getRecentMessages(dialog.id, 20);
     const historyMessages = history.map((m) => ({ role: m.role, content: m.content }));
 
-    // Augment with links + search
     const augmentedMessage = await augmentWithLinksAndSearch(
       fullText, historyMessages, ctx, statusMsgId
     );
@@ -521,7 +518,6 @@ export async function handleNeuroVoice(
     await saveMessage(dbUser.id, dialog.id, "user", userEntry);
     await saveMessage(dbUser.id, dialog.id, "assistant", result.content, model, result.tokensUsed ?? undefined);
 
-    // Auto-name dialog on first message
     if (dialog.title === "Новый диалог") {
       autoNameDialog(dialog.id, transcript, model);
     }
@@ -529,7 +525,6 @@ export async function handleNeuroVoice(
     const fullReply = `🎤 _${transcript}_\n\n${result.content}`;
     const chunks = splitMessage(fullReply);
 
-    // Edit status message with first chunk
     try {
       await ctx.telegram.editMessageText(
         ctx.chat!.id, statusMsgId, undefined,
@@ -543,7 +538,6 @@ export async function handleNeuroVoice(
       );
     }
 
-    // Send remaining chunks as separate messages
     for (let i = 1; i < chunks.length; i++) {
       try {
         await ctx.replyWithMarkdown(chunks[i]);
@@ -617,7 +611,6 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
       content: m.content,
     }));
 
-    // Augment caption with links + search
     const historyForSearch = history.map((m) => ({ role: m.role, content: m.content }));
     const augmentedCaption = await augmentWithLinksAndSearch(
       fullCaption, historyForSearch, ctx
@@ -696,7 +689,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
   const mimeType = doc.mime_type || "";
   const fileSize = doc.file_size || 0;
 
-  // Check file size
   if (fileSize > MAX_FILE_SIZE) {
     await ctx.reply(`❌ Файл слишком большой (${(fileSize / 1024 / 1024).toFixed(1)} МБ). Максимум — 15 МБ.`);
     return;
@@ -712,7 +704,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     const buffer = Buffer.from(await res.arrayBuffer());
     const ext = fileName.includes(".") ? fileName.slice(fileName.lastIndexOf(".")).toLowerCase() : "";
 
-    // Determine processing strategy
     const isImage = IMAGE_MIME_PREFIXES.some((p) => mimeType.startsWith(p));
     const isGeminiDoc = GEMINI_DOC_MIME_TYPES.has(mimeType);
     const isText = TEXT_MIME_TYPES.has(mimeType) || TEXT_EXTENSIONS.has(ext);
@@ -729,7 +720,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
       content: m.content,
     }));
 
-    // Augment caption with links + search
     const historyForSearch = history.map((m) => ({ role: m.role, content: m.content }));
     const augmentedCaption = await augmentWithLinksAndSearch(
       fullCaption, historyForSearch, ctx
@@ -789,7 +779,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
       result = await chatCompletion(messages, docTitleModel, docSystemPrompt);
       modelUsed = docTitleModel;
     } else {
-      // Unsupported format
       await ctx.reply(
         `❌ Формат файла не поддерживается: ${mimeType || ext || "неизвестный"}\n\n` +
         "Поддерживаемые форматы: изображения, PDF, DOCX, XLSX, текстовые файлы (.txt, .csv, .json, .md, .xml, .html)."

@@ -24,7 +24,6 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
   const text = typeof ctx.message.text === "string" ? ctx.message.text.trim() : "";
   if (!text) return;
 
-  // Rate limiting
   if (!checkRateLimit(telegramId)) {
     await ctx.reply("⏳ Слишком много записей. Подождите минуту.");
     return;
@@ -35,7 +34,6 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
   const firstName = ctx.from?.first_name ?? "";
   const lastName = ctx.from?.last_name ?? null;
 
-  // Try multi-line expenses first
   try {
     const multiResult = await addMultipleExpenses(telegramId, username, firstName, lastName, isAdmin, text);
     if (multiResult) {
@@ -65,7 +63,6 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
     return;
   }
 
-  // Single expense
   try {
     const result = await addExpenseFromText(telegramId, username, firstName, lastName, isAdmin, text);
     await ctx.replyWithMarkdown(result.confirmation, { ...getExpenseKeyboard(isAdmin) });

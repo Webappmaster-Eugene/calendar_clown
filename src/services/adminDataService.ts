@@ -9,7 +9,6 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { createLogger } from "../utils/logger.js";
 
-// Repository imports — same as adminData.ts bot handler
 import {
   getAllTranscriptionsPaginated,
   countAllTranscriptions,
@@ -486,7 +485,6 @@ import { bulkDeleteSearches } from "../osint/repository.js";
 import { bulkDeleteWorkplaces } from "../summarizer/repository.js";
 import { bulkDeleteChannels } from "../blogger/repository.js";
 import { bulkDeleteRubrics } from "../digest/repository.js";
-import { bulkDeleteEntries } from "../gandalf/repository.js";
 
 // ─── Edit support ────────────────────────────────────────────
 

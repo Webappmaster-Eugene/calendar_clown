@@ -132,7 +132,6 @@ export async function setModeMenuCommands(ctx: Context, mode: UserMode): Promise
 }
 
 export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | null) {
-  // If we have context, use role-based keyboard
   if (context) {
     if (context.role === "admin") {
       return Markup.keyboard([

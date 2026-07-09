@@ -65,7 +65,6 @@ export function accessControlMiddleware(): MiddlewareFn<Context> {
     const telegramId = ctx.from?.id;
     if (telegramId == null) return;
 
-    // Bootstrap admin always passes
     if (isBootstrapAdmin(telegramId)) return next();
 
     // If DB is unavailable, allow all users (calendar is protected by OAuth tokens)
@@ -76,10 +75,8 @@ export function accessControlMiddleware(): MiddlewareFn<Context> {
       return next();
     }
 
-    // Check DB
     const exists = await isUserInDb(telegramId);
     if (!exists) {
-      // Show onboarding message with application button
       await ctx.reply(
         `${ONBOARD_WELCOME}\n\nВаш Telegram ID: \`${telegramId}\``,
         {
@@ -92,7 +89,6 @@ export function accessControlMiddleware(): MiddlewareFn<Context> {
       return;
     }
 
-    // User exists — check status
     const status = await getUserStatus(telegramId);
     if (status === "pending") {
       // Allow /start and /help for pending users
@@ -119,14 +115,12 @@ export async function getUserMenuContext(telegramId: number): Promise<UserMenuCo
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return null;
 
-  // Get user status
   const { rows: statusRows } = await query<{ status: string }>(
     "SELECT COALESCE(status, 'approved') AS status FROM users WHERE telegram_id = $1",
     [telegramId]
   );
   const status = statusRows[0]?.status ?? "approved";
 
-  // Get tribe name
   let tribeName: string | null = null;
   if (dbUser.tribeId) {
     const { rows: tribeRows } = await query<{ name: string }>(

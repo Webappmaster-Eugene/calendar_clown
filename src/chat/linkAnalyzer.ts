@@ -19,7 +19,6 @@ export function extractUrls(text: string): string[] {
   const matches = text.match(regex);
   if (!matches) return [];
 
-  // Deduplicate and limit
   const unique = [...new Set(matches)];
   return unique.slice(0, NEURO_MAX_URLS);
 }

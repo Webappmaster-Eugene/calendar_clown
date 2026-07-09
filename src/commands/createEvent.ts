@@ -178,7 +178,6 @@ export async function handleCalendarText(ctx: Context): Promise<void> {
   try {
     const intent = await extractVoiceIntent(text);
 
-    // Handle list intents
     if (intent.type === "list_today" || intent.type === "list_week") {
       const now = new Date();
       const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
@@ -265,7 +264,6 @@ export async function handleCalendarText(ctx: Context): Promise<void> {
       return;
     }
 
-    // Not recognized as calendar event
     await ctx.reply(
       "Не удалось разобрать событие. Попробуйте формат:\nВстреча с командой завтра в 15:00\n\nИли используйте /new перед фразой.",
     );

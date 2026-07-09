@@ -136,14 +136,12 @@ export async function generateMonthlyExcel(
     { header: "Сумма", width: 18 },
   ];
 
-  // Title
   summarySheet.mergeCells("A1:C1");
   const titleCell = summarySheet.getCell("A1");
   titleCell.value = `Расходы за ${monthName(month)} ${year} — ${tribeName}`;
   titleCell.font = { bold: true, size: 14 };
   titleCell.alignment = { horizontal: "center" };
 
-  // Header row
   const headerRow = summarySheet.getRow(3);
   headerRow.values = ["", "Категория", "Сумма"];
   headerRow.font = { bold: true };
@@ -162,13 +160,11 @@ export async function generateMonthlyExcel(
     rowIdx++;
   }
 
-  // Total row
   const totalRow = summarySheet.getRow(rowIdx + 1);
   totalRow.values = ["", "ИТОГО", grandTotal];
   totalRow.font = { bold: true };
   totalRow.getCell(3).numFmt = MONEY_FMT;
 
-  // Limit row
   if (monthLimit > 0) {
     const limitRow = summarySheet.getRow(rowIdx + 2);
     limitRow.values = ["", "Лимит", monthLimit];
@@ -263,14 +259,12 @@ export async function generateYearlyExcel(
   for (let m = 1; m <= 12; m++) pivot.getColumn(2 + m).width = 12;
   pivot.getColumn(totalCols).width = 16;
 
-  // Title
   pivot.mergeCells(1, 1, 1, totalCols);
   const titleCell = pivot.getCell(1, 1);
   titleCell.value = `Расходы за ${year} — ${tribeName}`;
   titleCell.font = { bold: true, size: 14 };
   titleCell.alignment = { horizontal: "center" };
 
-  // Header row
   const headerRow = pivot.getRow(3);
   const headerValues: (string | number)[] = ["", "Категория"];
   for (let m = 1; m <= 12; m++) headerValues.push(monthNameShort(m));
@@ -289,7 +283,6 @@ export async function generateYearlyExcel(
     lookup.set(`${cell.categoryId}:${cell.month}`, cell.total);
   }
 
-  // Body rows
   let rowIdx = 4;
   const monthTotals = new Array(13).fill(0); // index 1..12
   let grandTotal = 0;

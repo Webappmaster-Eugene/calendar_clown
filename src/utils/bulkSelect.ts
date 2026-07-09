@@ -81,18 +81,15 @@ async function sendBulkPage(
 
   const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
 
-  // Item toggle buttons
   for (const item of pageItems) {
     const check = item.selected ? "☑️" : "⬜";
     const label = truncateText(`${check} ${item.label}`, 60);
     rows.push([Markup.button.callback(label, `bulk:tog:${item.id}`)]);
   }
 
-  // Select All / Deselect All on page
   const toggleAllLabel = allOnPage ? "◻️ Снять всё на странице" : "☑️ Выбрать всё на странице";
   rows.push([Markup.button.callback(toggleAllLabel, "bulk:all")]);
 
-  // Pagination
   const paginationRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (state.page > 0) {
     paginationRow.push(Markup.button.callback(BTN_PREV, `bulk:pg:${state.page - 1}`));
@@ -104,7 +101,6 @@ async function sendBulkPage(
     rows.push(paginationRow);
   }
 
-  // Execute & Cancel
   const actionRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (selectedCount > 0) {
     actionRow.push(Markup.button.callback(`🗑 Удалить (${selectedCount})`, "bulk:exec"));
@@ -142,7 +138,6 @@ export async function handleBulkCallback(ctx: Context): Promise<void> {
   }
 
   try {
-    // Toggle single item
     const togMatch = data.match(/^bulk:tog:(\d+)$/);
     if (togMatch) {
       const itemId = parseInt(togMatch[1], 10);
@@ -155,7 +150,6 @@ export async function handleBulkCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // Toggle all on current page
     if (data === "bulk:all") {
       const start = state.page * state.pageSize;
       const end = Math.min(start + state.pageSize, state.items.length);
@@ -169,7 +163,6 @@ export async function handleBulkCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // Pagination
     const pgMatch = data.match(/^bulk:pg:(\d+)$/);
     if (pgMatch) {
       state.page = parseInt(pgMatch[1], 10);
@@ -178,7 +171,6 @@ export async function handleBulkCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // Execute — show confirmation
     if (data === "bulk:exec") {
       const selectedCount = state.items.filter((i) => i.selected).length;
       if (selectedCount === 0) {
@@ -199,7 +191,6 @@ export async function handleBulkCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // Execute confirmed
     if (data === "bulk:exec_yes") {
       const selectedIds = state.items.filter((i) => i.selected).map((i) => i.id);
       if (selectedIds.length === 0) {
@@ -221,7 +212,6 @@ export async function handleBulkCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // Cancel
     if (data === "bulk:cancel") {
       bulkStates.delete(telegramId);
       await ctx.editMessageText("Операция отменена.");

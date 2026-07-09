@@ -246,23 +246,6 @@ export async function getTaskItemsByWork(workId: number): Promise<TaskItem[]> {
   return rows.map(mapTaskItem);
 }
 
-export async function getActiveTaskItemsByWork(workId: number): Promise<TaskItem[]> {
-  const { rows } = await query<TaskItemRow>(
-    `SELECT * FROM task_items WHERE work_id = $1 AND is_completed = false ORDER BY deadline ASC`,
-    [workId],
-  );
-  return rows.map(mapTaskItem);
-}
-
-export async function getTaskItemById(taskItemId: number): Promise<TaskItem | null> {
-  const { rows } = await query<TaskItemRow>(
-    `SELECT * FROM task_items WHERE id = $1`,
-    [taskItemId],
-  );
-  if (rows.length === 0) return null;
-  return mapTaskItem(rows[0]);
-}
-
 export async function toggleTaskItemCompleted(taskItemId: number): Promise<TaskItem | null> {
   const { rows } = await query<TaskItemRow>(
     `UPDATE task_items
@@ -428,47 +411,3 @@ export async function markTaskReminderSent(reminderId: number): Promise<void> {
   );
 }
 
-// ─── Admin ───────────────────────────────────────────────────────────────
-
-export async function getAllTaskWorksPaginated(
-  limit: number,
-  offset: number,
-): Promise<Array<TaskWork & { firstName: string }>> {
-  const { rows } = await query<TaskWorkRow & { first_name: string; active_count: string; completed_count: string }>(
-    `SELECT tw.*, u.first_name,
-       COUNT(ti.id) FILTER (WHERE ti.is_completed = false) AS active_count,
-       COUNT(ti.id) FILTER (WHERE ti.is_completed = true) AS completed_count
-     FROM task_works tw
-     JOIN users u ON tw.user_id = u.id
-     LEFT JOIN task_items ti ON ti.work_id = tw.id
-     GROUP BY tw.id, u.first_name
-     ORDER BY tw.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
-  );
-  return rows.map((r) => ({
-    ...mapTaskWork(r),
-    activeCount: parseInt(r.active_count, 10),
-    completedCount: parseInt(r.completed_count, 10),
-    firstName: r.first_name,
-  }));
-}
-
-export async function countAllTaskWorks(): Promise<number> {
-  const { rows } = await query<{ count: string }>(`SELECT COUNT(*) AS count FROM task_works`);
-  return parseInt(rows[0].count, 10);
-}
-
-export async function bulkDeleteTaskWorks(ids: number[]): Promise<number> {
-  if (ids.length === 0) return 0;
-  const { rowCount } = await query(
-    `DELETE FROM task_works WHERE id = ANY($1::int[])`,
-    [ids],
-  );
-  return rowCount ?? 0;
-}
-
-export async function deleteAllTaskWorks(): Promise<number> {
-  const { rowCount } = await query(`DELETE FROM task_works`);
-  return rowCount ?? 0;
-}

@@ -34,16 +34,3 @@ export function parseEventText(text: string): ParsedEvent | null {
 
   return { title: summary, start, end };
 }
-
-/**
- * Parse only date/time from string (e.g. "завтра 15:00") — returns start date and optional end (default +1h).
- * Times are interpreted in Europe/Moscow (MSK).
- */
-export function parseDateTime(text: string): { start: Date; end: Date } | null {
-  const parsed = ru.parse(text, mskRef(), { forwardDate: true });
-  const first = parsed[0];
-  if (!first) return null;
-  const start = first.date();
-  const end = first.end?.date() ?? new Date(start.getTime() + 60 * 60 * 1000);
-  return { start, end };
-}

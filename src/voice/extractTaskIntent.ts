@@ -9,39 +9,64 @@ import { callOpenRouter } from "../utils/openRouterClient.js";
 import { TIMEZONE_MSK } from "../shared/constants.js";
 import { INSTRUCTION_GUARD, wrapUserContent } from "./promptSafety.js";
 
-function buildTaskSystemPrompt(workNames: string[], nowIso: string): string {
+function buildTaskSystemPrompt(workNames: string[], dateStr: string, weekday: string, tomorrowStr: string): string {
   const worksList = workNames.length > 0
     ? workNames.map((n) => `- ${n}`).join("\n")
     : "(нет проектов)";
 
-  return `You are a task tracking assistant. Extract task information from the user's voice message (in Russian).
+  return `You are a task-tracking assistant. The user is in TASK-CREATION mode and is dictating (in Russian) a task to add. Extract it.
 Reply with ONLY a valid JSON object, no other text.
 
 Available projects/works (exact names):
 ${worksList}
 
-Current date/time (Moscow): ${nowIso}
+Current date: ${dateStr} (${weekday}), timezone Europe/Moscow (UTC+3). Tomorrow = ${tomorrowStr}.
 
 Output format:
-{"type":"task","work":"exact work name from list above or null","text":"task description","deadline":"ISO 8601 datetime string or null"}
+{"type":"task","work":"exact work name from the list or null","text":"task description","deadline":"ISO 8601 datetime with +03:00 offset or null"}
 
 Rules:
-- "work" MUST be one of the exact work names from the list above. If the user mentions a project name, match it (case-insensitive). If unclear or no match, set to null.
-- "text" is the task description — what needs to be done.
-- "deadline" must be an ISO 8601 datetime string with timezone offset +03:00 (Moscow). Parse Russian date/time expressions relative to the current date/time above.
-  Examples of Russian date expressions:
-  - "завтра в 18:00" → next day 18:00 MSK
-  - "в понедельник" → next Monday 09:00 MSK (default time if not specified)
-  - "через 3 дня к 15:00" → current date + 3 days at 15:00 MSK
-  - "вторник 18:00" → next Tuesday 18:00 MSK
-  - "послезавтра" → day after tomorrow 09:00 MSK
-  If deadline cannot be parsed, set to null.
-- If this is clearly NOT about creating a task, return {"type":"not_task"}
+- Assume the message IS a task. Return {"type":"not_task"} ONLY if it is clearly a question, a command unrelated to adding a task, or unintelligible noise.
+- "work": match the mentioned project to one from the list (case-insensitive, tolerate minor mishearings). If no project is mentioned or none plausibly matches, set null.
+- "text": what needs to be done. Never empty for a task.
+- "deadline": parse the Russian date/time relative to the current date above; always +03:00. A date without a time → 09:00. If no deadline is mentioned or it can't be parsed, set null.
+  Examples: "завтра в 18:00" → ${tomorrowStr}T18:00:00+03:00; "в понедельник" → next Monday 09:00; "через 3 дня к 15:00" → +3 days 15:00; "к концу недели" → nearest upcoming Friday 18:00.
 
 Examples:
-- "Добавь задачу в 9RED сдать отчёт до завтра 18:00" → {"type":"task","work":"9RED","text":"сдать отчёт","deadline":"...T18:00:00+03:00"}
-- "Росатом подготовить презентацию к понедельнику" → {"type":"task","work":"Росатом","text":"подготовить презентацию","deadline":"...T09:00:00+03:00"}
-- "задача 9483 Росатом вторник 18:00" → {"type":"task","work":"Росатом","text":"задача 9483","deadline":"...T18:00:00+03:00"}`;
+- "Добавь в 9RED сдать отчёт до завтра 18:00" → {"type":"task","work":"9RED","text":"сдать отчёт","deadline":"${tomorrowStr}T18:00:00+03:00"}
+- "Росатом подготовить презентацию к понедельнику" → {"type":"task","work":"Росатом","text":"подготовить презентацию","deadline":"<next Monday>T09:00:00+03:00"}
+- "напомни позвонить маме" → {"type":"task","work":null,"text":"позвонить маме","deadline":null}`;
+}
+
+function normalizeWork(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[«»"'`.,!?:;()]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Resolve a spoken project name to one of the user's exact work names.
+ * Conservative: exact (normalized) match, else a UNIQUE containment match
+ * (guards against short fragments matching everything). Returns null when
+ * ambiguous or unmatched, so the caller falls back to asking the user to pick.
+ */
+export function matchWorkName(candidate: string | null, workNames: string[]): string | null {
+  if (!candidate) return null;
+  const norm = normalizeWork(candidate);
+  if (!norm) return null;
+
+  const exact = workNames.find((w) => normalizeWork(w) === norm);
+  if (exact) return exact;
+
+  if (norm.length < 3) return null;
+  const contained = workNames.filter((w) => {
+    const nw = normalizeWork(w);
+    return nw.length >= 3 && (nw.includes(norm) || norm.includes(nw));
+  });
+  return contained.length === 1 ? contained[0] : null;
 }
 
 export interface TaskVoiceResult {
@@ -61,22 +86,18 @@ export async function extractTaskIntent(
   transcript: string,
   workNames: string[],
 ): Promise<TaskIntentResult> {
-  // Format current time in MSK for the prompt
+  // Date context in MSK: today + weekday + tomorrow, so the model resolves
+  // relative expressions ("в понедельник", "завтра") to the right calendar date.
   const now = new Date();
-  const nowMsk = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: TIMEZONE_MSK,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(now);
+  const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
+  const weekday = now.toLocaleDateString("en-GB", { weekday: "long", timeZone: TIMEZONE_MSK });
+  const tomorrowStr = new Date(new Date(`${dateStr}T00:00:00+03:00`).getTime() + 86_400_000)
+    .toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
 
   const content = await callOpenRouter({
     model: DEEPSEEK_MODEL,
     messages: [
-      { role: "system", content: `${buildTaskSystemPrompt(workNames, nowMsk)}\n\n${INSTRUCTION_GUARD}` },
+      { role: "system", content: `${buildTaskSystemPrompt(workNames, dateStr, weekday, tomorrowStr)}\n\n${INSTRUCTION_GUARD}` },
       { role: "user", content: wrapUserContent(transcript) },
     ],
   });
@@ -96,15 +117,7 @@ export async function extractTaskIntent(
 
     if (!text) return { type: "not_task" };
 
-    // Validate work name against known list (case-insensitive)
-    let matchedWork: string | null = null;
-    if (work) {
-      matchedWork = workNames.find(
-        (wn) => wn.toLowerCase() === work.toLowerCase(),
-      ) ?? null;
-    }
-
-    return { type: "task", work: matchedWork, text, deadline };
+    return { type: "task", work: matchWorkName(work, workNames), text, deadline };
   }
 
   return { type: "not_task" };

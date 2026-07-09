@@ -10,13 +10,11 @@ import { runOsintSearch, sendReport } from "../osint/searchOrchestrator.js";
 import { getSearchById, getFilteredSearchHistory, countTodaySearches } from "../osint/repository.js";
 import { parseSearchSubject } from "../osint/queryParser.js";
 import { escapeMarkdown, escapeMarkdownV2 } from "../utils/markdown.js";
-import { createLogger } from "../utils/logger.js";
 import { logAction } from "../logging/actionLogger.js";
 import { truncateText } from "../utils/uiKit.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import type { OsintParsedSubject } from "../osint/types.js";
 
-const log = createLogger("osint-mode");
 const PAGE_SIZE = 5;
 
 // ─── Volatile state ─────────────────────────────────────────────────────
@@ -69,14 +67,12 @@ export async function handleOsintCommand(ctx: Context): Promise<void> {
     isBootstrapAdmin(telegramId)
   );
 
-  // Check tribe access
   const menuCtx = await getUserMenuContext(telegramId);
   if (menuCtx && !canAccessMode("osint", menuCtx)) {
     await ctx.reply("🔍 OSINT-поиск доступен только для участников трайба. Обратитесь к администратору.");
     return;
   }
 
-  // Clear any pending state
   pendingSearches.delete(telegramId);
 
   await setUserMode(telegramId, "osint");
@@ -106,7 +102,6 @@ export async function handleOsintText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
 
-  // Skip mode-specific buttons
   if (["🔍 Новый поиск", "📋 История поисков", "🏠 Главное меню"].includes(text)) {
     return false;
   }
@@ -123,7 +118,6 @@ export async function handleOsintText(ctx: Context): Promise<boolean> {
       return true;
     }
 
-    // Update pending with new data
     pending.originalQuery = combinedQuery;
     pending.parsedSubject = parseResult.subject;
 
@@ -132,7 +126,6 @@ export async function handleOsintText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // New search — parse and show confirmation
   await showParsingStatus(ctx);
   const parseResult = await parseSearchSubject(text);
 
@@ -188,7 +181,6 @@ export async function handleOsintVoice(
     return;
   }
 
-  // Delete status message and show confirmation card
   try {
     await ctx.telegram.deleteMessage(chatId, statusMsgId);
   } catch {
@@ -331,7 +323,6 @@ export async function handleNewSearchButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
-  // Clear any pending state
   pendingSearches.delete(telegramId);
 
   const dbUser = await getUserByTelegramId(telegramId);
@@ -391,7 +382,6 @@ export async function handleViewSearchCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // Send full report
   const { splitMessage } = await import("../utils/telegram.js");
   const formatted = `🔍 *Запрос:* "${escapeMarkdown(search.query)}"\n\n${search.report}\n\n📊 Источников: ${search.sourcesCount}`;
   const chunks = splitMessage(formatted);
@@ -440,7 +430,6 @@ async function showHistory(ctx: Context, page: number): Promise<void> {
 
   const buttons: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
 
-  // Search items
   for (let i = 0; i < searches.length; i++) {
     const s = searches[i];
     const statusLabel = STATUS_DISPLAY[s.status] ?? s.status;
@@ -457,7 +446,6 @@ async function showHistory(ctx: Context, page: number): Promise<void> {
       : s.query;
     const namePreview = truncateText(displayName, 30);
 
-    // Show sources count for completed
     const sourcesInfo = s.status === "completed" && s.sourcesCount > 0
       ? ` \\(${s.sourcesCount} ист\\.\\)`
       : "";
@@ -476,7 +464,6 @@ async function showHistory(ctx: Context, page: number): Promise<void> {
     ]);
   }
 
-  // Pagination
   const navRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (page > 0) {
     navRow.push(Markup.button.callback("⬅️ Назад", `osint_hist:${page - 1}`));

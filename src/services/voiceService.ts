@@ -10,10 +10,7 @@ import { transcribeVoice } from "../voice/transcribe.js";
 import type { TranscribeContext } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import type { VoiceIntent } from "../voice/extractVoiceIntent.js";
-import { createLogger } from "../utils/logger.js";
 import type { VoiceIntentType } from "../shared/types.js";
-
-const log = createLogger("voice-service");
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -79,21 +76,7 @@ export async function transcribeAudio(filePath: string, context: TranscribeConte
   return { transcript: transcript.trim() };
 }
 
-/**
- * Extract intent from transcribed text.
- * Returns the intent type and extracted fields.
- */
 export async function extractIntent(transcript: string): Promise<VoiceIntentResult> {
   const result = await extractVoiceIntent(transcript);
   return intentToResult(result);
-}
-
-/**
- * Full pipeline: transcribe audio file and extract intent.
- * @param filePath - path to OGG/audio file on disk
- */
-export async function transcribeAndExtract(filePath: string): Promise<TranscribeAndExtractResult> {
-  const { transcript } = await transcribeAudio(filePath);
-  const intent = await extractIntent(transcript);
-  return { transcript, intent };
 }

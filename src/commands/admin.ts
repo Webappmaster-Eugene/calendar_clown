@@ -158,7 +158,6 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // admin:del:<telegramId>
   const delMatch = data.match(/^admin:del:(\d+)$/);
   if (delMatch) {
     const targetId = parseInt(delMatch[1], 10);
@@ -198,7 +197,6 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // admin:approve:<telegramId>
   const approveMatch = data.match(/^admin:approve:(\d+)$/);
   if (approveMatch) {
     const targetId = parseInt(approveMatch[1], 10);
@@ -206,7 +204,6 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     if (approved) {
       logAction(null, telegramId, "admin_user_approve", { targetTelegramId: targetId });
       await ctx.editMessageText(`✅ Пользователь ${targetId} одобрен.`);
-      // Notify user
       try {
         await ctx.telegram.sendMessage(targetId, "🎉 Ваша заявка одобрена! Отправьте /start для начала работы.");
       } catch (err) {
@@ -219,7 +216,6 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // admin:reject:<telegramId>
   const rejectMatch = data.match(/^admin:reject:(\d+)$/);
   if (rejectMatch) {
     const targetId = parseInt(rejectMatch[1], 10);
@@ -227,7 +223,6 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     if (rejected) {
       logAction(null, telegramId, "admin_user_reject", { targetTelegramId: targetId });
       await ctx.editMessageText(`❌ Заявка пользователя ${targetId} отклонена.`);
-      // Notify user
       try {
         await ctx.telegram.sendMessage(targetId, "❌ Ваша заявка на доступ отклонена. Вы можете подать заявку повторно.");
       } catch (err) {
@@ -263,7 +258,6 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // admin:set_tribe:<telegramId>
   const setTribeMatch = data.match(/^admin:set_tribe:(\d+)$/);
   if (setTribeMatch) {
     const targetId = parseInt(setTribeMatch[1], 10);
@@ -280,7 +274,6 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // admin:assign_tribe:<telegramId>:<tribeId>
   const assignTribeMatch = data.match(/^admin:assign_tribe:(\d+):(\d+)$/);
   if (assignTribeMatch) {
     const targetId = parseInt(assignTribeMatch[1], 10);
@@ -323,7 +316,6 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // admin:untribe:<telegramId>
   const untribeMatch = data.match(/^admin:untribe:(\d+)$/);
   if (untribeMatch) {
     const targetId = parseInt(untribeMatch[1], 10);
@@ -563,7 +555,6 @@ export async function handleOnboardRequest(ctx: Context): Promise<void> {
     return;
   }
 
-  // Check if user already exists
   const exists = await isUserInDb(telegramId);
   if (exists) {
     await ctx.answerCbQuery("Вы уже зарегистрированы.");
@@ -572,7 +563,6 @@ export async function handleOnboardRequest(ctx: Context): Promise<void> {
   }
 
   try {
-    // Create pending user
     await createPendingUser(
       telegramId,
       ctx.from?.username ?? null,
@@ -585,7 +575,6 @@ export async function handleOnboardRequest(ctx: Context): Promise<void> {
       "✅ Заявка отправлена!\n\nОжидайте одобрения администратора. Вы получите уведомление."
     );
 
-    // Notify admin
     const adminId = getAdminTelegramId();
     if (adminId) {
       const name = ctx.from?.first_name ?? "";

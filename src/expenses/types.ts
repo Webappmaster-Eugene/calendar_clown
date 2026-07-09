@@ -3,8 +3,11 @@ export interface Category {
   name: string;
   emoji: string;
   aliases: string[];
+  description: string | null;
   sortOrder: number;
   isActive: boolean;
+  /** NULL = встроенная категория (нельзя удалять); иначе id создавшего админа. */
+  createdByUserId: number | null;
 }
 
 export interface Expense {

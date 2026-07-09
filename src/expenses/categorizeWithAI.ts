@@ -8,6 +8,7 @@ import { DEEPSEEK_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import type { Category, ParsedExpense } from "./types.js";
+import { formatCategoryForPrompt } from "./parser.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("expense-categorize-ai");
@@ -24,17 +25,28 @@ Output format:
 
 Rules:
 - "category" MUST be one of the exact category names from the list above
-- Match the user's description to the most appropriate category semantically
+- ALWAYS choose the MOST SPECIFIC category that fits what was actually bought. Read each category's description to decide.
 - "subcategory" is the descriptive part (what was bought/paid for), null if only category name given
 - "amount" is a positive number in rubles
-- If no category seems close, use "Другое"
+- "Другое" is a LAST RESORT only — use it ONLY when the expense genuinely fits no other category, never as a shortcut when unsure
+
+Disambiguation:
+- Маркетплейс — это КАНАЛ покупки, а не категория. Покупки на Ozon / Wildberries / WB классифицируй по СУТИ товара (продукты, детские товары, товары для дома, аптека и т.д.), а НЕ в общую категорию. "Подарки" — ТОЛЬКО если это подарок другому человеку.
+- Ремонт/стройка/мебель/инструменты для КВАРТИРЫ или ДОМА → "Ремонт и обустройство квартиры". Ремонт МАШИНЫ/авто → "Ремонт машины и эксплуатация"
+- Детские ВЕЩИ (одежда, игрушки, памперсы, коляска) → "Детские товары". Детский САД / СЕКЦИИ (услуги) → "Садик" или "Кружки и секции детей"
+- Хозтовары / бытовая химия / посуда / фикс прайс → "Товары для дома". ЕДА и продукты питания → "Продукты"
 
 Examples:
 - "кофе 300" → {"category":"Кафе, доставка, фастфуд","subcategory":"Кофе","amount":300}
 - "бензин 2500" → {"category":"Бензин и расходники на машину","subcategory":null,"amount":2500}
 - "ашан 3500" → {"category":"Продукты","subcategory":"Ашан","amount":3500}
 - "обед 500" → {"category":"Кафе, доставка, фастфуд","subcategory":"Обед","amount":500}
-- "такси 800" → {"category":"Такси","subcategory":null,"amount":800}`;
+- "такси 800" → {"category":"Такси","subcategory":null,"amount":800}
+- "стройматериалы 5000" → {"category":"Ремонт и обустройство квартиры","subcategory":"Стройматериалы","amount":5000}
+- "детская одежда 2000" → {"category":"Детские товары","subcategory":"Одежда","amount":2000}
+- "фикс прайс бытовая химия 800" → {"category":"Товары для дома","subcategory":"Бытовая химия","amount":800}
+- "озон подгузники 1000" → {"category":"Детские товары","subcategory":"Подгузники","amount":1000}
+- "подарок жене духи 3000" → {"category":"Подарки","subcategory":"Духи жене","amount":3000}`;
 }
 
 /**
@@ -45,14 +57,7 @@ export async function categorizeExpenseText(
   text: string,
   categories: Category[]
 ): Promise<ParsedExpense | null> {
-  const categoriesList = categories
-    .map((c) => {
-      const aliasStr = c.aliases.length > 0
-        ? ` (aliases: ${c.aliases.join(", ")})`
-        : "";
-      return `- ${c.name}${aliasStr}`;
-    })
-    .join("\n");
+  const categoriesList = categories.map(formatCategoryForPrompt).join("\n");
 
   let content: string | null;
   try {

@@ -36,7 +36,6 @@ export function getPool(): pg.Pool {
   return pool;
 }
 
-/** Execute a parameterized SQL query against the pool. */
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,
   params?: unknown[]

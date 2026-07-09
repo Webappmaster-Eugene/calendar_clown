@@ -7,7 +7,7 @@ import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
 import { ensureUser, getUserByTelegramId, listTribeUsers } from "../expenses/repository.js";
-import { isBootstrapAdmin, getUserMenuContext } from "../middleware/auth.js";
+import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import {
   createGoalSet,
@@ -37,13 +37,10 @@ import {
   formatDeadline,
 } from "../goals/service.js";
 import type { GoalPeriod } from "../goals/service.js";
-import { createLogger } from "../utils/logger.js";
 import { getModeButtons, setModeMenuCommands } from "./expenseMode.js";
 import { escapeMarkdown } from "../utils/markdown.js";
 import { logAction } from "../logging/actionLogger.js";
 import { BTN_PREV, BTN_NEXT, truncateText } from "../utils/uiKit.js";
-
-const log = createLogger("goals-mode");
 
 const MAX_GOAL_SETS = 5;
 const MAX_GOAL_TEXT_LENGTH = 500;
@@ -96,7 +93,6 @@ export async function handleGoalsCommand(ctx: Context): Promise<void> {
   await setUserMode(telegramId, "goals");
   await setModeMenuCommands(ctx, "goals");
 
-  // Clear any pending states
   creationStates.delete(telegramId);
   goalAddingStates.delete(telegramId);
 
@@ -196,7 +192,6 @@ export async function handleSharedGoalsButton(ctx: Context): Promise<void> {
     return `${gs.emoji} *${escapeMarkdown(gs.ownerName)}* — ${escapeMarkdown(gs.name)}\n${progress}`;
   });
 
-  // Show as inline buttons for read-only viewing
   const buttons = sharedSets.map((gs) => [
     Markup.button.callback(
       `${gs.emoji} ${gs.ownerName}: ${gs.name}`,
@@ -258,7 +253,6 @@ export async function handleGoalSetCallback(ctx: Context): Promise<void> {
     await updateGoalSet(setId, dbUser.id, { visibility: newVis });
 
     if (newVis === "public" && dbUser.tribeId) {
-      // Show viewer selection
       await showViewerSelection(ctx, setId, dbUser.id, dbUser.tribeId);
     } else {
       await showGoalSet(ctx, setId, dbUser.id);
@@ -334,7 +328,6 @@ export async function handleGoalCallback(ctx: Context): Promise<void> {
 
     logAction(dbUser.id, telegramId, "goal_toggle", { goalId, isCompleted: goal.isCompleted });
 
-    // Refresh the goal set view
     await showGoalSet(ctx, goal.goalSetId, dbUser.id);
     return;
   }
@@ -390,7 +383,6 @@ export async function handleGoalPeriodCallback(ctx: Context): Promise<void> {
     throw err;
   }
 
-  // Create reminders if there's a deadline
   const reminderDates = calculateReminderDates(now, deadline);
   if (reminderDates.length > 0) {
     await createReminders(goalSet.id, reminderDates);
@@ -633,7 +625,6 @@ async function showGoalSet(ctx: Context, goalSetId: number, userId: number, offs
     `Прогресс: ${progress}\n` +
     `Видимость: ${visIcon}`;
 
-  // Goals list (paginated)
   const pageGoals = goals.slice(offset, offset + GOALS_PAGE_SIZE);
   const goalsText = pageGoals.length > 0
     ? "\n\n" + pageGoals.map((g) => formatGoalText(escapeMarkdown(g.text), g.isCompleted)).join("\n")
@@ -642,7 +633,6 @@ async function showGoalSet(ctx: Context, goalSetId: number, userId: number, offs
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
 
   if (isOwner) {
-    // Toggle completion buttons for incomplete goals
     const incomplete = pageGoals.filter((g) => !g.isCompleted);
     if (incomplete.length > 0) {
       for (const g of incomplete) {
@@ -654,7 +644,6 @@ async function showGoalSet(ctx: Context, goalSetId: number, userId: number, offs
       }
     }
 
-    // Completed goals — allow unchecking
     const completed = pageGoals.filter((g) => g.isCompleted);
     if (completed.length > 0) {
       for (const g of completed) {
@@ -676,7 +665,6 @@ async function showGoalSet(ctx: Context, goalSetId: number, userId: number, offs
     }
     if (navRow.length > 0) buttons.push(navRow);
 
-    // Action buttons
     buttons.push([
       Markup.button.callback("➕ Добавить цель", `goal_set_add:${goalSetId}`),
       Markup.button.callback(`👁 ${visIcon}`, `goal_set_vis:${goalSetId}`),

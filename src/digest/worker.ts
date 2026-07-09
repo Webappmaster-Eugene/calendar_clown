@@ -223,7 +223,6 @@ function formatDigestMessage(
   for (const item of items) {
     const addition = (current === header ? "" : "\n\n") + item;
     if (current.length + addition.length > TG_MAX_LENGTH) {
-      // Current message is full, push it and start a new one
       messages.push(current);
       current = item;
     } else {

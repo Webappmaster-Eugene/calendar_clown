@@ -8,12 +8,10 @@ import {
   countRubricsByUser,
   createRubric,
   deleteRubric,
-  toggleRubric,
   toggleRubricIsActive,
   updateRubric,
   addChannel,
   removeChannelById,
-  getChannelById,
   getChannelsByRubric,
   countChannelsByRubric,
   countTotalChannels,
@@ -23,13 +21,10 @@ import {
 } from "../digest/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { createLogger } from "../utils/logger.js";
 import type {
   DigestRubricDto,
   DigestChannelDto,
 } from "../shared/types.js";
-
-const log = createLogger("digest-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -47,9 +42,6 @@ async function requireDbUser(telegramId: number) {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get all rubrics for a user.
- */
 export async function getUserRubrics(telegramId: number): Promise<DigestRubricDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -72,34 +64,6 @@ export async function getUserRubrics(telegramId: number): Promise<DigestRubricDt
   return result;
 }
 
-/**
- * Get a single rubric by ID.
- */
-export async function getRubric(
-  telegramId: number,
-  rubricId: number
-): Promise<DigestRubricDto | null> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  const r = await getRubricByIdAndUser(rubricId, dbUser.id);
-  if (!r) return null;
-
-  const channelCount = await countChannelsByRubric(r.id);
-  return {
-    id: r.id,
-    name: r.name,
-    description: r.description,
-    emoji: r.emoji,
-    keywords: r.keywords,
-    isActive: r.isActive,
-    channelCount,
-    lastRunAt: null,
-  };
-}
-
-/**
- * Create a new rubric.
- */
 export async function createNewRubric(
   telegramId: number,
   params: { name: string; description?: string; emoji?: string; keywords?: string[] }
@@ -132,9 +96,6 @@ export async function createNewRubric(
   };
 }
 
-/**
- * Edit a rubric (partial update).
- */
 export async function editRubric(
   telegramId: number,
   rubricId: number,
@@ -143,14 +104,12 @@ export async function editRubric(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership
   const existing = await getRubricByIdAndUser(rubricId, dbUser.id);
   if (!existing) return null;
 
   const updated = await updateRubric(rubricId, updates);
   if (!updated) return null;
 
-  // Re-fetch to return the full updated DTO
   const rubric = await getRubricByIdAndUser(rubricId, dbUser.id);
   if (!rubric) return null;
 
@@ -167,9 +126,6 @@ export async function editRubric(
   };
 }
 
-/**
- * Delete a rubric.
- */
 export async function removeRubric(telegramId: number, rubricId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -202,9 +158,6 @@ export async function toggleRubricActive(
   };
 }
 
-/**
- * Get channels for a rubric.
- */
 export async function getRubricChannels(
   telegramId: number,
   rubricId: number
@@ -212,7 +165,6 @@ export async function getRubricChannels(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership
   const rubric = await getRubricByIdAndUser(rubricId, dbUser.id);
   if (!rubric) throw new Error("Рубрика не найдена.");
 
@@ -227,9 +179,6 @@ export async function getRubricChannels(
   }));
 }
 
-/**
- * Add a channel to a rubric.
- */
 export async function addChannelToRubric(
   telegramId: number,
   rubricId: number,
@@ -238,7 +187,6 @@ export async function addChannelToRubric(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership
   const rubric = await getRubricByIdAndUser(rubricId, dbUser.id);
   if (!rubric) throw new Error("Рубрика не найдена.");
 
@@ -263,9 +211,6 @@ export async function addChannelToRubric(
   };
 }
 
-/**
- * Remove a channel from a rubric.
- */
 export async function removeChannelFromRubric(
   telegramId: number,
   rubricId: number,
@@ -274,7 +219,6 @@ export async function removeChannelFromRubric(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify rubric ownership
   const rubric = await getRubricByIdAndUser(rubricId, dbUser.id);
   if (!rubric) throw new Error("Рубрика не найдена.");
 

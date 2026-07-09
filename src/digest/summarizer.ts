@@ -4,8 +4,11 @@
 
 import { OPENROUTER_URL, OPENROUTER_REFERER, DEEPSEEK_MODEL } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
+import { openRouterRequest } from "../utils/proxyAgent.js";
 
 const log = createLogger("digest");
+
+const SUMMARIZE_TIMEOUT_MS = 45_000;
 
 const SUMMARIZE_PROMPT = `Ты — помощник для создания дайджеста телеграм-каналов.
 Получаешь текст публикации из телеграм-канала.
@@ -37,7 +40,7 @@ export async function summarizePost(text: string): Promise<string | null> {
   const truncated = text.length > 2000 ? text.slice(0, 2000) + "..." : text;
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await openRouterRequest(OPENROUTER_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -52,6 +55,7 @@ export async function summarizePost(text: string): Promise<string | null> {
         ],
         max_tokens: 400,
       }),
+      timeoutMs: SUMMARIZE_TIMEOUT_MS,
     });
 
     if (!res.ok) {
@@ -114,7 +118,7 @@ export async function generateRubricMeta(
 {"emoji":"💻","keywords":["программирование","разработка","код","IT","технологии"]}`;
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await openRouterRequest(OPENROUTER_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -126,6 +130,7 @@ export async function generateRubricMeta(
         messages: [{ role: "user", content: prompt }],
         max_tokens: 200,
       }),
+      timeoutMs: SUMMARIZE_TIMEOUT_MS,
     });
 
     if (!res.ok) return { emoji: "📰", keywords: [] };

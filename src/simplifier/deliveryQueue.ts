@@ -82,7 +82,6 @@ async function doDeliver(bot: Telegraf, userId: number): Promise<void> {
     }
 
     if (item.status === "completed" && item.simplifiedText) {
-      // Delete status message, send result
       await deleteMessageSafe(bot, chatId, statusMessageId);
 
       const header = "🧹 *Результат упрощения:*\n\n";

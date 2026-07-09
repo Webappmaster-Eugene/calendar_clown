@@ -101,7 +101,6 @@ export async function handleVoiceInTranscribeMode(
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
-  // Resolve DB user
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) {
     await ctx.telegram.editMessageText(
@@ -139,7 +138,6 @@ export async function handleVoiceInTranscribeMode(
     await deleteTranscription(existing.id);
   }
 
-  // Download OGG file
   log.info(`Transcribe: downloading OGG for file ${voice.file_unique_id}`);
   let filePath: string;
   try {
@@ -166,14 +164,12 @@ export async function handleVoiceInTranscribeMode(
     return;
   }
 
-  // Extract forwarded message info
   const forwardedFromName = getForwardedFromName(ctx);
   const forwardedDate = getForwardedDate(ctx);
 
   // Get next sequence number for ordered delivery
   const sequenceNumber = ctx.message!.message_id;
 
-  // Save to DB
   log.info(`Transcribe: saving to DB for file ${voice.file_unique_id}`);
   let transcription;
   try {
@@ -207,7 +203,6 @@ export async function handleVoiceInTranscribeMode(
     return;
   }
 
-  // Enqueue BullMQ job
   log.info(`Transcribe: enqueueing job for transcription ${transcription.id}`);
   try {
     await addTranscribeJob({
@@ -242,7 +237,6 @@ export async function handleVoiceInTranscribeMode(
     forwarded: !!forwardedFromName,
   });
 
-  // Show queue position to the user
   try {
     const pendingCount = await countPendingForUser(dbUser.id);
     const durationStr = formatDuration(voice.duration);

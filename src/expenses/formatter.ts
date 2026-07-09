@@ -7,11 +7,6 @@ const RU_MONTHS = [
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
 
-const RU_MONTHS_GENITIVE = [
-  "Января", "Февраля", "Марта", "Апреля", "Мая", "Июня",
-  "Июля", "Августа", "Сентября", "Октября", "Ноября", "Декабря",
-];
-
 const RU_MONTHS_SHORT = [
   "Янв", "Фев", "Мар", "Апр", "Май", "Июн",
   "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек",
@@ -19,10 +14,6 @@ const RU_MONTHS_SHORT = [
 
 export function monthName(month: number): string {
   return RU_MONTHS[month - 1] ?? `Месяц ${month}`;
-}
-
-export function monthNameGenitive(month: number): string {
-  return RU_MONTHS_GENITIVE[month - 1] ?? `Месяц ${month}`;
 }
 
 export function monthNameShort(month: number): string {
@@ -39,7 +30,7 @@ export function formatMoneyShort(amount: number): string {
 
 export function formatComparisonReport(
   comparisons: MonthComparison[],
-  year1: number,
+  _year1: number,
   month1: number,
   year2: number,
   month2: number,

@@ -13,14 +13,11 @@ import {
 import { getQueueStatus } from "../transcribe/queue.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { createLogger } from "../utils/logger.js";
 import type {
   TranscriptionDto,
   TranscribeHistoryResponse,
   TranscribeQueueStatusDto,
 } from "../shared/types.js";
-
-const log = createLogger("transcribe-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -62,9 +59,6 @@ function transcriptionToDto(t: {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get transcription history with pagination.
- */
 export async function getHistory(
   telegramId: number,
   limit: number = 5,
@@ -84,9 +78,6 @@ export async function getHistory(
   };
 }
 
-/**
- * Get a single transcription by ID.
- */
 export async function getTranscription(
   telegramId: number,
   transcriptionId: number
@@ -98,9 +89,6 @@ export async function getTranscription(
   return transcriptionToDto(t);
 }
 
-/**
- * Delete a transcription.
- */
 export async function removeTranscription(
   telegramId: number,
   transcriptionId: number
@@ -110,9 +98,6 @@ export async function removeTranscription(
   return deleteTranscriptionForUser(transcriptionId, dbUser.id);
 }
 
-/**
- * Get pending transcriptions for user.
- */
 export async function getPending(telegramId: number): Promise<TranscriptionDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -120,18 +105,12 @@ export async function getPending(telegramId: number): Promise<TranscriptionDto[]
   return pending.map(transcriptionToDto);
 }
 
-/**
- * Clear user's pending/processing transcriptions.
- */
 export async function clearUserQueue(telegramId: number): Promise<number> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return markUserPendingAsFailed(dbUser.id, "Очищено пользователем");
 }
 
-/**
- * Get queue status (global counts by status).
- */
 export async function getQueueInfo(): Promise<TranscribeQueueStatusDto | null> {
   const status = await getQueueStatus();
   if (!status) return null;

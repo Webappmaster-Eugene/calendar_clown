@@ -18,14 +18,11 @@ import { SUMMARIZER_MODEL } from "../constants.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { createLogger } from "../utils/logger.js";
 import type {
   WorkplaceDto,
   WorkAchievementDto,
   SummaryDto,
 } from "../shared/types.js";
-
-const log = createLogger("summarizer-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -43,9 +40,6 @@ async function requireDbUser(telegramId: number) {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get all workplaces for a user.
- */
 export async function getUserWorkplaces(telegramId: number): Promise<WorkplaceDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -61,31 +55,6 @@ export async function getUserWorkplaces(telegramId: number): Promise<WorkplaceDt
   }));
 }
 
-/**
- * Get a single workplace by ID.
- */
-export async function getWorkplace(
-  telegramId: number,
-  workplaceId: number
-): Promise<WorkplaceDto | null> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  const w = await getWorkplaceById(workplaceId, dbUser.id);
-  if (!w) return null;
-
-  return {
-    id: w.id,
-    title: w.title,
-    company: w.company,
-    isActive: w.isActive,
-    achievementCount: w.achievementCount ?? 0,
-    createdAt: w.createdAt.toISOString(),
-  };
-}
-
-/**
- * Create a new workplace.
- */
 export async function createNewWorkplace(
   telegramId: number,
   title: string,
@@ -105,18 +74,12 @@ export async function createNewWorkplace(
   };
 }
 
-/**
- * Delete a workplace.
- */
 export async function removeWorkplace(telegramId: number, workplaceId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return deleteWorkplace(workplaceId, dbUser.id);
 }
 
-/**
- * Update workplace properties.
- */
 export async function editWorkplace(
   telegramId: number,
   workplaceId: number,
@@ -137,9 +100,6 @@ export async function editWorkplace(
   };
 }
 
-/**
- * Get achievements for a workplace with pagination.
- */
 export async function getWorkplaceAchievements(
   telegramId: number,
   workplaceId: number,
@@ -149,7 +109,6 @@ export async function getWorkplaceAchievements(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership
   const w = await getWorkplaceById(workplaceId, dbUser.id);
   if (!w) throw new Error("Место работы не найдено.");
 
@@ -163,9 +122,6 @@ export async function getWorkplaceAchievements(
   }));
 }
 
-/**
- * Add an achievement to a workplace.
- */
 export async function addAchievement(
   telegramId: number,
   workplaceId: number,
@@ -175,7 +131,6 @@ export async function addAchievement(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership
   const w = await getWorkplaceById(workplaceId, dbUser.id);
   if (!w) throw new Error("Место работы не найдено.");
 
@@ -189,9 +144,6 @@ export async function addAchievement(
   };
 }
 
-/**
- * Update achievement text.
- */
 export async function editAchievement(
   telegramId: number,
   achievementId: number,
@@ -211,17 +163,11 @@ export async function editAchievement(
   };
 }
 
-/**
- * Delete an achievement.
- */
 export async function removeAchievement(telegramId: number, achievementId: number): Promise<boolean> {
   requireDb();
   return deleteAchievement(achievementId);
 }
 
-/**
- * Generate an AI summary of all achievements for a workplace.
- */
 export async function generateSummary(
   telegramId: number,
   workplaceId: number

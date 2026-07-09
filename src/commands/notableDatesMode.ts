@@ -426,7 +426,6 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
     return await handleEditTextInput(ctx, telegramId, dbUser, pending, text);
   }
 
-  // action === "add"
   const parsed = parseNotableDateInput(text);
   if (!parsed) {
     // Keep pendingAction so user can retry without pressing "Добавить" again
@@ -750,14 +749,12 @@ export async function handleNotableDatesDocument(ctx: Context): Promise<void> {
   const doc = ctx.message && "document" in ctx.message ? ctx.message.document : null;
   if (!doc) return;
 
-  // Only accept CSV/text files
   const fileName = doc.file_name ?? "";
   if (!fileName.endsWith(".csv") && doc.mime_type !== "text/csv" && doc.mime_type !== "text/plain") {
     await ctx.reply("Пожалуйста, отправьте файл в формате CSV.");
     return;
   }
 
-  // Limit file size to 1 MB
   if (doc.file_size && doc.file_size > 1024 * 1024) {
     await ctx.reply("Файл слишком большой. Максимум 1 МБ.");
     return;
@@ -779,7 +776,6 @@ export async function handleNotableDatesDocument(ctx: Context): Promise<void> {
       return;
     }
 
-    // Skip header
     const dataLines = lines.slice(1);
     let imported = 0;
     let skipped = 0;
@@ -795,7 +791,6 @@ export async function handleNotableDatesDocument(ctx: Context): Promise<void> {
         const [subject, startDate] = parts;
         const description = parts.length >= 6 ? parts[5]?.trim() || null : null;
 
-        // Extract name and type
         const birthdayMatch = subject.match(/День рождения:\s*(.+)/);
         const anniversaryMatch = !birthdayMatch ? subject.match(/Годовщина\s+(.+)/i) : null;
 
@@ -821,7 +816,6 @@ export async function handleNotableDatesDocument(ctx: Context): Promise<void> {
           emoji = "📌";
         }
 
-        // Parse date MM/DD/YYYY
         const dateMatch = startDate.match(/^(\d{1,2})\/(\d{1,2})\/\d{4}$/);
         if (!dateMatch) {
           skipped++;

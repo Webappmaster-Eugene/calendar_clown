@@ -3,7 +3,6 @@
  * This is the single source of truth for mode access control.
  */
 import {
-  INDIVIDUAL_MODES as INDIVIDUAL_MODES_ARR,
   TRIBE_MODES as TRIBE_MODES_ARR,
   ADMIN_MODES as ADMIN_MODES_ARR,
 } from "./constants.js";
@@ -17,7 +16,6 @@ export interface UserMenuContext {
 }
 
 /** Set-versions of mode arrays for O(1) lookups in canAccessMode. */
-const INDIVIDUAL_MODES = new Set<string>(INDIVIDUAL_MODES_ARR);
 const TRIBE_MODES = new Set<string>(TRIBE_MODES_ARR);
 const ADMIN_MODES = new Set<string>(ADMIN_MODES_ARR);
 

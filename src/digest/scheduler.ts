@@ -10,7 +10,6 @@ import { logAction } from "../logging/actionLogger.js";
 import { getUsersWithActiveDigest } from "./repository.js";
 import { connectGramClient, disconnectGramClient, isDigestReady } from "./telegramClient.js";
 import { runDigestForUser } from "./worker.js";
-import { getUserByTelegramId } from "../expenses/repository.js";
 import { query } from "../db/connection.js";
 
 const log = createLogger("digest");
@@ -56,10 +55,8 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
   let usersCount = 0;
 
   try {
-    // Connect GramJS before processing
     await connectGramClient();
 
-    // Get all user IDs (DB internal) who have active rubrics with channels
     const dbUserIds = await getUsersWithActiveDigest();
     usersCount = dbUserIds.length;
     if (dbUserIds.length === 0) {
@@ -95,7 +92,6 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
   } catch (err) {
     log.error("Fatal digest error:", err);
   } finally {
-    // Disconnect GramJS after all digests are done
     await disconnectGramClient();
   }
 

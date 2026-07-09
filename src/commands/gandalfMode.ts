@@ -13,7 +13,6 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import {
   createCategory,
   getCategoriesByScope,
-  getCategoryById,
   deleteCategory,
   createEntry,
   getEntriesByCategory,
@@ -66,7 +65,6 @@ const optionalFieldStates = new Map<number, { entryId: number; field: "next_date
 // Track which entry field user is editing
 const editFieldStates = new Map<number, { entryId: number; field: "title" | "price" | "date" | "info" }>();
 
-/** Build scope object for the user. */
 function buildScope(dbUser: { id: number; tribeId: number | null }): GandalfScope {
   if (dbUser.tribeId) {
     return { type: "tribe", tribeId: dbUser.tribeId, userId: dbUser.id };
@@ -397,7 +395,6 @@ export async function handleGandalfEntryActionCallback(ctx: Context): Promise<vo
 
   const scope = buildScope(dbUser);
 
-  // View entry detail
   const viewMatch = data.match(/^gandalf_view:(\d+)$/);
   if (viewMatch) {
     const entryId = parseInt(viewMatch[1], 10);
@@ -426,7 +423,6 @@ export async function handleGandalfEntryActionCallback(ctx: Context): Promise<vo
     return;
   }
 
-  // Delete entry
   const delMatch = data.match(/^gandalf_del:(\d+)$/);
   if (delMatch) {
     const entryId = parseInt(delMatch[1], 10);
@@ -466,7 +462,6 @@ export async function handleGandalfFlagCallback(ctx: Context): Promise<void> {
   const emoji = flag === "important" ? "⭐" : "🔥";
   await ctx.answerCbQuery(`${emoji} Переключено`);
 
-  // Re-render entry
   const entry = await getEntryByIdScoped(entryId, scope);
   if (entry) {
     const files = await getFilesByEntry(entryId);
@@ -501,7 +496,6 @@ export async function handleGandalfVisibilityCallback(ctx: Context): Promise<voi
   const label = newVis === "private" ? "🔒 Приватная" : "🌐 Для трайба";
   await ctx.answerCbQuery(label);
 
-  // Re-render
   const entry = await getEntryByIdScoped(entryId, scope);
   if (entry) {
     const files = await getFilesByEntry(entryId);
@@ -640,7 +634,6 @@ export async function handleGandalfMoveToCallback(ctx: Context): Promise<void> {
 
 // ─── Entry Edit ─────────────────────────────────────────────────────────
 
-/** Helper to re-render entry detail after edit. */
 async function reRenderEntry(ctx: Context, entryId: number, scope: GandalfScope): Promise<void> {
   const entry = await getEntryByIdScoped(entryId, scope);
   if (!entry) return;
@@ -848,7 +841,6 @@ export async function handleGandalfStatsButton(ctx: Context): Promise<void> {
     [Markup.button.callback("📦 По категориям", "gandalf_stats:categories")],
     [Markup.button.callback("📅 По годам", "gandalf_stats:years")],
   ];
-  // User stats only for tribes
   if (dbUser.tribeId) {
     buttons.push([Markup.button.callback("👥 По участникам", "gandalf_stats:users")]);
   }
@@ -1019,7 +1011,6 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
         }
       }
       logAction(dbUser.id, telegramId, "gandalf_entry_edit", { entryId: editState.entryId, field: editState.field });
-      // Show updated entry
       await reRenderEntry(ctx, editState.entryId, scope);
     } catch (err) {
       log.error("Error updating gandalf entry field:", err);
@@ -1438,7 +1429,6 @@ function buildEntryButtons(entries: GandalfEntry[]) {
 function buildSingleEntryButtons(entry: GandalfEntry, filesCount: number, scope: GandalfScope) {
   const buttons: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
 
-  // Flag toggles
   const impLabel = entry.isImportant ? "⭐ Убрать важное" : "⭐ Важное";
   const urgLabel = entry.isUrgent ? "🔥 Убрать срочное" : "🔥 Срочное";
   buttons.push([
@@ -1459,7 +1449,6 @@ function buildSingleEntryButtons(entry: GandalfEntry, filesCount: number, scope:
     ]);
   }
 
-  // Edit buttons
   buttons.push([
     Markup.button.callback("✏️ Название", `gandalf_edit_title:${entry.id}`),
     Markup.button.callback("💰 Цена", `gandalf_edit_price:${entry.id}`),

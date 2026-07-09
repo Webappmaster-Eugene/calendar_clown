@@ -30,7 +30,6 @@ export function shouldFireNow(
   const currentMM = String(mskNow.getMinutes()).padStart(2, "0");
   const currentTime = `${currentHH}:${currentMM}`;
 
-  // Check endDate
   if (schedule.endDate) {
     const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
     if (todayStr > schedule.endDate) {
@@ -45,7 +44,6 @@ export function shouldFireNow(
     return false;
   }
 
-  // Check time
   if (!schedule.times.includes(currentTime)) {
     return false;
   }
@@ -80,7 +78,6 @@ export function formatScheduleDescription(schedule: ReminderSchedule): string {
 
   // Days
   const allWeekdays = [1, 2, 3, 4, 5];
-  const allDays = [1, 2, 3, 4, 5, 6, 7];
   const sorted = [...schedule.weekdays].sort((a, b) => a - b);
 
   if (sorted.length === 7) {
@@ -162,11 +159,4 @@ export function validateSchedule(schedule: ReminderSchedule): string | null {
   }
 
   return null;
-}
-
-/** Format reminder notification message. */
-export function formatReminderMessage(text: string, schedule: ReminderSchedule): string {
-  const scheduleDesc = formatScheduleDescription(schedule);
-  const endDateDesc = schedule.endDate ? `\n📆 До: ${formatEndDate(schedule.endDate)}` : "";
-  return `🔔 *Напоминание*\n\n${text}\n\n📅 ${scheduleDesc}${endDateDesc}`;
 }

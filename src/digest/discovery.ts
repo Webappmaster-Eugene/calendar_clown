@@ -82,7 +82,6 @@ export async function validateDiscoveredChannels(
 ): Promise<Array<{ username: string; mentionCount: number; title: string; subscriberCount: number }>> {
   const validated: Array<{ username: string; mentionCount: number; title: string; subscriberCount: number }> = [];
 
-  // Check top-25 candidates at most
   const toCheck = candidates.slice(0, 25);
 
   for (let i = 0; i < toCheck.length; i++) {

@@ -2,7 +2,7 @@
  * Expense business logic extracted from command handlers.
  * Used by both Telegraf bot handlers and REST API routes.
  */
-import { parseExpenseText, parseMultipleExpenses, getCategoriesList, getCategoriesListWithAliases } from "../expenses/parser.js";
+import { parseExpenseText, parseMultipleExpenses, getCategoriesListWithAliases } from "../expenses/parser.js";
 import {
   addExpense,
   ensureUser,
@@ -28,7 +28,14 @@ import {
   getTribeDefaultLimit,
   setEffectiveMonthLimit,
   getMonthlyCategoryTotalsForYear,
+  createCategory as repoCreateCategory,
+  updateCategory as repoUpdateCategory,
+  deactivateCategory as repoDeactivateCategory,
+  reassignExpensesCategory,
+  getCategoryById,
 } from "../expenses/repository.js";
+import { isBootstrapAdmin } from "../middleware/auth.js";
+import type { Category } from "../expenses/types.js";
 import {
   formatExpenseConfirmation,
   monthName,
@@ -40,14 +47,12 @@ import { createLogger } from "../utils/logger.js";
 import type {
   ExpenseDto,
   CategoryDto,
-  CategoryTotalDto,
-  UserTotalDto,
-  MonthComparisonDto,
   ExpenseReportDto,
   ExpenseDetailItemDto,
-  RecentExpenseDto,
   RecentExpensesResponse,
   ComparisonDrilldownDto,
+  CreateCategoryRequest,
+  UpdateCategoryRequest,
 } from "../shared/types.js";
 
 const log = createLogger("expense-service");
@@ -231,9 +236,6 @@ export async function addExpenseStructured(
   };
 }
 
-/**
- * Add multiple expenses from multi-line text.
- */
 export async function addMultipleExpenses(
   telegramId: number,
   username: string | null,
@@ -280,7 +282,6 @@ export async function addExpenseFromVoice(
 ): Promise<AddExpenseResult> {
   requireDb();
 
-  // Direct category lookup by name (no re-parsing through text pipeline)
   const categories = await getCategories();
   const normalizedName = categoryName.toLowerCase().trim();
   let cat = categories.find((c) => c.name.toLowerCase() === normalizedName);
@@ -292,7 +293,6 @@ export async function addExpenseFromVoice(
     );
   }
 
-  // Final fallback to "Другое"
   if (!cat) {
     cat = categories.find((c) => c.name === "Другое");
   }
@@ -447,9 +447,6 @@ export async function getMonthReport(
   };
 }
 
-/**
- * Get year report (monthly totals).
- */
 export async function getYearReport(
   telegramId: number,
   year: number
@@ -466,9 +463,6 @@ export async function getYearReport(
   return monthlyData;
 }
 
-/**
- * Generate Excel file for a month.
- */
 export async function generateExcel(
   telegramId: number,
   year: number,
@@ -540,9 +534,6 @@ export async function generateYearExcel(
   return { buffer, filename };
 }
 
-/**
- * Get last expense info for undo.
- */
 export async function getUndoInfo(telegramId: number): Promise<UndoInfo | null> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -564,9 +555,6 @@ export async function getUndoInfo(telegramId: number): Promise<UndoInfo | null> 
   };
 }
 
-/**
- * Confirm undo (delete) of an expense.
- */
 export async function undoExpense(telegramId: number, expenseId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -595,7 +583,6 @@ export async function editExpense(
     return null;
   }
 
-  // Nothing to update
   if (
     updates.amount === undefined &&
     updates.categoryId === undefined &&
@@ -627,14 +614,6 @@ export async function editExpense(
 }
 
 /**
- * Get expense category list (formatted string).
- */
-export async function getCategoriesListFormatted(): Promise<string> {
-  requireDb();
-  return getCategoriesList();
-}
-
-/**
  * Get expense category list with aliases for AI prompts.
  */
 export async function getCategoriesListWithAliasesFormatted(): Promise<string> {
@@ -642,23 +621,159 @@ export async function getCategoriesListWithAliasesFormatted(): Promise<string> {
   return getCategoriesListWithAliases();
 }
 
-/**
- * Get categories as DTOs.
- */
-export async function getCategoryDtos(): Promise<CategoryDto[]> {
-  requireDb();
-  const cats = await getCategories();
-  return cats.map((c) => ({
+/** Fallback category that must never be deleted (used by parsers when no match). */
+const FALLBACK_CATEGORY_NAME = "Другое";
+
+/** A category can be deleted only if it was user-created and is not the fallback. */
+function categoryCanDelete(c: Category): boolean {
+  return c.createdByUserId !== null && c.name !== FALLBACK_CATEGORY_NAME;
+}
+
+function toCategoryDto(c: Category): CategoryDto {
+  return {
     id: c.id,
     name: c.name,
     emoji: c.emoji,
     sortOrder: c.sortOrder,
-  }));
+    aliases: c.aliases,
+    description: c.description,
+    canDelete: categoryCanDelete(c),
+  };
 }
 
-/**
- * Get drilldown expenses for a category in a month.
- */
+/** Error with an associated HTTP status, thrown by category management. */
+export class CategoryServiceError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "CategoryServiceError";
+  }
+}
+
+function requireCategoryAdmin(telegramId: number): void {
+  if (!isBootstrapAdmin(telegramId)) {
+    throw new CategoryServiceError("Управление категориями доступно только администратору.", 403);
+  }
+}
+
+/** Normalize aliases: trim, drop empties, lowercase, dedupe. */
+function normalizeAliases(aliases?: string[]): string[] {
+  if (!aliases) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of aliases) {
+    const a = raw.trim().toLowerCase();
+    if (a && !seen.has(a)) {
+      seen.add(a);
+      result.push(a);
+    }
+  }
+  return result;
+}
+
+export async function getCategoryDtos(): Promise<CategoryDto[]> {
+  requireDb();
+  const cats = await getCategories();
+  return cats.map(toCategoryDto);
+}
+
+/** Create a new expense category (admin only). */
+export async function createCategoryFromRequest(
+  telegramId: number,
+  input: CreateCategoryRequest
+): Promise<CategoryDto> {
+  requireDb();
+  requireCategoryAdmin(telegramId);
+
+  const name = input.name?.trim();
+  if (!name) throw new CategoryServiceError("Название категории обязательно.", 400);
+
+  const dbUser = await requireDbUser(telegramId);
+
+  try {
+    const cat = await repoCreateCategory({
+      name,
+      emoji: input.emoji?.trim() || "📦",
+      aliases: normalizeAliases(input.aliases),
+      description: input.description?.trim() || null,
+      createdByUserId: dbUser.id,
+    });
+    return toCategoryDto(cat);
+  } catch (err) {
+    if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+      throw new CategoryServiceError(`Категория «${name}» уже существует.`, 409);
+    }
+    throw err;
+  }
+}
+
+/** Update an existing category (admin only). Built-in categories can be edited, not deleted. */
+export async function updateCategoryFromRequest(
+  telegramId: number,
+  categoryId: number,
+  input: UpdateCategoryRequest
+): Promise<CategoryDto> {
+  requireDb();
+  requireCategoryAdmin(telegramId);
+
+  const existing = await getCategoryById(categoryId);
+  if (!existing) throw new CategoryServiceError("Категория не найдена.", 404);
+
+  const updates: UpdateCategoryRequest = {};
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    if (!name) throw new CategoryServiceError("Название не может быть пустым.", 400);
+    updates.name = name;
+  }
+  if (input.emoji !== undefined) updates.emoji = input.emoji.trim() || "📦";
+  if (input.aliases !== undefined) updates.aliases = normalizeAliases(input.aliases);
+  if (input.description !== undefined) updates.description = input.description?.trim() || null;
+
+  try {
+    const cat = await repoUpdateCategory(categoryId, updates);
+    if (!cat) throw new CategoryServiceError("Категория не найдена.", 404);
+    return toCategoryDto(cat);
+  } catch (err) {
+    if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+      throw new CategoryServiceError("Категория с таким названием уже существует.", 409);
+    }
+    throw err;
+  }
+}
+
+/** Soft-delete (deactivate) a user-created category (admin only). */
+export async function deactivateCategoryFromRequest(
+  telegramId: number,
+  categoryId: number
+): Promise<boolean> {
+  requireDb();
+  requireCategoryAdmin(telegramId);
+
+  const existing = await getCategoryById(categoryId);
+  if (!existing) throw new CategoryServiceError("Категория не найдена.", 404);
+  if (!categoryCanDelete(existing)) {
+    throw new CategoryServiceError(
+      "Встроенные категории удалить нельзя (можно только редактировать).",
+      400
+    );
+  }
+
+  // Перед деактивацией переносим траты в «Другое», чтобы суммы не пропали из отчётов
+  // (getCategoryTotals фильтрует по is_active = true).
+  const fallback = (await getCategories()).find((c) => c.name === FALLBACK_CATEGORY_NAME);
+  if (fallback) {
+    await reassignExpensesCategory(categoryId, fallback.id);
+  } else {
+    log.warn(
+      "Fallback category '%s' not found; deactivating %d without reassigning expenses.",
+      FALLBACK_CATEGORY_NAME,
+      categoryId
+    );
+  }
+
+  const result = await repoDeactivateCategory(categoryId);
+  return result !== null;
+}
+
 export async function getCategoryDrilldown(
   telegramId: number,
   categoryId: number,

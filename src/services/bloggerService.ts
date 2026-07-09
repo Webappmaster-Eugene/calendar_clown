@@ -8,17 +8,14 @@ import {
   getChannelById,
   updateChannel,
   deleteChannel,
-  countChannelsByUser,
   createPost,
   getPostsByChannel,
-  getPostsByUser,
   getPostById,
   updatePostStatus,
   updatePostGenerated,
   deletePost,
   addSource,
   getSourcesByPost,
-  deleteSource,
   countSourcesByPost,
 } from "../blogger/repository.js";
 import type { BloggerChannel, BloggerPost, BloggerSource } from "../blogger/repository.js";
@@ -26,14 +23,11 @@ import { generatePost } from "../blogger/postGenerator.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { MAX_POST_SOURCES } from "../constants.js";
-import { createLogger } from "../utils/logger.js";
 import type {
   BloggerChannelDto,
   BloggerPostDto,
   BloggerSourceDto,
 } from "../shared/types.js";
-
-const log = createLogger("blogger-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -86,9 +80,6 @@ function sourceToDto(s: BloggerSource): BloggerSourceDto {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get all channels for a user.
- */
 export async function getUserChannels(telegramId: number): Promise<BloggerChannelDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -96,23 +87,6 @@ export async function getUserChannels(telegramId: number): Promise<BloggerChanne
   return channels.map(channelToDto);
 }
 
-/**
- * Get a single channel by ID.
- */
-export async function getChannel(
-  telegramId: number,
-  channelId: number
-): Promise<BloggerChannelDto | null> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  const c = await getChannelById(channelId, dbUser.id);
-  if (!c) return null;
-  return channelToDto(c);
-}
-
-/**
- * Create a new channel.
- */
 export async function createNewChannel(
   telegramId: number,
   params: { channelTitle: string; channelUsername?: string; nicheDescription?: string }
@@ -130,9 +104,6 @@ export async function createNewChannel(
   return channelToDto(c);
 }
 
-/**
- * Edit an existing channel.
- */
 export async function editChannel(
   telegramId: number,
   channelId: number,
@@ -145,18 +116,12 @@ export async function editChannel(
   return channelToDto(updated);
 }
 
-/**
- * Delete a channel.
- */
 export async function removeChannel(telegramId: number, channelId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return deleteChannel(channelId, dbUser.id);
 }
 
-/**
- * Get posts for a channel.
- */
 export async function getChannelPosts(
   telegramId: number,
   channelId: number,
@@ -174,23 +139,6 @@ export async function getChannelPosts(
   return posts.map(postToDto);
 }
 
-/**
- * Get all posts for a user.
- */
-export async function getUserPosts(
-  telegramId: number,
-  limit: number = 10,
-  offset: number = 0
-): Promise<BloggerPostDto[]> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  const posts = await getPostsByUser(dbUser.id, limit, offset);
-  return posts.map(postToDto);
-}
-
-/**
- * Create a new post (draft) for a channel.
- */
 export async function createNewPost(
   telegramId: number,
   channelId: number,
@@ -208,9 +156,6 @@ export async function createNewPost(
   return postToDto(post);
 }
 
-/**
- * Get a single post by ID.
- */
 export async function getPost(
   telegramId: number,
   postId: number
@@ -222,18 +167,12 @@ export async function getPost(
   return postToDto(p);
 }
 
-/**
- * Delete a post.
- */
 export async function removePost(telegramId: number, postId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return deletePost(postId, dbUser.id);
 }
 
-/**
- * Get sources for a post.
- */
 export async function getPostSources(
   telegramId: number,
   postId: number
@@ -249,9 +188,6 @@ export async function getPostSources(
   return sources.map(sourceToDto);
 }
 
-/**
- * Add a text source to a post.
- */
 export async function addTextSource(
   telegramId: number,
   postId: number,
@@ -274,9 +210,6 @@ export async function addTextSource(
   return sourceToDto(source);
 }
 
-/**
- * Generate post text from collected sources.
- */
 export async function generatePostText(
   telegramId: number,
   postId: number

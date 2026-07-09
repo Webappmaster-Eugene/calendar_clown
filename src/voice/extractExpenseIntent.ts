@@ -26,10 +26,17 @@ Rules:
 - If the user mentions a word matching an alias, use that alias's category name
 - "subcategory" is optional description text (what exactly was bought/paid for), null if not mentioned
 - "amount" is a positive number in rubles. Parse spoken numbers: "пять тысяч" = 5000, "двести" = 200, "полторы тысячи" = 1500
-- If the user mentions a category not in the list, pick the closest match. If no category seems close, use "Другое"
+- ALWAYS choose the MOST SPECIFIC category that fits what was actually bought. Read each category's description to decide.
+- "Другое" is a LAST RESORT only — use it ONLY when the expense genuinely fits no other category. Never use it as a shortcut when unsure; instead pick the closest specific category.
 - Only return {"type":"unknown"} if there is absolutely no amount mentioned AND the message is not about spending money
 - Only return {"type":"not_expense"} if the message is clearly about something completely unrelated to expenses (e.g. scheduling a meeting, asking a question)
-- When in doubt between "unknown" and "expense", prefer "expense" with category "Другое"
+- When in doubt between "unknown" and "expense", prefer "expense" and pick the closest specific category (NOT automatically "Другое")
+
+Disambiguation:
+- Маркетплейс — это КАНАЛ покупки, а не категория. Покупки на Ozon / Wildberries / WB классифицируй по СУТИ товара (продукты, детские товары, товары для дома, аптека и т.д.), а НЕ в общую категорию. "Подарки" — ТОЛЬКО если это подарок другому человеку.
+- Ремонт/стройка/мебель/инструменты для КВАРТИРЫ или ДОМА → "Ремонт и обустройство квартиры". Ремонт МАШИНЫ/авто → "Ремонт машины и эксплуатация"
+- Детские ВЕЩИ (одежда, игрушки, памперсы, коляска) → "Детские товары". Детский САД / СЕКЦИИ (услуги) → "Садик" или "Кружки и секции детей"
+- Хозтовары / бытовая химия / посуда / фикс прайс → "Товары для дома". ЕДА и продукты питания → "Продукты"
 
 Examples:
 - "аптека геморрой пять тысяч" → {"type":"expense","category":"Аптека","subcategory":"Геморрой","amount":5000}
@@ -39,7 +46,13 @@ Examples:
 - "массаж три тысячи" → {"type":"expense","category":"Массаж","subcategory":null,"amount":3000}
 - "такси пятьсот рублей" → {"type":"expense","category":"Такси","subcategory":null,"amount":500}
 - "обед пятьсот" → {"type":"expense","category":"Кафе, доставка, фастфуд","subcategory":"Обед","amount":500}
-- "заплатил за что-то две тысячи" → {"type":"expense","category":"Другое","subcategory":null,"amount":2000}`;
+- "стройматериалы пять тысяч" → {"type":"expense","category":"Ремонт и обустройство квартиры","subcategory":"Стройматериалы","amount":5000}
+- "детская одежда две тысячи" → {"type":"expense","category":"Детские товары","subcategory":"Одежда","amount":2000}
+- "фикс прайс средства для уборки полторы тысячи" → {"type":"expense","category":"Товары для дома","subcategory":"Средства для уборки","amount":1500}
+- "озон подгузники тысяча" → {"type":"expense","category":"Детские товары","subcategory":"Подгузники","amount":1000}
+- "вайлдберриз бытовая химия пятьсот" → {"type":"expense","category":"Товары для дома","subcategory":"Бытовая химия","amount":500}
+- "подарок жене духи три тысячи" → {"type":"expense","category":"Подарки","subcategory":"Духи жене","amount":3000}
+- "заплатил за что-то непонятное две тысячи" → {"type":"expense","category":"Другое","subcategory":null,"amount":2000}`;
 }
 
 export interface ExpenseVoiceResult {

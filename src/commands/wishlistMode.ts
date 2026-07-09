@@ -12,7 +12,6 @@ import { isDatabaseAvailable } from "../db/connection.js";
 import {
   createWishlist,
   getWishlistsByUser,
-  getWishlistsByTribe,
   getWishlistById,
   deleteWishlist,
   countWishlistsByUser,
@@ -409,7 +408,6 @@ export async function handleWlReserveCallback(ctx: Context): Promise<void> {
     logAction(dbUser.id, telegramId, "wishlist_item_reserve", { itemId });
     await ctx.answerCbQuery("\u2705 \u0412\u044B \u0437\u0430\u0431\u0440\u043E\u043D\u0438\u0440\u043E\u0432\u0430\u043B\u0438 \u044D\u0442\u043E\u0442 \u044D\u043B\u0435\u043C\u0435\u043D\u0442");
 
-    // Refresh item detail
     const item = await getItemById(itemId);
     if (item && dbUser.tribeId) {
       const wishlist = await getWishlistById(item.wishlistId, dbUser.tribeId);
@@ -447,7 +445,6 @@ export async function handleWlUnreserveCallback(ctx: Context): Promise<void> {
     logAction(dbUser.id, telegramId, "wishlist_item_unreserve", { itemId });
     await ctx.answerCbQuery("\u0411\u0440\u043E\u043D\u044C \u0441\u043D\u044F\u0442\u0430");
 
-    // Refresh item detail
     const item = await getItemById(itemId);
     if (item && dbUser.tribeId) {
       const wishlist = await getWishlistById(item.wishlistId, dbUser.tribeId);
@@ -711,7 +708,6 @@ async function showWishlistItems(
     buttons.push([Markup.button.callback("\u2795 \u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0436\u0435\u043B\u0430\u043D\u0438\u0435", `wl_add:${wishlistId}`)]);
   }
 
-  // Pagination
   const navButtons: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (offset > 0) {
     navButtons.push(Markup.button.callback("\u2B05\uFE0F \u041D\u0430\u0437\u0430\u0434", `wl_page:${wishlistId}:${offset - ITEMS_PAGE_SIZE}`));
@@ -798,7 +794,6 @@ function buildItemDetailButtons(
       Markup.button.callback("\u{1F5D1} \u0423\u0434\u0430\u043B\u0438\u0442\u044C", `wl_item_del:${item.id}`),
     ]);
   } else {
-    // Reservation buttons
     if (!item.isReserved) {
       buttons.push([
         Markup.button.callback("\u{1F381} \u0417\u0430\u0431\u0440\u043E\u043D\u0438\u0440\u043E\u0432\u0430\u0442\u044C", `wl_reserve:${item.id}`),

@@ -167,6 +167,5 @@ export async function generateDialogTitle(firstMessage: string, model?: string):
     return "Новый диалог";
   }
 
-  // Trim and limit to 200 chars
   return result.trim().slice(0, 200);
 }

@@ -107,33 +107,6 @@ export async function getWishlistById(wishlistId: number, tribeId: number): Prom
   return { ...mapWishlist(rows[0]), ownerName: rows[0].first_name };
 }
 
-export async function updateWishlist(
-  wishlistId: number,
-  userId: number,
-  updates: { name?: string; emoji?: string }
-): Promise<boolean> {
-  const sets: string[] = ["updated_at = NOW()"];
-  const params: unknown[] = [];
-  let idx = 1;
-
-  if (updates.name !== undefined) {
-    sets.push(`name = $${idx++}`);
-    params.push(updates.name);
-  }
-  if (updates.emoji !== undefined) {
-    sets.push(`emoji = $${idx++}`);
-    params.push(updates.emoji);
-  }
-
-  params.push(wishlistId, userId);
-
-  const { rowCount } = await query(
-    `UPDATE wishlists SET ${sets.join(", ")} WHERE id = $${idx++} AND user_id = $${idx} AND is_active = true`,
-    params
-  );
-  return (rowCount ?? 0) > 0;
-}
-
 export async function deleteWishlist(wishlistId: number, userId: number): Promise<boolean> {
   const { rowCount } = await query(
     "UPDATE wishlists SET is_active = false, updated_at = NOW() WHERE id = $1 AND user_id = $2",
@@ -269,19 +242,6 @@ export async function unreserveItem(itemId: number, userId: number): Promise<boo
     [itemId, userId]
   );
   return (rowCount ?? 0) > 0;
-}
-
-export async function getLatestItemByUser(wishlistId: number, userId: number): Promise<WishlistItem | null> {
-  const { rows } = await query<ItemRow>(
-    `SELECT wi.* FROM wishlist_items wi
-     JOIN wishlists w ON w.id = wi.wishlist_id
-     WHERE wi.wishlist_id = $1 AND w.user_id = $2
-     ORDER BY wi.created_at DESC
-     LIMIT 1`,
-    [wishlistId, userId]
-  );
-  if (rows.length === 0) return null;
-  return mapItem(rows[0]);
 }
 
 // ─── Files ──────────────────────────────────────────────────────────────

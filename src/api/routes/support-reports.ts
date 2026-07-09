@@ -23,9 +23,6 @@ app.post("/", async (c) => {
   }
 
   try {
-    // db imported from drizzle.ts singleton
-
-    // Find user id.
     const [user] = await db
       .select({ id: users.id, firstName: users.firstName })
       .from(users)
@@ -97,8 +94,6 @@ app.get("/admin", async (c) => {
   const status = c.req.query("status"); // "open" | "resolved" | undefined (all)
 
   try {
-    // db imported from drizzle.ts singleton
-
     let query = db
       .select({
         id: supportReports.id,
@@ -164,9 +159,6 @@ app.put("/admin/:id/respond", async (c) => {
   }
 
   try {
-    // db imported from drizzle.ts singleton
-
-    // Find admin user id.
     const [admin] = await db
       .select({ id: users.id })
       .from(users)
@@ -226,7 +218,6 @@ app.put("/admin/:id/resolve", async (c) => {
   const reportId = Number(c.req.param("id"));
 
   try {
-    // db imported from drizzle.ts singleton
     const [admin] = await db
       .select({ id: users.id })
       .from(users)

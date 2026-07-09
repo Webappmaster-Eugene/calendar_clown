@@ -103,7 +103,6 @@ export async function handleCancel(ctx: Context): Promise<void> {
       return;
     }
 
-    // Multiple events found — show list
     const listText = events.slice(0, 10).map((ev, i) => {
       const start = new Date(ev.start);
       const dateStr = start.toLocaleDateString("ru-RU", { dateStyle: "short", timeZone: TIMEZONE_MSK });

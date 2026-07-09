@@ -15,7 +15,6 @@ export async function handleBroadcastCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  // Answer callback query if triggered from inline button
   if (ctx.callbackQuery) {
     await ctx.answerCbQuery("📢 Царская почта");
   }

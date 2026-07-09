@@ -73,7 +73,6 @@ async function doDeliver(bot: Telegraf, userId: number): Promise<void> {
     }
 
     if (item.status === "completed" && item.transcript) {
-      // Send transcript and delete status message
       await sendTranscriptSafe(bot, chatId, item.transcript);
       await deleteMessageSafe(bot, chatId, statusMessageId);
       await markDelivered(item.id);

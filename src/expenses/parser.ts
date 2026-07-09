@@ -126,7 +126,7 @@ function extractAndRemoveAmount(text: string): AmountExtractionResult | null {
   return null;
 }
 
-interface CategoryMatch {
+export interface CategoryMatch {
   category: Category;
   matchedText: string;
   score: number;
@@ -134,8 +134,9 @@ interface CategoryMatch {
 
 /**
  * Find the best matching category using aliases and fuzzy prefix matching.
+ * A score >= 40 is considered a confident match (see parseExpenseText / bank-push ingest).
  */
-function findCategory(text: string, categories: Category[]): CategoryMatch | null {
+export function findCategory(text: string, categories: Category[]): CategoryMatch | null {
   const normalized = text.toLowerCase().trim();
   let bestMatch: CategoryMatch | null = null;
 
@@ -253,12 +254,15 @@ export async function getCategoriesList(): Promise<string> {
  */
 export async function getCategoriesListWithAliases(): Promise<string> {
   const categories = await getCategories();
-  return categories
-    .map((c) => {
-      const aliasStr = c.aliases.length > 0
-        ? ` (aliases: ${c.aliases.join(", ")})`
-        : "";
-      return `- ${c.name}${aliasStr}`;
-    })
-    .join("\n");
+  return categories.map(formatCategoryForPrompt).join("\n");
+}
+
+/**
+ * Format a single category for AI prompts, including its description and aliases.
+ * Format: "- Name — description (aliases: a, b)"
+ */
+export function formatCategoryForPrompt(c: Category): string {
+  const descStr = c.description ? ` — ${c.description}` : "";
+  const aliasStr = c.aliases.length > 0 ? ` (aliases: ${c.aliases.join(", ")})` : "";
+  return `- ${c.name}${descStr}${aliasStr}`;
 }

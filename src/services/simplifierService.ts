@@ -63,7 +63,6 @@ function toDto(s: {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/** Get simplification history with pagination. */
 export async function getHistory(
   telegramId: number,
   limit: number = 10,
@@ -83,7 +82,6 @@ export async function getHistory(
   };
 }
 
-/** Get a single simplification by ID. */
 export async function getSimplification(
   telegramId: number,
   simplificationId: number,
@@ -95,7 +93,6 @@ export async function getSimplification(
   return toDto(item);
 }
 
-/** Delete a simplification. */
 export async function removeSimplification(
   telegramId: number,
   simplificationId: number,

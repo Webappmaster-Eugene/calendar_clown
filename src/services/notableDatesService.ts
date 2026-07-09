@@ -16,10 +16,7 @@ import {
 import type { NotableDate } from "../notable-dates/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { createLogger } from "../utils/logger.js";
 import type { NotableDateDto } from "../shared/types.js";
-
-const log = createLogger("notable-dates-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -52,9 +49,6 @@ function dateToDto(d: NotableDate): NotableDateDto {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get all notable dates for the user's tribe.
- */
 export async function getAllDates(
   telegramId: number,
   month?: number
@@ -65,9 +59,6 @@ export async function getAllDates(
   return dates.map(dateToDto);
 }
 
-/**
- * Get notable dates with pagination.
- */
 export async function getDatesPaginated(
   telegramId: number,
   limit: number = 10,
@@ -85,9 +76,6 @@ export async function getDatesPaginated(
   return { dates: dates.map(dateToDto), total };
 }
 
-/**
- * Get upcoming notable dates (next N days).
- */
 export async function getUpcoming(
   telegramId: number,
   days: number = 14
@@ -98,9 +86,6 @@ export async function getUpcoming(
   return dates.map(dateToDto);
 }
 
-/**
- * Get a single notable date by ID.
- */
 export async function getDate(telegramId: number, dateId: number): Promise<NotableDateDto | null> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -109,9 +94,6 @@ export async function getDate(telegramId: number, dateId: number): Promise<Notab
   return dateToDto(date);
 }
 
-/**
- * Add a new notable date.
- */
 export async function createDate(
   telegramId: number,
   params: {
@@ -142,9 +124,6 @@ export async function createDate(
   return dateToDto(date);
 }
 
-/**
- * Update a notable date.
- */
 export async function editDate(
   telegramId: number,
   dateId: number,
@@ -157,18 +136,12 @@ export async function editDate(
   return dateToDto(updated);
 }
 
-/**
- * Remove a notable date.
- */
 export async function removeDate(telegramId: number, dateId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return removeNotableDate(dateId, dbUser.tribeId!);
 }
 
-/**
- * Toggle priority flag on a notable date.
- */
 export async function togglePriority(telegramId: number, dateId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -207,7 +180,7 @@ export async function importDatesFromCsv(
   const dbUser = await requireDbUser(telegramId);
 
   const lines = csvContent.split("\n").filter((l) => l.trim());
-  const dataLines = lines.slice(1); // Skip header
+  const dataLines = lines.slice(1);
 
   let imported = 0;
   let skipped = 0;

@@ -18,19 +18,14 @@ import {
   reserveItem,
   unreserveItem,
   getFilesByItem,
-  getTribeMembersWithWishlists,
 } from "../wishlist/repository.js";
 import type { WishlistItem } from "../wishlist/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { createLogger } from "../utils/logger.js";
 import type {
   WishlistDto,
   WishlistItemDto,
-  WishlistFileDto,
 } from "../shared/types.js";
-
-const log = createLogger("wishlist-service");
 
 const MAX_WISHLISTS_PER_USER = 5;
 
@@ -66,9 +61,6 @@ function itemToDto(item: WishlistItem, requesterId: number, files: Array<{ id: n
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get user's own wishlists.
- */
 export async function getUserWishlists(telegramId: number): Promise<WishlistDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -85,9 +77,6 @@ export async function getUserWishlists(telegramId: number): Promise<WishlistDto[
   }));
 }
 
-/**
- * Get tribe wishlists (all members).
- */
 export async function getTribeWishlists(telegramId: number): Promise<WishlistDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -106,9 +95,6 @@ export async function getTribeWishlists(telegramId: number): Promise<WishlistDto
   }));
 }
 
-/**
- * Create a new wishlist.
- */
 export async function createNewWishlist(
   telegramId: number,
   name: string,
@@ -136,18 +122,12 @@ export async function createNewWishlist(
   };
 }
 
-/**
- * Delete a wishlist.
- */
 export async function removeWishlist(telegramId: number, wishlistId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return deleteWishlist(wishlistId, dbUser.id);
 }
 
-/**
- * Get items in a wishlist with pagination.
- */
 export async function getWishlistItems(
   telegramId: number,
   wishlistId: number,
@@ -178,9 +158,6 @@ export async function getWishlistItems(
   return { items: dtos, total, wishlistName: wishlist.name };
 }
 
-/**
- * Add an item to a wishlist.
- */
 export async function addWishlistItem(
   telegramId: number,
   wishlistId: number,
@@ -234,26 +211,17 @@ export async function editWishlistItem(
   })));
 }
 
-/**
- * Delete an item from a wishlist.
- */
 export async function removeWishlistItem(telegramId: number, itemId: number): Promise<boolean> {
   requireDb();
   return deleteItem(itemId);
 }
 
-/**
- * Reserve an item.
- */
 export async function reserveWishlistItem(telegramId: number, itemId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return reserveItem(itemId, dbUser.id);
 }
 
-/**
- * Unreserve an item.
- */
 export async function unreserveWishlistItem(telegramId: number, itemId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);

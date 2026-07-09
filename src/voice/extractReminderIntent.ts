@@ -107,7 +107,6 @@ export async function extractReminderIntent(transcript: string): Promise<Reminde
 
     if (times.length === 0 || weekdays.length === 0) return { type: "unknown" };
 
-    // Normalize times to HH:MM
     const normalizedTimes = times.map((t) => {
       const parts = t.split(":");
       if (parts.length === 2) {

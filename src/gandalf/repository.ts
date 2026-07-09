@@ -288,17 +288,6 @@ export async function getEntriesByCategory(
   limit: number = 10,
   offset: number = 0
 ): Promise<GandalfEntry[]> {
-  const whereClause = tribeId != null
-    ? "e.tribe_id = $1 AND e.category_id = $2"
-    : "e.tribe_id IS NULL AND e.category_id = $2";
-  const params = tribeId != null
-    ? [tribeId, categoryId, limit, offset]
-    : [categoryId, limit, offset];
-  const limitIdx = tribeId != null ? "$3" : "$2";
-  const offsetIdx = tribeId != null ? "$4" : "$3";
-  const catIdx = tribeId != null ? "$2" : "$1";
-
-  // Rebuild for clarity
   if (tribeId != null) {
     const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
       `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
@@ -356,24 +345,6 @@ export async function getEntriesByScope(
      ORDER BY e.created_at DESC
      LIMIT $3 OFFSET $4`,
     [scope.tribeId, scope.userId, limit, offset]
-  );
-  return rows.map(mapEntryWithJoins);
-}
-
-export async function getEntriesByTribe(
-  tribeId: number,
-  limit: number = 10,
-  offset: number = 0
-): Promise<GandalfEntry[]> {
-  const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-    `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-     FROM gandalf_entries e
-     JOIN gandalf_categories c ON c.id = e.category_id
-     JOIN users u ON u.id = e.added_by_user_id
-     WHERE e.tribe_id = $1
-     ORDER BY e.created_at DESC
-     LIMIT $2 OFFSET $3`,
-    [tribeId, limit, offset]
   );
   return rows.map(mapEntryWithJoins);
 }
@@ -500,14 +471,6 @@ export async function countEntriesByCategory(tribeId: number | null, categoryId:
         "SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id IS NULL AND category_id = $1",
         [categoryId]
       );
-  return parseInt(rows[0].count, 10);
-}
-
-export async function countEntriesByTribe(tribeId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id = $1",
-    [tribeId]
-  );
   return parseInt(rows[0].count, 10);
 }
 
@@ -766,25 +729,6 @@ export async function getStatsByUser(tribeId: number, year?: number): Promise<Us
     totalEntries: parseInt(r.total_entries, 10),
     totalPrice: r.total_price ? parseFloat(r.total_price) : null,
   }));
-}
-
-export async function getTotalByTribe(tribeId: number, year?: number): Promise<{ totalEntries: number; totalPrice: number | null }> {
-  const yearFilter = year
-    ? "AND EXTRACT(YEAR FROM created_at) = $2"
-    : "";
-  const params: unknown[] = [tribeId];
-  if (year) params.push(year);
-
-  const { rows } = await query<{ total_entries: string; total_price: string | null }>(
-    `SELECT COUNT(*) AS total_entries, SUM(price) AS total_price
-     FROM gandalf_entries
-     WHERE tribe_id = $1 ${yearFilter}`,
-    params
-  );
-  return {
-    totalEntries: parseInt(rows[0].total_entries, 10),
-    totalPrice: rows[0].total_price ? parseFloat(rows[0].total_price) : null,
-  };
 }
 
 /** Get the latest entry for a user (for file attachment). */

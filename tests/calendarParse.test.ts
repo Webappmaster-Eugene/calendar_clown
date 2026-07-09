@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseEventText, parseDateTime } from "../src/calendar/parse.js";
+import { parseEventText } from "../src/calendar/parse.js";
 
 describe("parseEventText", () => {
   it("parses event with 'завтра в 15:00'", () => {
@@ -39,30 +39,6 @@ describe("parseEventText", () => {
     const result = parseEventText("Обед завтра в 12:00");
     if (result) {
       assert.ok(result.title.includes("Обед"), `Title should contain 'Обед', got: ${result.title}`);
-    }
-  });
-});
-
-describe("parseDateTime", () => {
-  it("parses date and time from text", () => {
-    const result = parseDateTime("завтра в 15:00");
-    assert.notEqual(result, null);
-    assert.ok(result!.start instanceof Date);
-    assert.ok(result!.end instanceof Date);
-  });
-
-  it("returns null for unparseable text", () => {
-    const result = parseDateTime("просто текст без даты и числа");
-    // chrono-node might or might not parse this — either null or a result is valid
-    // The key contract: it doesn't throw
-    assert.ok(result === null || result.start instanceof Date);
-  });
-
-  it("defaults end to start + 1 hour", () => {
-    const result = parseDateTime("завтра 10:00");
-    if (result) {
-      const diff = result.end.getTime() - result.start.getTime();
-      assert.equal(diff, 60 * 60 * 1000);
     }
   });
 });

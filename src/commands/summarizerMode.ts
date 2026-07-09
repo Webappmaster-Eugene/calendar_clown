@@ -71,7 +71,6 @@ export async function handleSummarizerCommand(ctx: Context): Promise<void> {
   await setUserMode(telegramId, "summarizer");
   await setModeMenuCommands(ctx, "summarizer");
 
-  // Clear any pending states
   creationStates.delete(telegramId);
   addingStates.delete(telegramId);
   editStates.delete(telegramId);

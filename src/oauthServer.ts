@@ -7,6 +7,8 @@ import type { WebAuthResult } from "./commands/digestAuth.js";
 import { createLogger } from "./utils/logger.js";
 import { createApiApp } from "./api/router.js";
 import { getPollHealth } from "./health/pollWatchdog.js";
+import { findUserByWebhookSecret } from "./expenses/bankPush/repository.js";
+import { ingestBankPush } from "./expenses/bankPush/ingest.js";
 
 const log = createLogger("oauth");
 
@@ -47,7 +49,6 @@ function serveStaticFile(pathname: string, res: http.ServerResponse): boolean {
   const relative = path.relative(WEBAPP_DIST, filePath);
   if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
 
-  // Try exact file first, then add index.html for directories
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
     const ext = path.extname(filePath);
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
@@ -111,6 +112,77 @@ function parsePathAndQuery(rawUrl: string): { pathname: string; searchParams: UR
   return { pathname: pathname || "/", searchParams: new URLSearchParams(search) };
 }
 
+// ── Bank push webhook ────────────────────────────────────────────────────────
+
+/** Simple in-memory sliding-window rate limit per webhook secret (native route, not Hono). */
+const bankWebhookHits = new Map<string, number[]>();
+const BANK_WEBHOOK_WINDOW_MS = 60_000;
+const BANK_WEBHOOK_MAX = 30;
+
+function bankWebhookRateLimited(secret: string): boolean {
+  const now = Date.now();
+  const hits = (bankWebhookHits.get(secret) ?? []).filter((t) => now - t < BANK_WEBHOOK_WINDOW_MS);
+  hits.push(now);
+  bankWebhookHits.set(secret, hits);
+  return hits.length > BANK_WEBHOOK_MAX;
+}
+
+/** Extract {title, text} from a webhook body (JSON {title,text} or raw text). */
+function parseBankWebhookBody(body: string): { title: string; text: string } {
+  const trimmed = body.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const json = JSON.parse(trimmed) as { title?: unknown; text?: unknown };
+      return {
+        title: typeof json.title === "string" ? json.title : "",
+        text: typeof json.text === "string" ? json.text : "",
+      };
+    } catch {
+      // fall through to raw
+    }
+  }
+  return { title: "", text: trimmed };
+}
+
+/**
+ * Handle POST /webhook/bank/<secret>. Always answers 200 for expected outcomes so the
+ * phone-side forwarder does not enter a retry storm; only truly unknown secrets get 404.
+ */
+async function handleBankWebhook(
+  secret: string,
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  if (bankWebhookRateLimited(secret)) {
+    sendJson(res, 429, { ok: false, error: "Too many requests" });
+    return;
+  }
+
+  const user = await findUserByWebhookSecret(secret);
+  if (!user) {
+    sendJson(res, 404, { ok: false, error: "Unknown webhook secret" });
+    return;
+  }
+
+  let body: string;
+  try {
+    body = await parseBody(req);
+  } catch {
+    sendJson(res, 413, { ok: false, error: "Payload too large" });
+    return;
+  }
+
+  const { title, text } = parseBankWebhookBody(body);
+  try {
+    const result = await ingestBankPush({ user, title, text });
+    sendJson(res, 200, { ok: true, status: result.status });
+  } catch (err) {
+    // Unexpected error — log, but still 200 so the forwarder doesn't hammer us for 24h.
+    log.error(`Bank webhook ingest error: ${err instanceof Error ? err.message : String(err)}`);
+    sendJson(res, 200, { ok: false, status: "error" });
+  }
+}
+
 export interface OAuthServerOptions {
   oauthRedirectUri?: string;
 }
@@ -140,7 +212,6 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
         const hostHeader = req.headers.host || `${host}:${port}`;
         const url = `${protocol}://${hostHeader}${req.url}`;
 
-        // Collect request body for non-GET methods
         let body: Buffer | undefined;
         if (req.method !== "GET" && req.method !== "HEAD") {
           body = await new Promise<Buffer>((resolve, reject) => {
@@ -173,14 +244,12 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
 
         const response = await fetch(request);
 
-        // Copy response headers
         response.headers.forEach((value, key) => {
           res.setHeader(key, value);
         });
         res.writeHead(response.status);
 
         if (response.body) {
-          // Stream the response
           const reader = response.body.getReader();
           const pump = async (): Promise<void> => {
             const { done, value } = await reader.read();
@@ -262,6 +331,18 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
       return;
     }
 
+    // Bank push webhook: POST /webhook/bank/<64-char hex secret>
+    const bankMatch = pathname.match(/^\/webhook\/bank\/([a-f0-9]{64})$/);
+    if (bankMatch) {
+      if (req.method !== "POST") {
+        res.writeHead(405);
+        res.end();
+        return;
+      }
+      await handleBankWebhook(bankMatch[1], req, res);
+      return;
+    }
+
     // ── Static files for Mini App (production) ───────────
     if (req.method === "GET" && serveStaticFile(pathname, res)) {
       return;
@@ -314,7 +395,7 @@ function mtprotoPageHtml(title: string, body: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${MTPROTO_STYLE}</style></head><body>${body}</body></html>`;
 }
 
-function mtprotoCodeFormHtml(token: string, error?: string): string {
+function mtprotoCodeFormHtml(_token: string, error?: string): string {
   const errorHtml = error ? `<p class="error">${escapeHtml(error)}</p>` : "";
   return mtprotoPageHtml("Ввод кода авторизации", `
     <h2>Введите код авторизации</h2>
@@ -329,7 +410,7 @@ function mtprotoCodeFormHtml(token: string, error?: string): string {
   `);
 }
 
-function mtprotoPasswordFormHtml(token: string, error?: string): string {
+function mtprotoPasswordFormHtml(_token: string, error?: string): string {
   const errorHtml = error ? `<p class="error">${escapeHtml(error)}</p>` : "";
   return mtprotoPageHtml("Пароль 2FA", `
     <h2>Введите пароль 2FA</h2>

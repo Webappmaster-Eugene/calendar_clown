@@ -7,7 +7,7 @@
 import { createHmac } from "crypto";
 import type { Context, Next } from "hono";
 import { createLogger } from "../utils/logger.js";
-import { getUserMenuContext, isBootstrapAdmin, canAccessMode } from "../middleware/auth.js";
+import { getUserMenuContext, isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { hasToken } from "../calendar/auth.js";
 import type { UserProfile, UserMode } from "../shared/types.js";
@@ -66,7 +66,6 @@ export function validateInitData(initDataRaw: string, botToken: string): InitDat
       return null;
     }
 
-    // Check expiry
     const authDateStr = params.get("auth_date");
     if (!authDateStr) return null;
     const authDate = parseInt(authDateStr, 10);
@@ -79,7 +78,6 @@ export function validateInitData(initDataRaw: string, botToken: string): InitDat
       }
     }
 
-    // Parse user
     const userStr = params.get("user");
     if (!userStr) return null;
 
@@ -143,7 +141,6 @@ export function apiAuthMiddleware() {
       const menuCtx = await getUserMenuContext(telegramId);
       if (menuCtx) {
         const calendarLinked = await hasToken(String(telegramId));
-        // Get current mode from DB
         const { query: dbQuery } = await import("../db/connection.js");
         const { rows } = await dbQuery<{ mode: string }>(
           "SELECT COALESCE(mode, 'calendar') AS mode FROM users WHERE telegram_id = $1",
@@ -162,6 +159,7 @@ export function apiAuthMiddleware() {
           tribeId: menuCtx.tribeId,
           tribeName: menuCtx.tribeName,
           hasCalendarLinked: calendarLinked,
+          isAdmin: isBootstrapAdmin(telegramId),
         };
       }
     }
@@ -180,6 +178,7 @@ export function apiAuthMiddleware() {
         tribeId: null,
         tribeName: null,
         hasCalendarLinked: calendarLinked,
+        isAdmin: true,
       };
     }
 
@@ -201,33 +200,6 @@ export function requireApproved() {
     if (profile.status !== "approved") {
       return c.json({ ok: false, error: "Account pending approval" }, 403);
     }
-    await next();
-  };
-}
-
-/**
- * Hono middleware: require specific mode access.
- * Must be used after apiAuthMiddleware.
- */
-export function requireModeAccess(mode: string) {
-  return async (c: Context<ApiEnv>, next: Next) => {
-    const profile = c.get("userProfile");
-    if (!profile) {
-      return c.json({ ok: false, error: "User not registered" }, 403);
-    }
-
-    const menuCtx = {
-      role: profile.role,
-      status: profile.status,
-      hasTribe: profile.hasTribe,
-      tribeId: profile.tribeId,
-      tribeName: profile.tribeName,
-    };
-
-    if (!canAccessMode(mode, menuCtx)) {
-      return c.json({ ok: false, error: `No access to mode: ${mode}` }, 403);
-    }
-
     await next();
   };
 }

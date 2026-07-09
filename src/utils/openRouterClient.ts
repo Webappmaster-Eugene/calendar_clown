@@ -1,4 +1,5 @@
 import { OPENROUTER_URL, OPENROUTER_REFERER } from "../constants.js";
+import { openRouterRequest, type OpenRouterHttpResponse } from "./proxyAgent.js";
 
 /**
  * Hard upper bound for any single non-streaming OpenRouter call. Without this, a
@@ -21,19 +22,19 @@ export type ContentPart =
 /** Message content: plain string or multimodal array. */
 export type MessageContent = string | ContentPart[];
 
-/** Run `fetch` with a hard AbortController-driven timeout. */
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+/** OpenRouter request with a hard timeout, normalizing the timeout error message. */
+async function fetchWithTimeout(
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: string },
+  timeoutMs: number,
+): Promise<OpenRouterHttpResponse> {
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await openRouterRequest(url, { ...init, timeoutMs });
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error(`OpenRouter request timed out after ${Math.round(timeoutMs / 1000)}s`);
     }
     throw err;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -157,7 +158,7 @@ export async function callOpenRouterStream(
     throw new Error("OPENROUTER_API_KEY is not set");
   }
 
-  const res = await fetch(OPENROUTER_URL, {
+  const res = await openRouterRequest(OPENROUTER_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -171,6 +172,8 @@ export async function callOpenRouterStream(
       ...(options.temperature != null ? { temperature: options.temperature } : {}),
       ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
     }),
+    timeoutMs: OPENROUTER_TIMEOUT_MS,
+    stream: true,
   });
 
   if (!res.ok) {
@@ -178,22 +181,18 @@ export async function callOpenRouterStream(
     throw new Error(`OpenRouter request failed: ${res.status} ${errText}`);
   }
 
-  if (!res.body) {
+  if (!res.stream) {
     throw new Error("No response body for streaming request");
   }
 
   let accumulated = "";
   let tokensUsed: number | null = null;
 
-  const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
+  for await (const chunk of res.stream) {
+    buffer += decoder.decode(chunk as Buffer, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
 
@@ -223,7 +222,6 @@ export async function callOpenRouterStream(
     }
   }
 
-  // Process remaining buffer
   if (buffer.trim().startsWith("data: ")) {
     const payload = buffer.trim().slice(6);
     if (payload !== "[DONE]") {

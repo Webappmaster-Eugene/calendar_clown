@@ -212,7 +212,6 @@ function toDto(row: {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/** Get analysis history with pagination. */
 export async function getHistory(
   telegramId: number,
   limit: number = 10,
@@ -232,7 +231,6 @@ export async function getHistory(
   };
 }
 
-/** Get a single analysis by ID. */
 export async function getAnalysis(
   telegramId: number,
   analysisId: number,
@@ -244,7 +242,6 @@ export async function getAnalysis(
   return toDto(item);
 }
 
-/** Delete an analysis. */
 export async function removeAnalysis(
   telegramId: number,
   analysisId: number,
@@ -265,7 +262,6 @@ export async function analyzePhoto(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Check daily limit
   const todayCount = await countAnalysesToday(dbUser.id);
   if (todayCount >= NUTRITIONIST_DAILY_LIMIT) {
     throw new Error(`Достигнут лимит анализов на сегодня (${NUTRITIONIST_DAILY_LIMIT}). Попробуйте завтра.`);
@@ -367,7 +363,6 @@ async function enrichItemsWithCatalogMatches(
   }
 }
 
-/** Get daily nutrition summary. */
 export async function getDailySummary(
   telegramId: number,
   date: string,

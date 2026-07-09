@@ -175,7 +175,6 @@ export async function handleAdminDataCallback(ctx: Context): Promise<void> {
   }
 
   try {
-    // Route by prefix
     if (data.startsWith("adm_tr:")) {
       await handleTranscriptions(ctx, data, telegramId);
     } else if (data.startsWith("adm_exp:")) {
@@ -1196,21 +1195,18 @@ async function showPaginatedList(
 
   const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
 
-  // Per-item action buttons
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
     const num = offset + i + 1;
     const row: Array<ReturnType<typeof Markup.button.callback>> = [
       Markup.button.callback(`🗑 #${num}`, `${prefix}:del:${id}`),
     ];
-    // Add edit button for modes that support it
     if (prefix === "adm_exp" || prefix === "adm_note" || prefix === "adm_gand" || prefix === "adm_dig") {
       row.push(Markup.button.callback(`✏️ #${num}`, `${prefix}:edit:${id}`));
     }
     rows.push(row);
   }
 
-  // Pagination
   const paginationRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (offset > 0) {
     paginationRow.push(Markup.button.callback("⬅️ Назад", `${prefix}:list:${offset - PAGE_SIZE}`));

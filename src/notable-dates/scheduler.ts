@@ -69,14 +69,12 @@ async function sendNotableDateReminders(bot: Telegraf): Promise<void> {
 
   log.info(`Checking notable dates for ${day}.${month} + advance reminders`);
 
-  // Get all tribes
   const { rows: tribes } = await query<{ id: number }>("SELECT id FROM tribes");
 
   for (const tribe of tribes) {
     try {
       const messages: string[] = [];
 
-      // Today's dates
       const todayDates = await getDatesByMonthDay(tribe.id, month, day);
       if (todayDates.length > 0) {
         const todayMsg = formatDayReminders(todayDates);

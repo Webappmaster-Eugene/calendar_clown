@@ -2,7 +2,7 @@ import type { Context } from "telegraf";
 import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
 import { Markup } from "telegraf";
-import { createEvent, deleteEvent, deleteRecurringEvent, searchEvents, listEvents, NoCalendarLinkedError } from "../calendar/client.js";
+import { createEvent, deleteEvent, searchEvents, listEvents, NoCalendarLinkedError } from "../calendar/client.js";
 import { extractCalendarEvents } from "../calendar/extractViaOpenRouter.js";
 import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
@@ -60,7 +60,6 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
 
   const statusMsg = await ctx.reply("Обрабатываю голосовое…");
 
-  // Check modes that don't need voice processing
   const telegramId = ctx.from?.id;
   logAction(null, telegramId ?? 0, "voice_message_received", { duration: voice.duration });
   if (telegramId != null && await isWishlistMode(telegramId)) {
@@ -127,6 +126,8 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
       const currentMode = await getUserMode(telegramId);
       if (currentMode === "expenses") {
         sttContext = "expense";
+      } else if (currentMode === "tasks") {
+        sttContext = "tasks";
       } else if (currentMode !== "calendar") {
         sttContext = "general";
       }
@@ -146,73 +147,61 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
       return;
     }
 
-    // Neuro (AI chat) mode — send transcript to AI
     if (telegramId != null && await isNeuroMode(telegramId)) {
       await handleNeuroVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // Gandalf (База знаний) mode — extract structured entry from voice
     if (telegramId != null && await isGandalfMode(telegramId)) {
       await handleGandalfVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // OSINT mode — search from voice transcript
     if (telegramId != null && await isOsintMode(telegramId)) {
       await handleOsintVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // Goals mode — add goal from voice
     if (telegramId != null && await isGoalsMode(telegramId)) {
       await handleGoalsVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // Tasks mode — add task from voice
     if (telegramId != null && await isTasksMode(telegramId)) {
       await handleTasksVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // Reminders mode — create/manage reminders from voice
     if (telegramId != null && await isRemindersMode(telegramId)) {
       await handleRemindersVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // Summarizer mode — add achievement from voice
     if (telegramId != null && await isSummarizerMode(telegramId)) {
       await handleSummarizerVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // Simplifier mode — add transcribed text to buffer
     if (telegramId != null && await isSimplifierMode(telegramId)) {
       await handleSimplifierVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // Blogger mode — add source from voice
     if (telegramId != null && await isBloggerMode(telegramId)) {
       await handleBloggerVoice(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // If in expense mode, try expense extraction first
     if (telegramId != null && await isExpenseMode(telegramId)) {
       await handleVoiceInExpenseMode(ctx, transcript, statusMsg.message_id);
       return;
     }
 
-    // Broadcast mode — send transcribed text to all tribe members
     if (telegramId != null && await isBroadcastMode(telegramId) && isBootstrapAdmin(telegramId)) {
       await handleVoiceInBroadcastMode(ctx, transcript, statusMsg.message_id, telegramId);
       return;
     }
 
-    // Calendar mode — existing logic
     await handleVoiceInCalendarMode(ctx, transcript, statusMsg.message_id, userId);
   } catch (err) {
     if (filePath) await unlink(filePath).catch(() => {});

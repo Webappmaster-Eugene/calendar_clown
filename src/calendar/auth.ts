@@ -1,12 +1,10 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { dirname } from "path";
-import { fileURLToPath } from "url";
 import { createHmac, timingSafeEqual } from "crypto";
 import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
 
 const SCOPES = ["https://www.googleapis.com/auth/calendar"];
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOKENS_DIR = "./data/tokens";
 
 /** Thrown when the user has not linked a calendar yet. */

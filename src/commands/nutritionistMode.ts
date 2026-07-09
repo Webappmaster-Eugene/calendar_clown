@@ -292,7 +292,7 @@ export async function handleNutritionistPhoto(ctx: Context): Promise<void> {
   if (!ctx.message || !("photo" in ctx.message) || !ctx.message.photo?.length) return;
 
   const photos = ctx.message.photo;
-  const photo = photos[photos.length - 1]; // Largest resolution
+  const photo = photos[photos.length - 1];
 
   // Check photo file size (Telegram photos can be up to 20MB)
   const fileSize = photo.file_size ?? 0;
@@ -307,7 +307,6 @@ export async function handleNutritionistPhoto(ctx: Context): Promise<void> {
   const statusMsg = await ctx.reply("🔍 Анализирую еду на фото...");
 
   try {
-    // Download photo
     const link = await ctx.telegram.getFileLink(photo.file_id);
     const res = await telegramFetch(link.toString());
     if (!res.ok) throw new Error(`Не удалось скачать фото: ${res.status}`);
@@ -315,7 +314,6 @@ export async function handleNutritionistPhoto(ctx: Context): Promise<void> {
     const buffer = Buffer.from(await res.arrayBuffer());
     const base64 = buffer.toString("base64");
 
-    // Analyze
     const result = await analyzePhoto(
       telegramId,
       base64,
@@ -324,12 +322,10 @@ export async function handleNutritionistPhoto(ctx: Context): Promise<void> {
       caption,
     );
 
-    // Delete status message
     try {
       await ctx.telegram.deleteMessage(ctx.chat!.id, statusMsg.message_id);
     } catch { /* ignore */ }
 
-    // Send result
     if (result.status === "failed") {
       await ctx.reply(`❌ ${result.errorMessage ?? "Ошибка при анализе."}`);
       return;
@@ -344,7 +340,6 @@ export async function handleNutritionistPhoto(ctx: Context): Promise<void> {
     const text = formatAnalysisMessage(result);
     await safeReplyMarkdown(ctx, text);
 
-    // Show daily summary inline
     const today = new Date().toLocaleDateString("sv-SE", { timeZone: TIMEZONE_MSK });
     const daily = await getDailySummary(telegramId, today);
     if (daily.mealsCount > 1) {
@@ -380,7 +375,6 @@ export async function handleNutritionistDocument(ctx: Context): Promise<void> {
   const doc = ctx.message.document;
   const mimeType = doc.mime_type ?? "";
 
-  // Only process image documents
   if (!mimeType.startsWith("image/")) return;
 
   const fileSize = doc.file_size ?? 0;
@@ -571,7 +565,6 @@ export async function handleNutritionistCallback(ctx: Context): Promise<void> {
     if (handled) return;
   }
 
-  // Pagination: nutri_hist:<offset>
   const histMatch = data.match(/^nutri_hist:(\d+)$/);
   if (histMatch) {
     const offset = parseInt(histMatch[1], 10);
@@ -584,7 +577,6 @@ export async function handleNutritionistCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // Full view: nutri_full:<id>
   const fullMatch = data.match(/^nutri_full:(\d+)$/);
   if (fullMatch) {
     const id = parseInt(fullMatch[1], 10);
@@ -604,7 +596,6 @@ export async function handleNutritionistCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // Delete confirm: nutri_del:<id>
   const delMatch = data.match(/^nutri_del:(\d+)$/);
   if (delMatch) {
     const id = parseInt(delMatch[1], 10);
@@ -621,7 +612,6 @@ export async function handleNutritionistCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // Delete yes: nutri_del_yes:<id>
   const delYesMatch = data.match(/^nutri_del_yes:(\d+)$/);
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
@@ -809,7 +799,6 @@ export async function handleNutritionistProductsButton(ctx: Context): Promise<vo
  * Returns true if the callback was consumed.
  */
 async function handleProductCatalogCallback(ctx: Context, data: string, telegramId: number): Promise<boolean> {
-  // List page: nutri_prod:<offset>
   const listMatch = data.match(/^nutri_prod:(\d+)$/);
   if (listMatch) {
     const offset = parseInt(listMatch[1], 10);
@@ -1597,7 +1586,6 @@ function formatCalculatorTotals(state: CalculatorState): string {
     );
   }
 
-  // Calculate totals
   let totalWeight = 0, totalCal = 0, totalP = 0, totalF = 0, totalC = 0;
   for (const item of state.items) {
     const factor = item.weightG / 100;
@@ -1650,13 +1638,11 @@ function buildCalcTotalsInlineKeyboard(state: CalculatorState) {
   }
   if (deleteRow.length > 0) rows.push(deleteRow);
 
-  // Settings row
   rows.push([
     Markup.button.callback("📋 Название", "nutri_calc_name"),
     Markup.button.callback("🔢 Порции", "nutri_calc_servings"),
   ]);
 
-  // Clear row
   rows.push([Markup.button.callback("🔄 Очистить всё", "nutri_calc_clear")]);
 
   return rows;
@@ -1718,7 +1704,6 @@ async function sendCalcProductPicker(
 // ─── Calculator: Callbacks ──────────────────────────────────────
 
 async function handleCalculatorCallback(ctx: Context, data: string, telegramId: number): Promise<boolean> {
-  // Pick product: nutri_calc_pick:<id>
   const pickMatch = data.match(/^nutri_calc_pick:(\d+)$/);
   if (pickMatch) {
     const productId = parseInt(pickMatch[1], 10);
@@ -1748,7 +1733,6 @@ async function handleCalculatorCallback(ctx: Context, data: string, telegramId: 
     return true;
   }
 
-  // Pagination: nutri_calc_page:<offset>
   const pageMatch = data.match(/^nutri_calc_page:(\d+)$/);
   if (pageMatch) {
     const offset = parseInt(pageMatch[1], 10);
@@ -1761,7 +1745,6 @@ async function handleCalculatorCallback(ctx: Context, data: string, telegramId: 
     return true;
   }
 
-  // Remove item: nutri_calc_remove:<index>
   const removeMatch = data.match(/^nutri_calc_remove:(\d+)$/);
   if (removeMatch) {
     const idx = parseInt(removeMatch[1], 10);
@@ -1786,7 +1769,6 @@ async function handleCalculatorCallback(ctx: Context, data: string, telegramId: 
     return true;
   }
 
-  // Clear all: nutri_calc_clear
   if (data === "nutri_calc_clear") {
     const state = calculatorStates.get(telegramId);
     if (state) {
@@ -1802,7 +1784,6 @@ async function handleCalculatorCallback(ctx: Context, data: string, telegramId: 
     return true;
   }
 
-  // Set meal name prompt: nutri_calc_name
   if (data === "nutri_calc_name") {
     const state = getOrCreateCalculatorState(telegramId);
     state.addingItem = null;
@@ -1816,7 +1797,6 @@ async function handleCalculatorCallback(ctx: Context, data: string, telegramId: 
     return true;
   }
 
-  // Set servings prompt: nutri_calc_servings
   if (data === "nutri_calc_servings") {
     const state = getOrCreateCalculatorState(telegramId);
     state.addingItem = null;
@@ -1830,7 +1810,6 @@ async function handleCalculatorCallback(ctx: Context, data: string, telegramId: 
     return true;
   }
 
-  // Cancel picker: nutri_calc_cancel
   if (data === "nutri_calc_cancel") {
     await ctx.answerCbQuery("Отменено");
     await ctx.editMessageText("❌ Выбор из каталога отменён.");

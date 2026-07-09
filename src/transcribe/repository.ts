@@ -33,17 +33,6 @@ export async function createTranscription(
   return mapRow(rows[0]);
 }
 
-/** Check if a transcription already exists for a given file (deduplication). */
-export async function transcriptionExists(
-  telegramFileUniqueId: string
-): Promise<boolean> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM voice_transcriptions WHERE telegram_file_unique_id = $1",
-    [telegramFileUniqueId]
-  );
-  return parseInt(rows[0].count, 10) > 0;
-}
-
 /** Update transcription status to 'processing'. */
 export async function markProcessing(transcriptionId: number): Promise<void> {
   await query(
@@ -79,18 +68,6 @@ export async function markFailed(
   );
 }
 
-/** Get transcription by ID. */
-export async function getTranscriptionById(
-  transcriptionId: number
-): Promise<VoiceTranscription | null> {
-  const { rows } = await query<TranscriptionRow>(
-    "SELECT * FROM voice_transcriptions WHERE id = $1",
-    [transcriptionId]
-  );
-  if (rows.length === 0) return null;
-  return mapRow(rows[0]);
-}
-
 /** Get transcription by ID with user ownership check. */
 export async function getTranscriptionByIdForUser(
   transcriptionId: number,
@@ -111,21 +88,6 @@ export async function countPendingForUser(userId: number): Promise<number> {
     [userId]
   );
   return parseInt(rows[0].count, 10);
-}
-
-/** Get recent completed transcriptions for a user (most recent first). */
-export async function getRecentTranscriptions(
-  userId: number,
-  limit: number = 10
-): Promise<VoiceTranscription[]> {
-  const { rows } = await query<TranscriptionRow>(
-    `SELECT * FROM voice_transcriptions
-     WHERE user_id = $1 AND status = 'completed'
-     ORDER BY transcribed_at DESC
-     LIMIT $2`,
-    [userId, limit]
-  );
-  return rows.map(mapRow);
 }
 
 /** Count total completed transcriptions for a user. */
@@ -229,15 +191,6 @@ export async function deleteTranscriptionForUser(id: number, userId: number): Pr
     [id, userId]
   );
   return (rowCount ?? 0) > 0;
-}
-
-/** Delete all completed transcriptions for a user. */
-export async function deleteAllTranscriptionsForUser(userId: number): Promise<number> {
-  const { rowCount } = await query(
-    "DELETE FROM voice_transcriptions WHERE user_id = $1 AND status = 'completed'",
-    [userId]
-  );
-  return rowCount ?? 0;
 }
 
 /** Admin: delete ALL transcriptions across all users. */

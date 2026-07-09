@@ -167,9 +167,6 @@ export async function createEventFromIntent(
   return results;
 }
 
-/**
- * Get today's events.
- */
 export async function getEventsToday(userId: string): Promise<CalendarEventDto[]> {
   const now = new Date();
   const start = new Date(now);
@@ -181,9 +178,6 @@ export async function getEventsToday(userId: string): Promise<CalendarEventDto[]
   return events.map(toDto);
 }
 
-/**
- * Get this week's events (next 7 days).
- */
 export async function getEventsWeek(userId: string): Promise<CalendarEventDto[]> {
   const now = new Date();
   const start = new Date(now);
@@ -195,9 +189,6 @@ export async function getEventsWeek(userId: string): Promise<CalendarEventDto[]>
   return events.map(toDto);
 }
 
-/**
- * Cancel a single event by ID.
- */
 export async function cancelEventById(
   userId: string,
   telegramId: number,
@@ -216,9 +207,6 @@ export async function cancelEventById(
   }
 }
 
-/**
- * Cancel all recurring instances.
- */
 export async function cancelRecurringEvent(
   userId: string,
   recurringEventId: string
@@ -264,12 +252,10 @@ export async function searchAndCancelEvent(
     return { cancelled: true, event: toDto(ev) };
   }
 
-  // Multiple found
   return {
     cancelled: false,
     multipleFound: events.slice(0, 10).map(toDto),
   };
 }
 
-// Re-export errors for convenience
 export { NoCalendarLinkedError, PastDateError };

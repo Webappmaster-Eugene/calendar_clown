@@ -69,7 +69,6 @@ export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgres
   const { path: effectivePath, converted } = await compressToOggIfNeeded(filePath);
 
   try {
-    // Detect duration (0 if ffprobe unavailable)
     const duration = await getAudioDuration(effectivePath);
     const fileSizeBytes = await getFileSize(effectivePath);
 
@@ -87,18 +86,15 @@ export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgres
 
     const hasFFmpeg = await isFFmpegAvailable();
 
-    // Determine if chunking is needed
     const needsChunking =
       (effectiveDuration > MAX_CHUNK_DURATION_SEC) ||
       (fileSizeBytes > MAX_SINGLE_FILE_BYTES);
 
     if (!needsChunking) {
-      // File is small enough — send as a single request
       return await transcribeSingleFile(effectivePath, effectiveDuration, onProgress);
     }
 
     if (hasFFmpeg) {
-      // ffmpeg available — split into proper audio chunks
       return await transcribeWithChunking(effectivePath, effectiveDuration, onProgress);
     }
 
@@ -126,7 +122,6 @@ async function transcribeSingleFile(filePath: string, durationSec: number, onPro
   const durationStr = formatDuration(durationSec);
   log.info(`Single file transcription: duration=${durationSec.toFixed(1)}s, timeout=${timeoutMs}ms`);
 
-  // Wrap progress to show overall % for single-file mode
   const wrappedProgress: OnProgressCallback | undefined = onProgress
     ? (step: string) => {
         onProgress(`Транскрибация (${durationStr}) — ${step}`);

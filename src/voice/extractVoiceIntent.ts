@@ -204,7 +204,6 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
   }
 
   if (json.type === "calendar") {
-    // Parse single or multiple events
     const rawEvents: Array<Record<string, unknown>> = [];
     if (Array.isArray(json.events)) {
       rawEvents.push(...(json.events as Array<Record<string, unknown>>));
@@ -230,7 +229,6 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
     }
 
     if (events.length > 0) {
-      // Apply corrections to each event
       const correctedEvents = events.map((ev) => {
         const singleIntent: VoiceIntent = { type: "calendar", events: [ev] };
         const corrected = correctCalendarIntentWeekday(transcript, singleIntent);

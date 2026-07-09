@@ -9,7 +9,6 @@ import {
   createSearch,
 } from "../osint/repository.js";
 import { runOsintSearch } from "../osint/searchOrchestrator.js";
-import { parseSearchSubject } from "../osint/queryParser.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { OSINT_DAILY_LIMIT } from "../constants.js";
@@ -64,9 +63,6 @@ export async function getSearchHistory(
   };
 }
 
-/**
- * Get a single search result by ID.
- */
 export async function getSearch(
   telegramId: number,
   searchId: number
@@ -86,20 +82,6 @@ export async function getSearch(
     errorMessage: s.errorMessage,
     completedAt: s.completedAt?.toISOString() ?? null,
     createdAt: s.createdAt.toISOString(),
-  };
-}
-
-/**
- * Get today's search count and remaining quota.
- */
-export async function getSearchQuota(telegramId: number): Promise<{ used: number; limit: number; remaining: number }> {
-  requireDb();
-  const dbUser = await requireDbUser(telegramId);
-  const used = await countTodaySearches(dbUser.id);
-  return {
-    used,
-    limit: OSINT_DAILY_LIMIT,
-    remaining: Math.max(0, OSINT_DAILY_LIMIT - used),
   };
 }
 

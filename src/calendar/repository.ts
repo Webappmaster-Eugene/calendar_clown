@@ -56,39 +56,6 @@ export async function markEventDeleted(googleEventId: string, userId: number): P
   return (rowCount ?? 0) > 0;
 }
 
-/** Get calendar events for a user within a date range. */
-export async function getEventsByUser(
-  userId: number,
-  dateFrom: Date,
-  dateTo: Date
-): Promise<CalendarEventRecord[]> {
-  const { rows } = await query<{
-    id: number;
-    user_id: number;
-    tribe_id: number;
-    google_event_id: string | null;
-    summary: string;
-    description: string | null;
-    start_time: Date;
-    end_time: Date;
-    recurrence: string[] | null;
-    input_method: string;
-    status: string;
-    error_message: string | null;
-    html_link: string | null;
-    created_at: Date;
-    updated_at: Date | null;
-    deleted_at: Date | null;
-  }>(
-    `SELECT * FROM calendar_events
-     WHERE user_id = $1 AND start_time >= $2 AND start_time < $3
-     ORDER BY start_time`,
-    [userId, dateFrom.toISOString(), dateTo.toISOString()]
-  );
-
-  return rows.map(mapRow);
-}
-
 // ─── Admin functions ────────────────────────────────────────────────────
 
 /** Admin: get all calendar events paginated (all users). */

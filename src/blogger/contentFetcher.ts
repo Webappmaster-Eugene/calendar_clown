@@ -33,7 +33,6 @@ export async function fetchUrlContent(url: string): Promise<FetchedContent | nul
       return null;
     }
 
-    // Truncate very long content
     const maxLen = 10_000;
     return {
       title: title || url,
@@ -57,29 +56,24 @@ function extractTitle(html: string): string {
 
 /** Extract readable text from HTML, preferring <article>, then <main>, then <body>. */
 function extractReadableContent(html: string): string {
-  // Try <article> first
   let content = extractTag(html, "article");
   if (!content) content = extractTag(html, "main");
   if (!content) content = extractTag(html, "body");
   if (!content) return "";
 
-  // Remove scripts, styles, nav, header, footer
   content = content.replace(/<script[\s\S]*?<\/script>/gi, "");
   content = content.replace(/<style[\s\S]*?<\/style>/gi, "");
   content = content.replace(/<nav[\s\S]*?<\/nav>/gi, "");
   content = content.replace(/<header[\s\S]*?<\/header>/gi, "");
   content = content.replace(/<footer[\s\S]*?<\/footer>/gi, "");
 
-  // Convert <p>, <br>, <li>, headings to newlines
   content = content.replace(/<br\s*\/?>/gi, "\n");
   content = content.replace(/<\/p>/gi, "\n\n");
   content = content.replace(/<\/li>/gi, "\n");
   content = content.replace(/<\/h[1-6]>/gi, "\n\n");
 
-  // Strip remaining tags
   content = content.replace(/<[^>]+>/g, "");
 
-  // Decode entities and clean up whitespace
   content = decodeHtmlEntities(content);
   content = content.replace(/[ \t]+/g, " ");
   content = content.replace(/\n{3,}/g, "\n\n");

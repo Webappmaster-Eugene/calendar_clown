@@ -5,32 +5,21 @@
 import {
   addUserByTelegramId,
   removeUserByTelegramId,
-  listTribeUsers,
-  listUsersWithoutTribe,
-  listAllApprovedUsers,
-  getUserByTelegramId,
   approveUser,
   rejectUser,
-  listPendingUsers,
   setUserTribe,
   removeUserFromTribe,
-  listTribes,
-  createTribe,
-  getTribeName,
   updateTribe,
   deleteTribe,
 } from "../expenses/repository.js";
 import { query } from "../db/connection.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
-import { createLogger } from "../utils/logger.js";
 import type {
   AdminUserDto,
   TribeDto,
   AdminStatsDto,
 } from "../shared/types.js";
-
-const log = createLogger("admin-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -48,9 +37,6 @@ function requireAdmin(telegramId: number): void {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * List all approved users.
- */
 export async function listUsers(telegramId: number): Promise<AdminUserDto[]> {
   requireDb();
   requireAdmin(telegramId);
@@ -82,9 +68,6 @@ export async function listUsers(telegramId: number): Promise<AdminUserDto[]> {
   }));
 }
 
-/**
- * List pending users awaiting approval.
- */
 export async function getPendingUsers(telegramId: number): Promise<AdminUserDto[]> {
   requireDb();
   requireAdmin(telegramId);
@@ -114,27 +97,18 @@ export async function getPendingUsers(telegramId: number): Promise<AdminUserDto[
   }));
 }
 
-/**
- * Approve a pending user.
- */
 export async function approveUserById(telegramId: number, targetTelegramId: number): Promise<boolean> {
   requireDb();
   requireAdmin(telegramId);
   return approveUser(targetTelegramId);
 }
 
-/**
- * Reject a pending user.
- */
 export async function rejectUserById(telegramId: number, targetTelegramId: number): Promise<boolean> {
   requireDb();
   requireAdmin(telegramId);
   return rejectUser(targetTelegramId);
 }
 
-/**
- * Add a new user by telegram ID.
- */
 export async function addUser(telegramId: number, targetTelegramId: number): Promise<boolean> {
   requireDb();
   requireAdmin(telegramId);
@@ -142,9 +116,6 @@ export async function addUser(telegramId: number, targetTelegramId: number): Pro
   return result !== null;
 }
 
-/**
- * Remove a user by telegram ID.
- */
 export async function removeUser(telegramId: number, targetTelegramId: number): Promise<boolean> {
   requireDb();
   requireAdmin(telegramId);
@@ -159,9 +130,6 @@ export async function removeUser(telegramId: number, targetTelegramId: number): 
   return removeUserByTelegramId(targetTelegramId);
 }
 
-/**
- * Assign a user to a tribe.
- */
 export async function assignUserToTribe(
   telegramId: number,
   targetTelegramId: number,
@@ -172,9 +140,6 @@ export async function assignUserToTribe(
   return setUserTribe(targetTelegramId, tribeId);
 }
 
-/**
- * Remove a user from their tribe.
- */
 export async function removeUserTribe(
   telegramId: number,
   targetTelegramId: number
@@ -184,9 +149,6 @@ export async function removeUserTribe(
   return removeUserFromTribe(targetTelegramId);
 }
 
-/**
- * List all tribes.
- */
 export async function getTribes(telegramId: number): Promise<TribeDto[]> {
   requireDb();
   requireAdmin(telegramId);
@@ -207,9 +169,6 @@ export async function getTribes(telegramId: number): Promise<TribeDto[]> {
   }));
 }
 
-/**
- * Create a new tribe.
- */
 export async function createNewTribe(telegramId: number, name: string): Promise<TribeDto> {
   requireDb();
   requireAdmin(telegramId);
@@ -228,9 +187,6 @@ export async function createNewTribe(telegramId: number, name: string): Promise<
   };
 }
 
-/**
- * Update tribe settings.
- */
 export async function editTribe(
   telegramId: number,
   tribeId: number,
@@ -241,18 +197,12 @@ export async function editTribe(
   return updateTribe(tribeId, fields);
 }
 
-/**
- * Delete a tribe (only if no users assigned).
- */
 export async function removeTribe(telegramId: number, tribeId: number): Promise<boolean> {
   requireDb();
   requireAdmin(telegramId);
   return deleteTribe(tribeId);
 }
 
-/**
- * Get global statistics.
- */
 export async function getGlobalStats(telegramId: number): Promise<AdminStatsDto> {
   requireDb();
   requireAdmin(telegramId);

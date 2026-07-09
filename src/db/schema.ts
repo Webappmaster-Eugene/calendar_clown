@@ -44,10 +44,14 @@ export const users = pgTable(
       .references(() => tribes.id),
     activeDialogId: integer("active_dialog_id"),
     chatProvider: varchar("chat_provider", { length: 20 }).notNull().default("free"),
+    // Per-user secret for the bank push-notification webhook (/webhook/bank/<secret>).
+    // NULL until the user enables the integration; regenerable (revokes the old URL).
+    webhookSecret: varchar("webhook_secret", { length: 64 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("idx_users_telegram_id").on(table.telegramId),
+    uniqueIndex("idx_users_webhook_secret").on(table.webhookSecret),
     check("users_role_check", sql`${table.role} IN ('admin', 'user')`),
   ],
 );
@@ -59,8 +63,11 @@ export const categories = pgTable("categories", {
   name: varchar("name", { length: 255 }).notNull().unique(),
   emoji: varchar("emoji", { length: 10 }).notNull().default(""),
   aliases: text("aliases").array().notNull().default(sql`'{}'`),
+  description: varchar("description", { length: 500 }),
   sortOrder: integer("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
+  // NULL = встроенная категория (нельзя удалять); иначе id создавшего админа.
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
 });
 
 // ─── Expenses ────────────────────────────────────────────────────────────────
@@ -81,6 +88,12 @@ export const expenses = pgTable(
     subcategory: varchar("subcategory", { length: 500 }),
     amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
     inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
+    // Origin of the record. Complements input_method (which is limited to text/voice):
+    // 'text' | 'voice' | 'bank_push'. Used to distinguish auto-imported bank operations.
+    source: varchar("source", { length: 20 }).notNull().default("text"),
+    // Idempotency key for auto-imports (sha256 of tgId|amount|merchant|hour). NULL for
+    // manual entries. A partial unique index enforces one row per bank push.
+    dedupHash: varchar("dedup_hash", { length: 64 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }),
   },
@@ -88,11 +101,18 @@ export const expenses = pgTable(
     index("idx_expenses_tribe_created").on(table.tribeId, table.createdAt),
     index("idx_expenses_category").on(table.categoryId),
     index("idx_expenses_user_created").on(table.userId, table.createdAt),
+    uniqueIndex("idx_expenses_dedup_hash")
+      .on(table.dedupHash)
+      .where(sql`${table.dedupHash} IS NOT NULL`),
     check("expenses_amount_check", sql`${table.amount} > 0`),
     check("expenses_amount_range", sql`${table.amount} >= 1 AND ${table.amount} <= 10000000`),
     check(
       "expenses_input_method_check",
       sql`${table.inputMethod} IN ('text', 'voice')`,
+    ),
+    check(
+      "expenses_source_check",
+      sql`${table.source} IN ('text', 'voice', 'bank_push')`,
     ),
   ],
 );

@@ -24,7 +24,6 @@ const log = createLogger("worker");
  * The bot reference is needed to trigger ordered delivery via Telegram.
  */
 export function createTranscribeProcessor(bot: Telegraf) {
-  // Check ffmpeg on first load — logs a warning if not available
   isFFmpegAvailable().catch(() => {});
 
   return async function processTranscribeJob(
@@ -70,16 +69,12 @@ export function createTranscribeProcessor(bot: Telegraf) {
         chars: transcript.length,
       });
 
-      // Flush any pending progress update before delivery
       await reporter.flush();
 
-      // Update status message to indicate waiting for ordered delivery
       await editStatusSafe(bot, chatId, statusMessageId, "✅ Расшифровано, ожидает очереди...");
 
-      // Clean up OGG file after successful processing
       await unlink(filePath).catch(() => {});
 
-      // Trigger ordered delivery for this user
       deliverCompletedInOrder(bot, userId);
     } catch (err) {
       await reporter.flush();

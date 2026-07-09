@@ -64,6 +64,8 @@ export interface UserProfile {
   tribeId: number | null;
   tribeName: string | null;
   hasCalendarLinked: boolean;
+  /** true если пользователь — bootstrap-админ (ADMIN_TELEGRAM_ID). */
+  isAdmin: boolean;
 }
 
 // ─── Calendar ─────────────────────────────────────────────────
@@ -146,6 +148,24 @@ export interface CategoryDto {
   name: string;
   emoji: string;
   sortOrder: number;
+  aliases: string[];
+  description: string | null;
+  /** false для встроенных категорий и «Другое» — удалять нельзя. */
+  canDelete: boolean;
+}
+
+export interface CreateCategoryRequest {
+  name: string;
+  emoji?: string;
+  aliases?: string[];
+  description?: string | null;
+}
+
+export interface UpdateCategoryRequest {
+  name?: string;
+  emoji?: string;
+  aliases?: string[];
+  description?: string | null;
 }
 
 export interface ExpenseDto {

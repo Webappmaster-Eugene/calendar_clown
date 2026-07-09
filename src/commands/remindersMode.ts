@@ -7,7 +7,7 @@ import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
 import { ensureUser, getUserByTelegramId, listTribeUsers } from "../expenses/repository.js";
-import { isBootstrapAdmin, getUserMenuContext } from "../middleware/auth.js";
+import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import {
   createReminder,
@@ -19,7 +19,6 @@ import {
   updateReminderText,
   updateReminderSchedule,
   updateReminderSound,
-  getTribeReminders,
   getTribeUserReminders,
   addSubscriber,
   removeSubscriber,
@@ -86,7 +85,6 @@ export async function handleRemindersCommand(ctx: Context): Promise<void> {
   await setUserMode(telegramId, "reminders");
   await setModeMenuCommands(ctx, "reminders");
 
-  // Clear any pending states
   wizardStates.delete(telegramId);
   editStates.delete(telegramId);
 
@@ -124,7 +122,6 @@ export async function handleMyRemindersButton(ctx: Context): Promise<void> {
 
   const buttons = reminders.map((r) => {
     const status = r.isActive ? "⏰" : "⏸";
-    const schedDesc = formatScheduleDescription(r.schedule);
     const label = `${status} ${truncateText(r.text, 25)}`;
     return [Markup.button.callback(label, `rem_view:${r.id}`)];
   });
@@ -202,7 +199,6 @@ export async function handleReminderViewCallback(ctx: Context): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
 
-  // rem_view:<id> — show reminder details
   if (data.startsWith("rem_view:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     await showReminder(ctx, reminderId, dbUser.id);
@@ -221,7 +217,6 @@ export async function handleReminderActionCallback(ctx: Context): Promise<void> 
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
 
-  // rem_pause:<id> — toggle active
   if (data.startsWith("rem_pause:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     const updated = await toggleReminderActive(reminderId, dbUser.id);
@@ -235,7 +230,6 @@ export async function handleReminderActionCallback(ctx: Context): Promise<void> 
     return;
   }
 
-  // rem_del:<id> — delete
   if (data.startsWith("rem_del:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     const deleted = await deleteReminder(reminderId, dbUser.id);
@@ -248,7 +242,6 @@ export async function handleReminderActionCallback(ctx: Context): Promise<void> 
     return;
   }
 
-  // rem_confirm:<telegramId> — confirm creation
   if (data.startsWith("rem_confirm:")) {
     const targetTelegramId = parseInt(data.split(":")[1], 10);
     if (targetTelegramId !== telegramId) return;
@@ -256,7 +249,6 @@ export async function handleReminderActionCallback(ctx: Context): Promise<void> 
     return;
   }
 
-  // rem_cancel_create:<telegramId> — cancel creation
   if (data.startsWith("rem_cancel_create:")) {
     const targetTelegramId = parseInt(data.split(":")[1], 10);
     if (targetTelegramId !== telegramId) return;
@@ -277,7 +269,6 @@ export async function handleReminderEditCallback(ctx: Context): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
 
-  // rem_edit:<id> — show edit submenu
   if (data.startsWith("rem_edit:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     const reminder = await getReminderById(reminderId);
@@ -344,7 +335,6 @@ export async function handleReminderTribeCallback(ctx: Context): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser || !dbUser.tribeId) return;
 
-  // rem_tribe_user:<userId> — show user's reminders
   if (data.startsWith("rem_tribe_user:")) {
     const targetUserId = parseInt(data.split(":")[1], 10);
     const reminders = await getTribeUserReminders(targetUserId);
@@ -393,7 +383,6 @@ export async function handleReminderTribeCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // rem_sub:<reminderId> — subscribe
   if (data.startsWith("rem_sub:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     await addSubscriber(reminderId, dbUser.id);
@@ -416,7 +405,6 @@ export async function handleReminderTribeCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // rem_unsub:<reminderId> — unsubscribe
   if (data.startsWith("rem_unsub:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     await removeSubscriber(reminderId, dbUser.id);
@@ -479,7 +467,6 @@ export async function handleReminderSoundCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // rem_sound_set:<soundId> — select sound during wizard
   if (data.startsWith("rem_sound_set:")) {
     const soundId = parseInt(data.split(":")[1], 10);
     const state = wizardStates.get(telegramId);
@@ -498,7 +485,6 @@ export async function handleReminderSoundCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // rem_sound_none:<telegramId> — no sound during wizard
   if (data.startsWith("rem_sound_none:")) {
     const targetId = parseInt(data.split(":")[1], 10);
     if (targetId !== telegramId) return;
@@ -549,11 +535,9 @@ export async function handleReminderSoundCallback(ctx: Context): Promise<void> {
     const soundId = parseInt(parts[2], 10);
 
     if (soundId === 0) {
-      // Remove sound
       await updateReminderSound(reminderId, dbUser.id, null, false);
       logAction(dbUser.id, telegramId, "reminder_edit", { reminderId, field: "sound", soundId: null });
     } else {
-      // Set sound
       await updateReminderSound(reminderId, dbUser.id, soundId, true);
       logAction(dbUser.id, telegramId, "reminder_edit", { reminderId, field: "sound", soundId });
     }
@@ -572,13 +556,11 @@ export async function handleRemindersText(ctx: Context): Promise<boolean> {
   if (!ctx.message || !("text" in ctx.message)) return false;
   const text = ctx.message.text;
 
-  // Edit state — handle field editing
   const edit = editStates.get(telegramId);
   if (edit) {
     return await handleEditInput(ctx, telegramId, edit, text);
   }
 
-  // Creation wizard
   const state = wizardStates.get(telegramId);
   if (!state) return false;
 

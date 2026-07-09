@@ -109,7 +109,6 @@ app.post("/voice", async (c) => {
       return c.json({ ok: false, error: "audio file is required (multipart field 'audio')" }, 400);
     }
 
-    // Save to temp file
     const tempDir = join(process.cwd(), "data", "voice");
     await mkdir(tempDir, { recursive: true });
     const ext = audioFile.name?.split(".").pop() ?? "ogg";
@@ -125,7 +124,6 @@ app.post("/voice", async (c) => {
       return c.json({ ok: false, error: "Не удалось распознать речь" }, 422);
     }
 
-    // Simplify the transcript
     const result = await simplifyFromApi(telegramId, transcript, "voice");
     return c.json({
       ok: true,

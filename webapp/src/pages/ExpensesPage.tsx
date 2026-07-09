@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
@@ -18,6 +19,7 @@ import type {
   SetMonthlyLimitRequest,
   ExpenseDto,
   UpdateExpenseRequest,
+  UserProfile,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import { useTelegram } from "../hooks/useTelegram";
@@ -37,7 +39,7 @@ const RU_MONTHS = [
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
 
-type ExpenseTab = "report" | "comparison" | "stats" | "year" | "recent";
+type ExpenseTab = "report" | "comparison" | "stats" | "year" | "recent" | "categories";
 
 interface DrilldownExpense {
   id: number;
@@ -90,6 +92,12 @@ export function ExpensesPage() {
     queryKey: ["expenses", "categories"],
     queryFn: () => api.get<CategoryDto[]>("/api/expenses/categories"),
   });
+
+  const { data: profile } = useQuery({
+    queryKey: ["user", "me"],
+    queryFn: () => api.get<UserProfile>("/api/user/me"),
+  });
+  const isAdmin = profile?.isAdmin ?? false;
 
   const { data: yearData, isLoading: yearLoading } = useQuery({
     queryKey: ["expenses", "year", yearForYearTab],
@@ -194,6 +202,12 @@ export function ExpensesPage() {
     <div className="page">
       <h1 className="page-title">Расходы</h1>
 
+      <div style={{ marginBottom: 12 }}>
+        <Link to="/bankhook" style={{ fontSize: 13, color: "var(--tg-theme-link-color)" }}>
+          🏦 Автозапись трат из Т-Банка
+        </Link>
+      </div>
+
       {/* Quick input */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
         <input
@@ -239,19 +253,22 @@ export function ExpensesPage() {
 
       {/* Tabs */}
       <div className="tabs tabs--scroll" ref={tabsRef}>
-        {(["report", "comparison", "stats", "year", "recent"] as const).map((t) => (
+        {([
+          "report", "comparison", "stats", "year", "recent",
+          ...(isAdmin ? ["categories" as const] : []),
+        ] as ExpenseTab[]).map((t) => (
           <button
             key={t}
             className={`tab${tab === t ? " active" : ""}`}
             onClick={() => setTab(t)}
           >
-            {t === "report" ? "Отчёт" : t === "comparison" ? "Сравнение" : t === "stats" ? "Статистика" : t === "year" ? "За год" : "Последние"}
+            {t === "report" ? "Отчёт" : t === "comparison" ? "Сравнение" : t === "stats" ? "Статистика" : t === "year" ? "За год" : t === "recent" ? "Последние" : "Категории"}
           </button>
         ))}
       </div>
 
       {/* Month navigator (for report/comparison/stats) */}
-      {tab !== "year" && tab !== "recent" && (
+      {tab !== "year" && tab !== "recent" && tab !== "categories" && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <button className="btn btn-small" onClick={() => goMonth(-1)}>◀</button>
           <span style={{ fontWeight: 600, fontSize: 15 }}>
@@ -302,9 +319,12 @@ export function ExpensesPage() {
       {tab === "recent" && (
         <RecentView data={recentData} isLoading={recentLoading} page={recentPage} onPageChange={setRecentPage} />
       )}
+      {tab === "categories" && isAdmin && (
+        <CategoriesManager categories={categories ?? []} />
+      )}
 
-      {/* FAB form */}
-      {!showForm ? (
+      {/* FAB form (hidden on the categories tab, which has its own management UI) */}
+      {tab === "categories" ? null : !showForm ? (
         <button className="fab" onClick={() => setShowForm(true)}>+</button>
       ) : (
         <div className="card" style={{ marginTop: 16 }}>
@@ -360,6 +380,139 @@ export function ExpensesPage() {
             </div>
           </form>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Categories Manager (admin only) ─────────────────────────
+
+function CategoriesManager({ categories }: { categories: CategoryDto[] }) {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [name, setName] = useState("");
+  const [emoji, setEmoji] = useState("");
+  const [aliases, setAliases] = useState("");
+  const [description, setDescription] = useState("");
+
+  const reset = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setName("");
+    setEmoji("");
+    setAliases("");
+    setDescription("");
+  };
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["expenses"] });
+
+  const createMutation = useMutation({
+    mutationFn: (body: { name: string; emoji?: string; aliases: string[]; description: string | null }) =>
+      api.post<CategoryDto>("/api/expenses/categories", body),
+    onSuccess: () => { invalidate(); reset(); },
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...body }: { id: number; name: string; emoji?: string; aliases: string[]; description: string | null }) =>
+      api.put<CategoryDto>(`/api/expenses/categories/${id}`, body),
+    onSuccess: () => { invalidate(); reset(); },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.del<{ deleted: boolean }>(`/api/expenses/categories/${id}`),
+    onSuccess: () => invalidate(),
+  });
+
+  const parseAliases = (s: string) =>
+    s.split(",").map((a) => a.trim()).filter(Boolean);
+
+  const startEdit = (c: CategoryDto) => {
+    setEditingId(c.id);
+    setName(c.name);
+    setEmoji(c.emoji);
+    setAliases(c.aliases.join(", "));
+    setDescription(c.description ?? "");
+    setShowForm(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const body = {
+      name: name.trim(),
+      emoji: emoji.trim() || undefined,
+      aliases: parseAliases(aliases),
+      description: description.trim() || null,
+    };
+    if (editingId) updateMutation.mutate({ id: editingId, ...body });
+    else createMutation.mutate(body);
+  };
+
+  const handleDelete = (c: CategoryDto) => {
+    if (window.confirm(`Удалить категорию «${c.name}»?`)) deleteMutation.mutate(c.id);
+  };
+
+  const pending = createMutation.isPending || updateMutation.isPending;
+  const mutationError = (createMutation.error || updateMutation.error || deleteMutation.error) as Error | null;
+
+  return (
+    <div>
+      <div className="card-hint" style={{ marginBottom: 12, fontSize: 13 }}>
+        Категории общие для всех. «Классификация» (aliases) и «Описание» помогают боту точнее
+        распознавать траты голосом и текстом и раскладывать их в нужную категорию.
+      </div>
+      {mutationError && <div className="error-msg">{mutationError.message}</div>}
+
+      {showForm && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label className="form-label">Эмодзи</label>
+              <input className="input" value={emoji} onChange={(e) => setEmoji(e.target.value)} placeholder="📦" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Название</label>
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Например, Питомцы" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Классификация (через запятую)</label>
+              <input className="input" value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder="корм, ветеринар, зоомагазин" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Описание (для распознавания)</label>
+              <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Расходы на домашних животных" />
+            </div>
+            <div className="form-row">
+              <button type="button" className="btn" onClick={reset}>Отмена</button>
+              <button type="submit" className="btn btn-primary" disabled={pending || !name.trim()}>
+                {editingId ? "Сохранить" : "Создать"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {categories.map((c) => (
+        <div key={c.id} className="list-item">
+          <div className="list-item-content" style={{ flex: 1 }}>
+            <div className="list-item-title">{c.emoji} {c.name}</div>
+            {c.description && <div className="list-item-hint">{c.description}</div>}
+            {c.aliases.length > 0 && (
+              <div className="list-item-hint" style={{ opacity: 0.7 }}>{c.aliases.join(", ")}</div>
+            )}
+          </div>
+          <div className="list-item-actions">
+            <button className="btn btn-icon" onClick={() => startEdit(c)}>✏️</button>
+            {c.canDelete && (
+              <button className="btn btn-icon btn-danger" onClick={() => handleDelete(c)}>🗑️</button>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {!showForm && (
+        <button className="btn btn-primary" style={{ marginTop: 12, width: "100%" }} onClick={() => setShowForm(true)}>
+          + Новая категория
+        </button>
       )}
     </div>
   );

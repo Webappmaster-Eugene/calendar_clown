@@ -38,7 +38,6 @@ async function main(): Promise<void> {
   const content = await readFile(csvPath, "utf-8");
   const lines = content.split("\n").filter((l) => l.trim());
 
-  // Skip header
   const dataLines = lines.slice(1);
   let imported = 0;
   let skipped = 0;

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { escapeMarkdown, escapeMarkdownV2, safeBold } from "../src/utils/markdown.js";
+import { escapeMarkdown, escapeMarkdownV2 } from "../src/utils/markdown.js";
 
 describe("escapeMarkdown", () => {
   it("returns plain text unchanged", () => {
@@ -48,19 +48,5 @@ describe("escapeMarkdownV2", () => {
 
   it("handles empty string", () => {
     assert.equal(escapeMarkdownV2(""), "");
-  });
-});
-
-describe("safeBold", () => {
-  it("wraps plain text in asterisks", () => {
-    assert.equal(safeBold("Hello"), "*Hello*");
-  });
-
-  it("escapes inner special characters", () => {
-    assert.equal(safeBold("test*value"), "*test\\*value*");
-  });
-
-  it("handles empty string", () => {
-    assert.equal(safeBold(""), "**");
   });
 });

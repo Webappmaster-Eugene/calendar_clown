@@ -5,7 +5,6 @@
 import {
   createReminder,
   getRemindersByUser,
-  getReminderById,
   countActiveReminders,
   deleteReminder,
   toggleReminderActive,
@@ -16,7 +15,6 @@ import {
   addSubscriber,
   removeSubscriber,
   getSubscribers,
-  isSubscribed,
 } from "../reminders/repository.js";
 import {
   getAvailableSounds as getAvailableSoundsRepo,
@@ -24,11 +22,10 @@ import {
   getFiredRemindersWithSound,
 } from "../reminders/soundRepository.js";
 import type { ReminderSchedule } from "../reminders/types.js";
-import { formatScheduleDescription, validateSchedule } from "../reminders/service.js";
+import { validateSchedule } from "../reminders/service.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { MAX_REMINDERS_PER_USER } from "../constants.js";
-import { createLogger } from "../utils/logger.js";
 import type {
   ReminderDto,
   ReminderScheduleDto,
@@ -36,8 +33,6 @@ import type {
   ReminderSoundDto,
   FiredReminderDto,
 } from "../shared/types.js";
-
-const log = createLogger("reminders-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -88,9 +83,6 @@ function reminderToDto(
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get all reminders for a user.
- */
 export async function getUserReminders(telegramId: number): Promise<ReminderDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -109,30 +101,6 @@ export async function getUserReminders(telegramId: number): Promise<ReminderDto[
   return result;
 }
 
-/**
- * Get a single reminder by ID.
- */
-export async function getReminder(telegramId: number, reminderId: number): Promise<ReminderDto | null> {
-  requireDb();
-  const r = await getReminderById(reminderId);
-  if (!r) return null;
-
-  // Verify ownership
-  const dbUser = await requireDbUser(telegramId);
-  if (r.userId !== dbUser.id) return null;
-
-  const subs = await getSubscribers(r.id);
-  const soundInfo = r.soundId ? await getSoundById(r.soundId) : null;
-  return reminderToDto(
-    r,
-    subs.map((s) => ({ id: s.id, subscriberName: s.subscriberName ?? "" })),
-    soundInfo ? { name: soundInfo.name, emoji: soundInfo.emoji } : null,
-  );
-}
-
-/**
- * Create a new reminder.
- */
 export async function createNewReminder(
   telegramId: number,
   text: string,
@@ -158,7 +126,6 @@ export async function createNewReminder(
   const validationError = validateSchedule(reminderSchedule);
   if (validationError) throw new Error(validationError);
 
-  // Validate sound exists if provided
   let soundInfo: { name: string; emoji: string } | null = null;
   const resolvedSoundId = soundId ?? null;
   const resolvedSoundEnabled = (soundEnabled === true && resolvedSoundId !== null);
@@ -181,18 +148,12 @@ export async function createNewReminder(
   return reminderToDto(reminder, [], soundInfo);
 }
 
-/**
- * Delete a reminder.
- */
 export async function removeReminder(telegramId: number, reminderId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return deleteReminder(reminderId, dbUser.id);
 }
 
-/**
- * Toggle reminder active/inactive.
- */
 export async function toggleReminder(telegramId: number, reminderId: number): Promise<ReminderDto | null> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -206,9 +167,6 @@ export async function toggleReminder(telegramId: number, reminderId: number): Pr
   );
 }
 
-/**
- * Update reminder text.
- */
 export async function editReminderText(
   telegramId: number,
   reminderId: number,
@@ -219,9 +177,6 @@ export async function editReminderText(
   return updateReminderText(reminderId, dbUser.id, text);
 }
 
-/**
- * Edit reminder schedule.
- */
 export async function editReminderSchedule(
   telegramId: number,
   reminderId: number,
@@ -239,9 +194,6 @@ export async function editReminderSchedule(
   return updateReminderSchedule(reminderId, dbUser.id, scheduleData);
 }
 
-/**
- * Update reminder sound settings.
- */
 export async function editReminderSoundSettings(
   telegramId: number,
   reminderId: number,
@@ -258,9 +210,6 @@ export async function editReminderSoundSettings(
   return updateReminderSound(reminderId, dbUser.id, soundId, resolvedEnabled);
 }
 
-/**
- * Get available reminder sounds.
- */
 export async function getAvailableSounds(): Promise<ReminderSoundDto[]> {
   requireDb();
   const sounds = await getAvailableSoundsRepo();
@@ -272,9 +221,6 @@ export async function getAvailableSounds(): Promise<ReminderSoundDto[]> {
   }));
 }
 
-/**
- * Get recently fired reminders with sound for Mini App polling.
- */
 export async function getFiredReminders(
   telegramId: number,
   since: Date
@@ -283,9 +229,6 @@ export async function getFiredReminders(
   return getFiredRemindersWithSound(telegramId, since);
 }
 
-/**
- * Get tribe reminders (excluding own).
- */
 export async function getTribeRemindersList(telegramId: number): Promise<Array<ReminderDto & { ownerName: string }>> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -307,18 +250,12 @@ export async function getTribeRemindersList(telegramId: number): Promise<Array<R
   return result;
 }
 
-/**
- * Subscribe to a reminder.
- */
 export async function subscribeToReminder(telegramId: number, reminderId: number): Promise<void> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   await addSubscriber(reminderId, dbUser.id);
 }
 
-/**
- * Unsubscribe from a reminder.
- */
 export async function unsubscribeFromReminder(telegramId: number, reminderId: number): Promise<void> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);

@@ -16,7 +16,6 @@ export async function handleAuth(ctx: Context): Promise<void> {
     : "";
 
   if (!text) {
-    // No code provided — check if already linked, otherwise show OAuth button
     const linked = await hasToken(String(userId));
     if (linked) {
       await ctx.reply("✅ Календарь уже привязан. /today — встречи на сегодня.");

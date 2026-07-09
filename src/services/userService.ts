@@ -12,9 +12,6 @@ import type { UserProfile, UserMode } from "../shared/types.js";
 
 const log = createLogger("user-service");
 
-/**
- * Get full user profile for API response.
- */
 export async function getUserProfile(telegramId: number, firstName: string, username?: string): Promise<UserProfile | null> {
   if (!isDatabaseAvailable()) {
     // Fallback for bootstrap admin
@@ -31,6 +28,7 @@ export async function getUserProfile(telegramId: number, firstName: string, user
         tribeId: null,
         tribeName: null,
         hasCalendarLinked: calendarLinked,
+        isAdmin: true,
       };
     }
     return null;
@@ -57,18 +55,15 @@ export async function getUserProfile(telegramId: number, firstName: string, user
     tribeId: menuCtx.tribeId,
     tribeName: menuCtx.tribeName,
     hasCalendarLinked: calendarLinked,
+    isAdmin: isBootstrapAdmin(telegramId),
   };
 }
 
-/**
- * Switch user's current mode.
- */
 export async function switchMode(telegramId: number, newMode: UserMode): Promise<void> {
   if (!isDatabaseAvailable()) {
     throw new Error("Database unavailable");
   }
 
-  // Verify user exists and has access
   const menuCtx = await getUserMenuContext(telegramId);
   if (!menuCtx) {
     throw new Error("User not found");
@@ -83,9 +78,6 @@ export async function switchMode(telegramId: number, newMode: UserMode): Promise
   log.info(`User ${telegramId} switched mode to ${newMode}`);
 }
 
-/**
- * Get available modes for a user.
- */
 export function getAvailableModes(profile: UserProfile): UserMode[] {
   const allModes: UserMode[] = [
     "calendar", "expenses", "transcribe", "simplifier", "digest", "gandalf", "neuro",

@@ -12,7 +12,6 @@ import {
   collectSummaryData,
   isEmptyData,
   generateAiSummary,
-  formatFallbackSummary,
 } from "../services/adminSummaryService.js";
 
 const log = createLogger("adminSummary");
@@ -59,7 +58,6 @@ export async function handleSummaryCallback(ctx: Context): Promise<void> {
 
   const data = ctx.callbackQuery.data;
 
-  // summary:menu → show period selection
   if (data === "summary:menu") {
     await ctx.editMessageText("📊 *Выберите период для саммари:*", {
       parse_mode: "Markdown",
@@ -69,7 +67,6 @@ export async function handleSummaryCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // summary:<period> → load data + AI
   const period = data.replace("summary:", "");
   if (!VALID_PERIODS.has(period)) {
     await ctx.answerCbQuery("Неизвестный период.");
@@ -108,7 +105,6 @@ export async function handleSummaryCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // Generate AI summary (with fallback)
     const resultText = await generateAiSummary(summaryData);
 
     try {

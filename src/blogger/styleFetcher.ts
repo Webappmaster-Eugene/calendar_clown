@@ -59,7 +59,6 @@ async function fetchViaMTProto(username: string): Promise<string[]> {
 
   const longPosts = posts.filter((p) => p.text.length >= MIN_POST_LENGTH);
 
-  // Sort by engagement: views + reactions
   longPosts.sort((a, b) => {
     const engA = (a.views ?? 0) + (a.reactionsCount ?? 0);
     const engB = (b.views ?? 0) + (b.reactionsCount ?? 0);
@@ -93,7 +92,6 @@ async function fetchViaWeb(username: string): Promise<string[]> {
   let match: RegExpExecArray | null;
 
   while ((match = postRegex.exec(html)) !== null) {
-    // Strip HTML tags to get plain text
     const text = match[1]
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<[^>]+>/g, "")

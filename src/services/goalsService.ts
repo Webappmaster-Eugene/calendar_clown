@@ -14,7 +14,6 @@ import {
   toggleGoalCompleted,
   updateGoalText,
   deleteGoal,
-  getGoalSetProgress,
   addViewer,
   removeViewer,
   getViewersByGoalSet,
@@ -25,20 +24,15 @@ import type { GoalSet, Goal } from "../goals/repository.js";
 import {
   calculateDeadline,
   calculateReminderDates,
-  formatPeriod,
-  formatProgress,
 } from "../goals/service.js";
 import type { GoalPeriod } from "../goals/service.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { createLogger } from "../utils/logger.js";
 import type {
   GoalSetDto,
   GoalDto,
   GoalSetVisibility,
 } from "../shared/types.js";
-
-const log = createLogger("goals-service");
 
 const MAX_GOAL_SETS = 5;
 
@@ -83,9 +77,6 @@ function goalToDto(g: Goal): GoalDto {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get all goal sets for a user.
- */
 export async function getUserGoalSets(telegramId: number): Promise<GoalSetDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -93,9 +84,6 @@ export async function getUserGoalSets(telegramId: number): Promise<GoalSetDto[]>
   return sets.map(goalSetToDto);
 }
 
-/**
- * Get a single goal set with its goals.
- */
 export async function getGoalSetWithGoals(
   telegramId: number,
   goalSetId: number
@@ -113,9 +101,6 @@ export async function getGoalSetWithGoals(
   };
 }
 
-/**
- * Create a new goal set.
- */
 export async function createNewGoalSet(
   telegramId: number,
   name: string,
@@ -133,7 +118,6 @@ export async function createNewGoalSet(
   const deadline = calculateDeadline(period, new Date());
   const gs = await createGoalSet(dbUser.id, name, period, deadline, emoji);
 
-  // Create reminders if there's a deadline
   const reminderDates = calculateReminderDates(gs.createdAt, deadline);
   if (reminderDates.length > 0) {
     await createReminders(gs.id, reminderDates);
@@ -142,18 +126,12 @@ export async function createNewGoalSet(
   return goalSetToDto(gs);
 }
 
-/**
- * Delete a goal set.
- */
 export async function removeGoalSet(telegramId: number, goalSetId: number): Promise<boolean> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return deleteGoalSet(goalSetId, dbUser.id);
 }
 
-/**
- * Update goal set properties.
- */
 export async function updateGoalSetProps(
   telegramId: number,
   goalSetId: number,
@@ -166,9 +144,6 @@ export async function updateGoalSetProps(
   return goalSetToDto(updated);
 }
 
-/**
- * Add a goal to a goal set.
- */
 export async function addGoal(
   telegramId: number,
   goalSetId: number,
@@ -178,7 +153,6 @@ export async function addGoal(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership
   const gs = await getGoalSetById(goalSetId);
   if (!gs || gs.userId !== dbUser.id) {
     throw new Error("Набор целей не найден.");
@@ -188,9 +162,6 @@ export async function addGoal(
   return goalToDto(goal);
 }
 
-/**
- * Toggle goal completion status.
- */
 export async function toggleGoal(telegramId: number, goalId: number): Promise<GoalDto | null> {
   requireDb();
   // Note: toggleGoalCompleted doesn't do ownership check, but the API layer verifies telegramId
@@ -199,9 +170,6 @@ export async function toggleGoal(telegramId: number, goalId: number): Promise<Go
   return goalToDto(goal);
 }
 
-/**
- * Edit a goal's text.
- */
 export async function editGoalText(telegramId: number, goalId: number, text: string): Promise<GoalDto | null> {
   requireDb();
   const goal = await updateGoalText(goalId, text);
@@ -209,9 +177,6 @@ export async function editGoalText(telegramId: number, goalId: number, text: str
   return goalToDto(goal);
 }
 
-/**
- * Delete a goal.
- */
 export async function removeGoal(telegramId: number, goalId: number): Promise<boolean> {
   requireDb();
   return deleteGoal(goalId);
@@ -232,9 +197,6 @@ export async function getFriendsGoalSets(
   }));
 }
 
-/**
- * Get viewers for a goal set.
- */
 export async function getGoalSetViewers(
   telegramId: number,
   goalSetId: number
@@ -247,9 +209,6 @@ export async function getGoalSetViewers(
   return viewers.map((v) => ({ userId: v.viewerUserId, firstName: v.viewerName ?? "" }));
 }
 
-/**
- * Add a viewer to a goal set.
- */
 export async function addGoalSetViewer(
   telegramId: number,
   goalSetId: number,
@@ -262,9 +221,6 @@ export async function addGoalSetViewer(
   await addViewer(goalSetId, viewerUserId);
 }
 
-/**
- * Remove a viewer from a goal set.
- */
 export async function removeGoalSetViewer(
   telegramId: number,
   goalSetId: number,
@@ -275,16 +231,4 @@ export async function removeGoalSetViewer(
   const gs = await getGoalSetById(goalSetId);
   if (!gs || gs.userId !== dbUser.id) throw new Error("Набор целей не найден.");
   await removeViewer(goalSetId, viewerUserId);
-}
-
-/**
- * Get goal set progress.
- */
-export async function getProgress(goalSetId: number): Promise<{ completed: number; total: number; formatted: string }> {
-  requireDb();
-  const progress = await getGoalSetProgress(goalSetId);
-  return {
-    ...progress,
-    formatted: formatProgress(progress.completed, progress.total),
-  };
 }
