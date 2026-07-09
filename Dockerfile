@@ -33,13 +33,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=backend-builder /app/dist ./dist
-COPY --from=backend-builder /app/src/db/migrations ./migrations
 COPY --from=frontend-builder /app/webapp/dist ./webapp-dist
 COPY drizzle ./drizzle
 
 RUN mkdir -p data/tokens data/voice
 
-ENV MIGRATIONS_DIR=/app/migrations
 ENV DRIZZLE_DIR=/app/drizzle
 
 EXPOSE 18790

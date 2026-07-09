@@ -5,8 +5,11 @@
 
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
+import { eq } from "drizzle-orm";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
+import { db } from "../db/drizzle.js";
+import { digestRubrics, expenses, gandalfEntries } from "../db/schema.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { initBulkSelect } from "../utils/bulkSelect.js";
 import { logAction } from "../logging/actionLogger.js";
@@ -373,8 +376,7 @@ async function handleExpenses(ctx: Context, data: string, telegramId: number): P
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
     // Admin delete: no ownership check
-    const { query } = await import("../db/connection.js");
-    await query("DELETE FROM expenses WHERE id = $1", [id]);
+    await db.delete(expenses).where(eq(expenses.id, id));
     logAction(null, telegramId, "admin_data_delete", { entity: "expense", id });
     await ctx.editMessageText(`✅ Расход #${id} удалён.`);
     return;
@@ -450,8 +452,7 @@ async function handleGandalf(ctx: Context, data: string, telegramId: number): Pr
   const delYesMatch = data.match(/^adm_gand:del_yes:(\d+)$/);
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
-    const { query } = await import("../db/connection.js");
-    await query("DELETE FROM gandalf_entries WHERE id = $1", [id]);
+    await db.delete(gandalfEntries).where(eq(gandalfEntries.id, id));
     logAction(null, telegramId, "admin_data_delete", { entity: "gandalf_entry", id });
     await ctx.editMessageText(`✅ Запись #${id} удалена.`);
     return;
@@ -525,8 +526,7 @@ async function handleDigest(ctx: Context, data: string, telegramId: number): Pro
   const delYesMatch = data.match(/^adm_dig:del_yes:(\d+)$/);
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);
-    const { query } = await import("../db/connection.js");
-    await query("DELETE FROM digest_rubrics WHERE id = $1", [id]);
+    await db.delete(digestRubrics).where(eq(digestRubrics.id, id));
     logAction(null, telegramId, "admin_data_delete", { entity: "digest_rubric", id });
     await ctx.editMessageText(`✅ Рубрика #${id} удалена.`);
     return;

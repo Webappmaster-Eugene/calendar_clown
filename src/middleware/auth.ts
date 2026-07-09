@@ -2,7 +2,9 @@ import type { Context, MiddlewareFn } from "telegraf";
 import { Markup } from "telegraf";
 import { isUserInDb, getUserByTelegramId, getUserStatus } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { query } from "../db/connection.js";
+import { eq } from "drizzle-orm";
+import { db } from "../db/drizzle.js";
+import { tribes } from "../db/schema.js";
 
 // Import from shared for internal use + re-export for backward compatibility.
 import type { UserMenuContext } from "../shared/auth.js";
@@ -115,19 +117,15 @@ export async function getUserMenuContext(telegramId: number): Promise<UserMenuCo
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return null;
 
-  const { rows: statusRows } = await query<{ status: string }>(
-    "SELECT COALESCE(status, 'approved') AS status FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
-  const status = statusRows[0]?.status ?? "approved";
+  const status = (await getUserStatus(telegramId)) ?? "approved";
 
   let tribeName: string | null = null;
   if (dbUser.tribeId) {
-    const { rows: tribeRows } = await query<{ name: string }>(
-      "SELECT name FROM tribes WHERE id = $1",
-      [dbUser.tribeId]
-    );
-    tribeName = tribeRows[0]?.name ?? null;
+    const [tribeRow] = await db
+      .select({ name: tribes.name })
+      .from(tribes)
+      .where(eq(tribes.id, dbUser.tribeId));
+    tribeName = tribeRow?.name ?? null;
   }
 
   return {

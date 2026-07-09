@@ -26,8 +26,8 @@ before(async () => {
   dotenv.config();
   dotenv.config({ path: ".env.local", override: true });
 
-  const { runMigrations } = await import("../src/db/migrate.js");
-  await runMigrations();
+  const { runDrizzleMigrations } = await import("../src/db/migrate.js");
+  await runDrizzleMigrations();
 
   const repo = await import("../src/expenses/repository.js");
   ensureUser = repo.ensureUser;

@@ -13,7 +13,7 @@ dotenv.config();
 dotenv.config({ path: ".env.local", override: true });
 
 import { readFile } from "fs/promises";
-import { runMigrations } from "../db/migrate.js";
+import { runDrizzleMigrations } from "../db/migrate.js";
 import { setDatabaseAvailable, closePool } from "../db/connection.js";
 import { addNotableDate } from "./repository.js";
 import { createLogger } from "../utils/logger.js";
@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  await runMigrations();
+  await runDrizzleMigrations();
   setDatabaseAvailable(true);
 
   const content = await readFile(csvPath, "utf-8");

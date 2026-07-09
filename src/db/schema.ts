@@ -15,6 +15,7 @@ import {
   index,
   unique,
   check,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -42,7 +43,8 @@ export const users = pgTable(
     mode: varchar("mode", { length: 20 }).notNull().default("calendar"),
     tribeId: integer("tribe_id")
       .references(() => tribes.id),
-    activeDialogId: integer("active_dialog_id"),
+    // Circular ref (users ↔ chat_dialogs): the AnyPgColumn return annotation breaks TS's inference cycle.
+    activeDialogId: integer("active_dialog_id").references((): AnyPgColumn => chatDialogs.id, { onDelete: "set null" }),
     chatProvider: varchar("chat_provider", { length: 20 }).notNull().default("free"),
     // Per-user secret for the bank push-notification webhook (/webhook/bank/<secret>).
     // NULL until the user enables the integration; regenerable (revokes the old URL).
@@ -193,7 +195,7 @@ export const voiceTranscriptions = pgTable(
   (table) => [
     index("idx_voice_transcriptions_user_id").on(table.userId),
     index("idx_voice_transcriptions_status").on(table.status),
-    index("idx_voice_transcriptions_created_at").on(table.createdAt),
+    index("idx_voice_transcriptions_created_at").on(table.createdAt.desc()),
     index("idx_vt_delivery").on(table.userId, table.sequenceNumber).where(sql`is_delivered = false`),
   ],
 );
@@ -295,7 +297,7 @@ export const digestRuns = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("idx_digest_runs_user").on(table.userId, table.createdAt),
+    index("idx_digest_runs_user").on(table.userId, table.createdAt.desc()),
   ],
 );
 
@@ -330,8 +332,8 @@ export const digestPosts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("idx_digest_posts_rubric_date").on(table.rubricId, table.postDate),
-    index("idx_digest_posts_user_date").on(table.userId, table.createdAt),
+    index("idx_digest_posts_rubric_date").on(table.rubricId, table.postDate.desc()),
+    index("idx_digest_posts_user_date").on(table.userId, table.createdAt.desc()),
     unique("digest_posts_run_id_channel_username_telegram_message_id_key").on(
       table.runId,
       table.channelUsername,
@@ -369,6 +371,7 @@ export const notableDates = pgTable(
     id: serial("id").primaryKey(),
     tribeId: integer("tribe_id")
       .notNull()
+      .default(1)
       .references(() => tribes.id),
     addedByUserId: integer("added_by_user_id").references(() => users.id),
     name: varchar("name", { length: 255 }).notNull(),
@@ -428,6 +431,10 @@ export const gandalfCategories = pgTable(
   (table) => [
     index("idx_gandalf_categories_tribe").on(table.tribeId),
     unique("gandalf_categories_tribe_id_name_key").on(table.tribeId, table.name),
+    // Personal (tribe-less) categories: enforce unique name per creator among active ones.
+    uniqueIndex("gandalf_categories_user_name_key")
+      .on(table.createdByUserId, table.name)
+      .where(sql`${table.tribeId} IS NULL AND ${table.isActive} = true`),
   ],
 );
 
@@ -459,6 +466,7 @@ export const gandalfEntries = pgTable(
   (table) => [
     index("idx_gandalf_entries_tribe_created").on(table.tribeId, table.createdAt),
     index("idx_gandalf_entries_category").on(table.categoryId),
+    index("idx_gandalf_entries_added_user").on(table.addedByUserId),
     index("idx_gandalf_entries_user_created").on(table.addedByUserId, table.createdAt),
     index("idx_gandalf_entries_important").on(table.isImportant).where(sql`is_important = true`),
     index("idx_gandalf_entries_urgent").on(table.isUrgent).where(sql`is_urgent = true`),
@@ -940,7 +948,7 @@ export const taskWorks = pgTable(
   (table) => [
     index("idx_task_works_user").on(table.userId),
     uniqueIndex("task_works_user_name_active_key")
-      .on(table.userId, table.name)
+      .on(table.userId, sql`lower(${table.name})`)
       .where(sql`is_archived = false`),
   ],
 );

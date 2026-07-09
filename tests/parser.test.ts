@@ -19,8 +19,8 @@ before(async () => {
   dotenv.config({ path: ".env.local", override: true });
 
   // Run migrations to ensure categories exist
-  const { runMigrations } = await import("../src/db/migrate.js");
-  await runMigrations();
+  const { runDrizzleMigrations } = await import("../src/db/migrate.js");
+  await runDrizzleMigrations();
 
   const parser = await import("../src/expenses/parser.js");
   parseExpenseText = parser.parseExpenseText;

@@ -5,7 +5,9 @@
 
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
-import { query } from "../db/connection.js";
+import { and, eq, sql } from "drizzle-orm";
+import { db } from "../db/drizzle.js";
+import { telegramMtprotoSessions } from "../db/schema.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("mtproto-session");
@@ -22,50 +24,51 @@ const userClients = new Map<number, UserClientEntry>();
 
 // ─── Session Repository ──────────────────────────────────────────────────
 
-interface SessionRow {
-  session_string: string;
-  phone_hint: string | null;
-  is_active: boolean;
-}
-
 export async function saveUserSession(
   userId: number,
   sessionString: string,
   phoneHint: string | null
 ): Promise<void> {
-  await query(
-    `INSERT INTO telegram_mtproto_sessions (user_id, session_string, phone_hint, is_active, updated_at)
-     VALUES ($1, $2, $3, true, NOW())
-     ON CONFLICT (user_id) DO UPDATE SET
-       session_string = EXCLUDED.session_string,
-       phone_hint = EXCLUDED.phone_hint,
-       is_active = true,
-       updated_at = NOW()`,
-    [userId, sessionString, phoneHint]
-  );
+  await db
+    .insert(telegramMtprotoSessions)
+    .values({ userId, sessionString, phoneHint, isActive: true, updatedAt: sql`now()` })
+    .onConflictDoUpdate({
+      target: telegramMtprotoSessions.userId,
+      set: {
+        sessionString: sql`excluded.session_string`,
+        phoneHint: sql`excluded.phone_hint`,
+        isActive: true,
+        updatedAt: sql`now()`,
+      },
+    });
 }
 
 export async function getUserSession(
   userId: number
 ): Promise<{ sessionString: string; phoneHint: string | null; isActive: boolean } | null> {
-  const { rows } = await query<SessionRow>(
-    "SELECT session_string, phone_hint, is_active FROM telegram_mtproto_sessions WHERE user_id = $1",
-    [userId]
-  );
-  if (rows.length === 0) return null;
+  const [row] = await db
+    .select({
+      sessionString: telegramMtprotoSessions.sessionString,
+      phoneHint: telegramMtprotoSessions.phoneHint,
+      isActive: telegramMtprotoSessions.isActive,
+    })
+    .from(telegramMtprotoSessions)
+    .where(eq(telegramMtprotoSessions.userId, userId));
+  if (!row) return null;
   return {
-    sessionString: rows[0].session_string,
-    phoneHint: rows[0].phone_hint,
-    isActive: rows[0].is_active,
+    sessionString: row.sessionString,
+    phoneHint: row.phoneHint,
+    isActive: row.isActive,
   };
 }
 
 export async function hasActiveSession(userId: number): Promise<boolean> {
-  const { rows } = await query<{ cnt: string }>(
-    "SELECT COUNT(*) AS cnt FROM telegram_mtproto_sessions WHERE user_id = $1 AND is_active = true",
-    [userId]
-  );
-  return Number(rows[0].cnt) > 0;
+  const [row] = await db
+    .select({ id: telegramMtprotoSessions.id })
+    .from(telegramMtprotoSessions)
+    .where(and(eq(telegramMtprotoSessions.userId, userId), eq(telegramMtprotoSessions.isActive, true)))
+    .limit(1);
+  return !!row;
 }
 
 // ─── Client Manager ─────────────────────────────────────────────────────

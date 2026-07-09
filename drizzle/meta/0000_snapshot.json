@@ -1,6 +1,6 @@
 {
-  "id": "7fd53d84-1c09-40a0-8384-96082fc94143",
-  "prevId": "d1fedab6-713b-4e37-b1c7-b2e59de316ec",
+  "id": "6cad229c-7ee6-44c7-87c9-6c850579551b",
+  "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1210,7 +1210,7 @@
             {
               "expression": "post_date",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],
@@ -1231,7 +1231,7 @@
             {
               "expression": "created_at",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],
@@ -1497,7 +1497,7 @@
             {
               "expression": "created_at",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],
@@ -1819,6 +1819,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "gandalf_categories_user_name_key": {
+          "name": "gandalf_categories_user_name_key",
+          "columns": [
+            {
+              "expression": "created_by_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"gandalf_categories\".\"tribe_id\" IS NULL AND \"gandalf_categories\".\"is_active\" = true",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -1986,6 +2008,21 @@
           "columns": [
             {
               "expression": "category_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_gandalf_entries_added_user": {
+          "name": "idx_gandalf_entries_added_user",
+          "columns": [
+            {
+              "expression": "added_by_user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2602,7 +2639,8 @@
           "name": "tribe_id",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": 1
         },
         "added_by_user_id": {
           "name": "added_by_user_id",
@@ -4008,9 +4046,9 @@
               "nulls": "last"
             },
             {
-              "expression": "name",
-              "isExpression": false,
+              "expression": "lower(\"name\")",
               "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],
@@ -4578,6 +4616,19 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "users_active_dialog_id_chat_dialogs_id_fk": {
+          "name": "users_active_dialog_id_chat_dialogs_id_fk",
+          "tableFrom": "users",
+          "tableTo": "chat_dialogs",
+          "columnsFrom": [
+            "active_dialog_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4758,7 +4809,7 @@
             {
               "expression": "created_at",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],

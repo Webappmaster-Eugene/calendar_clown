@@ -1,1 +1,0 @@
-ALTER TABLE users ADD COLUMN chat_provider VARCHAR(20) NOT NULL DEFAULT 'free';

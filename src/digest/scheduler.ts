@@ -10,7 +10,9 @@ import { logAction } from "../logging/actionLogger.js";
 import { getUsersWithActiveDigest } from "./repository.js";
 import { connectGramClient, disconnectGramClient, isDigestReady } from "./telegramClient.js";
 import { runDigestForUser } from "./worker.js";
-import { query } from "../db/connection.js";
+import { eq } from "drizzle-orm";
+import { db } from "../db/drizzle.js";
+import { users } from "../db/schema.js";
 
 const log = createLogger("digest");
 
@@ -66,14 +68,14 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
 
     // Resolve DB user IDs to telegram IDs
     for (const dbUserId of dbUserIds) {
-      const { rows } = await query<{ telegram_id: string }>(
-        "SELECT telegram_id FROM users WHERE id = $1",
-        [dbUserId]
-      );
-      if (rows.length === 0) continue;
-      const telegramId = Number(rows[0].telegram_id);
+      const [row] = await db
+        .select({ telegramId: users.telegramId })
+        .from(users)
+        .where(eq(users.id, dbUserId));
+      if (!row) continue;
+      const telegramId = Number(row.telegramId);
       if (!Number.isFinite(telegramId) || telegramId <= 0) {
-        log.warn(`Invalid telegram_id for dbUser ${dbUserId}: ${rows[0].telegram_id}`);
+        log.warn(`Invalid telegram_id for dbUser ${dbUserId}: ${row.telegramId}`);
         continue;
       }
 

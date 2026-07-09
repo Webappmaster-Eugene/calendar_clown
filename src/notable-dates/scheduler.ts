@@ -11,7 +11,8 @@ import { logAction } from "../logging/actionLogger.js";
 import { getDatesByMonthDay } from "./repository.js";
 import { formatDayReminders } from "./service.js";
 import { listTribeUsers } from "../expenses/repository.js";
-import { query } from "../db/connection.js";
+import { db } from "../db/drizzle.js";
+import { tribes } from "../db/schema.js";
 
 const log = createLogger("notable-dates");
 
@@ -69,9 +70,9 @@ async function sendNotableDateReminders(bot: Telegraf): Promise<void> {
 
   log.info(`Checking notable dates for ${day}.${month} + advance reminders`);
 
-  const { rows: tribes } = await query<{ id: number }>("SELECT id FROM tribes");
+  const tribeRows = await db.select({ id: tribes.id }).from(tribes);
 
-  for (const tribe of tribes) {
+  for (const tribe of tribeRows) {
     try {
       const messages: string[] = [];
 

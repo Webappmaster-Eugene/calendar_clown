@@ -5,7 +5,7 @@
 import { getUserMenuContext, canAccessMode, isBootstrapAdmin } from "../middleware/auth.js";
 import { invalidateUserModeCache } from "../middleware/userMode.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { query } from "../db/connection.js";
+import { getUserMode, setUserMode } from "../expenses/repository.js";
 import { hasToken } from "../calendar/auth.js";
 import { createLogger } from "../utils/logger.js";
 import type { UserProfile, UserMode } from "../shared/types.js";
@@ -37,11 +37,7 @@ export async function getUserProfile(telegramId: number, firstName: string, user
   const menuCtx = await getUserMenuContext(telegramId);
   if (!menuCtx) return null;
 
-  const { rows } = await query<{ mode: string }>(
-    "SELECT COALESCE(mode, 'calendar') AS mode FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
-  const mode = (rows[0]?.mode ?? "calendar") as UserMode;
+  const mode = (await getUserMode(telegramId)) as UserMode;
   const calendarLinked = await hasToken(String(telegramId));
 
   return {
@@ -73,7 +69,7 @@ export async function switchMode(telegramId: number, newMode: UserMode): Promise
     throw new Error(`No access to mode: ${newMode}`);
   }
 
-  await query("UPDATE users SET mode = $1 WHERE telegram_id = $2", [newMode, telegramId]);
+  await setUserMode(telegramId, newMode);
   invalidateUserModeCache(telegramId);
   log.info(`User ${telegramId} switched mode to ${newMode}`);
 }

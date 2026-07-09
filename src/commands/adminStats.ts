@@ -1,8 +1,18 @@
 import type { Context } from "telegraf";
 import { readdir } from "fs/promises";
+import { count, eq, sql } from "drizzle-orm";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { query } from "../db/connection.js";
+import { db } from "../db/drizzle.js";
+import {
+  calendarEvents,
+  digestPosts,
+  digestRubrics,
+  digestRuns,
+  expenses,
+  users,
+  voiceTranscriptions,
+} from "../db/schema.js";
 import { DB_UNAVAILABLE_MSG } from "./expenseMode.js";
 import { logAction } from "../logging/actionLogger.js";
 
@@ -46,67 +56,68 @@ async function getGlobalStats(): Promise<GlobalStats> {
     digestRunsResult,
     digestPostsResult,
   ] = await Promise.all([
-    query<{ count: string }>("SELECT COUNT(*) AS count FROM users"),
-    query<{ total: string; text_count: string; voice_count: string; total_amount: string }>(
-      `SELECT
-        COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE input_method = 'text') AS text_count,
-        COUNT(*) FILTER (WHERE input_method = 'voice') AS voice_count,
-        COALESCE(SUM(amount), 0) AS total_amount
-      FROM expenses`
-    ),
-    query<{ created: string; deleted: string; text_count: string; voice_count: string }>(
-      `SELECT
-        COUNT(*) FILTER (WHERE status = 'created') AS created,
-        COUNT(*) FILTER (WHERE status = 'deleted') AS deleted,
-        COUNT(*) FILTER (WHERE input_method = 'text') AS text_count,
-        COUNT(*) FILTER (WHERE input_method = 'voice') AS voice_count
-      FROM calendar_events`
-    ),
-    query<{ total: string; errors: string }>(
-      `SELECT
-        COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE status = 'error') AS errors
-      FROM voice_transcriptions`
-    ),
-    query<{ count: string }>(
-      "SELECT COUNT(*) AS count FROM digest_rubrics WHERE is_active = true"
-    ),
-    query<{ count: string }>("SELECT COUNT(*) AS count FROM digest_runs"),
-    query<{ count: string }>("SELECT COUNT(*) AS count FROM digest_posts"),
+    db.select({ count: count() }).from(users),
+    db
+      .select({
+        total: count(),
+        textCount: sql<string>`count(*) filter (where ${expenses.inputMethod} = 'text')`,
+        voiceCount: sql<string>`count(*) filter (where ${expenses.inputMethod} = 'voice')`,
+        totalAmount: sql<string>`coalesce(sum(${expenses.amount}), 0)`,
+      })
+      .from(expenses),
+    db
+      .select({
+        created: sql<string>`count(*) filter (where ${calendarEvents.status} = 'created')`,
+        deleted: sql<string>`count(*) filter (where ${calendarEvents.status} = 'deleted')`,
+        textCount: sql<string>`count(*) filter (where ${calendarEvents.inputMethod} = 'text')`,
+        voiceCount: sql<string>`count(*) filter (where ${calendarEvents.inputMethod} = 'voice')`,
+      })
+      .from(calendarEvents),
+    db
+      .select({
+        total: count(),
+        errors: sql<string>`count(*) filter (where ${voiceTranscriptions.status} = 'error')`,
+      })
+      .from(voiceTranscriptions),
+    db.select({ count: count() }).from(digestRubrics).where(eq(digestRubrics.isActive, true)),
+    db.select({ count: count() }).from(digestRuns),
+    db.select({ count: count() }).from(digestPosts),
   ]);
 
   const linkedCalendars = await countLinkedCalendars();
 
   return {
-    totalUsers: parseInt(usersResult.rows[0].count, 10),
+    totalUsers: usersResult[0].count,
     linkedCalendars,
     expenses: {
-      total: parseInt(expensesResult.rows[0].total, 10),
-      textCount: parseInt(expensesResult.rows[0].text_count, 10),
-      voiceCount: parseInt(expensesResult.rows[0].voice_count, 10),
-      totalAmount: parseFloat(expensesResult.rows[0].total_amount),
+      total: expensesResult[0].total,
+      textCount: parseInt(expensesResult[0].textCount, 10),
+      voiceCount: parseInt(expensesResult[0].voiceCount, 10),
+      totalAmount: parseFloat(expensesResult[0].totalAmount),
     },
     calendarEvents: {
-      created: parseInt(eventsResult.rows[0].created, 10),
-      deleted: parseInt(eventsResult.rows[0].deleted, 10),
-      textCount: parseInt(eventsResult.rows[0].text_count, 10),
-      voiceCount: parseInt(eventsResult.rows[0].voice_count, 10),
+      created: parseInt(eventsResult[0].created, 10),
+      deleted: parseInt(eventsResult[0].deleted, 10),
+      textCount: parseInt(eventsResult[0].textCount, 10),
+      voiceCount: parseInt(eventsResult[0].voiceCount, 10),
     },
     transcriptions: {
-      total: parseInt(transcriptionsResult.rows[0].total, 10),
-      errors: parseInt(transcriptionsResult.rows[0].errors, 10),
+      total: transcriptionsResult[0].total,
+      errors: parseInt(transcriptionsResult[0].errors, 10),
     },
     digest: {
-      activeRubrics: parseInt(digestRubricsResult.rows[0].count, 10),
-      totalRuns: parseInt(digestRunsResult.rows[0].count, 10),
-      totalPosts: parseInt(digestPostsResult.rows[0].count, 10),
+      activeRubrics: digestRubricsResult[0].count,
+      totalRuns: digestRunsResult[0].count,
+      totalPosts: digestPostsResult[0].count,
     },
   };
 }
 
 async function getPerUserStats(): Promise<UserStats[]> {
-  const result = await query<{
+  // Multi-subquery per-user dashboard: three correlated grouped-count LEFT JOINs.
+  // Kept as a single statement via the db.execute escape hatch; column-object
+  // interpolation keeps table/column renames compile-checked.
+  const { rows } = await db.execute<{
     telegram_id: string;
     first_name: string;
     username: string;
@@ -114,23 +125,23 @@ async function getPerUserStats(): Promise<UserStats[]> {
     expense_count: string;
     event_count: string;
     voice_count: string;
-  }>(
-    `SELECT
-      u.telegram_id,
-      u.first_name,
-      COALESCE(u.username, '') AS username,
-      u.role,
+  }>(sql`
+    SELECT
+      ${users.telegramId} AS telegram_id,
+      ${users.firstName} AS first_name,
+      COALESCE(${users.username}, '') AS username,
+      ${users.role} AS role,
       COALESCE(e.cnt, 0) AS expense_count,
       COALESCE(ce.cnt, 0) AS event_count,
       COALESCE(vt.cnt, 0) AS voice_count
-    FROM users u
-    LEFT JOIN (SELECT user_id, COUNT(*) AS cnt FROM expenses GROUP BY user_id) e ON e.user_id = u.id
-    LEFT JOIN (SELECT user_id, COUNT(*) AS cnt FROM calendar_events GROUP BY user_id) ce ON ce.user_id = u.id
-    LEFT JOIN (SELECT user_id, COUNT(*) AS cnt FROM voice_transcriptions GROUP BY user_id) vt ON vt.user_id = u.id
-    ORDER BY u.role DESC, u.first_name`
-  );
+    FROM ${users}
+    LEFT JOIN (SELECT ${expenses.userId} AS user_id, COUNT(*) AS cnt FROM ${expenses} GROUP BY ${expenses.userId}) e ON e.user_id = ${users.id}
+    LEFT JOIN (SELECT ${calendarEvents.userId} AS user_id, COUNT(*) AS cnt FROM ${calendarEvents} GROUP BY ${calendarEvents.userId}) ce ON ce.user_id = ${users.id}
+    LEFT JOIN (SELECT ${voiceTranscriptions.userId} AS user_id, COUNT(*) AS cnt FROM ${voiceTranscriptions} GROUP BY ${voiceTranscriptions.userId}) vt ON vt.user_id = ${users.id}
+    ORDER BY ${users.role} DESC, ${users.firstName}
+  `);
 
-  return result.rows.map((r) => ({
+  return rows.map((r) => ({
     telegramId: r.telegram_id,
     firstName: r.first_name,
     username: r.username,

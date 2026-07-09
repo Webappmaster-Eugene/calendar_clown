@@ -3,8 +3,10 @@
  * Logs user actions to action_logs table.
  */
 
-import { query } from "../db/connection.js";
+import { and, count, desc, eq, gte, ilike, lt, sql } from "drizzle-orm";
 import { isDatabaseAvailable } from "../db/connection.js";
+import { db } from "../db/drizzle.js";
+import { actionLogs, users } from "../db/schema.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("action-log");
@@ -57,12 +59,16 @@ export function logAction(
     detailsStr = detailsStr.slice(0, MAX_DETAILS_LENGTH);
   }
 
-  query(
-    `INSERT INTO action_logs (user_id, telegram_id, action, details) VALUES ($1, $2, $3, $4)`,
-    [userId, telegramId, action, detailsStr]
-  ).catch((err) => {
-    log.error(`Failed to log action "${action}":`, err);
-  });
+  db.insert(actionLogs)
+    .values({
+      userId,
+      telegramId: telegramId == null ? null : BigInt(telegramId),
+      action,
+      details: detailsStr,
+    })
+    .catch((err) => {
+      log.error(`Failed to log action "${action}":`, err);
+    });
 }
 
 /** Convenience: log action from API context where only telegramId is known. */
@@ -78,72 +84,45 @@ export function logApiAction(
 
 /** Get paginated action logs with user info, supporting filters. */
 export async function getActionLogs(filters: ActionLogFilter): Promise<ActionLogsResult> {
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-  let paramIdx = 1;
+  const conditions = [];
+  if (filters.userId != null) conditions.push(eq(actionLogs.userId, filters.userId));
+  if (filters.telegramId != null) conditions.push(eq(actionLogs.telegramId, BigInt(filters.telegramId)));
+  if (filters.action) conditions.push(eq(actionLogs.action, filters.action));
+  if (filters.search) conditions.push(ilike(actionLogs.details, `%${filters.search}%`));
+  if (filters.dateFrom) conditions.push(gte(actionLogs.createdAt, new Date(filters.dateFrom)));
+  if (filters.dateTo) conditions.push(lt(actionLogs.createdAt, new Date(filters.dateTo)));
 
-  if (filters.userId != null) {
-    conditions.push(`al.user_id = $${paramIdx++}`);
-    params.push(filters.userId);
-  }
-  if (filters.telegramId != null) {
-    conditions.push(`al.telegram_id = $${paramIdx++}`);
-    params.push(filters.telegramId);
-  }
-  if (filters.action) {
-    conditions.push(`al.action = $${paramIdx++}`);
-    params.push(filters.action);
-  }
-  if (filters.search) {
-    conditions.push(`al.details ILIKE $${paramIdx++}`);
-    params.push(`%${filters.search}%`);
-  }
-  if (filters.dateFrom) {
-    conditions.push(`al.created_at >= $${paramIdx++}`);
-    params.push(filters.dateFrom);
-  }
-  if (filters.dateTo) {
-    conditions.push(`al.created_at < $${paramIdx++}`);
-    params.push(filters.dateTo);
-  }
-
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
   const limit = Math.min(filters.limit ?? 50, 100);
   const offset = filters.offset ?? 0;
 
-  const countQuery = `SELECT COUNT(*) AS total FROM action_logs al ${where}`;
-  const dataQuery = `
-    SELECT
-      al.id,
-      al.user_id AS "userId",
-      al.telegram_id::text AS "telegramId",
-      al.action,
-      al.details,
-      al.created_at::text AS "createdAt",
-      u.first_name AS "firstName",
-      u.username
-    FROM action_logs al
-    LEFT JOIN users u ON u.id = al.user_id
-    ${where}
-    ORDER BY al.created_at DESC
-    LIMIT $${paramIdx++} OFFSET $${paramIdx++}
-  `;
-
-  const [countResult, dataResult] = await Promise.all([
-    query<{ total: string }>(countQuery, params),
-    query<ActionLogEntry>(dataQuery, [...params, limit, offset]),
+  const [countResult, items] = await Promise.all([
+    db.select({ total: count() }).from(actionLogs).where(where),
+    // Preserve the original ::text casts so timestamp/bigint formatting is byte-identical.
+    db
+      .select({
+        id: actionLogs.id,
+        userId: actionLogs.userId,
+        telegramId: sql<string | null>`${actionLogs.telegramId}::text`,
+        action: actionLogs.action,
+        details: actionLogs.details,
+        createdAt: sql<string>`${actionLogs.createdAt}::text`,
+        firstName: users.firstName,
+        username: users.username,
+      })
+      .from(actionLogs)
+      .leftJoin(users, eq(users.id, actionLogs.userId))
+      .where(where)
+      .orderBy(desc(actionLogs.createdAt))
+      .limit(limit)
+      .offset(offset),
   ]);
 
-  return {
-    items: dataResult.rows,
-    total: parseInt(countResult.rows[0]?.total ?? "0", 10),
-  };
+  return { items, total: countResult[0].total };
 }
 
 /** Get all distinct action names (for filter dropdown). */
 export async function getDistinctActions(): Promise<string[]> {
-  const { rows } = await query<{ action: string }>(
-    `SELECT DISTINCT action FROM action_logs ORDER BY action`
-  );
+  const rows = await db.selectDistinct({ action: actionLogs.action }).from(actionLogs).orderBy(actionLogs.action);
   return rows.map((r) => r.action);
 }

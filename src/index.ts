@@ -9,7 +9,7 @@ import { shutdownTelemetry } from "./telemetry.js";
 import { createBot } from "./bot.js";
 import { setBotSendMessage, setBotSendDocument } from "./botInstance.js";
 import { startOAuthServer } from "./oauthServer.js";
-import { runMigrations, runDrizzleMigrations } from "./db/migrate.js";
+import { runDrizzleMigrations } from "./db/migrate.js";
 import { query, closePool, setDatabaseAvailable, isDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
 import { initTranscribeQueue, startTranscribeWorker, closeTranscribeQueue, startStaleJobCleaner, stopStaleJobCleaner, startWorkerHealthMonitor, stopWorkerHealthMonitor } from "./transcribe/queue.js";
@@ -65,7 +65,6 @@ async function main(): Promise<void> {
       // Docker restarts the process, so a broken migration surfaces as a visible
       // crash-loop rather than a hidden degradation that swallows schema drift.
       try {
-        await runMigrations();
         await runDrizzleMigrations();
         log.info("Database migrations completed.");
       } catch (err) {

@@ -4,7 +4,23 @@
  * Extracted from commands/adminSummary.ts for reuse in both Telegram bot and REST API.
  */
 
-import { query } from "../db/connection.js";
+import { type SQL, sql } from "drizzle-orm";
+import { db } from "../db/drizzle.js";
+import {
+  actionLogs,
+  calendarEvents,
+  categories,
+  chatMessages,
+  digestRuns,
+  expenses,
+  gandalfCategories,
+  gandalfEntries,
+  goals,
+  notableDates,
+  users,
+  voiceTranscriptions,
+  wishlistItems,
+} from "../db/schema.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
@@ -129,15 +145,16 @@ export function getPeriodRange(period: SummaryPeriod): PeriodRange {
 // ─── Data collection ─────────────────────────────────────────────────────────
 
 export async function collectSummaryData(range: PeriodRange): Promise<UsageSummaryData> {
-  const p = [range.from.toISOString(), range.to.toISOString()];
+  const from = range.from.toISOString();
+  const to = range.to.toISOString();
 
   async function safeQuery<T extends Record<string, unknown>>(
-    sql: string,
-    params: string[],
+    statement: SQL,
     label: string,
   ): Promise<{ rows: T[] }> {
     try {
-      return await query<T>(sql, params);
+      const result = await db.execute<T>(statement);
+      return { rows: result.rows as T[] };
     } catch (err) {
       log.error(`Summary query failed [${label}]`, err);
       return { rows: [] };
@@ -163,158 +180,143 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
   ] = await Promise.all([
     // 1. expenses: count, sum, text/voice split
     safeQuery<{ count: string; total: string; text_count: string; voice_count: string }>(
-      `SELECT
+      sql`SELECT
          COUNT(*)::text AS count,
-         COALESCE(SUM(amount), 0)::text AS total,
-         COUNT(*) FILTER (WHERE input_method = 'text')::text AS text_count,
-         COUNT(*) FILTER (WHERE input_method = 'voice')::text AS voice_count
-       FROM expenses
-       WHERE created_at >= $1 AND created_at < $2`,
-      p,
+         COALESCE(SUM(${expenses.amount}), 0)::text AS total,
+         COUNT(*) FILTER (WHERE ${expenses.inputMethod} = 'text')::text AS text_count,
+         COUNT(*) FILTER (WHERE ${expenses.inputMethod} = 'voice')::text AS voice_count
+       FROM ${expenses}
+       WHERE ${expenses.createdAt} >= ${from} AND ${expenses.createdAt} < ${to}`,
       "expenses",
     ),
     // 2. expenses + categories: top-10
     safeQuery<{ name: string; emoji: string; cnt: string; amt: string }>(
-      `SELECT c.name, c.emoji, COUNT(*)::text AS cnt, SUM(e.amount)::text AS amt
-       FROM expenses e
-       JOIN categories c ON c.id = e.category_id
-       WHERE e.created_at >= $1 AND e.created_at < $2
-       GROUP BY c.id, c.name, c.emoji
-       ORDER BY SUM(e.amount) DESC
+      sql`SELECT ${categories.name} AS name, ${categories.emoji} AS emoji, COUNT(*)::text AS cnt, SUM(${expenses.amount})::text AS amt
+       FROM ${expenses}
+       JOIN ${categories} ON ${categories.id} = ${expenses.categoryId}
+       WHERE ${expenses.createdAt} >= ${from} AND ${expenses.createdAt} < ${to}
+       GROUP BY ${categories.id}, ${categories.name}, ${categories.emoji}
+       ORDER BY SUM(${expenses.amount}) DESC
        LIMIT 10`,
-      p,
       "expense_categories",
     ),
     // 3. expenses + users: per-user breakdown
     safeQuery<{ first_name: string; cnt: string; amt: string }>(
-      `SELECT u.first_name, COUNT(*)::text AS cnt, SUM(e.amount)::text AS amt
-       FROM expenses e
-       JOIN users u ON u.id = e.user_id
-       WHERE e.created_at >= $1 AND e.created_at < $2
-       GROUP BY u.id, u.first_name
-       ORDER BY SUM(e.amount) DESC`,
-      p,
+      sql`SELECT ${users.firstName} AS first_name, COUNT(*)::text AS cnt, SUM(${expenses.amount})::text AS amt
+       FROM ${expenses}
+       JOIN ${users} ON ${users.id} = ${expenses.userId}
+       WHERE ${expenses.createdAt} >= ${from} AND ${expenses.createdAt} < ${to}
+       GROUP BY ${users.id}, ${users.firstName}
+       ORDER BY SUM(${expenses.amount}) DESC`,
       "expense_users",
     ),
     // 4. calendar_events: created/deleted, text/voice
     safeQuery<{ created: string; deleted: string; text_count: string; voice_count: string }>(
-      `SELECT
-         COUNT(*) FILTER (WHERE status = 'created')::text AS created,
-         COUNT(*) FILTER (WHERE status = 'deleted')::text AS deleted,
-         COUNT(*) FILTER (WHERE input_method = 'text')::text AS text_count,
-         COUNT(*) FILTER (WHERE input_method = 'voice')::text AS voice_count
-       FROM calendar_events
-       WHERE created_at >= $1 AND created_at < $2`,
-      p,
+      sql`SELECT
+         COUNT(*) FILTER (WHERE ${calendarEvents.status} = 'created')::text AS created,
+         COUNT(*) FILTER (WHERE ${calendarEvents.status} = 'deleted')::text AS deleted,
+         COUNT(*) FILTER (WHERE ${calendarEvents.inputMethod} = 'text')::text AS text_count,
+         COUNT(*) FILTER (WHERE ${calendarEvents.inputMethod} = 'voice')::text AS voice_count
+       FROM ${calendarEvents}
+       WHERE ${calendarEvents.createdAt} >= ${from} AND ${calendarEvents.createdAt} < ${to}`,
       "calendar_events",
     ),
     // 5. calendar_events + users: per-user
     safeQuery<{ first_name: string; created: string; deleted: string }>(
-      `SELECT u.first_name,
-         COUNT(*) FILTER (WHERE ce.status = 'created')::text AS created,
-         COUNT(*) FILTER (WHERE ce.status = 'deleted')::text AS deleted
-       FROM calendar_events ce
-       JOIN users u ON u.id = ce.user_id
-       WHERE ce.created_at >= $1 AND ce.created_at < $2
-       GROUP BY u.id, u.first_name
+      sql`SELECT ${users.firstName} AS first_name,
+         COUNT(*) FILTER (WHERE ${calendarEvents.status} = 'created')::text AS created,
+         COUNT(*) FILTER (WHERE ${calendarEvents.status} = 'deleted')::text AS deleted
+       FROM ${calendarEvents}
+       JOIN ${users} ON ${users.id} = ${calendarEvents.userId}
+       WHERE ${calendarEvents.createdAt} >= ${from} AND ${calendarEvents.createdAt} < ${to}
+       GROUP BY ${users.id}, ${users.firstName}
        ORDER BY COUNT(*) DESC`,
-      p,
       "calendar_users",
     ),
     // 6. voice_transcriptions: total, errors
     safeQuery<{ total: string; errors: string }>(
-      `SELECT
+      sql`SELECT
          COUNT(*)::text AS total,
-         COUNT(*) FILTER (WHERE status = 'error')::text AS errors
-       FROM voice_transcriptions
-       WHERE created_at >= $1 AND created_at < $2`,
-      p,
+         COUNT(*) FILTER (WHERE ${voiceTranscriptions.status} = 'error')::text AS errors
+       FROM ${voiceTranscriptions}
+       WHERE ${voiceTranscriptions.createdAt} >= ${from} AND ${voiceTranscriptions.createdAt} < ${to}`,
       "transcriptions",
     ),
     // 7. voice_transcriptions + users: per-user
     safeQuery<{ first_name: string; cnt: string }>(
-      `SELECT u.first_name, COUNT(*)::text AS cnt
-       FROM voice_transcriptions vt
-       JOIN users u ON u.id = vt.user_id
-       WHERE vt.created_at >= $1 AND vt.created_at < $2
-       GROUP BY u.id, u.first_name
+      sql`SELECT ${users.firstName} AS first_name, COUNT(*)::text AS cnt
+       FROM ${voiceTranscriptions}
+       JOIN ${users} ON ${users.id} = ${voiceTranscriptions.userId}
+       WHERE ${voiceTranscriptions.createdAt} >= ${from} AND ${voiceTranscriptions.createdAt} < ${to}
+       GROUP BY ${users.id}, ${users.firstName}
        ORDER BY COUNT(*) DESC`,
-      p,
       "transcription_users",
     ),
     // 8. action_logs: action types + counts (top 20)
     safeQuery<{ action: string; cnt: string }>(
-      `SELECT action, COUNT(*)::text AS cnt
-       FROM action_logs
-       WHERE created_at >= $1 AND created_at < $2
-       GROUP BY action
+      sql`SELECT ${actionLogs.action} AS action, COUNT(*)::text AS cnt
+       FROM ${actionLogs}
+       WHERE ${actionLogs.createdAt} >= ${from} AND ${actionLogs.createdAt} < ${to}
+       GROUP BY ${actionLogs.action}
        ORDER BY COUNT(*) DESC
        LIMIT 20`,
-      p,
       "action_logs",
     ),
     // 9. gandalf_entries + categories: entries per category
     safeQuery<{ name: string; cnt: string }>(
-      `SELECT gc.name, COUNT(*)::text AS cnt
-       FROM gandalf_entries ge
-       JOIN gandalf_categories gc ON gc.id = ge.category_id
-       WHERE ge.created_at >= $1 AND ge.created_at < $2
-       GROUP BY gc.id, gc.name
+      sql`SELECT ${gandalfCategories.name} AS name, COUNT(*)::text AS cnt
+       FROM ${gandalfEntries}
+       JOIN ${gandalfCategories} ON ${gandalfCategories.id} = ${gandalfEntries.categoryId}
+       WHERE ${gandalfEntries.createdAt} >= ${from} AND ${gandalfEntries.createdAt} < ${to}
+       GROUP BY ${gandalfCategories.id}, ${gandalfCategories.name}
        ORDER BY COUNT(*) DESC`,
-      p,
       "gandalf",
     ),
     // 10. chat_messages: count
     safeQuery<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM chat_messages
-       WHERE created_at >= $1 AND created_at < $2`,
-      p,
+      sql`SELECT COUNT(*)::text AS count
+       FROM ${chatMessages}
+       WHERE ${chatMessages.createdAt} >= ${from} AND ${chatMessages.createdAt} < ${to}`,
       "chat_count",
     ),
     // 11. chat_messages + users: per-user
     safeQuery<{ first_name: string; cnt: string }>(
-      `SELECT u.first_name, COUNT(*)::text AS cnt
-       FROM chat_messages cm
-       JOIN users u ON u.id = cm.user_id
-       WHERE cm.created_at >= $1 AND cm.created_at < $2
-       GROUP BY u.id, u.first_name
+      sql`SELECT ${users.firstName} AS first_name, COUNT(*)::text AS cnt
+       FROM ${chatMessages}
+       JOIN ${users} ON ${users.id} = ${chatMessages.userId}
+       WHERE ${chatMessages.createdAt} >= ${from} AND ${chatMessages.createdAt} < ${to}
+       GROUP BY ${users.id}, ${users.firstName}
        ORDER BY COUNT(*) DESC`,
-      p,
       "chat_users",
     ),
     // 12. digest_runs: count, posts_found
     safeQuery<{ count: string; posts_found: string }>(
-      `SELECT COUNT(*)::text AS count, COALESCE(SUM(posts_found), 0)::text AS posts_found
-       FROM digest_runs
-       WHERE created_at >= $1 AND created_at < $2`,
-      p,
+      sql`SELECT COUNT(*)::text AS count, COALESCE(SUM(${digestRuns.postsFound}), 0)::text AS posts_found
+       FROM ${digestRuns}
+       WHERE ${digestRuns.createdAt} >= ${from} AND ${digestRuns.createdAt} < ${to}`,
       "digest_runs",
     ),
     // 13. wishlist_items: count
     safeQuery<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM wishlist_items
-       WHERE created_at >= $1 AND created_at < $2`,
-      p,
+      sql`SELECT COUNT(*)::text AS count
+       FROM ${wishlistItems}
+       WHERE ${wishlistItems.createdAt} >= ${from} AND ${wishlistItems.createdAt} < ${to}`,
       "wishlist",
     ),
     // 14. goals: created + completed
     safeQuery<{ created: string; completed: string }>(
-      `SELECT
+      sql`SELECT
          COUNT(*)::text AS created,
-         COUNT(*) FILTER (WHERE is_completed = true)::text AS completed
-       FROM goals
-       WHERE created_at >= $1 AND created_at < $2`,
-      p,
+         COUNT(*) FILTER (WHERE ${goals.isCompleted} = true)::text AS completed
+       FROM ${goals}
+       WHERE ${goals.createdAt} >= ${from} AND ${goals.createdAt} < ${to}`,
       "goals",
     ),
     // 15. notable_dates: count
     safeQuery<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM notable_dates
-       WHERE created_at >= $1 AND created_at < $2`,
-      p,
+      sql`SELECT COUNT(*)::text AS count
+       FROM ${notableDates}
+       WHERE ${notableDates.createdAt} >= ${from} AND ${notableDates.createdAt} < ${to}`,
       "notable_dates",
     ),
   ]);
