@@ -1,4 +1,7 @@
-import { query } from "../db/connection.js";
+import { and, asc, count, eq, inArray, ne, or, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { db } from "../db/drizzle.js";
+import { notableDates } from "../db/schema.js";
 
 export interface NotableDate {
   id: number;
@@ -35,102 +38,59 @@ export async function getDatesByMonthDay(
   month: number,
   day: number
 ): Promise<NotableDate[]> {
-  const { rows } = await query<{
-    id: number;
-    tribe_id: number;
-    added_by_user_id: number | null;
-    name: string;
-    date_month: number;
-    date_day: number;
-    event_type: string;
-    description: string | null;
-    greeting_template: string | null;
-    emoji: string;
-    is_priority: boolean;
-    is_active: boolean;
-    created_at: Date;
-  }>(
-    `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
-            event_type, description, greeting_template, emoji, is_priority, is_active, created_at
-     FROM notable_dates
-     WHERE tribe_id = $1 AND date_month = $2 AND date_day = $3 AND is_active = true
-     ORDER BY event_type, name`,
-    [tribeId, month, day]
-  );
+  const rows = await db
+    .select()
+    .from(notableDates)
+    .where(
+      and(
+        eq(notableDates.tribeId, tribeId),
+        eq(notableDates.dateMonth, month),
+        eq(notableDates.dateDay, day),
+        eq(notableDates.isActive, true)
+      )
+    )
+    .orderBy(asc(notableDates.eventType), asc(notableDates.name));
   return rows.map(mapRow);
 }
 
 /** Add a notable date. */
 export async function addNotableDate(params: AddNotableDateParams): Promise<NotableDate> {
-  const { rows } = await query<{
-    id: number;
-    tribe_id: number;
-    added_by_user_id: number | null;
-    name: string;
-    date_month: number;
-    date_day: number;
-    event_type: string;
-    description: string | null;
-    greeting_template: string | null;
-    emoji: string;
-    is_priority: boolean;
-    is_active: boolean;
-    created_at: Date;
-  }>(
-    `INSERT INTO notable_dates (tribe_id, added_by_user_id, name, date_month, date_day, event_type, description, greeting_template, emoji, is_priority)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     RETURNING id, tribe_id, added_by_user_id, name, date_month, date_day,
-               event_type, description, greeting_template, emoji, is_priority, is_active, created_at`,
-    [
-      params.tribeId,
-      params.addedByUserId,
-      params.name,
-      params.dateMonth,
-      params.dateDay,
-      params.eventType ?? "birthday",
-      params.description ?? null,
-      params.greetingTemplate ?? null,
-      params.emoji ?? "🎂",
-      params.isPriority ?? false,
-    ]
-  );
-  return mapRow(rows[0]);
+  const [row] = await db
+    .insert(notableDates)
+    .values({
+      tribeId: params.tribeId,
+      addedByUserId: params.addedByUserId,
+      name: params.name,
+      dateMonth: params.dateMonth,
+      dateDay: params.dateDay,
+      eventType: params.eventType ?? "birthday",
+      description: params.description ?? null,
+      greetingTemplate: params.greetingTemplate ?? null,
+      emoji: params.emoji ?? "🎂",
+      isPriority: params.isPriority ?? false,
+    })
+    .returning();
+  return mapRow(row);
 }
 
 /** Toggle is_priority flag on a notable date. */
 export async function toggleNotableDatePriority(id: number, tribeId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE notable_dates SET is_priority = NOT is_priority, updated_at = NOW() WHERE id = $1 AND tribe_id = $2",
-    [id, tribeId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(notableDates)
+    .set({ isPriority: sql`not ${notableDates.isPriority}`, updatedAt: sql`now()` })
+    .where(and(eq(notableDates.id, id), eq(notableDates.tribeId, tribeId)))
+    .returning({ id: notableDates.id });
+  return rows.length > 0;
 }
 
 /** Get a notable date by id. */
 export async function getNotableDateById(id: number, tribeId: number): Promise<NotableDate | null> {
-  const { rows } = await query<{
-    id: number;
-    tribe_id: number;
-    added_by_user_id: number | null;
-    name: string;
-    date_month: number;
-    date_day: number;
-    event_type: string;
-    description: string | null;
-    greeting_template: string | null;
-    emoji: string;
-    is_priority: boolean;
-    is_active: boolean;
-    created_at: Date;
-  }>(
-    `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
-            event_type, description, greeting_template, emoji, is_priority, is_active, created_at
-     FROM notable_dates
-     WHERE id = $1 AND tribe_id = $2`,
-    [id, tribeId]
-  );
-  if (rows.length === 0) return null;
-  return mapRow(rows[0]);
+  const [row] = await db
+    .select()
+    .from(notableDates)
+    .where(and(eq(notableDates.id, id), eq(notableDates.tribeId, tribeId)));
+  if (!row) return null;
+  return mapRow(row);
 }
 
 /** Update specific fields of a notable date. */
@@ -139,76 +99,34 @@ export async function updateNotableDate(
   tribeId: number,
   fields: Partial<{ name: string; dateMonth: number; dateDay: number; description: string | null; eventType: string; emoji: string; isPriority: boolean }>
 ): Promise<NotableDate | null> {
-  const setClauses: string[] = [];
-  const params: unknown[] = [];
-  let paramIdx = 1;
+  const set: PgUpdateSetSource<typeof notableDates> = {};
+  if (fields.name !== undefined) set.name = fields.name;
+  if (fields.dateMonth !== undefined) set.dateMonth = fields.dateMonth;
+  if (fields.dateDay !== undefined) set.dateDay = fields.dateDay;
+  if (fields.description !== undefined) set.description = fields.description;
+  if (fields.eventType !== undefined) set.eventType = fields.eventType;
+  if (fields.emoji !== undefined) set.emoji = fields.emoji;
+  if (fields.isPriority !== undefined) set.isPriority = fields.isPriority;
 
-  if (fields.name !== undefined) {
-    setClauses.push(`name = $${paramIdx++}`);
-    params.push(fields.name);
-  }
-  if (fields.dateMonth !== undefined) {
-    setClauses.push(`date_month = $${paramIdx++}`);
-    params.push(fields.dateMonth);
-  }
-  if (fields.dateDay !== undefined) {
-    setClauses.push(`date_day = $${paramIdx++}`);
-    params.push(fields.dateDay);
-  }
-  if (fields.description !== undefined) {
-    setClauses.push(`description = $${paramIdx++}`);
-    params.push(fields.description);
-  }
-  if (fields.eventType !== undefined) {
-    setClauses.push(`event_type = $${paramIdx++}`);
-    params.push(fields.eventType);
-  }
-  if (fields.emoji !== undefined) {
-    setClauses.push(`emoji = $${paramIdx++}`);
-    params.push(fields.emoji);
-  }
-  if (fields.isPriority !== undefined) {
-    setClauses.push(`is_priority = $${paramIdx++}`);
-    params.push(fields.isPriority);
-  }
+  if (Object.keys(set).length === 0) return null;
 
-  if (setClauses.length === 0) return null;
-
-  setClauses.push(`updated_at = NOW()`);
-  params.push(id, tribeId);
-
-  const sql = `UPDATE notable_dates SET ${setClauses.join(", ")}
-     WHERE id = $${paramIdx++} AND tribe_id = $${paramIdx}
-     RETURNING id, tribe_id, added_by_user_id, name, date_month, date_day,
-               event_type, description, greeting_template, emoji, is_priority, is_active, created_at`;
-
-  const { rows } = await query<{
-    id: number;
-    tribe_id: number;
-    added_by_user_id: number | null;
-    name: string;
-    date_month: number;
-    date_day: number;
-    event_type: string;
-    description: string | null;
-    greeting_template: string | null;
-    emoji: string;
-    is_priority: boolean;
-    is_active: boolean;
-    created_at: Date;
-  }>(sql, params);
-
-  if (rows.length === 0) return null;
-  return mapRow(rows[0]);
+  set.updatedAt = sql`now()`;
+  const [row] = await db
+    .update(notableDates)
+    .set(set)
+    .where(and(eq(notableDates.id, id), eq(notableDates.tribeId, tribeId)))
+    .returning();
+  if (!row) return null;
+  return mapRow(row);
 }
 
 /** Remove a notable date. */
 export async function removeNotableDate(id: number, tribeId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM notable_dates WHERE id = $1 AND tribe_id = $2",
-    [id, tribeId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(notableDates)
+    .where(and(eq(notableDates.id, id), eq(notableDates.tribeId, tribeId)))
+    .returning({ id: notableDates.id });
+  return rows.length > 0;
 }
 
 /** List notable dates for a tribe (optionally filtered by month). */
@@ -216,34 +134,19 @@ export async function listNotableDates(
   tribeId: number,
   month?: number
 ): Promise<NotableDate[]> {
-  let sql = `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
-                    event_type, description, greeting_template, emoji, is_priority, is_active, created_at
-             FROM notable_dates
-             WHERE tribe_id = $1 AND is_active = true`;
-  const params: unknown[] = [tribeId];
+  const conds = [eq(notableDates.tribeId, tribeId), eq(notableDates.isActive, true)];
+  if (month != null) conds.push(eq(notableDates.dateMonth, month));
 
-  if (month != null) {
-    sql += " AND date_month = $2";
-    params.push(month);
-  }
-
-  sql += " ORDER BY date_month, date_day, event_type, name";
-
-  const { rows } = await query<{
-    id: number;
-    tribe_id: number;
-    added_by_user_id: number | null;
-    name: string;
-    date_month: number;
-    date_day: number;
-    event_type: string;
-    description: string | null;
-    greeting_template: string | null;
-    emoji: string;
-    is_priority: boolean;
-    is_active: boolean;
-    created_at: Date;
-  }>(sql, params);
+  const rows = await db
+    .select()
+    .from(notableDates)
+    .where(and(...conds))
+    .orderBy(
+      asc(notableDates.dateMonth),
+      asc(notableDates.dateDay),
+      asc(notableDates.eventType),
+      asc(notableDates.name)
+    );
   return rows.map(mapRow);
 }
 
@@ -252,15 +155,11 @@ export async function countNotableDates(
   tribeId: number,
   excludeHolidays: boolean = false
 ): Promise<number> {
-  let sql = `SELECT COUNT(*)::int AS cnt FROM notable_dates WHERE tribe_id = $1 AND is_active = true`;
-  const params: unknown[] = [tribeId];
+  const conds = [eq(notableDates.tribeId, tribeId), eq(notableDates.isActive, true)];
+  if (excludeHolidays) conds.push(ne(notableDates.eventType, "holiday"));
 
-  if (excludeHolidays) {
-    sql += ` AND event_type != 'holiday'`;
-  }
-
-  const { rows } = await query<{ cnt: number }>(sql, params);
-  return rows[0]?.cnt ?? 0;
+  const [row] = await db.select({ value: count() }).from(notableDates).where(and(...conds));
+  return row.value;
 }
 
 /** List notable dates with pagination (flat list, ordered by date). */
@@ -270,35 +169,21 @@ export async function listNotableDatesPaginated(
   offset: number,
   excludeHolidays: boolean = false
 ): Promise<NotableDate[]> {
-  let sql = `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
-                    event_type, description, greeting_template, emoji, is_priority, is_active, created_at
-             FROM notable_dates
-             WHERE tribe_id = $1 AND is_active = true`;
-  const params: unknown[] = [tribeId];
-  let paramIdx = 2;
+  const conds = [eq(notableDates.tribeId, tribeId), eq(notableDates.isActive, true)];
+  if (excludeHolidays) conds.push(ne(notableDates.eventType, "holiday"));
 
-  if (excludeHolidays) {
-    sql += ` AND event_type != 'holiday'`;
-  }
-
-  sql += ` ORDER BY date_month, date_day, event_type, name LIMIT $${paramIdx++} OFFSET $${paramIdx}`;
-  params.push(limit, offset);
-
-  const { rows } = await query<{
-    id: number;
-    tribe_id: number;
-    added_by_user_id: number | null;
-    name: string;
-    date_month: number;
-    date_day: number;
-    event_type: string;
-    description: string | null;
-    greeting_template: string | null;
-    emoji: string;
-    is_priority: boolean;
-    is_active: boolean;
-    created_at: Date;
-  }>(sql, params);
+  const rows = await db
+    .select()
+    .from(notableDates)
+    .where(and(...conds))
+    .orderBy(
+      asc(notableDates.dateMonth),
+      asc(notableDates.dateDay),
+      asc(notableDates.eventType),
+      asc(notableDates.name)
+    )
+    .limit(limit)
+    .offset(offset);
   return rows.map(mapRow);
 }
 
@@ -317,34 +202,20 @@ export async function getUpcomingDates(
 
   if (pairs.length === 0) return [];
 
-  const conditions = pairs.map((_, i) => `(date_month = $${i * 2 + 2} AND date_day = $${i * 2 + 3})`).join(" OR ");
-  const params: unknown[] = [tribeId];
-  for (const p of pairs) {
-    params.push(p.month, p.day);
-  }
-
-  const { rows } = await query<{
-    id: number;
-    tribe_id: number;
-    added_by_user_id: number | null;
-    name: string;
-    date_month: number;
-    date_day: number;
-    event_type: string;
-    description: string | null;
-    greeting_template: string | null;
-    emoji: string;
-    is_priority: boolean;
-    is_active: boolean;
-    created_at: Date;
-  }>(
-    `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
-            event_type, description, greeting_template, emoji, is_priority, is_active, created_at
-     FROM notable_dates
-     WHERE tribe_id = $1 AND is_active = true AND (${conditions})
-     ORDER BY date_month, date_day, event_type, name`,
-    params
+  const dayMatch = or(
+    ...pairs.map((p) => and(eq(notableDates.dateMonth, p.month), eq(notableDates.dateDay, p.day)))
   );
+
+  const rows = await db
+    .select()
+    .from(notableDates)
+    .where(and(eq(notableDates.tribeId, tribeId), eq(notableDates.isActive, true), dayMatch))
+    .orderBy(
+      asc(notableDates.dateMonth),
+      asc(notableDates.dateDay),
+      asc(notableDates.eventType),
+      asc(notableDates.name)
+    );
   return rows.map(mapRow);
 }
 
@@ -353,20 +224,20 @@ export async function getUpcomingDates(
 /** Admin: bulk delete notable dates by ID array. */
 export async function bulkDeleteDates(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
-  const { rowCount } = await query(
-    "DELETE FROM notable_dates WHERE id = ANY($1)",
-    [ids]
-  );
-  return rowCount ?? 0;
+  const rows = await db
+    .delete(notableDates)
+    .where(inArray(notableDates.id, ids))
+    .returning({ id: notableDates.id });
+  return rows.length;
 }
 
 /** Admin: delete all notable dates for a tribe. */
 export async function deleteAllDates(tribeId: number): Promise<number> {
-  const { rowCount } = await query(
-    "DELETE FROM notable_dates WHERE tribe_id = $1",
-    [tribeId]
-  );
-  return rowCount ?? 0;
+  const rows = await db
+    .delete(notableDates)
+    .where(eq(notableDates.tribeId, tribeId))
+    .returning({ id: notableDates.id });
+  return rows.length;
 }
 
 /** Admin: get all notable dates paginated (all tribes). */
@@ -374,60 +245,38 @@ export async function getAllDatesPaginated(
   limit: number,
   offset: number
 ): Promise<NotableDate[]> {
-  const { rows } = await query<{
-    id: number; tribe_id: number; added_by_user_id: number | null;
-    name: string; date_month: number; date_day: number;
-    event_type: string; description: string | null;
-    greeting_template: string | null; emoji: string;
-    is_priority: boolean; is_active: boolean; created_at: Date;
-  }>(
-    `SELECT id, tribe_id, added_by_user_id, name, date_month, date_day,
-            event_type, description, greeting_template, emoji, is_priority, is_active, created_at
-     FROM notable_dates
-     ORDER BY date_month, date_day, name
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
-  );
+  const rows = await db
+    .select()
+    .from(notableDates)
+    .orderBy(asc(notableDates.dateMonth), asc(notableDates.dateDay), asc(notableDates.name))
+    .limit(limit)
+    .offset(offset);
   return rows.map(mapRow);
 }
 
 /** Admin: count all notable dates for a tribe. */
 export async function countAllDates(tribeId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM notable_dates WHERE tribe_id = $1",
-    [tribeId]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(notableDates)
+    .where(eq(notableDates.tribeId, tribeId));
+  return row.value;
 }
 
-function mapRow(r: {
-  id: number;
-  tribe_id: number;
-  added_by_user_id: number | null;
-  name: string;
-  date_month: number;
-  date_day: number;
-  event_type: string;
-  description: string | null;
-  greeting_template: string | null;
-  emoji: string;
-  is_priority: boolean;
-  is_active: boolean;
-  created_at: Date;
-}): NotableDate {
+function mapRow(r: typeof notableDates.$inferSelect): NotableDate {
   return {
     id: r.id,
-    tribeId: r.tribe_id,
-    addedByUserId: r.added_by_user_id,
+    tribeId: r.tribeId,
+    addedByUserId: r.addedByUserId,
     name: r.name,
-    dateMonth: r.date_month,
-    dateDay: r.date_day,
-    eventType: r.event_type,
+    dateMonth: r.dateMonth,
+    dateDay: r.dateDay,
+    eventType: r.eventType,
     description: r.description,
-    greetingTemplate: r.greeting_template,
-    emoji: r.emoji,
-    isPriority: r.is_priority,
-    isActive: r.is_active,
-    createdAt: r.created_at,
+    greetingTemplate: r.greetingTemplate,
+    emoji: r.emoji ?? "🎂",
+    isPriority: r.isPriority ?? false,
+    isActive: r.isActive ?? true,
+    createdAt: r.createdAt ?? new Date(),
   };
 }

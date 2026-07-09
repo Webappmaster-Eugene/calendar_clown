@@ -1,9 +1,12 @@
 /**
  * CRUD repository for Task Tracker: task works, task items, task reminders.
- * All queries use raw SQL via query().
+ * Data access via Drizzle query builder; row types inferred from the schema.
  */
 
-import { query } from "../db/connection.js";
+import { and, count, desc, eq, getTableColumns, lte, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { db } from "../db/drizzle.js";
+import { taskItems, taskReminders, taskWorks, users } from "../db/schema.js";
 
 // ─── Domain Types ────────────────────────────────────────────────────────
 
@@ -43,67 +46,37 @@ export interface PendingTaskReminder {
   userId: number;
 }
 
-// ─── Row Types (snake_case) ──────────────────────────────────────────────
-
-interface TaskWorkRow {
-  id: number;
-  user_id: number;
-  name: string;
-  emoji: string;
-  is_archived: boolean;
-  created_at: Date;
-  updated_at: Date;
-}
-
-interface TaskItemRow {
-  id: number;
-  work_id: number;
-  text: string;
-  deadline: Date;
-  is_completed: boolean;
-  completed_at: Date | null;
-  input_method: string;
-  created_at: Date;
-  updated_at: Date;
-}
-
-interface PendingReminderRow {
-  reminder_id: number;
-  task_item_id: number;
-  task_text: string;
-  deadline: Date;
-  work_name: string;
-  work_emoji: string;
-  reminder_type: string;
-  telegram_id: string; // bigint comes as string
-  user_id: number;
-}
+// Aggregated item counts per work, reused across the work-listing queries.
+const itemCounts = {
+  activeCount: sql<number>`count(${taskItems.id}) filter (where not ${taskItems.isCompleted})`.mapWith(Number),
+  completedCount: sql<number>`count(${taskItems.id}) filter (where ${taskItems.isCompleted})`.mapWith(Number),
+};
 
 // ─── Mappers ─────────────────────────────────────────────────────────────
 
-function mapTaskWork(r: TaskWorkRow): TaskWork {
+function mapTaskWork(r: typeof taskWorks.$inferSelect): TaskWork {
   return {
     id: r.id,
-    userId: r.user_id,
+    userId: r.userId,
     name: r.name,
     emoji: r.emoji,
-    isArchived: r.is_archived,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    isArchived: r.isArchived,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }
 
-function mapTaskItem(r: TaskItemRow): TaskItem {
+function mapTaskItem(r: typeof taskItems.$inferSelect): TaskItem {
   return {
     id: r.id,
-    workId: r.work_id,
+    workId: r.workId,
     text: r.text,
     deadline: r.deadline,
-    isCompleted: r.is_completed,
-    completedAt: r.completed_at,
-    inputMethod: r.input_method,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    isCompleted: r.isCompleted,
+    completedAt: r.completedAt,
+    inputMethod: r.inputMethod,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }
 
@@ -114,59 +87,44 @@ export async function createTaskWork(
   name: string,
   emoji: string = "📋",
 ): Promise<TaskWork> {
-  const { rows } = await query<TaskWorkRow>(
-    `INSERT INTO task_works (user_id, name, emoji)
-     VALUES ($1, $2, $3) RETURNING *`,
-    [userId, name, emoji],
-  );
-  return mapTaskWork(rows[0]);
+  const [row] = await db.insert(taskWorks).values({ userId, name, emoji }).returning();
+  return mapTaskWork(row);
 }
 
 export async function getTaskWorksByUser(userId: number): Promise<TaskWork[]> {
-  const { rows } = await query<TaskWorkRow & { active_count: string; completed_count: string }>(
-    `SELECT tw.*,
-       COUNT(ti.id) FILTER (WHERE ti.is_completed = false) AS active_count,
-       COUNT(ti.id) FILTER (WHERE ti.is_completed = true) AS completed_count
-     FROM task_works tw
-     LEFT JOIN task_items ti ON ti.work_id = tw.id
-     WHERE tw.user_id = $1 AND tw.is_archived = false
-     GROUP BY tw.id
-     ORDER BY tw.created_at DESC`,
-    [userId],
-  );
-  return rows.map((r) => ({
-    ...mapTaskWork(r),
-    activeCount: parseInt(r.active_count, 10),
-    completedCount: parseInt(r.completed_count, 10),
-  }));
+  const rows = await db
+    .select({ ...getTableColumns(taskWorks), ...itemCounts })
+    .from(taskWorks)
+    .leftJoin(taskItems, eq(taskItems.workId, taskWorks.id))
+    .where(and(eq(taskWorks.userId, userId), eq(taskWorks.isArchived, false)))
+    .groupBy(taskWorks.id)
+    .orderBy(desc(taskWorks.createdAt));
+  return rows.map((r) => ({ ...mapTaskWork(r), activeCount: r.activeCount, completedCount: r.completedCount }));
 }
 
 export async function getTaskWorkById(workId: number): Promise<TaskWork | null> {
-  const { rows } = await query<TaskWorkRow & { active_count: string; completed_count: string }>(
-    `SELECT tw.*,
-       COUNT(ti.id) FILTER (WHERE ti.is_completed = false) AS active_count,
-       COUNT(ti.id) FILTER (WHERE ti.is_completed = true) AS completed_count
-     FROM task_works tw
-     LEFT JOIN task_items ti ON ti.work_id = tw.id
-     WHERE tw.id = $1
-     GROUP BY tw.id`,
-    [workId],
-  );
-  if (rows.length === 0) return null;
-  return {
-    ...mapTaskWork(rows[0]),
-    activeCount: parseInt(rows[0].active_count, 10),
-    completedCount: parseInt(rows[0].completed_count, 10),
-  };
+  const [row] = await db
+    .select({ ...getTableColumns(taskWorks), ...itemCounts })
+    .from(taskWorks)
+    .leftJoin(taskItems, eq(taskItems.workId, taskWorks.id))
+    .where(eq(taskWorks.id, workId))
+    .groupBy(taskWorks.id);
+  if (!row) return null;
+  return { ...mapTaskWork(row), activeCount: row.activeCount, completedCount: row.completedCount };
 }
 
 export async function getTaskWorkByName(userId: number, name: string): Promise<TaskWork | null> {
-  const { rows } = await query<TaskWorkRow>(
-    `SELECT * FROM task_works WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND is_archived = false`,
-    [userId, name],
-  );
-  if (rows.length === 0) return null;
-  return mapTaskWork(rows[0]);
+  const [row] = await db
+    .select()
+    .from(taskWorks)
+    .where(
+      and(
+        eq(taskWorks.userId, userId),
+        sql`lower(${taskWorks.name}) = lower(${name})`,
+        eq(taskWorks.isArchived, false),
+      ),
+    );
+  return row ? mapTaskWork(row) : null;
 }
 
 export async function updateTaskWork(
@@ -174,133 +132,126 @@ export async function updateTaskWork(
   userId: number,
   updates: { name?: string; emoji?: string; isArchived?: boolean },
 ): Promise<TaskWork | null> {
-  const sets: string[] = [];
-  const params: unknown[] = [];
-  let idx = 1;
+  const set: PgUpdateSetSource<typeof taskWorks> = {};
+  if (updates.name !== undefined) set.name = updates.name;
+  if (updates.emoji !== undefined) set.emoji = updates.emoji;
+  if (updates.isArchived !== undefined) set.isArchived = updates.isArchived;
 
-  if (updates.name !== undefined) {
-    sets.push(`name = $${idx++}`);
-    params.push(updates.name);
-  }
-  if (updates.emoji !== undefined) {
-    sets.push(`emoji = $${idx++}`);
-    params.push(updates.emoji);
-  }
-  if (updates.isArchived !== undefined) {
-    sets.push(`is_archived = $${idx++}`);
-    params.push(updates.isArchived);
-  }
+  if (Object.keys(set).length === 0) return getTaskWorkById(workId);
 
-  if (sets.length === 0) return getTaskWorkById(workId);
-
-  sets.push(`updated_at = NOW()`);
-  params.push(workId, userId);
-
-  const { rows } = await query<TaskWorkRow>(
-    `UPDATE task_works SET ${sets.join(", ")}
-     WHERE id = $${idx++} AND user_id = $${idx}
-     RETURNING *`,
-    params,
-  );
-  if (rows.length === 0) return null;
-  return mapTaskWork(rows[0]);
+  set.updatedAt = sql`now()`;
+  const [row] = await db
+    .update(taskWorks)
+    .set(set)
+    .where(and(eq(taskWorks.id, workId), eq(taskWorks.userId, userId)))
+    .returning();
+  return row ? mapTaskWork(row) : null;
 }
 
 export async function deleteTaskWork(workId: number, userId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    `DELETE FROM task_works WHERE id = $1 AND user_id = $2`,
-    [workId, userId],
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(taskWorks)
+    .where(and(eq(taskWorks.id, workId), eq(taskWorks.userId, userId)))
+    .returning({ id: taskWorks.id });
+  return rows.length > 0;
 }
 
 export async function countTaskWorksByUser(userId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM task_works WHERE user_id = $1 AND is_archived = false`,
-    [userId],
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(taskWorks)
+    .where(and(eq(taskWorks.userId, userId), eq(taskWorks.isArchived, false)));
+  return row.value;
 }
 
 // ─── Task Items ──────────────────────────────────────────────────────────
 
-export async function createTaskItem(
+/** Create a task item and its reminders atomically. */
+export async function createTaskItemWithReminders(
   workId: number,
   text: string,
   deadline: Date,
-  inputMethod: string = "text",
+  inputMethod: string,
+  reminders: Array<{ remindAt: Date; reminderType: string }>,
 ): Promise<TaskItem> {
-  const { rows } = await query<TaskItemRow>(
-    `INSERT INTO task_items (work_id, text, deadline, input_method)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [workId, text, deadline, inputMethod],
-  );
-  return mapTaskItem(rows[0]);
+  return db.transaction(async (tx) => {
+    const [item] = await tx.insert(taskItems).values({ workId, text, deadline, inputMethod }).returning();
+    if (reminders.length > 0) {
+      await tx.insert(taskReminders).values(
+        reminders.map((r) => ({ taskItemId: item.id, remindAt: r.remindAt, reminderType: r.reminderType })),
+      );
+    }
+    return mapTaskItem(item);
+  });
 }
 
 export async function getTaskItemsByWork(workId: number): Promise<TaskItem[]> {
-  const { rows } = await query<TaskItemRow>(
-    `SELECT * FROM task_items WHERE work_id = $1 ORDER BY deadline ASC`,
-    [workId],
-  );
+  const rows = await db.select().from(taskItems).where(eq(taskItems.workId, workId)).orderBy(taskItems.deadline);
   return rows.map(mapTaskItem);
 }
 
 export async function toggleTaskItemCompleted(taskItemId: number): Promise<TaskItem | null> {
-  const { rows } = await query<TaskItemRow>(
-    `UPDATE task_items
-     SET is_completed = NOT is_completed,
-         completed_at = CASE WHEN is_completed THEN NULL ELSE NOW() END,
-         updated_at = NOW()
-     WHERE id = $1
-     RETURNING *`,
-    [taskItemId],
-  );
-  if (rows.length === 0) return null;
-  return mapTaskItem(rows[0]);
+  const [row] = await db
+    .update(taskItems)
+    .set({
+      isCompleted: sql`not ${taskItems.isCompleted}`,
+      completedAt: sql`case when ${taskItems.isCompleted} then null else now() end`,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(taskItems.id, taskItemId))
+    .returning();
+  return row ? mapTaskItem(row) : null;
 }
 
 export async function updateTaskItemText(taskItemId: number, text: string): Promise<TaskItem | null> {
-  const { rows } = await query<TaskItemRow>(
-    `UPDATE task_items SET text = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-    [text, taskItemId],
-  );
-  if (rows.length === 0) return null;
-  return mapTaskItem(rows[0]);
+  const [row] = await db
+    .update(taskItems)
+    .set({ text, updatedAt: sql`now()` })
+    .where(eq(taskItems.id, taskItemId))
+    .returning();
+  return row ? mapTaskItem(row) : null;
 }
 
-export async function updateTaskItemDeadline(taskItemId: number, deadline: Date): Promise<TaskItem | null> {
-  const { rows } = await query<TaskItemRow>(
-    `UPDATE task_items SET deadline = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-    [deadline, taskItemId],
-  );
-  if (rows.length === 0) return null;
-  return mapTaskItem(rows[0]);
+/** Replace a task item's deadline and regenerate its reminders atomically. */
+export async function replaceTaskItemDeadline(
+  taskItemId: number,
+  deadline: Date,
+  reminders: Array<{ remindAt: Date; reminderType: string }>,
+): Promise<TaskItem | null> {
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(taskItems)
+      .set({ deadline, updatedAt: sql`now()` })
+      .where(eq(taskItems.id, taskItemId))
+      .returning();
+    if (!updated) return null;
+
+    await tx.delete(taskReminders).where(eq(taskReminders.taskItemId, taskItemId));
+    if (reminders.length > 0) {
+      await tx.insert(taskReminders).values(
+        reminders.map((r) => ({ taskItemId, remindAt: r.remindAt, reminderType: r.reminderType })),
+      );
+    }
+    return mapTaskItem(updated);
+  });
 }
 
 export async function deleteTaskItem(taskItemId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    `DELETE FROM task_items WHERE id = $1`,
-    [taskItemId],
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db.delete(taskItems).where(eq(taskItems.id, taskItemId)).returning({ id: taskItems.id });
+  return rows.length > 0;
 }
 
 export async function countTaskItemsByWork(workId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM task_items WHERE work_id = $1`,
-    [workId],
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db.select({ value: count() }).from(taskItems).where(eq(taskItems.workId, workId));
+  return row.value;
 }
 
 export async function getCompletedTaskItems(workId: number): Promise<TaskItem[]> {
-  const { rows } = await query<TaskItemRow>(
-    `SELECT * FROM task_items
-     WHERE work_id = $1 AND is_completed = true
-     ORDER BY completed_at DESC`,
-    [workId],
-  );
+  const rows = await db
+    .select()
+    .from(taskItems)
+    .where(and(eq(taskItems.workId, workId), eq(taskItems.isCompleted, true)))
+    .orderBy(desc(taskItems.completedAt));
   return rows.map(mapTaskItem);
 }
 
@@ -312,102 +263,41 @@ export async function getTaskItemWithOwnership(
   taskItemId: number,
   userId: number,
 ): Promise<{ item: TaskItem; work: TaskWork } | null> {
-  const { rows } = await query<TaskItemRow & { w_id: number; w_user_id: number; w_name: string; w_emoji: string; w_is_archived: boolean; w_created_at: Date; w_updated_at: Date }>(
-    `SELECT ti.*,
-       tw.id AS w_id, tw.user_id AS w_user_id, tw.name AS w_name,
-       tw.emoji AS w_emoji, tw.is_archived AS w_is_archived,
-       tw.created_at AS w_created_at, tw.updated_at AS w_updated_at
-     FROM task_items ti
-     JOIN task_works tw ON ti.work_id = tw.id
-     WHERE ti.id = $1 AND tw.user_id = $2`,
-    [taskItemId, userId],
-  );
-  if (rows.length === 0) return null;
-  const r = rows[0];
-  return {
-    item: mapTaskItem(r),
-    work: {
-      id: r.w_id,
-      userId: r.w_user_id,
-      name: r.w_name,
-      emoji: r.w_emoji,
-      isArchived: r.w_is_archived,
-      createdAt: r.w_created_at,
-      updatedAt: r.w_updated_at,
-    },
-  };
+  const [row] = await db
+    .select({ item: getTableColumns(taskItems), work: getTableColumns(taskWorks) })
+    .from(taskItems)
+    .innerJoin(taskWorks, eq(taskItems.workId, taskWorks.id))
+    .where(and(eq(taskItems.id, taskItemId), eq(taskWorks.userId, userId)));
+  if (!row) return null;
+  return { item: mapTaskItem(row.item), work: mapTaskWork(row.work) };
 }
 
 // ─── Task Reminders ──────────────────────────────────────────────────────
 
-export async function createTaskReminders(
-  taskItemId: number,
-  reminders: Array<{ remindAt: Date; reminderType: string }>,
-): Promise<void> {
-  if (reminders.length === 0) return;
-
-  const values: string[] = [];
-  const params: unknown[] = [];
-  let idx = 1;
-
-  for (const r of reminders) {
-    values.push(`($${idx++}, $${idx++}, $${idx++})`);
-    params.push(taskItemId, r.remindAt, r.reminderType);
-  }
-
-  await query(
-    `INSERT INTO task_reminders (task_item_id, remind_at, reminder_type)
-     VALUES ${values.join(", ")}`,
-    params,
-  );
-}
-
-export async function deleteRemindersForTask(taskItemId: number): Promise<void> {
-  await query(
-    `DELETE FROM task_reminders WHERE task_item_id = $1`,
-    [taskItemId],
-  );
-}
-
 export async function getPendingTaskReminders(now: Date): Promise<PendingTaskReminder[]> {
-  const { rows } = await query<PendingReminderRow>(
-    `SELECT
-       tr.id AS reminder_id,
-       tr.task_item_id,
-       ti.text AS task_text,
-       ti.deadline,
-       tw.name AS work_name,
-       tw.emoji AS work_emoji,
-       tr.reminder_type,
-       u.telegram_id,
-       u.id AS user_id
-     FROM task_reminders tr
-     JOIN task_items ti ON tr.task_item_id = ti.id
-     JOIN task_works tw ON ti.work_id = tw.id
-     JOIN users u ON tw.user_id = u.id
-     WHERE tr.sent = false
-       AND tr.remind_at <= $1
-       AND ti.is_completed = false
-     ORDER BY tr.remind_at ASC`,
-    [now],
-  );
-  return rows.map((r) => ({
-    reminderId: r.reminder_id,
-    taskItemId: r.task_item_id,
-    taskText: r.task_text,
-    deadline: r.deadline,
-    workName: r.work_name,
-    workEmoji: r.work_emoji,
-    reminderType: r.reminder_type,
-    telegramId: Number(r.telegram_id),
-    userId: r.user_id,
-  }));
+  const rows = await db
+    .select({
+      reminderId: taskReminders.id,
+      taskItemId: taskReminders.taskItemId,
+      taskText: taskItems.text,
+      deadline: taskItems.deadline,
+      workName: taskWorks.name,
+      workEmoji: taskWorks.emoji,
+      reminderType: taskReminders.reminderType,
+      telegramId: users.telegramId,
+      userId: users.id,
+    })
+    .from(taskReminders)
+    .innerJoin(taskItems, eq(taskReminders.taskItemId, taskItems.id))
+    .innerJoin(taskWorks, eq(taskItems.workId, taskWorks.id))
+    .innerJoin(users, eq(taskWorks.userId, users.id))
+    .where(
+      and(eq(taskReminders.sent, false), lte(taskReminders.remindAt, now), eq(taskItems.isCompleted, false)),
+    )
+    .orderBy(taskReminders.remindAt);
+  return rows.map((r) => ({ ...r, telegramId: Number(r.telegramId) }));
 }
 
 export async function markTaskReminderSent(reminderId: number): Promise<void> {
-  await query(
-    `UPDATE task_reminders SET sent = true, sent_at = NOW() WHERE id = $1`,
-    [reminderId],
-  );
+  await db.update(taskReminders).set({ sent: true, sentAt: sql`now()` }).where(eq(taskReminders.id, reminderId));
 }
-

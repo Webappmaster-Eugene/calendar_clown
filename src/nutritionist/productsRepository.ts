@@ -1,8 +1,11 @@
 /**
  * Repository for the nutrition_products table (user product catalog).
- * Raw SQL via query() — follows the pattern of nutritionist/repository.ts.
+ * Data access via Drizzle query builder; row types inferred from the schema.
  */
-import { query } from "../db/connection.js";
+import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { db } from "../db/drizzle.js";
+import { nutritionProducts } from "../db/schema.js";
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -25,40 +28,23 @@ export interface NutritionProduct {
   updatedAt: Date;
 }
 
-interface NutritionProductRow {
-  id: number;
-  user_id: number;
-  name: string;
-  description: string | null;
-  unit: string;
-  calories_per_100: string;
-  proteins_per_100_g: string;
-  fats_per_100_g: string;
-  carbs_per_100_g: string;
-  package_photo_path: string | null;
-  package_photo_mime: string | null;
-  package_telegram_file_id: string | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-function mapRow(row: NutritionProductRow): NutritionProduct {
+function mapRow(row: typeof nutritionProducts.$inferSelect): NutritionProduct {
   const unit = row.unit === "ml" ? "ml" : "g";
   return {
     id: row.id,
-    userId: row.user_id,
+    userId: row.userId,
     name: row.name,
     description: row.description,
     unit,
-    caloriesPer100: parseFloat(row.calories_per_100),
-    proteinsPer100G: parseFloat(row.proteins_per_100_g),
-    fatsPer100G: parseFloat(row.fats_per_100_g),
-    carbsPer100G: parseFloat(row.carbs_per_100_g),
-    packagePhotoPath: row.package_photo_path,
-    packagePhotoMime: row.package_photo_mime,
-    packageTelegramFileId: row.package_telegram_file_id,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    caloriesPer100: parseFloat(row.caloriesPer100),
+    proteinsPer100G: parseFloat(row.proteinsPer100G),
+    fatsPer100G: parseFloat(row.fatsPer100G),
+    carbsPer100G: parseFloat(row.carbsPer100G),
+    packagePhotoPath: row.packagePhotoPath,
+    packagePhotoMime: row.packagePhotoMime,
+    packageTelegramFileId: row.packageTelegramFileId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -95,28 +81,23 @@ export interface UpdateNutritionProductInput {
 export async function createProduct(
   input: CreateNutritionProductInput,
 ): Promise<NutritionProduct> {
-  const { rows } = await query<NutritionProductRow>(
-    `INSERT INTO nutrition_products (
-       user_id, name, description, unit,
-       calories_per_100, proteins_per_100_g, fats_per_100_g, carbs_per_100_g,
-       package_photo_path, package_photo_mime, package_telegram_file_id
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     RETURNING *`,
-    [
-      input.userId,
-      input.name,
-      input.description,
-      input.unit,
-      input.caloriesPer100,
-      input.proteinsPer100G,
-      input.fatsPer100G,
-      input.carbsPer100G,
-      input.packagePhotoPath ?? null,
-      input.packagePhotoMime ?? null,
-      input.packageTelegramFileId ?? null,
-    ],
-  );
-  return mapRow(rows[0]);
+  const [row] = await db
+    .insert(nutritionProducts)
+    .values({
+      userId: input.userId,
+      name: input.name,
+      description: input.description,
+      unit: input.unit,
+      caloriesPer100: String(input.caloriesPer100),
+      proteinsPer100G: String(input.proteinsPer100G),
+      fatsPer100G: String(input.fatsPer100G),
+      carbsPer100G: String(input.carbsPer100G),
+      packagePhotoPath: input.packagePhotoPath ?? null,
+      packagePhotoMime: input.packagePhotoMime ?? null,
+      packageTelegramFileId: input.packageTelegramFileId ?? null,
+    })
+    .returning();
+  return mapRow(row);
 }
 
 /**
@@ -128,47 +109,33 @@ export async function updateProduct(
   userId: number,
   patch: UpdateNutritionProductInput,
 ): Promise<NutritionProduct | null> {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  let idx = 1;
+  const set: PgUpdateSetSource<typeof nutritionProducts> = {};
 
-  const push = (column: string, value: unknown) => {
-    fields.push(`${column} = $${idx}`);
-    values.push(value);
-    idx++;
-  };
-
-  if (patch.name !== undefined) push("name", patch.name);
-  if (patch.description !== undefined) push("description", patch.description);
-  if (patch.unit !== undefined) push("unit", patch.unit);
-  if (patch.caloriesPer100 !== undefined) push("calories_per_100", patch.caloriesPer100);
-  if (patch.proteinsPer100G !== undefined) push("proteins_per_100_g", patch.proteinsPer100G);
-  if (patch.fatsPer100G !== undefined) push("fats_per_100_g", patch.fatsPer100G);
-  if (patch.carbsPer100G !== undefined) push("carbs_per_100_g", patch.carbsPer100G);
-  if (patch.packagePhotoPath !== undefined) push("package_photo_path", patch.packagePhotoPath);
-  if (patch.packagePhotoMime !== undefined) push("package_photo_mime", patch.packagePhotoMime);
+  if (patch.name !== undefined) set.name = patch.name;
+  if (patch.description !== undefined) set.description = patch.description;
+  if (patch.unit !== undefined) set.unit = patch.unit;
+  if (patch.caloriesPer100 !== undefined) set.caloriesPer100 = String(patch.caloriesPer100);
+  if (patch.proteinsPer100G !== undefined) set.proteinsPer100G = String(patch.proteinsPer100G);
+  if (patch.fatsPer100G !== undefined) set.fatsPer100G = String(patch.fatsPer100G);
+  if (patch.carbsPer100G !== undefined) set.carbsPer100G = String(patch.carbsPer100G);
+  if (patch.packagePhotoPath !== undefined) set.packagePhotoPath = patch.packagePhotoPath;
+  if (patch.packagePhotoMime !== undefined) set.packagePhotoMime = patch.packagePhotoMime;
   if (patch.packageTelegramFileId !== undefined) {
-    push("package_telegram_file_id", patch.packageTelegramFileId);
+    set.packageTelegramFileId = patch.packageTelegramFileId;
   }
 
-  if (fields.length === 0) {
+  if (Object.keys(set).length === 0) {
     // Nothing to update — return the current row.
     return getProductById(id, userId);
   }
 
-  fields.push(`updated_at = NOW()`);
-  values.push(id, userId);
-  const idParam = `$${idx}`;
-  const userParam = `$${idx + 1}`;
-
-  const { rows } = await query<NutritionProductRow>(
-    `UPDATE nutrition_products
-        SET ${fields.join(", ")}
-      WHERE id = ${idParam} AND user_id = ${userParam}
-      RETURNING *`,
-    values,
-  );
-  return rows.length > 0 ? mapRow(rows[0]) : null;
+  set.updatedAt = sql`now()`;
+  const [row] = await db
+    .update(nutritionProducts)
+    .set(set)
+    .where(and(eq(nutritionProducts.id, id), eq(nutritionProducts.userId, userId)))
+    .returning();
+  return row ? mapRow(row) : null;
 }
 
 /**
@@ -180,13 +147,11 @@ export async function deleteProduct(
   id: number,
   userId: number,
 ): Promise<NutritionProduct | null> {
-  const { rows } = await query<NutritionProductRow>(
-    `DELETE FROM nutrition_products
-       WHERE id = $1 AND user_id = $2
-       RETURNING *`,
-    [id, userId],
-  );
-  return rows.length > 0 ? mapRow(rows[0]) : null;
+  const [row] = await db
+    .delete(nutritionProducts)
+    .where(and(eq(nutritionProducts.id, id), eq(nutritionProducts.userId, userId)))
+    .returning();
+  return row ? mapRow(row) : null;
 }
 
 /** Get a single product by id with ownership check. */
@@ -194,11 +159,11 @@ export async function getProductById(
   id: number,
   userId: number,
 ): Promise<NutritionProduct | null> {
-  const { rows } = await query<NutritionProductRow>(
-    "SELECT * FROM nutrition_products WHERE id = $1 AND user_id = $2",
-    [id, userId],
-  );
-  return rows.length > 0 ? mapRow(rows[0]) : null;
+  const [row] = await db
+    .select()
+    .from(nutritionProducts)
+    .where(and(eq(nutritionProducts.id, id), eq(nutritionProducts.userId, userId)));
+  return row ? mapRow(row) : null;
 }
 
 /**
@@ -214,23 +179,27 @@ export async function listProducts(
   const trimmed = search?.trim();
   if (trimmed) {
     const pattern = `%${trimmed}%`;
-    const { rows } = await query<NutritionProductRow>(
-      `SELECT * FROM nutrition_products
-         WHERE user_id = $1
-           AND (name ILIKE $2 OR description ILIKE $2)
-         ORDER BY created_at DESC
-         LIMIT $3 OFFSET $4`,
-      [userId, pattern, limit, offset],
-    );
+    const rows = await db
+      .select()
+      .from(nutritionProducts)
+      .where(
+        and(
+          eq(nutritionProducts.userId, userId),
+          or(ilike(nutritionProducts.name, pattern), ilike(nutritionProducts.description, pattern)),
+        ),
+      )
+      .orderBy(desc(nutritionProducts.createdAt))
+      .limit(limit)
+      .offset(offset);
     return rows.map(mapRow);
   }
-  const { rows } = await query<NutritionProductRow>(
-    `SELECT * FROM nutrition_products
-       WHERE user_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2 OFFSET $3`,
-    [userId, limit, offset],
-  );
+  const rows = await db
+    .select()
+    .from(nutritionProducts)
+    .where(eq(nutritionProducts.userId, userId))
+    .orderBy(desc(nutritionProducts.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map(mapRow);
 }
 
@@ -242,19 +211,22 @@ export async function countProducts(
   const trimmed = search?.trim();
   if (trimmed) {
     const pattern = `%${trimmed}%`;
-    const { rows } = await query<{ count: string }>(
-      `SELECT COUNT(*) AS count FROM nutrition_products
-         WHERE user_id = $1
-           AND (name ILIKE $2 OR description ILIKE $2)`,
-      [userId, pattern],
-    );
-    return parseInt(rows[0].count, 10);
+    const [row] = await db
+      .select({ value: count() })
+      .from(nutritionProducts)
+      .where(
+        and(
+          eq(nutritionProducts.userId, userId),
+          or(ilike(nutritionProducts.name, pattern), ilike(nutritionProducts.description, pattern)),
+        ),
+      );
+    return row.value;
   }
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM nutrition_products WHERE user_id = $1",
-    [userId],
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(nutritionProducts)
+    .where(eq(nutritionProducts.userId, userId));
+  return row.value;
 }
 
 /**
@@ -266,13 +238,12 @@ export async function listAllProductsForUser(
   userId: number,
   maxRows: number,
 ): Promise<NutritionProduct[]> {
-  const { rows } = await query<NutritionProductRow>(
-    `SELECT * FROM nutrition_products
-       WHERE user_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2`,
-    [userId, maxRows],
-  );
+  const rows = await db
+    .select()
+    .from(nutritionProducts)
+    .where(eq(nutritionProducts.userId, userId))
+    .orderBy(desc(nutritionProducts.createdAt))
+    .limit(maxRows);
   return rows.map(mapRow);
 }
 
@@ -285,12 +256,15 @@ export async function findProductsByNormalizedName(
   userId: number,
   normalizedName: string,
 ): Promise<NutritionProduct[]> {
-  const { rows } = await query<NutritionProductRow>(
-    `SELECT * FROM nutrition_products
-       WHERE user_id = $1
-         AND LOWER(TRIM(name)) = $2
-       ORDER BY created_at DESC`,
-    [userId, normalizedName],
-  );
+  const rows = await db
+    .select()
+    .from(nutritionProducts)
+    .where(
+      and(
+        eq(nutritionProducts.userId, userId),
+        sql`lower(trim(${nutritionProducts.name})) = ${normalizedName}`,
+      ),
+    )
+    .orderBy(desc(nutritionProducts.createdAt));
   return rows.map(mapRow);
 }

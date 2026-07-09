@@ -3,7 +3,9 @@
  * Kept separate from the general expenses repository to keep the feature cohesive.
  */
 import { randomBytes } from "node:crypto";
-import { query } from "../../db/connection.js";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { db } from "../../db/drizzle.js";
+import { expenses, users } from "../../db/schema.js";
 import {
   MAX_EXPENSE_AMOUNT,
   MIN_EXPENSE_AMOUNT,
@@ -11,27 +13,15 @@ import {
 } from "../../constants.js";
 import type { DbUser } from "../types.js";
 
-const USER_COLUMNS = "id, telegram_id, username, first_name, last_name, role, tribe_id";
-
-interface UserRow {
-  id: number;
-  telegram_id: string;
-  username: string | null;
-  first_name: string;
-  last_name: string | null;
-  role: string;
-  tribe_id: number | null;
-}
-
-function mapUserRow(r: UserRow): DbUser {
+function mapUser(r: typeof users.$inferSelect): DbUser {
   return {
     id: r.id,
-    telegramId: Number(r.telegram_id),
+    telegramId: Number(r.telegramId),
     username: r.username,
-    firstName: r.first_name,
-    lastName: r.last_name,
+    firstName: r.firstName,
+    lastName: r.lastName,
     role: r.role as "admin" | "user",
-    tribeId: r.tribe_id,
+    tribeId: r.tribeId,
   };
 }
 
@@ -46,47 +36,44 @@ function generateSecret(): string {
  * re-read the value the winner stored.
  */
 export async function getOrCreateWebhookSecret(telegramId: number): Promise<string | null> {
-  const { rows } = await query<{ webhook_secret: string | null }>(
-    "SELECT webhook_secret FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
-  if (rows.length === 0) return null; // user not provisioned yet
-  if (rows[0].webhook_secret) return rows[0].webhook_secret;
+  const [existing] = await db
+    .select({ webhookSecret: users.webhookSecret })
+    .from(users)
+    .where(eq(users.telegramId, BigInt(telegramId)));
+  if (!existing) return null; // user not provisioned yet
+  if (existing.webhookSecret) return existing.webhookSecret;
 
   const secret = generateSecret();
-  const { rows: updated } = await query<{ webhook_secret: string }>(
-    `UPDATE users SET webhook_secret = $1
-     WHERE telegram_id = $2 AND webhook_secret IS NULL
-     RETURNING webhook_secret`,
-    [secret, telegramId]
-  );
-  if (updated.length > 0) return updated[0].webhook_secret;
+  const [updated] = await db
+    .update(users)
+    .set({ webhookSecret: secret })
+    .where(and(eq(users.telegramId, BigInt(telegramId)), isNull(users.webhookSecret)))
+    .returning({ webhookSecret: users.webhookSecret });
+  if (updated?.webhookSecret) return updated.webhookSecret;
 
   // Lost the race — return whatever the concurrent call stored.
-  const { rows: fresh } = await query<{ webhook_secret: string | null }>(
-    "SELECT webhook_secret FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
-  return fresh[0]?.webhook_secret ?? null;
+  const [fresh] = await db
+    .select({ webhookSecret: users.webhookSecret })
+    .from(users)
+    .where(eq(users.telegramId, BigInt(telegramId)));
+  return fresh?.webhookSecret ?? null;
 }
 
 /** Rotate the user's webhook secret (invalidates the previous URL). */
 export async function regenerateWebhookSecret(telegramId: number): Promise<string | null> {
   const secret = generateSecret();
-  const { rows } = await query<{ webhook_secret: string }>(
-    "UPDATE users SET webhook_secret = $1 WHERE telegram_id = $2 RETURNING webhook_secret",
-    [secret, telegramId]
-  );
-  return rows[0]?.webhook_secret ?? null;
+  const [row] = await db
+    .update(users)
+    .set({ webhookSecret: secret })
+    .where(eq(users.telegramId, BigInt(telegramId)))
+    .returning({ webhookSecret: users.webhookSecret });
+  return row?.webhookSecret ?? null;
 }
 
 /** Resolve an inbound webhook secret to its owner. Returns null if unknown. */
 export async function findUserByWebhookSecret(secret: string): Promise<DbUser | null> {
-  const { rows } = await query<UserRow>(
-    `SELECT ${USER_COLUMNS} FROM users WHERE webhook_secret = $1`,
-    [secret]
-  );
-  return rows.length > 0 ? mapUserRow(rows[0]) : null;
+  const [row] = await db.select().from(users).where(eq(users.webhookSecret, secret));
+  return row ? mapUser(row) : null;
 }
 
 export interface InsertBankPushExpenseInput {
@@ -121,23 +108,23 @@ export async function insertBankPushExpense(
     ? input.subcategory.slice(0, MAX_SUBCATEGORY_LENGTH).trim() || null
     : null;
 
-  const { rows } = await query<{ id: number; created_at: Date }>(
-    `INSERT INTO expenses
-       (user_id, tribe_id, category_id, subcategory, amount, input_method, source, dedup_hash, created_at)
-     VALUES ($1, $2, $3, $4, $5, 'text', 'bank_push', $6, COALESCE($7::timestamptz, NOW()))
-     ON CONFLICT (dedup_hash) WHERE dedup_hash IS NOT NULL DO NOTHING
-     RETURNING id, created_at`,
-    [
-      input.userId,
-      input.tribeId,
-      input.categoryId,
-      sanitizedSub,
-      amount,
-      input.dedupHash,
-      input.createdAt ?? null,
-    ]
-  );
+  const [row] = await db
+    .insert(expenses)
+    .values({
+      userId: input.userId,
+      tribeId: input.tribeId,
+      categoryId: input.categoryId,
+      subcategory: sanitizedSub,
+      amount: String(amount),
+      inputMethod: "text",
+      source: "bank_push",
+      dedupHash: input.dedupHash,
+      createdAt: input.createdAt ?? sql`now()`,
+    })
+    // Partial unique index idx_expenses_dedup_hash ... WHERE dedup_hash IS NOT NULL.
+    .onConflictDoNothing({ target: expenses.dedupHash, where: sql`${expenses.dedupHash} is not null` })
+    .returning({ id: expenses.id, createdAt: expenses.createdAt });
 
-  if (rows.length === 0) return null; // duplicate — already recorded
-  return { id: rows[0].id, createdAt: rows[0].created_at };
+  if (!row) return null; // duplicate — already recorded
+  return { id: row.id, createdAt: row.createdAt };
 }

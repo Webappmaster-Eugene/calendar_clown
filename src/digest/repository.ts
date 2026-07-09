@@ -1,4 +1,12 @@
-import { query } from "../db/connection.js";
+/**
+ * CRUD repository for Digest mode: rubrics, channels, runs, posts.
+ * Data access via Drizzle query builder; row types inferred from the schema.
+ */
+
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { db } from "../db/drizzle.js";
+import { digestChannels, digestPosts, digestRubrics, digestRuns, users } from "../db/schema.js";
 import type {
   DigestRubric,
   DigestChannel,
@@ -26,37 +34,43 @@ export const MAX_CHANNELS_TOTAL = parseInt(
 // ─── Rubrics ─────────────────────────────────────────────────────────────────
 
 export async function createRubric(params: CreateRubricParams): Promise<DigestRubric> {
-  const { rows } = await query<RubricRow>(
-    `INSERT INTO digest_rubrics (user_id, name, description, emoji, keywords)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING *`,
-    [params.userId, params.name, params.description, params.emoji, params.keywords]
-  );
-  return mapRubric(rows[0]);
+  const [row] = await db
+    .insert(digestRubrics)
+    .values({
+      userId: params.userId,
+      name: params.name,
+      description: params.description,
+      emoji: params.emoji,
+      keywords: params.keywords,
+    })
+    .returning();
+  return mapRubric(row);
 }
 
 export async function getRubricsByUser(userId: number): Promise<DigestRubric[]> {
-  const { rows } = await query<RubricRow>(
-    "SELECT * FROM digest_rubrics WHERE user_id = $1 ORDER BY created_at",
-    [userId]
-  );
+  const rows = await db
+    .select()
+    .from(digestRubrics)
+    .where(eq(digestRubrics.userId, userId))
+    .orderBy(digestRubrics.createdAt);
   return rows.map(mapRubric);
 }
 
 export async function getActiveRubricsByUser(userId: number): Promise<DigestRubric[]> {
-  const { rows } = await query<RubricRow>(
-    "SELECT * FROM digest_rubrics WHERE user_id = $1 AND is_active = true ORDER BY created_at",
-    [userId]
-  );
+  const rows = await db
+    .select()
+    .from(digestRubrics)
+    .where(and(eq(digestRubrics.userId, userId), eq(digestRubrics.isActive, true)))
+    .orderBy(digestRubrics.createdAt);
   return rows.map(mapRubric);
 }
 
 export async function getRubricByIdAndUser(rubricId: number, userId: number): Promise<DigestRubric | null> {
-  const { rows } = await query<RubricRow>(
-    "SELECT * FROM digest_rubrics WHERE id = $1 AND user_id = $2",
-    [rubricId, userId]
-  );
-  return rows.length > 0 ? mapRubric(rows[0]) : null;
+  const [row] = await db
+    .select()
+    .from(digestRubrics)
+    .where(and(eq(digestRubrics.id, rubricId), eq(digestRubrics.userId, userId)));
+  return row ? mapRubric(row) : null;
 }
 
 export async function getRubricByUserAndName(
@@ -65,48 +79,52 @@ export async function getRubricByUserAndName(
 ): Promise<DigestRubric | null> {
   // Escape LIKE wildcards in user input to prevent unintended matches
   const escapedName = name.replace(/[%_\\]/g, "\\$&");
-  const { rows } = await query<RubricRow>(
-    `SELECT * FROM digest_rubrics
-     WHERE user_id = $1
-       AND (LOWER(name) = LOWER($2) OR LOWER(TRIM(name)) LIKE '%' || LOWER($3) || '%' ESCAPE '\\')
-     LIMIT 1`,
-    [userId, name, escapedName]
-  );
-  return rows.length > 0 ? mapRubric(rows[0]) : null;
+  const [row] = await db
+    .select()
+    .from(digestRubrics)
+    .where(
+      and(
+        eq(digestRubrics.userId, userId),
+        sql`(lower(${digestRubrics.name}) = lower(${name}) OR lower(trim(${digestRubrics.name})) LIKE '%' || lower(${escapedName}) || '%' ESCAPE '\\')`
+      )
+    )
+    .limit(1);
+  return row ? mapRubric(row) : null;
 }
 
 export async function countRubricsByUser(userId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM digest_rubrics WHERE user_id = $1",
-    [userId]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(digestRubrics)
+    .where(eq(digestRubrics.userId, userId));
+  return row.value;
 }
 
 export async function deleteRubric(rubricId: number, userId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM digest_rubrics WHERE id = $1 AND user_id = $2",
-    [rubricId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(digestRubrics)
+    .where(and(eq(digestRubrics.id, rubricId), eq(digestRubrics.userId, userId)))
+    .returning({ id: digestRubrics.id });
+  return rows.length > 0;
 }
 
 export async function toggleRubric(rubricId: number, userId: number, isActive: boolean): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE digest_rubrics SET is_active = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
-    [isActive, rubricId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(digestRubrics)
+    .set({ isActive, updatedAt: sql`now()` })
+    .where(and(eq(digestRubrics.id, rubricId), eq(digestRubrics.userId, userId)))
+    .returning({ id: digestRubrics.id });
+  return rows.length > 0;
 }
 
 /** Toggle is_active to its opposite value and return the updated rubric. */
 export async function toggleRubricIsActive(rubricId: number, userId: number): Promise<DigestRubric | null> {
-  const { rows } = await query<RubricRow>(
-    `UPDATE digest_rubrics SET is_active = NOT is_active, updated_at = NOW()
-     WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [rubricId, userId]
-  );
-  return rows.length > 0 ? mapRubric(rows[0]) : null;
+  const [row] = await db
+    .update(digestRubrics)
+    .set({ isActive: sql`not ${digestRubrics.isActive}`, updatedAt: sql`now()` })
+    .where(and(eq(digestRubrics.id, rubricId), eq(digestRubrics.userId, userId)))
+    .returning();
+  return row ? mapRubric(row) : null;
 }
 
 // ─── Channels ────────────────────────────────────────────────────────────────
@@ -116,74 +134,77 @@ export async function addChannel(
   channelUsername: string
 ): Promise<DigestChannel> {
   const clean = channelUsername.replace(/^@/, "").toLowerCase();
-  const { rows } = await query<ChannelRow>(
-    `INSERT INTO digest_channels (rubric_id, channel_username)
-     VALUES ($1, $2)
-     ON CONFLICT (rubric_id, channel_username) DO UPDATE SET is_active = true
-     RETURNING *`,
-    [rubricId, clean]
-  );
-  return mapChannel(rows[0]);
+  const [row] = await db
+    .insert(digestChannels)
+    .values({ rubricId, channelUsername: clean })
+    .onConflictDoUpdate({
+      target: [digestChannels.rubricId, digestChannels.channelUsername],
+      set: { isActive: true },
+    })
+    .returning();
+  return mapChannel(row);
 }
 
 export async function getChannelsByRubric(rubricId: number): Promise<DigestChannel[]> {
-  const { rows } = await query<ChannelRow>(
-    "SELECT * FROM digest_channels WHERE rubric_id = $1 AND is_active = true ORDER BY added_at",
-    [rubricId]
-  );
+  const rows = await db
+    .select()
+    .from(digestChannels)
+    .where(and(eq(digestChannels.rubricId, rubricId), eq(digestChannels.isActive, true)))
+    .orderBy(digestChannels.addedAt);
   return rows.map(mapChannel);
 }
 
 export async function countChannelsByRubric(rubricId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM digest_channels WHERE rubric_id = $1 AND is_active = true",
-    [rubricId]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(digestChannels)
+    .where(and(eq(digestChannels.rubricId, rubricId), eq(digestChannels.isActive, true)));
+  return row.value;
 }
 
 export async function countTotalChannels(): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM digest_channels WHERE is_active = true"
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(digestChannels)
+    .where(eq(digestChannels.isActive, true));
+  return row.value;
 }
 
 export async function removeChannel(rubricId: number, channelUsername: string): Promise<boolean> {
   const clean = channelUsername.replace(/^@/, "").toLowerCase();
-  const { rowCount } = await query(
-    "UPDATE digest_channels SET is_active = false WHERE rubric_id = $1 AND channel_username = $2",
-    [rubricId, clean]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(digestChannels)
+    .set({ isActive: false })
+    .where(and(eq(digestChannels.rubricId, rubricId), eq(digestChannels.channelUsername, clean)))
+    .returning({ id: digestChannels.id });
+  return rows.length > 0;
 }
 
 export async function getChannelById(channelId: number): Promise<DigestChannel | null> {
-  const { rows } = await query<ChannelRow>(
-    "SELECT * FROM digest_channels WHERE id = $1 AND is_active = true",
-    [channelId]
-  );
-  return rows.length > 0 ? mapChannel(rows[0]) : null;
+  const [row] = await db
+    .select()
+    .from(digestChannels)
+    .where(and(eq(digestChannels.id, channelId), eq(digestChannels.isActive, true)));
+  return row ? mapChannel(row) : null;
 }
 
 export async function removeChannelById(channelId: number, rubricId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE digest_channels SET is_active = false WHERE id = $1 AND rubric_id = $2",
-    [channelId, rubricId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(digestChannels)
+    .set({ isActive: false })
+    .where(and(eq(digestChannels.id, channelId), eq(digestChannels.rubricId, rubricId)))
+    .returning({ id: digestChannels.id });
+  return rows.length > 0;
 }
 
 // ─── Runs ────────────────────────────────────────────────────────────────────
 
 export async function createRun(userId: number, rubricId: number): Promise<DigestRun> {
-  const { rows } = await query<RunRow>(
-    `INSERT INTO digest_runs (user_id, rubric_id, status, started_at)
-     VALUES ($1, $2, 'running', NOW())
-     RETURNING *`,
-    [userId, rubricId]
-  );
-  return mapRun(rows[0]);
+  const [row] = await db
+    .insert(digestRuns)
+    .values({ userId, rubricId, status: "running", startedAt: sql`now()` })
+    .returning();
+  return mapRun(row);
 }
 
 export async function completeRun(
@@ -192,22 +213,23 @@ export async function completeRun(
   postsFound: number,
   postsSelected: number
 ): Promise<void> {
-  await query(
-    `UPDATE digest_runs
-     SET status = 'completed', channels_parsed = $1, posts_found = $2,
-         posts_selected = $3, completed_at = NOW()
-     WHERE id = $4`,
-    [channelsParsed, postsFound, postsSelected, runId]
-  );
+  await db
+    .update(digestRuns)
+    .set({
+      status: "completed",
+      channelsParsed,
+      postsFound,
+      postsSelected,
+      completedAt: sql`now()`,
+    })
+    .where(eq(digestRuns.id, runId));
 }
 
 export async function failRun(runId: number, errorMessage: string): Promise<void> {
-  await query(
-    `UPDATE digest_runs
-     SET status = 'failed', error_message = $1, completed_at = NOW()
-     WHERE id = $2`,
-    [errorMessage, runId]
-  );
+  await db
+    .update(digestRuns)
+    .set({ status: "failed", errorMessage, completedAt: sql`now()` })
+    .where(eq(digestRuns.id, runId));
 }
 
 // ─── Posts ────────────────────────────────────────────────────────────────────
@@ -215,38 +237,46 @@ export async function failRun(runId: number, errorMessage: string): Promise<void
 export async function insertDigestPosts(posts: CreateDigestPostParams[]): Promise<DigestPost[]> {
   if (posts.length === 0) return [];
 
-  const results: DigestPost[] = [];
-  for (const p of posts) {
-    const { rows } = await query<PostRow>(
-      `INSERT INTO digest_posts
-         (run_id, rubric_id, user_id, channel_username, channel_title,
-          telegram_message_id, message_url, original_text, summary,
-          post_date, views, forwards, reactions_count, comments_count,
-          engagement_score, is_from_tracked_channel)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-       ON CONFLICT (run_id, channel_username, telegram_message_id) DO NOTHING
-       RETURNING *`,
-      [
-        p.runId, p.rubricId, p.userId, p.channelUsername, p.channelTitle,
-        p.telegramMessageId, p.messageUrl, p.originalText, p.summary,
-        p.postDate, p.views, p.forwards, p.reactionsCount, p.commentsCount,
-        p.engagementScore, p.isFromTrackedChannel,
-      ]
-    );
-    if (rows.length > 0) results.push(mapPost(rows[0]));
-  }
-  return results;
+  const rows = await db
+    .insert(digestPosts)
+    .values(
+      posts.map((p) => ({
+        runId: p.runId,
+        rubricId: p.rubricId,
+        userId: p.userId,
+        channelUsername: p.channelUsername,
+        channelTitle: p.channelTitle,
+        telegramMessageId: BigInt(p.telegramMessageId),
+        messageUrl: p.messageUrl,
+        originalText: p.originalText,
+        summary: p.summary,
+        postDate: p.postDate,
+        views: p.views,
+        forwards: p.forwards,
+        reactionsCount: p.reactionsCount,
+        commentsCount: p.commentsCount,
+        engagementScore: p.engagementScore,
+        isFromTrackedChannel: p.isFromTrackedChannel,
+      }))
+    )
+    .onConflictDoNothing({
+      target: [digestPosts.runId, digestPosts.channelUsername, digestPosts.telegramMessageId],
+    })
+    .returning();
+  return rows.map(mapPost);
 }
 
 /** Get all users who have at least one active rubric with channels. */
 export async function getUsersWithActiveDigest(): Promise<number[]> {
-  const { rows } = await query<{ user_id: number }>(
-    `SELECT DISTINCT r.user_id
-     FROM digest_rubrics r
-     JOIN digest_channels c ON c.rubric_id = r.id AND c.is_active = true
-     WHERE r.is_active = true`
-  );
-  return rows.map((r) => r.user_id);
+  const rows = await db
+    .selectDistinct({ userId: digestRubrics.userId })
+    .from(digestRubrics)
+    .innerJoin(
+      digestChannels,
+      and(eq(digestChannels.rubricId, digestRubrics.id), eq(digestChannels.isActive, true))
+    )
+    .where(eq(digestRubrics.isActive, true));
+  return rows.map((r) => r.userId);
 }
 
 // ─── Admin functions ─────────────────────────────────────────────────────────
@@ -256,55 +286,44 @@ export async function updateRubric(
   rubricId: number,
   fields: { name?: string; description?: string | null; emoji?: string | null; keywords?: string[] }
 ): Promise<boolean> {
-  const sets: string[] = ["updated_at = NOW()"];
-  const params: unknown[] = [];
-  let idx = 1;
+  const set: PgUpdateSetSource<typeof digestRubrics> = {};
+  if (fields.name !== undefined) set.name = fields.name;
+  if (fields.description !== undefined) set.description = fields.description;
+  if (fields.emoji !== undefined) set.emoji = fields.emoji;
+  if (fields.keywords !== undefined) set.keywords = fields.keywords;
 
-  if (fields.name !== undefined) {
-    sets.push(`name = $${idx++}`);
-    params.push(fields.name);
-  }
-  if (fields.description !== undefined) {
-    sets.push(`description = $${idx++}`);
-    params.push(fields.description);
-  }
-  if (fields.emoji !== undefined) {
-    sets.push(`emoji = $${idx++}`);
-    params.push(fields.emoji);
-  }
-  if (fields.keywords !== undefined) {
-    sets.push(`keywords = $${idx++}`);
-    params.push(fields.keywords);
-  }
+  if (Object.keys(set).length === 0) return false;
 
-  if (sets.length === 1) return false; // only updated_at
-  params.push(rubricId);
-
-  const { rowCount } = await query(
-    `UPDATE digest_rubrics SET ${sets.join(", ")} WHERE id = $${idx}`,
-    params
-  );
-  return (rowCount ?? 0) > 0;
+  set.updatedAt = sql`now()`;
+  const rows = await db
+    .update(digestRubrics)
+    .set(set)
+    .where(eq(digestRubrics.id, rubricId))
+    .returning({ id: digestRubrics.id });
+  return rows.length > 0;
 }
 
 /** Admin: bulk delete rubrics by ID array. */
 export async function bulkDeleteRubrics(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
-  const { rowCount } = await query(
-    "DELETE FROM digest_rubrics WHERE id = ANY($1)",
-    [ids]
-  );
-  return rowCount ?? 0;
+  const rows = await db
+    .delete(digestRubrics)
+    .where(inArray(digestRubrics.id, ids))
+    .returning({ id: digestRubrics.id });
+  return rows.length;
 }
 
 /** Admin: delete all rubrics (optionally by user). */
 export async function deleteAllRubrics(userId?: number): Promise<number> {
   if (userId != null) {
-    const { rowCount } = await query("DELETE FROM digest_rubrics WHERE user_id = $1", [userId]);
-    return rowCount ?? 0;
+    const rows = await db
+      .delete(digestRubrics)
+      .where(eq(digestRubrics.userId, userId))
+      .returning({ id: digestRubrics.id });
+    return rows.length;
   }
-  const { rowCount } = await query("DELETE FROM digest_rubrics");
-  return rowCount ?? 0;
+  const rows = await db.delete(digestRubrics).returning({ id: digestRubrics.id });
+  return rows.length;
 }
 
 /** Admin: get all rubrics paginated (all users). */
@@ -312,145 +331,85 @@ export async function getAllRubricsPaginated(
   limit: number,
   offset: number
 ): Promise<Array<DigestRubric & { firstName: string }>> {
-  const { rows } = await query<RubricRow & { first_name: string }>(
-    `SELECT r.*, u.first_name
-     FROM digest_rubrics r
-     JOIN users u ON u.id = r.user_id
-     ORDER BY r.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
-  );
-  return rows.map((r) => ({ ...mapRubric(r), firstName: r.first_name }));
+  const rows = await db
+    .select({ rubric: digestRubrics, firstName: users.firstName })
+    .from(digestRubrics)
+    .innerJoin(users, eq(users.id, digestRubrics.userId))
+    .orderBy(desc(digestRubrics.createdAt))
+    .limit(limit)
+    .offset(offset);
+  return rows.map((r) => ({ ...mapRubric(r.rubric), firstName: r.firstName }));
 }
 
 /** Admin: count all rubrics. */
 export async function countAllRubrics(): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM digest_rubrics"
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db.select({ value: count() }).from(digestRubrics);
+  return row.value;
 }
 
 // ─── Row mappers ─────────────────────────────────────────────────────────────
 
-interface RubricRow {
-  id: number;
-  user_id: number;
-  name: string;
-  description: string | null;
-  emoji: string | null;
-  keywords: string[];
-  is_active: boolean;
-  created_at: Date;
-  updated_at: Date;
-}
-
-function mapRubric(r: RubricRow): DigestRubric {
+function mapRubric(r: typeof digestRubrics.$inferSelect): DigestRubric {
   return {
     id: r.id,
-    userId: r.user_id,
+    userId: r.userId,
     name: r.name,
     description: r.description,
     emoji: r.emoji,
     keywords: r.keywords ?? [],
-    isActive: r.is_active,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    isActive: r.isActive ?? true,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }
 
-interface ChannelRow {
-  id: number;
-  rubric_id: number;
-  channel_username: string;
-  channel_title: string | null;
-  subscriber_count: number | null;
-  is_active: boolean;
-  added_at: Date;
-}
-
-function mapChannel(r: ChannelRow): DigestChannel {
+function mapChannel(r: typeof digestChannels.$inferSelect): DigestChannel {
   return {
     id: r.id,
-    rubricId: r.rubric_id,
-    channelUsername: r.channel_username,
-    channelTitle: r.channel_title,
-    subscriberCount: r.subscriber_count,
-    isActive: r.is_active,
-    addedAt: r.added_at,
+    rubricId: r.rubricId,
+    channelUsername: r.channelUsername,
+    channelTitle: r.channelTitle,
+    subscriberCount: r.subscriberCount,
+    isActive: r.isActive ?? true,
+    addedAt: r.addedAt,
   };
 }
 
-interface RunRow {
-  id: number;
-  user_id: number;
-  rubric_id: number;
-  status: string;
-  channels_parsed: number;
-  posts_found: number;
-  posts_selected: number;
-  error_message: string | null;
-  started_at: Date | null;
-  completed_at: Date | null;
-  created_at: Date;
-}
-
-function mapRun(r: RunRow): DigestRun {
+function mapRun(r: typeof digestRuns.$inferSelect): DigestRun {
   return {
     id: r.id,
-    userId: r.user_id,
-    rubricId: r.rubric_id,
+    userId: r.userId,
+    rubricId: r.rubricId,
     status: r.status as DigestRunStatus,
-    channelsParsed: r.channels_parsed,
-    postsFound: r.posts_found,
-    postsSelected: r.posts_selected,
-    errorMessage: r.error_message,
-    startedAt: r.started_at,
-    completedAt: r.completed_at,
-    createdAt: r.created_at,
+    channelsParsed: r.channelsParsed,
+    postsFound: r.postsFound,
+    postsSelected: r.postsSelected,
+    errorMessage: r.errorMessage,
+    startedAt: r.startedAt,
+    completedAt: r.completedAt,
+    createdAt: r.createdAt,
   };
 }
 
-interface PostRow {
-  id: number;
-  run_id: number;
-  rubric_id: number;
-  user_id: number;
-  channel_username: string;
-  channel_title: string | null;
-  telegram_message_id: number;
-  message_url: string | null;
-  original_text: string | null;
-  summary: string | null;
-  post_date: Date;
-  views: number;
-  forwards: number;
-  reactions_count: number;
-  comments_count: number;
-  engagement_score: number;
-  is_from_tracked_channel: boolean;
-  created_at: Date;
-}
-
-function mapPost(r: PostRow): DigestPost {
+function mapPost(r: typeof digestPosts.$inferSelect): DigestPost {
   return {
     id: r.id,
-    runId: r.run_id,
-    rubricId: r.rubric_id,
-    userId: r.user_id,
-    channelUsername: r.channel_username,
-    channelTitle: r.channel_title,
-    telegramMessageId: r.telegram_message_id,
-    messageUrl: r.message_url,
-    originalText: r.original_text,
+    runId: r.runId,
+    rubricId: r.rubricId,
+    userId: r.userId,
+    channelUsername: r.channelUsername,
+    channelTitle: r.channelTitle,
+    telegramMessageId: Number(r.telegramMessageId),
+    messageUrl: r.messageUrl,
+    originalText: r.originalText,
     summary: r.summary,
-    postDate: r.post_date,
+    postDate: r.postDate,
     views: r.views,
     forwards: r.forwards,
-    reactionsCount: r.reactions_count,
-    commentsCount: r.comments_count,
-    engagementScore: r.engagement_score,
-    isFromTrackedChannel: r.is_from_tracked_channel,
-    createdAt: r.created_at,
+    reactionsCount: r.reactionsCount,
+    commentsCount: r.commentsCount,
+    engagementScore: r.engagementScore,
+    isFromTrackedChannel: r.isFromTrackedChannel,
+    createdAt: r.createdAt,
   };
 }

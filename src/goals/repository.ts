@@ -1,9 +1,12 @@
 /**
  * CRUD repository for Goals mode: goal sets, goals, viewers, reminders.
- * All queries use raw SQL via query().
+ * Data access via Drizzle query builder; row types inferred from the schema.
  */
 
-import { query } from "../db/connection.js";
+import { and, count, desc, eq, getTableColumns, inArray, lte, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { db } from "../db/drizzle.js";
+import { goalReminders, goalSets, goalSetViewers, goals, users } from "../db/schema.js";
 import type { GoalPeriod } from "./service.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -52,30 +55,12 @@ export interface PendingReminder {
   userId: number;
 }
 
-// ─── Row types ──────────────────────────────────────────────────────────
-
-interface GoalSetRow {
-  id: number;
-  user_id: number;
-  name: string;
-  emoji: string;
-  period: GoalPeriod;
-  visibility: GoalSetVisibility;
-  deadline: Date | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-interface GoalRow {
-  id: number;
-  goal_set_id: number;
-  text: string;
-  is_completed: boolean;
-  input_method: string;
-  completed_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-}
+// Aggregated goal counts, reused across the set-listing queries. Column-object
+// interpolation keeps the SQL rename-safe (breaks the build, not runtime, on rename).
+const goalCounts = {
+  totalCount: sql<number>`count(${goals.id})`.mapWith(Number),
+  completedCount: sql<number>`count(${goals.id}) filter (where ${goals.isCompleted})`.mapWith(Number),
+};
 
 // ─── Goal Sets ──────────────────────────────────────────────────────────
 
@@ -86,50 +71,33 @@ export async function createGoalSet(
   deadline: Date | null,
   emoji: string = "🎯"
 ): Promise<GoalSet> {
-  const { rows } = await query<GoalSetRow>(
-    `INSERT INTO goal_sets (user_id, name, period, deadline, emoji)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [userId, name, period, deadline, emoji]
-  );
-  return mapGoalSet(rows[0]);
+  const [row] = await db
+    .insert(goalSets)
+    .values({ userId, name, period, deadline, emoji })
+    .returning();
+  return mapGoalSet(row);
 }
 
 export async function getGoalSetsByUser(userId: number): Promise<GoalSet[]> {
-  const { rows } = await query<GoalSetRow & { completed_count: string; total_count: string }>(
-    `SELECT gs.*,
-       COUNT(g.id) AS total_count,
-       COUNT(g.id) FILTER (WHERE g.is_completed = true) AS completed_count
-     FROM goal_sets gs
-     LEFT JOIN goals g ON g.goal_set_id = gs.id
-     WHERE gs.user_id = $1
-     GROUP BY gs.id
-     ORDER BY gs.created_at DESC`,
-    [userId]
-  );
-  return rows.map((r) => ({
-    ...mapGoalSet(r),
-    completedCount: parseInt(r.completed_count, 10),
-    totalCount: parseInt(r.total_count, 10),
-  }));
+  const rows = await db
+    .select({ ...getTableColumns(goalSets), ...goalCounts })
+    .from(goalSets)
+    .leftJoin(goals, eq(goals.goalSetId, goalSets.id))
+    .where(eq(goalSets.userId, userId))
+    .groupBy(goalSets.id)
+    .orderBy(desc(goalSets.createdAt));
+  return rows.map((r) => ({ ...mapGoalSet(r), completedCount: r.completedCount, totalCount: r.totalCount }));
 }
 
 export async function getGoalSetById(goalSetId: number): Promise<GoalSet | null> {
-  const { rows } = await query<GoalSetRow & { completed_count: string; total_count: string }>(
-    `SELECT gs.*,
-       COUNT(g.id) AS total_count,
-       COUNT(g.id) FILTER (WHERE g.is_completed = true) AS completed_count
-     FROM goal_sets gs
-     LEFT JOIN goals g ON g.goal_set_id = gs.id
-     WHERE gs.id = $1
-     GROUP BY gs.id`,
-    [goalSetId]
-  );
-  if (rows.length === 0) return null;
-  return {
-    ...mapGoalSet(rows[0]),
-    completedCount: parseInt(rows[0].completed_count, 10),
-    totalCount: parseInt(rows[0].total_count, 10),
-  };
+  const [row] = await db
+    .select({ ...getTableColumns(goalSets), ...goalCounts })
+    .from(goalSets)
+    .leftJoin(goals, eq(goals.goalSetId, goalSets.id))
+    .where(eq(goalSets.id, goalSetId))
+    .groupBy(goalSets.id);
+  if (!row) return null;
+  return { ...mapGoalSet(row), completedCount: row.completedCount, totalCount: row.totalCount };
 }
 
 export async function updateGoalSet(
@@ -137,52 +105,33 @@ export async function updateGoalSet(
   userId: number,
   updates: { name?: string; emoji?: string; visibility?: GoalSetVisibility }
 ): Promise<GoalSet | null> {
-  const sets: string[] = [];
-  const params: unknown[] = [];
-  let idx = 1;
+  const set: PgUpdateSetSource<typeof goalSets> = {};
+  if (updates.name !== undefined) set.name = updates.name;
+  if (updates.emoji !== undefined) set.emoji = updates.emoji;
+  if (updates.visibility !== undefined) set.visibility = updates.visibility;
 
-  if (updates.name !== undefined) {
-    sets.push(`name = $${idx++}`);
-    params.push(updates.name);
-  }
-  if (updates.emoji !== undefined) {
-    sets.push(`emoji = $${idx++}`);
-    params.push(updates.emoji);
-  }
-  if (updates.visibility !== undefined) {
-    sets.push(`visibility = $${idx++}`);
-    params.push(updates.visibility);
-  }
+  if (Object.keys(set).length === 0) return getGoalSetById(goalSetId);
 
-  if (sets.length === 0) return getGoalSetById(goalSetId);
-
-  sets.push(`updated_at = NOW()`);
-  params.push(goalSetId, userId);
-
-  const { rows } = await query<GoalSetRow>(
-    `UPDATE goal_sets SET ${sets.join(", ")}
-     WHERE id = $${idx++} AND user_id = $${idx}
-     RETURNING *`,
-    params
-  );
-  if (rows.length === 0) return null;
-  return mapGoalSet(rows[0]);
+  set.updatedAt = sql`now()`;
+  const [row] = await db
+    .update(goalSets)
+    .set(set)
+    .where(and(eq(goalSets.id, goalSetId), eq(goalSets.userId, userId)))
+    .returning();
+  return row ? mapGoalSet(row) : null;
 }
 
 export async function deleteGoalSet(goalSetId: number, userId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM goal_sets WHERE id = $1 AND user_id = $2",
-    [goalSetId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(goalSets)
+    .where(and(eq(goalSets.id, goalSetId), eq(goalSets.userId, userId)))
+    .returning({ id: goalSets.id });
+  return rows.length > 0;
 }
 
 export async function countGoalSetsByUser(userId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM goal_sets WHERE user_id = $1",
-    [userId]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db.select({ value: count() }).from(goalSets).where(eq(goalSets.userId, userId));
+  return row.value;
 }
 
 // ─── Goals ──────────────────────────────────────────────────────────────
@@ -192,126 +141,95 @@ export async function createGoal(
   text: string,
   inputMethod: string = "text"
 ): Promise<Goal> {
-  const { rows } = await query<GoalRow>(
-    `INSERT INTO goals (goal_set_id, text, input_method)
-     VALUES ($1, $2, $3) RETURNING *`,
-    [goalSetId, text, inputMethod]
-  );
-  return mapGoal(rows[0]);
+  const [row] = await db.insert(goals).values({ goalSetId, text, inputMethod }).returning();
+  return mapGoal(row);
 }
 
 export async function getGoalsBySet(goalSetId: number): Promise<Goal[]> {
-  const { rows } = await query<GoalRow>(
-    `SELECT * FROM goals WHERE goal_set_id = $1 ORDER BY created_at`,
-    [goalSetId]
-  );
+  const rows = await db.select().from(goals).where(eq(goals.goalSetId, goalSetId)).orderBy(goals.createdAt);
   return rows.map(mapGoal);
 }
 
 export async function toggleGoalCompleted(goalId: number): Promise<Goal | null> {
-  const { rows } = await query<GoalRow>(
-    `UPDATE goals
-     SET is_completed = NOT is_completed,
-         completed_at = CASE WHEN NOT is_completed THEN NOW() ELSE NULL END,
-         updated_at = NOW()
-     WHERE id = $1
-     RETURNING *`,
-    [goalId]
-  );
-  if (rows.length === 0) return null;
-  return mapGoal(rows[0]);
+  const [row] = await db
+    .update(goals)
+    .set({
+      isCompleted: sql`not ${goals.isCompleted}`,
+      completedAt: sql`case when not ${goals.isCompleted} then now() else null end`,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(goals.id, goalId))
+    .returning();
+  return row ? mapGoal(row) : null;
 }
 
 export async function updateGoalText(goalId: number, text: string): Promise<Goal | null> {
-  const { rows } = await query<GoalRow>(
-    `UPDATE goals SET text = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-    [text, goalId]
-  );
-  if (rows.length === 0) return null;
-  return mapGoal(rows[0]);
+  const [row] = await db
+    .update(goals)
+    .set({ text, updatedAt: sql`now()` })
+    .where(eq(goals.id, goalId))
+    .returning();
+  return row ? mapGoal(row) : null;
 }
 
 export async function deleteGoal(goalId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM goals WHERE id = $1",
-    [goalId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db.delete(goals).where(eq(goals.id, goalId)).returning({ id: goals.id });
+  return rows.length > 0;
 }
 
 export async function getGoalSetProgress(goalSetId: number): Promise<{ completed: number; total: number }> {
-  const { rows } = await query<{ total: string; completed: string }>(
-    `SELECT COUNT(*) AS total,
-       COUNT(*) FILTER (WHERE is_completed = true) AS completed
-     FROM goals WHERE goal_set_id = $1`,
-    [goalSetId]
-  );
-  return {
-    total: parseInt(rows[0].total, 10),
-    completed: parseInt(rows[0].completed, 10),
-  };
+  const [row] = await db
+    .select({
+      total: count(),
+      completed: sql<number>`count(*) filter (where ${goals.isCompleted})`.mapWith(Number),
+    })
+    .from(goals)
+    .where(eq(goals.goalSetId, goalSetId));
+  return { total: row.total, completed: row.completed };
 }
 
 // ─── Viewers ────────────────────────────────────────────────────────────
 
 export async function addViewer(goalSetId: number, viewerUserId: number): Promise<void> {
-  await query(
-    `INSERT INTO goal_set_viewers (goal_set_id, viewer_user_id)
-     VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-    [goalSetId, viewerUserId]
-  );
+  await db.insert(goalSetViewers).values({ goalSetId, viewerUserId }).onConflictDoNothing();
 }
 
 export async function removeViewer(goalSetId: number, viewerUserId: number): Promise<void> {
-  await query(
-    "DELETE FROM goal_set_viewers WHERE goal_set_id = $1 AND viewer_user_id = $2",
-    [goalSetId, viewerUserId]
-  );
+  await db
+    .delete(goalSetViewers)
+    .where(and(eq(goalSetViewers.goalSetId, goalSetId), eq(goalSetViewers.viewerUserId, viewerUserId)));
 }
 
 export async function getViewersByGoalSet(goalSetId: number): Promise<GoalSetViewer[]> {
-  const { rows } = await query<{
-    id: number;
-    goal_set_id: number;
-    viewer_user_id: number;
-    created_at: Date;
-    first_name: string;
-  }>(
-    `SELECT gsv.*, u.first_name
-     FROM goal_set_viewers gsv
-     JOIN users u ON u.id = gsv.viewer_user_id
-     WHERE gsv.goal_set_id = $1
-     ORDER BY u.first_name`,
-    [goalSetId]
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    goalSetId: r.goal_set_id,
-    viewerUserId: r.viewer_user_id,
-    createdAt: r.created_at,
-    viewerName: r.first_name,
-  }));
+  return db
+    .select({
+      id: goalSetViewers.id,
+      goalSetId: goalSetViewers.goalSetId,
+      viewerUserId: goalSetViewers.viewerUserId,
+      createdAt: goalSetViewers.createdAt,
+      viewerName: users.firstName,
+    })
+    .from(goalSetViewers)
+    .innerJoin(users, eq(users.id, goalSetViewers.viewerUserId))
+    .where(eq(goalSetViewers.goalSetId, goalSetId))
+    .orderBy(users.firstName);
 }
 
 export async function getPublicGoalSetsForViewer(viewerUserId: number): Promise<(GoalSet & { ownerName: string })[]> {
-  const { rows } = await query<GoalSetRow & { completed_count: string; total_count: string; first_name: string }>(
-    `SELECT gs.*, u.first_name,
-       COUNT(g.id) AS total_count,
-       COUNT(g.id) FILTER (WHERE g.is_completed = true) AS completed_count
-     FROM goal_sets gs
-     JOIN goal_set_viewers gsv ON gsv.goal_set_id = gs.id
-     JOIN users u ON u.id = gs.user_id
-     LEFT JOIN goals g ON g.goal_set_id = gs.id
-     WHERE gsv.viewer_user_id = $1 AND gs.visibility = 'public'
-     GROUP BY gs.id, u.first_name
-     ORDER BY u.first_name, gs.name`,
-    [viewerUserId]
-  );
+  const rows = await db
+    .select({ ...getTableColumns(goalSets), ...goalCounts, ownerName: users.firstName })
+    .from(goalSets)
+    .innerJoin(goalSetViewers, eq(goalSetViewers.goalSetId, goalSets.id))
+    .innerJoin(users, eq(users.id, goalSets.userId))
+    .leftJoin(goals, eq(goals.goalSetId, goalSets.id))
+    .where(and(eq(goalSetViewers.viewerUserId, viewerUserId), eq(goalSets.visibility, "public")))
+    .groupBy(goalSets.id, users.firstName)
+    .orderBy(users.firstName, goalSets.name);
   return rows.map((r) => ({
     ...mapGoalSet(r),
-    completedCount: parseInt(r.completed_count, 10),
-    totalCount: parseInt(r.total_count, 10),
-    ownerName: r.first_name,
+    completedCount: r.completedCount,
+    totalCount: r.totalCount,
+    ownerName: r.ownerName,
   }));
 }
 
@@ -319,49 +237,36 @@ export async function getPublicGoalSetsForViewer(viewerUserId: number): Promise<
 
 export async function createReminders(goalSetId: number, dates: Date[]): Promise<void> {
   if (dates.length === 0) return;
-
-  const values = dates.map((_, i) => `($1, $${i + 2})`).join(", ");
-  const params: unknown[] = [goalSetId, ...dates];
-
-  await query(
-    `INSERT INTO goal_reminders (goal_set_id, remind_at) VALUES ${values}`,
-    params
-  );
+  await db.insert(goalReminders).values(dates.map((remindAt) => ({ goalSetId, remindAt })));
 }
 
 export async function getPendingReminders(now: Date): Promise<PendingReminder[]> {
-  const { rows } = await query<{
-    reminder_id: number;
-    goal_set_id: number;
-    goal_set_name: string;
-    goal_set_emoji: string;
-    telegram_id: string;
-    user_id: number;
-  }>(
-    `SELECT gr.id AS reminder_id, gs.id AS goal_set_id, gs.name AS goal_set_name,
-       gs.emoji AS goal_set_emoji, u.telegram_id, u.id AS user_id
-     FROM goal_reminders gr
-     JOIN goal_sets gs ON gs.id = gr.goal_set_id
-     JOIN users u ON u.id = gs.user_id
-     WHERE gr.sent = false AND gr.remind_at <= $1
-     ORDER BY gr.remind_at`,
-    [now]
-  );
+  const rows = await db
+    .select({
+      reminderId: goalReminders.id,
+      goalSetId: goalSets.id,
+      goalSetName: goalSets.name,
+      goalSetEmoji: goalSets.emoji,
+      telegramId: users.telegramId,
+      userId: users.id,
+    })
+    .from(goalReminders)
+    .innerJoin(goalSets, eq(goalSets.id, goalReminders.goalSetId))
+    .innerJoin(users, eq(users.id, goalSets.userId))
+    .where(and(eq(goalReminders.sent, false), lte(goalReminders.remindAt, now)))
+    .orderBy(goalReminders.remindAt);
   return rows.map((r) => ({
-    reminderId: r.reminder_id,
-    goalSetId: r.goal_set_id,
-    goalSetName: r.goal_set_name,
-    goalSetEmoji: r.goal_set_emoji,
-    telegramId: Number(r.telegram_id),
-    userId: r.user_id,
+    reminderId: r.reminderId,
+    goalSetId: r.goalSetId,
+    goalSetName: r.goalSetName,
+    goalSetEmoji: r.goalSetEmoji ?? "🎯",
+    telegramId: Number(r.telegramId),
+    userId: r.userId,
   }));
 }
 
 export async function markReminderSent(reminderId: number): Promise<void> {
-  await query(
-    "UPDATE goal_reminders SET sent = true, sent_at = NOW() WHERE id = $1",
-    [reminderId]
-  );
+  await db.update(goalReminders).set({ sent: true, sentAt: sql`now()` }).where(eq(goalReminders.id, reminderId));
 }
 
 // ─── Admin functions ────────────────────────────────────────────────────
@@ -371,75 +276,67 @@ export async function getAllGoalSetsPaginated(
   limit: number,
   offset: number
 ): Promise<Array<GoalSet & { firstName: string; completedCount: number; totalCount: number }>> {
-  const { rows } = await query<GoalSetRow & { first_name: string; completed_count: string; total_count: string }>(
-    `SELECT gs.*, u.first_name,
-       COUNT(g.id) AS total_count,
-       COUNT(g.id) FILTER (WHERE g.is_completed = true) AS completed_count
-     FROM goal_sets gs
-     JOIN users u ON u.id = gs.user_id
-     LEFT JOIN goals g ON g.goal_set_id = gs.id
-     GROUP BY gs.id, u.first_name
-     ORDER BY gs.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
-  );
+  const rows = await db
+    .select({ ...getTableColumns(goalSets), ...goalCounts, firstName: users.firstName })
+    .from(goalSets)
+    .innerJoin(users, eq(users.id, goalSets.userId))
+    .leftJoin(goals, eq(goals.goalSetId, goalSets.id))
+    .groupBy(goalSets.id, users.firstName)
+    .orderBy(desc(goalSets.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map((r) => ({
     ...mapGoalSet(r),
-    firstName: r.first_name,
-    completedCount: parseInt(r.completed_count, 10),
-    totalCount: parseInt(r.total_count, 10),
+    firstName: r.firstName,
+    completedCount: r.completedCount,
+    totalCount: r.totalCount,
   }));
 }
 
 /** Admin: count all goal sets. */
 export async function countAllGoalSets(): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM goal_sets"
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db.select({ value: count() }).from(goalSets);
+  return row.value;
 }
 
 /** Admin: bulk delete goal sets by IDs. */
 export async function bulkDeleteGoalSets(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
-  const { rowCount } = await query(
-    "DELETE FROM goal_sets WHERE id = ANY($1)",
-    [ids]
-  );
-  return rowCount ?? 0;
+  const rows = await db.delete(goalSets).where(inArray(goalSets.id, ids)).returning({ id: goalSets.id });
+  return rows.length;
 }
 
 /** Admin: delete ALL goal sets. */
 export async function deleteAllGoalSets(): Promise<number> {
-  const { rowCount } = await query("DELETE FROM goal_sets");
-  return rowCount ?? 0;
+  const rows = await db.delete(goalSets).returning({ id: goalSets.id });
+  return rows.length;
 }
 
 // ─── Mappers ────────────────────────────────────────────────────────────
 
-function mapGoalSet(r: GoalSetRow): GoalSet {
+function mapGoalSet(r: typeof goalSets.$inferSelect): GoalSet {
   return {
     id: r.id,
-    userId: r.user_id,
+    userId: r.userId,
     name: r.name,
-    emoji: r.emoji,
-    period: r.period,
-    visibility: r.visibility,
+    emoji: r.emoji ?? "🎯",
+    period: r.period as GoalPeriod,
+    visibility: r.visibility as GoalSetVisibility,
     deadline: r.deadline,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }
 
-function mapGoal(r: GoalRow): Goal {
+function mapGoal(r: typeof goals.$inferSelect): Goal {
   return {
     id: r.id,
-    goalSetId: r.goal_set_id,
+    goalSetId: r.goalSetId,
     text: r.text,
-    isCompleted: r.is_completed,
-    inputMethod: r.input_method,
-    completedAt: r.completed_at,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    isCompleted: r.isCompleted,
+    inputMethod: r.inputMethod,
+    completedAt: r.completedAt,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }

@@ -1,4 +1,7 @@
-import { query } from "../db/connection.js";
+import { and, count, desc, eq, gt, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { db } from "../db/drizzle.js";
+import { categories, expenses, tribeMonthlyLimits, tribes, users } from "../db/schema.js";
 import {
   MAX_EXPENSE_AMOUNT,
   MIN_EXPENSE_AMOUNT,
@@ -18,40 +21,28 @@ import type {
 
 let categoriesCache: Category[] | null = null;
 
-interface CategoryRow {
-  id: number;
-  name: string;
-  emoji: string;
-  aliases: string[];
-  description: string | null;
-  sort_order: number;
-  is_active: boolean;
-  created_by_user_id: number | null;
-}
-
-function mapCategoryRow(r: CategoryRow): Category {
+function mapCategory(r: typeof categories.$inferSelect): Category {
   return {
     id: r.id,
     name: r.name,
     emoji: r.emoji,
     aliases: r.aliases,
     description: r.description,
-    sortOrder: r.sort_order,
-    isActive: r.is_active,
-    createdByUserId: r.created_by_user_id,
+    sortOrder: r.sortOrder,
+    isActive: r.isActive,
+    createdByUserId: r.createdByUserId,
   };
 }
-
-const CATEGORY_COLUMNS =
-  "id, name, emoji, aliases, description, sort_order, is_active, created_by_user_id";
 
 /** Fetch all active categories (cached in memory). */
 export async function getCategories(): Promise<Category[]> {
   if (categoriesCache) return categoriesCache;
-  const { rows } = await query<CategoryRow>(
-    `SELECT ${CATEGORY_COLUMNS} FROM categories WHERE is_active = true ORDER BY sort_order`
-  );
-  categoriesCache = rows.map(mapCategoryRow);
+  const rows = await db
+    .select()
+    .from(categories)
+    .where(eq(categories.isActive, true))
+    .orderBy(categories.sortOrder);
+  categoriesCache = rows.map(mapCategory);
   return categoriesCache;
 }
 
@@ -62,10 +53,11 @@ export function invalidateCategoriesCache(): void {
 
 /** Next sort order for a new category (keeps it before the "Другое" fallback at 100). */
 async function getNextCategorySortOrder(): Promise<number> {
-  const { rows } = await query<{ next: number }>(
-    "SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM categories WHERE sort_order < 100"
-  );
-  return rows[0]?.next ?? 1;
+  const [row] = await db
+    .select({ next: sql<number>`coalesce(max(${categories.sortOrder}), 0) + 1`.mapWith(Number) })
+    .from(categories)
+    .where(lt(categories.sortOrder, 100));
+  return row?.next ?? 1;
 }
 
 /** Create a new expense category (admin). */
@@ -77,21 +69,19 @@ export async function createCategory(input: {
   createdByUserId: number;
 }): Promise<Category> {
   const sortOrder = await getNextCategorySortOrder();
-  const { rows } = await query<CategoryRow>(
-    `INSERT INTO categories (name, emoji, aliases, description, sort_order, created_by_user_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING ${CATEGORY_COLUMNS}`,
-    [
-      input.name,
-      input.emoji,
-      input.aliases ?? [],
-      input.description ?? null,
+  const [row] = await db
+    .insert(categories)
+    .values({
+      name: input.name,
+      emoji: input.emoji,
+      aliases: input.aliases ?? [],
+      description: input.description ?? null,
       sortOrder,
-      input.createdByUserId,
-    ]
-  );
+      createdByUserId: input.createdByUserId,
+    })
+    .returning();
   invalidateCategoriesCache();
-  return mapCategoryRow(rows[0]);
+  return mapCategory(row);
 }
 
 /** Update an existing category (admin). Only provided fields are changed. */
@@ -104,49 +94,31 @@ export async function updateCategory(
     description?: string | null;
   }
 ): Promise<Category | null> {
-  const sets: string[] = [];
-  const values: unknown[] = [];
-  let i = 1;
+  const set: PgUpdateSetSource<typeof categories> = {};
+  if (updates.name !== undefined) set.name = updates.name;
+  if (updates.emoji !== undefined) set.emoji = updates.emoji;
+  if (updates.aliases !== undefined) set.aliases = updates.aliases;
+  if (updates.description !== undefined) set.description = updates.description;
 
-  if (updates.name !== undefined) {
-    sets.push(`name = $${i++}`);
-    values.push(updates.name);
-  }
-  if (updates.emoji !== undefined) {
-    sets.push(`emoji = $${i++}`);
-    values.push(updates.emoji);
-  }
-  if (updates.aliases !== undefined) {
-    sets.push(`aliases = $${i++}`);
-    values.push(updates.aliases);
-  }
-  if (updates.description !== undefined) {
-    sets.push(`description = $${i++}`);
-    values.push(updates.description);
-  }
-
-  if (sets.length === 0) {
+  if (Object.keys(set).length === 0) {
     const existing = (await getCategories()).find((c) => c.id === categoryId);
     return existing ?? null;
   }
 
-  values.push(categoryId);
-  const { rows } = await query<CategoryRow>(
-    `UPDATE categories SET ${sets.join(", ")} WHERE id = $${i} RETURNING ${CATEGORY_COLUMNS}`,
-    values
-  );
+  const [row] = await db.update(categories).set(set).where(eq(categories.id, categoryId)).returning();
   invalidateCategoriesCache();
-  return rows[0] ? mapCategoryRow(rows[0]) : null;
+  return row ? mapCategory(row) : null;
 }
 
 /** Soft-delete a category (admin). Returns the affected row, or null if not found. */
 export async function deactivateCategory(categoryId: number): Promise<Category | null> {
-  const { rows } = await query<CategoryRow>(
-    `UPDATE categories SET is_active = false WHERE id = $1 RETURNING ${CATEGORY_COLUMNS}`,
-    [categoryId]
-  );
+  const [row] = await db
+    .update(categories)
+    .set({ isActive: false })
+    .where(eq(categories.id, categoryId))
+    .returning();
   invalidateCategoriesCache();
-  return rows[0] ? mapCategoryRow(rows[0]) : null;
+  return row ? mapCategory(row) : null;
 }
 
 /** Reassign all expenses from one category to another. Returns rows moved. */
@@ -154,25 +126,19 @@ export async function reassignExpensesCategory(
   fromCategoryId: number,
   toCategoryId: number
 ): Promise<number> {
-  const { rowCount } = await query(
-    "UPDATE expenses SET category_id = $1, updated_at = NOW() WHERE category_id = $2",
-    [toCategoryId, fromCategoryId]
-  );
-  return rowCount ?? 0;
+  const rows = await db
+    .update(expenses)
+    .set({ categoryId: toCategoryId, updatedAt: sql`now()` })
+    .where(eq(expenses.categoryId, fromCategoryId))
+    .returning({ id: expenses.id });
+  return rows.length;
 }
 
 /** Fetch a single category by id, regardless of active state. */
 export async function getCategoryById(categoryId: number): Promise<Category | null> {
-  const { rows } = await query<CategoryRow>(
-    `SELECT ${CATEGORY_COLUMNS} FROM categories WHERE id = $1`,
-    [categoryId]
-  );
-  return rows[0] ? mapCategoryRow(rows[0]) : null;
+  const [row] = await db.select().from(categories).where(eq(categories.id, categoryId));
+  return row ? mapCategory(row) : null;
 }
-
-/** Set monthly limit for a category (stored in description-like field — here we use a lightweight approach). */
-// Note: category limits could be stored in a separate table; for now we skip this
-// as the plan focuses on adding the management UI.
 
 /** Get detailed expense rows for a category in a date range (drilldown). */
 export async function getExpensesByCategory(
@@ -189,27 +155,33 @@ export async function getExpensesByCategory(
   firstName: string;
   createdAt: Date;
 }>> {
-  const { rows } = await query<{
-    id: number;
-    subcategory: string | null;
-    amount: string;
-    first_name: string;
-    created_at: Date;
-  }>(
-    `SELECT e.id, e.subcategory, e.amount, u.first_name, e.created_at
-     FROM expenses e
-     JOIN users u ON u.id = e.user_id
-     WHERE e.tribe_id = $1 AND e.category_id = $2 AND e.created_at >= $3 AND e.created_at < $4
-     ORDER BY e.created_at DESC
-     LIMIT $5 OFFSET $6`,
-    [tribeId, categoryId, dateFrom.toISOString(), dateTo.toISOString(), limit, offset]
-  );
+  const rows = await db
+    .select({
+      id: expenses.id,
+      subcategory: expenses.subcategory,
+      amount: expenses.amount,
+      firstName: users.firstName,
+      createdAt: expenses.createdAt,
+    })
+    .from(expenses)
+    .innerJoin(users, eq(users.id, expenses.userId))
+    .where(
+      and(
+        eq(expenses.tribeId, tribeId),
+        eq(expenses.categoryId, categoryId),
+        gte(expenses.createdAt, dateFrom),
+        lt(expenses.createdAt, dateTo),
+      ),
+    )
+    .orderBy(desc(expenses.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map((r) => ({
     id: r.id,
     subcategory: r.subcategory,
     amount: parseFloat(r.amount),
-    firstName: r.first_name,
-    createdAt: r.created_at,
+    firstName: r.firstName,
+    createdAt: r.createdAt,
   }));
 }
 
@@ -227,29 +199,29 @@ export async function getAllExpensesForReport(
   firstName: string;
   createdAt: Date;
 }>> {
-  const { rows } = await query<{
-    id: number;
-    category_id: number;
-    subcategory: string | null;
-    amount: string;
-    first_name: string;
-    created_at: Date;
-  }>(
-    `SELECT e.id, e.category_id, e.subcategory, e.amount, u.first_name, e.created_at
-     FROM expenses e
-     JOIN users u ON u.id = e.user_id
-     JOIN categories c ON c.id = e.category_id
-     WHERE e.tribe_id = $1 AND e.created_at >= $2 AND e.created_at < $3
-     ORDER BY c.sort_order ASC, e.created_at DESC`,
-    [tribeId, dateFrom.toISOString(), dateTo.toISOString()]
-  );
+  const rows = await db
+    .select({
+      id: expenses.id,
+      categoryId: expenses.categoryId,
+      subcategory: expenses.subcategory,
+      amount: expenses.amount,
+      firstName: users.firstName,
+      createdAt: expenses.createdAt,
+    })
+    .from(expenses)
+    .innerJoin(users, eq(users.id, expenses.userId))
+    .innerJoin(categories, eq(categories.id, expenses.categoryId))
+    .where(
+      and(eq(expenses.tribeId, tribeId), gte(expenses.createdAt, dateFrom), lt(expenses.createdAt, dateTo)),
+    )
+    .orderBy(categories.sortOrder, desc(expenses.createdAt));
   return rows.map((r) => ({
     id: r.id,
-    categoryId: r.category_id,
+    categoryId: r.categoryId,
     subcategory: r.subcategory,
     amount: parseFloat(r.amount),
-    firstName: r.first_name,
-    createdAt: r.created_at,
+    firstName: r.firstName,
+    createdAt: r.createdAt,
   }));
 }
 
@@ -260,15 +232,33 @@ export async function countExpensesByCategory(
   dateFrom: Date,
   dateTo: Date
 ): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM expenses
-     WHERE tribe_id = $1 AND category_id = $2 AND created_at >= $3 AND created_at < $4`,
-    [tribeId, categoryId, dateFrom.toISOString(), dateTo.toISOString()]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(expenses)
+    .where(
+      and(
+        eq(expenses.tribeId, tribeId),
+        eq(expenses.categoryId, categoryId),
+        gte(expenses.createdAt, dateFrom),
+        lt(expenses.createdAt, dateTo),
+      ),
+    );
+  return row.value;
 }
 
 // ─── Users ────────────────────────────────────────────────────────────
+
+function mapDbUser(r: typeof users.$inferSelect): DbUser {
+  return {
+    id: r.id,
+    telegramId: Number(r.telegramId),
+    username: r.username,
+    firstName: r.firstName,
+    lastName: r.lastName,
+    role: r.role as "admin" | "user",
+    tribeId: r.tribeId,
+  };
+}
 
 /** Create or update a user in the DB. Updates name fields if the user already exists. */
 export async function ensureUser(
@@ -279,182 +269,84 @@ export async function ensureUser(
   isAdmin: boolean
 ): Promise<DbUser> {
   const role = isAdmin ? "admin" : "user";
+  const tgId = BigInt(telegramId);
 
-  const { rows: existing } = await query<{
-    id: number;
-    telegram_id: string;
-    username: string | null;
-    first_name: string;
-    last_name: string | null;
-    role: string;
-    tribe_id: number | null;
-  }>(
-    "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(users).where(eq(users.telegramId, tgId));
 
-  if (existing.length > 0) {
-    const row = existing[0];
-    // Only upgrade to admin (never downgrade), since other users may have been made admin via /admin
-    const newRole = isAdmin && row.role !== "admin" ? "admin" : row.role;
-    const needsUpdate =
-      row.username !== username ||
-      row.first_name !== firstName ||
-      row.last_name !== lastName ||
-      newRole !== row.role;
+    if (existing) {
+      // Only upgrade to admin (never downgrade), since other users may have been made admin via /admin
+      const newRole = isAdmin && existing.role !== "admin" ? "admin" : existing.role;
+      const needsUpdate =
+        existing.username !== username ||
+        existing.firstName !== firstName ||
+        existing.lastName !== lastName ||
+        newRole !== existing.role;
 
-    if (needsUpdate) {
-      await query(
-        "UPDATE users SET username = $1, first_name = $2, last_name = $3, role = $4 WHERE id = $5",
-        [username, firstName, lastName, newRole, row.id]
-      );
+      if (needsUpdate) {
+        await tx
+          .update(users)
+          .set({ username, firstName, lastName, role: newRole })
+          .where(eq(users.id, existing.id));
+      }
+      return {
+        id: existing.id,
+        telegramId: Number(existing.telegramId),
+        username: username ?? existing.username,
+        firstName: firstName || existing.firstName,
+        lastName: lastName ?? existing.lastName,
+        role: newRole as "admin" | "user",
+        tribeId: existing.tribeId,
+      };
     }
-    return {
-      id: row.id,
-      telegramId: Number(row.telegram_id),
-      username: username ?? row.username,
-      firstName: firstName || row.first_name,
-      lastName: lastName ?? row.last_name,
-      role: newRole as "admin" | "user",
-      tribeId: row.tribe_id,
-    };
-  }
 
-  const { rows: tribes } = await query<{ id: number }>(
-    "SELECT id FROM tribes ORDER BY id LIMIT 1"
-  );
-  const tribeId = tribes[0]?.id ?? 1;
+    const [firstTribe] = await tx.select({ id: tribes.id }).from(tribes).orderBy(tribes.id).limit(1);
+    const tribeId = firstTribe?.id ?? 1;
 
-  const { rows: inserted } = await query<{ id: number }>(
-    `INSERT INTO users (telegram_id, username, first_name, last_name, role, tribe_id)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [telegramId, username, firstName, lastName, role, tribeId]
-  );
+    const [inserted] = await tx
+      .insert(users)
+      .values({ telegramId: tgId, username, firstName, lastName, role, tribeId })
+      .returning({ id: users.id });
 
-  return {
-    id: inserted[0].id,
-    telegramId,
-    username,
-    firstName,
-    lastName,
-    role,
-    tribeId,
-  };
+    return { id: inserted.id, telegramId, username, firstName, lastName, role, tribeId };
+  });
 }
 
 /** Look up a user by Telegram ID. Returns null if not found. */
 export async function getUserByTelegramId(telegramId: number): Promise<DbUser | null> {
-  const { rows } = await query<{
-    id: number;
-    telegram_id: string;
-    username: string | null;
-    first_name: string;
-    last_name: string | null;
-    role: string;
-    tribe_id: number | null;
-  }>(
-    "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
-  if (rows.length === 0) return null;
-  const r = rows[0];
-  return {
-    id: r.id,
-    telegramId: Number(r.telegram_id),
-    username: r.username,
-    firstName: r.first_name,
-    lastName: r.last_name,
-    role: r.role as "admin" | "user",
-    tribeId: r.tribe_id,
-  };
+  const [row] = await db.select().from(users).where(eq(users.telegramId, BigInt(telegramId)));
+  return row ? mapDbUser(row) : null;
 }
 
 /** Check if a telegram user exists in the DB (used for access control). */
 export async function isUserInDb(telegramId: number): Promise<boolean> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
-  return parseInt(rows[0].count, 10) > 0;
+  const [row] = await db
+    .select({ value: count() })
+    .from(users)
+    .where(eq(users.telegramId, BigInt(telegramId)));
+  return row.value > 0;
 }
 
 /** List approved users without a tribe (for tribe assignment). */
 export async function listUsersWithoutTribe(): Promise<DbUser[]> {
-  const { rows } = await query<{
-    id: number;
-    telegram_id: string;
-    username: string | null;
-    first_name: string;
-    last_name: string | null;
-    role: string;
-    tribe_id: number | null;
-  }>(
-    `SELECT id, telegram_id, username, first_name, last_name, role, tribe_id
-     FROM users
-     WHERE tribe_id IS NULL AND COALESCE(status, 'approved') = 'approved' AND role != 'admin'
-     ORDER BY id`
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    telegramId: Number(r.telegram_id),
-    username: r.username,
-    firstName: r.first_name,
-    lastName: r.last_name,
-    role: r.role as "admin" | "user",
-    tribeId: r.tribe_id,
-  }));
+  const rows = await db
+    .select()
+    .from(users)
+    .where(and(isNull(users.tribeId), eq(users.status, "approved"), ne(users.role, "admin")))
+    .orderBy(users.id);
+  return rows.map(mapDbUser);
 }
 
 /** List all approved (non-pending) users. */
 export async function listAllApprovedUsers(): Promise<DbUser[]> {
-  const { rows } = await query<{
-    id: number;
-    telegram_id: string;
-    username: string | null;
-    first_name: string;
-    last_name: string | null;
-    role: string;
-    tribe_id: number | null;
-  }>(
-    `SELECT id, telegram_id, username, first_name, last_name, role, tribe_id
-     FROM users
-     WHERE COALESCE(status, 'approved') != 'pending'
-     ORDER BY id`
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    telegramId: Number(r.telegram_id),
-    username: r.username,
-    firstName: r.first_name,
-    lastName: r.last_name,
-    role: r.role as "admin" | "user",
-    tribeId: r.tribe_id,
-  }));
+  const rows = await db.select().from(users).where(ne(users.status, "pending")).orderBy(users.id);
+  return rows.map(mapDbUser);
 }
 
 /** List all users in a tribe. */
 export async function listTribeUsers(tribeId: number): Promise<DbUser[]> {
-  const { rows } = await query<{
-    id: number;
-    telegram_id: string;
-    username: string | null;
-    first_name: string;
-    last_name: string | null;
-    role: string;
-    tribe_id: number | null;
-  }>(
-    "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE tribe_id = $1 ORDER BY id",
-    [tribeId]
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    telegramId: Number(r.telegram_id),
-    username: r.username,
-    firstName: r.first_name,
-    lastName: r.last_name,
-    role: r.role as "admin" | "user",
-    tribeId: r.tribe_id,
-  }));
+  const rows = await db.select().from(users).where(eq(users.tribeId, tribeId)).orderBy(users.id);
+  return rows.map(mapDbUser);
 }
 
 /** Add a new user by telegram ID (admin action). Returns the created user or null if already exists. */
@@ -465,35 +357,24 @@ export async function addUserByTelegramId(
   const exists = await isUserInDb(telegramId);
   if (exists) return null;
 
-  const { rows: tribes } = await query<{ id: number }>(
-    "SELECT id FROM tribes ORDER BY id LIMIT 1"
-  );
-  const tribeId = tribes[0]?.id ?? 1;
+  const [firstTribe] = await db.select({ id: tribes.id }).from(tribes).orderBy(tribes.id).limit(1);
+  const tribeId = firstTribe?.id ?? 1;
 
-  const { rows } = await query<{ id: number }>(
-    `INSERT INTO users (telegram_id, username, first_name, role, tribe_id)
-     VALUES ($1, NULL, '', $2, $3) RETURNING id`,
-    [telegramId, role, tribeId]
-  );
+  const [inserted] = await db
+    .insert(users)
+    .values({ telegramId: BigInt(telegramId), username: null, firstName: "", role, tribeId })
+    .returning({ id: users.id });
 
-  return {
-    id: rows[0].id,
-    telegramId,
-    username: null,
-    firstName: "",
-    lastName: null,
-    role,
-    tribeId,
-  };
+  return { id: inserted.id, telegramId, username: null, firstName: "", lastName: null, role, tribeId };
 }
 
 /** Remove a user by telegram ID (admin action). Returns true if deleted. */
 export async function removeUserByTelegramId(telegramId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(users)
+    .where(eq(users.telegramId, BigInt(telegramId)))
+    .returning({ id: users.id });
+  return rows.length > 0;
 }
 
 /** Create a pending user (onboarding request). No tribe assigned — admin assigns later. */
@@ -503,107 +384,77 @@ export async function createPendingUser(
   firstName: string,
   lastName: string | null
 ): Promise<DbUser> {
-  const { rows } = await query<{ id: number }>(
-    `INSERT INTO users (telegram_id, username, first_name, last_name, role, status)
-     VALUES ($1, $2, $3, $4, 'user', 'pending') RETURNING id`,
-    [telegramId, username, firstName, lastName]
-  );
+  const [inserted] = await db
+    .insert(users)
+    .values({ telegramId: BigInt(telegramId), username, firstName, lastName, role: "user", status: "pending" })
+    .returning({ id: users.id });
 
-  return {
-    id: rows[0].id,
-    telegramId,
-    username,
-    firstName,
-    lastName,
-    role: "user",
-    tribeId: null,
-  };
+  return { id: inserted.id, telegramId, username, firstName, lastName, role: "user", tribeId: null };
 }
 
 /** Approve a pending user. */
 export async function approveUser(telegramId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE users SET status = 'approved' WHERE telegram_id = $1 AND status = 'pending'",
-    [telegramId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(users)
+    .set({ status: "approved" })
+    .where(and(eq(users.telegramId, BigInt(telegramId)), eq(users.status, "pending")))
+    .returning({ id: users.id });
+  return rows.length > 0;
 }
 
 /** Reject a pending user (delete from DB so they can re-apply). */
 export async function rejectUser(telegramId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM users WHERE telegram_id = $1 AND status = 'pending'",
-    [telegramId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(users)
+    .where(and(eq(users.telegramId, BigInt(telegramId)), eq(users.status, "pending")))
+    .returning({ id: users.id });
+  return rows.length > 0;
 }
 
 /** List all pending users. */
 export async function listPendingUsers(): Promise<DbUser[]> {
-  const { rows } = await query<{
-    id: number;
-    telegram_id: string;
-    username: string | null;
-    first_name: string;
-    last_name: string | null;
-    role: string;
-    tribe_id: number | null;
-  }>(
-    "SELECT id, telegram_id, username, first_name, last_name, role, tribe_id FROM users WHERE status = 'pending' ORDER BY id"
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    telegramId: Number(r.telegram_id),
-    username: r.username,
-    firstName: r.first_name,
-    lastName: r.last_name,
-    role: r.role as "admin" | "user",
-    tribeId: r.tribe_id,
-  }));
+  const rows = await db.select().from(users).where(eq(users.status, "pending")).orderBy(users.id);
+  return rows.map(mapDbUser);
 }
 
 /** Get user status by telegram ID. Returns null if user not found. */
 export async function getUserStatus(telegramId: number): Promise<string | null> {
-  const { rows } = await query<{ status: string }>(
-    "SELECT COALESCE(status, 'approved') AS status FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
-  return rows[0]?.status ?? null;
+  const [row] = await db
+    .select({ status: users.status })
+    .from(users)
+    .where(eq(users.telegramId, BigInt(telegramId)));
+  return row?.status ?? null;
 }
 
 /** Set user's tribe. */
 export async function setUserTribe(telegramId: number, tribeId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE users SET tribe_id = $1 WHERE telegram_id = $2",
-    [tribeId, telegramId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(users)
+    .set({ tribeId })
+    .where(eq(users.telegramId, BigInt(telegramId)))
+    .returning({ id: users.id });
+  return rows.length > 0;
 }
 
 /** Remove user from tribe (set tribe_id to NULL). */
 export async function removeUserFromTribe(telegramId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE users SET tribe_id = NULL WHERE telegram_id = $1",
-    [telegramId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(users)
+    .set({ tribeId: null })
+    .where(eq(users.telegramId, BigInt(telegramId)))
+    .returning({ id: users.id });
+  return rows.length > 0;
 }
 
 /** List all tribes. */
 export async function listTribes(): Promise<Array<{ id: number; name: string }>> {
-  const { rows } = await query<{ id: number; name: string }>(
-    "SELECT id, name FROM tribes ORDER BY name"
-  );
-  return rows;
+  return db.select({ id: tribes.id, name: tribes.name }).from(tribes).orderBy(tribes.name);
 }
 
 /** Create a new tribe. */
 export async function createTribe(name: string): Promise<{ id: number; name: string }> {
-  const { rows } = await query<{ id: number; name: string }>(
-    "INSERT INTO tribes (name) VALUES ($1) RETURNING id, name",
-    [name]
-  );
-  return rows[0];
+  const [row] = await db.insert(tribes).values({ name }).returning({ id: tribes.id, name: tribes.name });
+  return row;
 }
 
 /** Valid bot modes. */
@@ -613,29 +464,23 @@ const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses
 
 /** Get user's current bot mode from DB. */
 export async function getUserMode(telegramId: number): Promise<BotMode> {
-  const { rows } = await query<{ mode: string }>(
-    "SELECT mode FROM users WHERE telegram_id = $1",
-    [telegramId]
-  );
-  const mode = rows[0]?.mode;
-  return VALID_MODES.has(mode) ? (mode as BotMode) : "calendar";
+  const [row] = await db
+    .select({ mode: users.mode })
+    .from(users)
+    .where(eq(users.telegramId, BigInt(telegramId)));
+  const mode = row?.mode;
+  return mode && VALID_MODES.has(mode) ? (mode as BotMode) : "calendar";
 }
 
 /** Set user's bot mode in DB. */
 export async function setUserMode(telegramId: number, mode: BotMode): Promise<void> {
-  await query(
-    "UPDATE users SET mode = $1 WHERE telegram_id = $2",
-    [mode, telegramId]
-  );
+  await db.update(users).set({ mode }).where(eq(users.telegramId, BigInt(telegramId)));
 }
 
 /** Get display name for a tribe. Falls back to 'Семья'. */
 export async function getTribeName(tribeId: number): Promise<string> {
-  const { rows } = await query<{ name: string }>(
-    "SELECT name FROM tribes WHERE id = $1",
-    [tribeId]
-  );
-  return rows[0]?.name ?? "Семья";
+  const [row] = await db.select({ name: tribes.name }).from(tribes).where(eq(tribes.id, tribeId));
+  return row?.name ?? "Семья";
 }
 
 // ─── Expenses CRUD ────────────────────────────────────────────────────
@@ -665,116 +510,104 @@ export async function addExpense(
     ? subcategory.slice(0, MAX_SUBCATEGORY_LENGTH).trim() || null
     : null;
 
-  const { rows } = await query<{
-    id: number;
-    user_id: number;
-    tribe_id: number;
-    category_id: number;
-    subcategory: string | null;
-    amount: string;
-    input_method: string;
-    created_at: Date;
-  }>(
-    `INSERT INTO expenses (user_id, tribe_id, category_id, subcategory, amount, input_method, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
-     RETURNING id, user_id, tribe_id, category_id, subcategory, amount, input_method, created_at`,
-    [userId, tribeId, categoryId, sanitizedSub, amount, inputMethod, createdAt ?? null]
-  );
-  const r = rows[0];
+  const [r] = await db
+    .insert(expenses)
+    .values({
+      userId,
+      tribeId,
+      categoryId,
+      subcategory: sanitizedSub,
+      amount: String(amount),
+      inputMethod,
+      createdAt: createdAt ?? sql`now()`,
+    })
+    .returning();
   return {
     id: r.id,
-    userId: r.user_id,
-    tribeId: r.tribe_id,
-    categoryId: r.category_id,
+    userId: r.userId,
+    tribeId: r.tribeId,
+    categoryId: r.categoryId,
     subcategory: r.subcategory,
     amount: parseFloat(r.amount),
-    inputMethod: r.input_method as "text" | "voice",
-    createdAt: r.created_at,
+    inputMethod: r.inputMethod as "text" | "voice",
+    createdAt: r.createdAt,
   };
 }
 
 /** Get a single expense by ID with category info. */
 export async function getExpenseById(expenseId: number): Promise<ExpenseWithCategory | null> {
-  const { rows } = await query<{
-    id: number;
-    user_id: number;
-    tribe_id: number;
-    category_id: number;
-    subcategory: string | null;
-    amount: string;
-    input_method: string;
-    created_at: Date;
-    category_name: string;
-    category_emoji: string;
-  }>(
-    `SELECT e.id, e.user_id, e.tribe_id, e.category_id, e.subcategory, e.amount,
-            e.input_method, e.created_at, c.name AS category_name, c.emoji AS category_emoji
-     FROM expenses e
-     JOIN categories c ON c.id = e.category_id
-     WHERE e.id = $1`,
-    [expenseId]
-  );
-  if (rows.length === 0) return null;
-  const r = rows[0];
+  const [r] = await db
+    .select({
+      id: expenses.id,
+      userId: expenses.userId,
+      tribeId: expenses.tribeId,
+      categoryId: expenses.categoryId,
+      subcategory: expenses.subcategory,
+      amount: expenses.amount,
+      inputMethod: expenses.inputMethod,
+      createdAt: expenses.createdAt,
+      categoryName: categories.name,
+      categoryEmoji: categories.emoji,
+    })
+    .from(expenses)
+    .innerJoin(categories, eq(categories.id, expenses.categoryId))
+    .where(eq(expenses.id, expenseId));
+  if (!r) return null;
   return {
     id: r.id,
-    userId: r.user_id,
-    tribeId: r.tribe_id,
-    categoryId: r.category_id,
+    userId: r.userId,
+    tribeId: r.tribeId,
+    categoryId: r.categoryId,
     subcategory: r.subcategory,
     amount: parseFloat(r.amount),
-    inputMethod: r.input_method as "text" | "voice",
-    createdAt: r.created_at,
-    categoryName: r.category_name,
-    categoryEmoji: r.category_emoji,
+    inputMethod: r.inputMethod as "text" | "voice",
+    createdAt: r.createdAt,
+    categoryName: r.categoryName,
+    categoryEmoji: r.categoryEmoji,
   };
 }
 
 /** Delete an expense by ID. Only deletes if owned by the given user. */
 export async function deleteExpense(expenseId: number, userId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM expenses WHERE id = $1 AND user_id = $2",
-    [expenseId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(expenses)
+    .where(and(eq(expenses.id, expenseId), eq(expenses.userId, userId)))
+    .returning({ id: expenses.id });
+  return rows.length > 0;
 }
 
 /** Get the most recent expense for a user (for undo). */
 export async function getLastExpense(userId: number): Promise<ExpenseWithCategory | null> {
-  const { rows } = await query<{
-    id: number;
-    user_id: number;
-    tribe_id: number;
-    category_id: number;
-    subcategory: string | null;
-    amount: string;
-    input_method: string;
-    created_at: Date;
-    category_name: string;
-    category_emoji: string;
-  }>(
-    `SELECT e.id, e.user_id, e.tribe_id, e.category_id, e.subcategory, e.amount,
-            e.input_method, e.created_at, c.name AS category_name, c.emoji AS category_emoji
-     FROM expenses e
-     JOIN categories c ON c.id = e.category_id
-     WHERE e.user_id = $1
-     ORDER BY e.created_at DESC
-     LIMIT 1`,
-    [userId]
-  );
-  if (rows.length === 0) return null;
-  const r = rows[0];
+  const [r] = await db
+    .select({
+      id: expenses.id,
+      userId: expenses.userId,
+      tribeId: expenses.tribeId,
+      categoryId: expenses.categoryId,
+      subcategory: expenses.subcategory,
+      amount: expenses.amount,
+      inputMethod: expenses.inputMethod,
+      createdAt: expenses.createdAt,
+      categoryName: categories.name,
+      categoryEmoji: categories.emoji,
+    })
+    .from(expenses)
+    .innerJoin(categories, eq(categories.id, expenses.categoryId))
+    .where(eq(expenses.userId, userId))
+    .orderBy(desc(expenses.createdAt))
+    .limit(1);
+  if (!r) return null;
   return {
     id: r.id,
-    userId: r.user_id,
-    tribeId: r.tribe_id,
-    categoryId: r.category_id,
+    userId: r.userId,
+    tribeId: r.tribeId,
+    categoryId: r.categoryId,
     subcategory: r.subcategory,
     amount: parseFloat(r.amount),
-    inputMethod: r.input_method as "text" | "voice",
-    createdAt: r.created_at,
-    categoryName: r.category_name,
-    categoryEmoji: r.category_emoji,
+    inputMethod: r.inputMethod as "text" | "voice",
+    createdAt: r.createdAt,
+    categoryName: r.categoryName,
+    categoryEmoji: r.categoryEmoji,
   };
 }
 
@@ -784,13 +617,11 @@ export async function getLastExpense(userId: number): Promise<ExpenseWithCategor
 export async function getMonthTotal(tribeId: number, year: number, month: number): Promise<number> {
   const start = new Date(Date.UTC(year, month - 1, 1));
   const end = new Date(Date.UTC(year, month, 1));
-  const { rows } = await query<{ total: string | null }>(
-    `SELECT COALESCE(SUM(amount), 0) AS total
-     FROM expenses
-     WHERE tribe_id = $1 AND created_at >= $2 AND created_at < $3`,
-    [tribeId, start.toISOString(), end.toISOString()]
-  );
-  return parseFloat(rows[0].total ?? "0");
+  const [row] = await db
+    .select({ total: sql<string>`coalesce(sum(${expenses.amount}), 0)` })
+    .from(expenses)
+    .where(and(eq(expenses.tribeId, tribeId), gte(expenses.createdAt, start), lt(expenses.createdAt, end)));
+  return parseFloat(row.total ?? "0");
 }
 
 /** Get per-category expense totals for a tribe in a date range. */
@@ -799,32 +630,35 @@ export async function getCategoryTotals(
   dateFrom: Date,
   dateTo: Date
 ): Promise<CategoryTotal[]> {
-  const { rows } = await query<{
-    category_id: number;
-    category_name: string;
-    category_emoji: string;
-    total: string;
-    sort_order: number;
-  }>(
-    `SELECT c.id AS category_id, c.name AS category_name, c.emoji AS category_emoji,
-            COALESCE(SUM(e.amount), 0) AS total, c.sort_order
-     FROM categories c
-     LEFT JOIN expenses e ON e.category_id = c.id
-       AND e.tribe_id = $1
-       AND e.created_at >= $2
-       AND e.created_at < $3
-     WHERE c.is_active = true
-     GROUP BY c.id, c.name, c.emoji, c.sort_order
-     HAVING COALESCE(SUM(e.amount), 0) > 0
-     ORDER BY c.sort_order`,
-    [tribeId, dateFrom.toISOString(), dateTo.toISOString()]
-  );
+  const total = sql<string>`coalesce(sum(${expenses.amount}), 0)`;
+  const rows = await db
+    .select({
+      categoryId: categories.id,
+      categoryName: categories.name,
+      categoryEmoji: categories.emoji,
+      total,
+      sortOrder: categories.sortOrder,
+    })
+    .from(categories)
+    .leftJoin(
+      expenses,
+      and(
+        eq(expenses.categoryId, categories.id),
+        eq(expenses.tribeId, tribeId),
+        gte(expenses.createdAt, dateFrom),
+        lt(expenses.createdAt, dateTo),
+      ),
+    )
+    .where(eq(categories.isActive, true))
+    .groupBy(categories.id, categories.name, categories.emoji, categories.sortOrder)
+    .having(sql`coalesce(sum(${expenses.amount}), 0) > 0`)
+    .orderBy(categories.sortOrder);
   return rows.map((r) => ({
-    categoryId: r.category_id,
-    categoryName: r.category_name,
-    categoryEmoji: r.category_emoji,
+    categoryId: r.categoryId,
+    categoryName: r.categoryName,
+    categoryEmoji: r.categoryEmoji,
     total: parseFloat(r.total),
-    sortOrder: r.sort_order,
+    sortOrder: r.sortOrder,
   }));
 }
 
@@ -834,24 +668,15 @@ export async function getUserTotals(
   dateFrom: Date,
   dateTo: Date
 ): Promise<UserTotal[]> {
-  const { rows } = await query<{
-    user_id: number;
-    first_name: string;
-    total: string;
-  }>(
-    `SELECT e.user_id, u.first_name, COALESCE(SUM(e.amount), 0) AS total
-     FROM expenses e
-     JOIN users u ON u.id = e.user_id
-     WHERE e.tribe_id = $1 AND e.created_at >= $2 AND e.created_at < $3
-     GROUP BY e.user_id, u.first_name
-     ORDER BY total DESC`,
-    [tribeId, dateFrom.toISOString(), dateTo.toISOString()]
-  );
-  return rows.map((r) => ({
-    userId: r.user_id,
-    firstName: r.first_name,
-    total: parseFloat(r.total),
-  }));
+  const total = sql<string>`coalesce(sum(${expenses.amount}), 0)`;
+  const rows = await db
+    .select({ userId: expenses.userId, firstName: users.firstName, total })
+    .from(expenses)
+    .innerJoin(users, eq(users.id, expenses.userId))
+    .where(and(eq(expenses.tribeId, tribeId), gte(expenses.createdAt, dateFrom), lt(expenses.createdAt, dateTo)))
+    .groupBy(expenses.userId, users.firstName)
+    .orderBy(desc(total));
+  return rows.map((r) => ({ userId: r.userId, firstName: r.firstName, total: parseFloat(r.total) }));
 }
 
 /** Compare category totals between two months (for trend analysis).
@@ -869,39 +694,36 @@ export async function getMonthComparison(
   const currFrom = new Date(Date.UTC(year2, month2 - 1, 1));
   const currTo = day ? new Date(Date.UTC(year2, month2 - 1, day + 1)) : new Date(Date.UTC(year2, month2, 1));
 
-  const { rows } = await query<{
-    category_id: number;
-    category_name: string;
-    category_emoji: string;
-    sort_order: number;
-    prev_total: string;
-    curr_total: string;
-  }>(
-    `SELECT c.id AS category_id, c.name AS category_name, c.emoji AS category_emoji,
-            c.sort_order,
-            COALESCE(SUM(e.amount) FILTER (WHERE e.created_at >= $2 AND e.created_at < $3), 0) AS prev_total,
-            COALESCE(SUM(e.amount) FILTER (WHERE e.created_at >= $4 AND e.created_at < $5), 0) AS curr_total
-     FROM categories c
-     LEFT JOIN expenses e ON e.category_id = c.id AND e.tribe_id = $1
-     WHERE c.is_active = true
-     GROUP BY c.id, c.name, c.emoji, c.sort_order
-     HAVING COALESCE(SUM(e.amount) FILTER (WHERE e.created_at >= $2 AND e.created_at < $3), 0) > 0
-        OR COALESCE(SUM(e.amount) FILTER (WHERE e.created_at >= $4 AND e.created_at < $5), 0) > 0
-     ORDER BY c.sort_order`,
-    [tribeId, prevFrom.toISOString(), prevTo.toISOString(), currFrom.toISOString(), currTo.toISOString()]
-  );
+  const prevTotal = sql<string>`coalesce(sum(${expenses.amount}) filter (where ${expenses.createdAt} >= ${prevFrom} and ${expenses.createdAt} < ${prevTo}), 0)`;
+  const currTotal = sql<string>`coalesce(sum(${expenses.amount}) filter (where ${expenses.createdAt} >= ${currFrom} and ${expenses.createdAt} < ${currTo}), 0)`;
 
-  return rows.map((r) => {
-    const prevTotal = parseFloat(r.prev_total);
-    const currTotal = parseFloat(r.curr_total);
-    return {
-      categoryId: r.category_id,
-      categoryName: r.category_name,
-      categoryEmoji: r.category_emoji,
-      sortOrder: r.sort_order,
+  const rows = await db
+    .select({
+      categoryId: categories.id,
+      categoryName: categories.name,
+      categoryEmoji: categories.emoji,
+      sortOrder: categories.sortOrder,
       prevTotal,
       currTotal,
-      diff: currTotal - prevTotal,
+    })
+    .from(categories)
+    .leftJoin(expenses, and(eq(expenses.categoryId, categories.id), eq(expenses.tribeId, tribeId)))
+    .where(eq(categories.isActive, true))
+    .groupBy(categories.id, categories.name, categories.emoji, categories.sortOrder)
+    .having(sql`${prevTotal} > 0 or ${currTotal} > 0`)
+    .orderBy(categories.sortOrder);
+
+  return rows.map((r) => {
+    const prev = parseFloat(r.prevTotal);
+    const curr = parseFloat(r.currTotal);
+    return {
+      categoryId: r.categoryId,
+      categoryName: r.categoryName,
+      categoryEmoji: r.categoryEmoji,
+      sortOrder: r.sortOrder,
+      prevTotal: prev,
+      currTotal: curr,
+      diff: curr - prev,
     };
   });
 }
@@ -914,52 +736,46 @@ export async function getExpensesPaginated(
   limit: number,
   offset: number
 ): Promise<Array<ExpenseWithCategory & { firstName: string }>> {
-  const { rows } = await query<{
-    id: number;
-    user_id: number;
-    tribe_id: number;
-    category_id: number;
-    subcategory: string | null;
-    amount: string;
-    input_method: string;
-    created_at: Date;
-    category_name: string;
-    category_emoji: string;
-    first_name: string;
-  }>(
-    `SELECT e.id, e.user_id, e.tribe_id, e.category_id, e.subcategory, e.amount,
-            e.input_method, e.created_at, c.name AS category_name, c.emoji AS category_emoji,
-            u.first_name
-     FROM expenses e
-     JOIN categories c ON c.id = e.category_id
-     JOIN users u ON u.id = e.user_id
-     WHERE e.tribe_id = $1
-     ORDER BY e.created_at DESC
-     LIMIT $2 OFFSET $3`,
-    [tribeId, limit, offset]
-  );
+  const rows = await db
+    .select({
+      id: expenses.id,
+      userId: expenses.userId,
+      tribeId: expenses.tribeId,
+      categoryId: expenses.categoryId,
+      subcategory: expenses.subcategory,
+      amount: expenses.amount,
+      inputMethod: expenses.inputMethod,
+      createdAt: expenses.createdAt,
+      categoryName: categories.name,
+      categoryEmoji: categories.emoji,
+      firstName: users.firstName,
+    })
+    .from(expenses)
+    .innerJoin(categories, eq(categories.id, expenses.categoryId))
+    .innerJoin(users, eq(users.id, expenses.userId))
+    .where(eq(expenses.tribeId, tribeId))
+    .orderBy(desc(expenses.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map((r) => ({
     id: r.id,
-    userId: r.user_id,
-    tribeId: r.tribe_id,
-    categoryId: r.category_id,
+    userId: r.userId,
+    tribeId: r.tribeId,
+    categoryId: r.categoryId,
     subcategory: r.subcategory,
     amount: parseFloat(r.amount),
-    inputMethod: r.input_method as "text" | "voice",
-    createdAt: r.created_at,
-    categoryName: r.category_name,
-    categoryEmoji: r.category_emoji,
-    firstName: r.first_name,
+    inputMethod: r.inputMethod as "text" | "voice",
+    createdAt: r.createdAt,
+    categoryName: r.categoryName,
+    categoryEmoji: r.categoryEmoji,
+    firstName: r.firstName,
   }));
 }
 
 /** Admin: count all expenses for a tribe. */
 export async function countExpenses(tribeId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM expenses WHERE tribe_id = $1",
-    [tribeId]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db.select({ value: count() }).from(expenses).where(eq(expenses.tribeId, tribeId));
+  return row.value;
 }
 
 /** Admin: update expense fields (no ownership check). */
@@ -967,56 +783,31 @@ export async function updateExpense(
   expenseId: number,
   fields: { amount?: number; categoryId?: number; subcategory?: string | null; createdAt?: Date }
 ): Promise<boolean> {
-  const sets: string[] = [];
-  const params: unknown[] = [];
-  let idx = 1;
+  const set: PgUpdateSetSource<typeof expenses> = {};
+  if (fields.amount !== undefined) set.amount = String(fields.amount);
+  if (fields.categoryId !== undefined) set.categoryId = fields.categoryId;
+  if (fields.subcategory !== undefined) set.subcategory = fields.subcategory;
+  if (fields.createdAt !== undefined) set.createdAt = fields.createdAt;
 
-  if (fields.amount !== undefined) {
-    sets.push(`amount = $${idx++}`);
-    params.push(fields.amount);
-  }
-  if (fields.categoryId !== undefined) {
-    sets.push(`category_id = $${idx++}`);
-    params.push(fields.categoryId);
-  }
-  if (fields.subcategory !== undefined) {
-    sets.push(`subcategory = $${idx++}`);
-    params.push(fields.subcategory);
-  }
-  if (fields.createdAt !== undefined) {
-    sets.push(`created_at = $${idx++}`);
-    params.push(fields.createdAt);
-  }
-
-  if (sets.length === 0) return false;
+  if (Object.keys(set).length === 0) return false;
   // updated_at always tracks the moment of edit
-  sets.push(`updated_at = NOW()`);
-  params.push(expenseId);
+  set.updatedAt = sql`now()`;
 
-  const { rowCount } = await query(
-    `UPDATE expenses SET ${sets.join(", ")} WHERE id = $${idx}`,
-    params
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db.update(expenses).set(set).where(eq(expenses.id, expenseId)).returning({ id: expenses.id });
+  return rows.length > 0;
 }
 
 /** Admin: bulk delete expenses by ID array. */
 export async function bulkDeleteExpenses(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
-  const { rowCount } = await query(
-    "DELETE FROM expenses WHERE id = ANY($1)",
-    [ids]
-  );
-  return rowCount ?? 0;
+  const rows = await db.delete(expenses).where(inArray(expenses.id, ids)).returning({ id: expenses.id });
+  return rows.length;
 }
 
 /** Admin: delete all expenses for a tribe. */
 export async function deleteAllExpenses(tribeId: number): Promise<number> {
-  const { rowCount } = await query(
-    "DELETE FROM expenses WHERE tribe_id = $1",
-    [tribeId]
-  );
-  return rowCount ?? 0;
+  const rows = await db.delete(expenses).where(eq(expenses.tribeId, tribeId)).returning({ id: expenses.id });
+  return rows.length;
 }
 
 /** Admin: update tribe name/monthlyLimit. */
@@ -1024,38 +815,24 @@ export async function updateTribe(
   tribeId: number,
   fields: { name?: string; monthlyLimit?: number | null }
 ): Promise<boolean> {
-  const sets: string[] = [];
-  const params: unknown[] = [];
-  let idx = 1;
-
-  if (fields.name !== undefined) {
-    sets.push(`name = $${idx++}`);
-    params.push(fields.name);
-  }
+  const set: PgUpdateSetSource<typeof tribes> = {};
+  if (fields.name !== undefined) set.name = fields.name;
   if (fields.monthlyLimit !== undefined) {
-    sets.push(`monthly_limit = $${idx++}`);
-    params.push(fields.monthlyLimit);
+    set.monthlyLimit = fields.monthlyLimit === null ? null : String(fields.monthlyLimit);
   }
 
-  if (sets.length === 0) return false;
-  params.push(tribeId);
+  if (Object.keys(set).length === 0) return false;
 
-  const { rowCount } = await query(
-    `UPDATE tribes SET ${sets.join(", ")} WHERE id = $${idx}`,
-    params
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db.update(tribes).set(set).where(eq(tribes.id, tribeId)).returning({ id: tribes.id });
+  return rows.length > 0;
 }
 
 /** Admin: delete a tribe (only if no users assigned). */
 export async function deleteTribe(tribeId: number): Promise<boolean> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM users WHERE tribe_id = $1",
-    [tribeId]
-  );
-  if (parseInt(rows[0].count, 10) > 0) return false;
-  const { rowCount } = await query("DELETE FROM tribes WHERE id = $1", [tribeId]);
-  return (rowCount ?? 0) > 0;
+  const [row] = await db.select({ value: count() }).from(users).where(eq(users.tribeId, tribeId));
+  if (row.value > 0) return false;
+  const rows = await db.delete(tribes).where(eq(tribes.id, tribeId)).returning({ id: tribes.id });
+  return rows.length > 0;
 }
 
 /** Get detailed expense rows for Excel export (includes user and category info). */
@@ -1073,34 +850,31 @@ export async function getExpensesForExcel(
   createdAt: Date;
   sortOrder: number;
 }>> {
-  const { rows } = await query<{
-    category_id: number;
-    category_name: string;
-    category_emoji: string;
-    subcategory: string | null;
-    amount: string;
-    first_name: string;
-    created_at: Date;
-    sort_order: number;
-  }>(
-    `SELECT c.id AS category_id, c.name AS category_name, c.emoji AS category_emoji,
-            e.subcategory, e.amount, u.first_name, e.created_at, c.sort_order
-     FROM expenses e
-     JOIN categories c ON c.id = e.category_id
-     JOIN users u ON u.id = e.user_id
-     WHERE e.tribe_id = $1 AND e.created_at >= $2 AND e.created_at < $3
-     ORDER BY c.sort_order, e.created_at`,
-    [tribeId, dateFrom.toISOString(), dateTo.toISOString()]
-  );
+  const rows = await db
+    .select({
+      categoryId: categories.id,
+      categoryName: categories.name,
+      categoryEmoji: categories.emoji,
+      subcategory: expenses.subcategory,
+      amount: expenses.amount,
+      firstName: users.firstName,
+      createdAt: expenses.createdAt,
+      sortOrder: categories.sortOrder,
+    })
+    .from(expenses)
+    .innerJoin(categories, eq(categories.id, expenses.categoryId))
+    .innerJoin(users, eq(users.id, expenses.userId))
+    .where(and(eq(expenses.tribeId, tribeId), gte(expenses.createdAt, dateFrom), lt(expenses.createdAt, dateTo)))
+    .orderBy(categories.sortOrder, expenses.createdAt);
   return rows.map((r) => ({
-    categoryId: r.category_id,
-    categoryName: r.category_name,
-    categoryEmoji: r.category_emoji,
+    categoryId: r.categoryId,
+    categoryName: r.categoryName,
+    categoryEmoji: r.categoryEmoji,
     subcategory: r.subcategory,
     amount: parseFloat(r.amount),
-    firstName: r.first_name,
-    createdAt: r.created_at,
-    sortOrder: r.sort_order,
+    firstName: r.firstName,
+    createdAt: r.createdAt,
+    sortOrder: r.sortOrder,
   }));
 }
 
@@ -1117,22 +891,17 @@ export async function getMonthlyCategoryTotalsForYear(
 ): Promise<Array<{ month: number; categoryId: number; total: number }>> {
   const start = new Date(Date.UTC(year, 0, 1));
   const end = new Date(Date.UTC(year + 1, 0, 1));
-  const { rows } = await query<{ month: string; category_id: number; total: string }>(
-    `SELECT EXTRACT(MONTH FROM (e.created_at AT TIME ZONE 'UTC'))::int AS month,
-            e.category_id,
-            COALESCE(SUM(e.amount), 0) AS total
-     FROM expenses e
-     WHERE e.tribe_id = $1
-       AND e.created_at >= $2
-       AND e.created_at < $3
-     GROUP BY month, e.category_id`,
-    [tribeId, start.toISOString(), end.toISOString()]
-  );
-  return rows.map((r) => ({
-    month: typeof r.month === "string" ? parseInt(r.month, 10) : r.month,
-    categoryId: r.category_id,
-    total: parseFloat(r.total),
-  }));
+  const monthExpr = sql<number>`extract(month from (${expenses.createdAt} at time zone 'UTC'))::int`.mapWith(Number);
+  const rows = await db
+    .select({
+      month: monthExpr,
+      categoryId: expenses.categoryId,
+      total: sql<string>`coalesce(sum(${expenses.amount}), 0)`,
+    })
+    .from(expenses)
+    .where(and(eq(expenses.tribeId, tribeId), gte(expenses.createdAt, start), lt(expenses.createdAt, end)))
+    .groupBy(monthExpr, expenses.categoryId);
+  return rows.map((r) => ({ month: r.month, categoryId: r.categoryId, total: parseFloat(r.total) }));
 }
 
 // ─── Monthly limit overrides ──────────────────────────────────────────
@@ -1150,20 +919,24 @@ export async function getEffectiveMonthLimit(
   month: number,
   fallback: number
 ): Promise<number> {
-  const { rows } = await query<{ override: string | null; tribe_default: string | null }>(
-    `SELECT
-        (SELECT limit_amount FROM tribe_monthly_limits
-           WHERE tribe_id = $1 AND year = $2 AND month = $3) AS override,
-        (SELECT monthly_limit FROM tribes WHERE id = $1) AS tribe_default`,
-    [tribeId, year, month]
-  );
-  const r = rows[0];
-  if (r?.override != null) {
-    const v = parseFloat(r.override);
+  const [override] = await db
+    .select({ v: tribeMonthlyLimits.limitAmount })
+    .from(tribeMonthlyLimits)
+    .where(
+      and(
+        eq(tribeMonthlyLimits.tribeId, tribeId),
+        eq(tribeMonthlyLimits.year, year),
+        eq(tribeMonthlyLimits.month, month),
+      ),
+    );
+  if (override?.v != null) {
+    const v = parseFloat(override.v);
     if (Number.isFinite(v) && v > 0) return v;
   }
-  if (r?.tribe_default != null) {
-    const v = parseFloat(r.tribe_default);
+
+  const [tribe] = await db.select({ v: tribes.monthlyLimit }).from(tribes).where(eq(tribes.id, tribeId));
+  if (tribe?.v != null) {
+    const v = parseFloat(tribe.v);
     if (Number.isFinite(v) && v > 0) return v;
   }
   return fallback;
@@ -1175,23 +948,24 @@ export async function isMonthLimitOverridden(
   year: number,
   month: number
 ): Promise<boolean> {
-  const { rows } = await query<{ exists: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM tribe_monthly_limits
-       WHERE tribe_id = $1 AND year = $2 AND month = $3
-     ) AS exists`,
-    [tribeId, year, month]
-  );
-  return rows[0]?.exists === true;
+  const [row] = await db
+    .select({ id: tribeMonthlyLimits.id })
+    .from(tribeMonthlyLimits)
+    .where(
+      and(
+        eq(tribeMonthlyLimits.tribeId, tribeId),
+        eq(tribeMonthlyLimits.year, year),
+        eq(tribeMonthlyLimits.month, month),
+      ),
+    )
+    .limit(1);
+  return !!row;
 }
 
 /** Returns the tribe-wide default limit (tribes.monthly_limit), or null if unset. */
 export async function getTribeDefaultLimit(tribeId: number): Promise<number | null> {
-  const { rows } = await query<{ monthly_limit: string | null }>(
-    "SELECT monthly_limit FROM tribes WHERE id = $1",
-    [tribeId]
-  );
-  const raw = rows[0]?.monthly_limit;
+  const [row] = await db.select({ v: tribes.monthlyLimit }).from(tribes).where(eq(tribes.id, tribeId));
+  const raw = row?.v;
   if (raw == null) return null;
   const v = parseFloat(raw);
   return Number.isFinite(v) && v > 0 ? v : null;
@@ -1218,24 +992,27 @@ export async function setEffectiveMonthLimit(
   }
 
   if (applyToFuture) {
-    await query(
-      `UPDATE tribes SET monthly_limit = $2 WHERE id = $1`,
-      [tribeId, amount]
-    );
-    // Remove overrides for this month and any later month so the new default applies cleanly.
-    await query(
-      `DELETE FROM tribe_monthly_limits
-       WHERE tribe_id = $1 AND (year > $2 OR (year = $2 AND month >= $3))`,
-      [tribeId, year, month]
-    );
+    await db.transaction(async (tx) => {
+      await tx.update(tribes).set({ monthlyLimit: String(amount) }).where(eq(tribes.id, tribeId));
+      // Remove overrides for this month and any later month so the new default applies cleanly.
+      await tx.delete(tribeMonthlyLimits).where(
+        and(
+          eq(tribeMonthlyLimits.tribeId, tribeId),
+          or(
+            gt(tribeMonthlyLimits.year, year),
+            and(eq(tribeMonthlyLimits.year, year), gte(tribeMonthlyLimits.month, month)),
+          ),
+        ),
+      );
+    });
     return;
   }
 
-  await query(
-    `INSERT INTO tribe_monthly_limits (tribe_id, year, month, limit_amount, updated_at)
-     VALUES ($1, $2, $3, $4, NOW())
-     ON CONFLICT (tribe_id, year, month)
-     DO UPDATE SET limit_amount = EXCLUDED.limit_amount, updated_at = NOW()`,
-    [tribeId, year, month, amount]
-  );
+  await db
+    .insert(tribeMonthlyLimits)
+    .values({ tribeId, year, month, limitAmount: String(amount), updatedAt: sql`now()` })
+    .onConflictDoUpdate({
+      target: [tribeMonthlyLimits.tribeId, tribeMonthlyLimits.year, tribeMonthlyLimits.month],
+      set: { limitAmount: sql`excluded.limit_amount`, updatedAt: sql`now()` },
+    });
 }

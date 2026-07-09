@@ -1,44 +1,29 @@
 /**
  * CRUD repository for Reminders: create/get/update/delete + subscribers.
- * All queries use raw SQL via query().
+ * Data access via Drizzle query builder; row types inferred from the schema.
  */
 
-import { query } from "../db/connection.js";
+import { and, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { db } from "../db/drizzle.js";
+import { reminderSounds, reminderSubscribers, reminders, users } from "../db/schema.js";
 import type { Reminder, ReminderSchedule, ActiveReminderWithUser, ReminderSubscriber } from "./types.js";
-
-// ─── Row types ──────────────────────────────────────────────────────────
-
-interface ReminderRow {
-  id: number;
-  user_id: number;
-  tribe_id: number | null;
-  text: string;
-  schedule: ReminderSchedule;
-  is_active: boolean;
-  last_fired_at: Date | null;
-  input_method: string;
-  sound_id: number | null;
-  sound_enabled: boolean;
-  created_at: Date;
-  updated_at: Date;
-}
 
 // ─── Mappers ────────────────────────────────────────────────────────────
 
-function mapReminder(r: ReminderRow): Reminder {
+function mapReminder(r: typeof reminders.$inferSelect): Reminder {
   return {
     id: r.id,
-    userId: r.user_id,
-    tribeId: r.tribe_id,
+    userId: r.userId,
+    tribeId: r.tribeId,
     text: r.text,
-    schedule: r.schedule,
-    isActive: r.is_active,
-    lastFiredAt: r.last_fired_at,
-    inputMethod: r.input_method,
-    soundId: r.sound_id,
-    soundEnabled: r.sound_enabled,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    schedule: r.schedule as ReminderSchedule,
+    isActive: r.isActive,
+    lastFiredAt: r.lastFiredAt,
+    inputMethod: r.inputMethod,
+    soundId: r.soundId,
+    soundEnabled: r.soundEnabled,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }
 
@@ -53,45 +38,43 @@ export async function createReminder(
   soundId: number | null = null,
   soundEnabled: boolean = false
 ): Promise<Reminder> {
-  const { rows } = await query<ReminderRow>(
-    `INSERT INTO reminders (user_id, tribe_id, text, schedule, input_method, sound_id, sound_enabled)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [userId, tribeId, text, JSON.stringify(schedule), inputMethod, soundId, soundEnabled]
-  );
-  return mapReminder(rows[0]);
+  const [row] = await db
+    .insert(reminders)
+    .values({ userId, tribeId, text, schedule, inputMethod, soundId, soundEnabled })
+    .returning();
+  return mapReminder(row);
 }
 
 export async function getReminderById(reminderId: number): Promise<Reminder | null> {
-  const { rows } = await query<ReminderRow>(
-    "SELECT * FROM reminders WHERE id = $1",
-    [reminderId]
-  );
-  if (rows.length === 0) return null;
-  return mapReminder(rows[0]);
+  const [row] = await db.select().from(reminders).where(eq(reminders.id, reminderId));
+  if (!row) return null;
+  return mapReminder(row);
 }
 
 export async function getRemindersByUser(userId: number): Promise<Reminder[]> {
-  const { rows } = await query<ReminderRow>(
-    "SELECT * FROM reminders WHERE user_id = $1 ORDER BY created_at DESC",
-    [userId]
-  );
+  const rows = await db
+    .select()
+    .from(reminders)
+    .where(eq(reminders.userId, userId))
+    .orderBy(desc(reminders.createdAt));
   return rows.map(mapReminder);
 }
 
 export async function countActiveReminders(userId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM reminders WHERE user_id = $1 AND is_active = true",
-    [userId]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(reminders)
+    .where(and(eq(reminders.userId, userId), eq(reminders.isActive, true)));
+  return row.value;
 }
 
 export async function updateReminderText(reminderId: number, userId: number, text: string): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE reminders SET text = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
-    [text, reminderId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(reminders)
+    .set({ text, updatedAt: sql`now()` })
+    .where(and(eq(reminders.id, reminderId), eq(reminders.userId, userId)))
+    .returning({ id: reminders.id });
+  return rows.length > 0;
 }
 
 export async function updateReminderSchedule(
@@ -99,29 +82,30 @@ export async function updateReminderSchedule(
   userId: number,
   schedule: ReminderSchedule
 ): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE reminders SET schedule = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
-    [JSON.stringify(schedule), reminderId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(reminders)
+    .set({ schedule, updatedAt: sql`now()` })
+    .where(and(eq(reminders.id, reminderId), eq(reminders.userId, userId)))
+    .returning({ id: reminders.id });
+  return rows.length > 0;
 }
 
 export async function toggleReminderActive(reminderId: number, userId: number): Promise<Reminder | null> {
-  const { rows } = await query<ReminderRow>(
-    `UPDATE reminders SET is_active = NOT is_active, updated_at = NOW()
-     WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [reminderId, userId]
-  );
-  if (rows.length === 0) return null;
-  return mapReminder(rows[0]);
+  const [row] = await db
+    .update(reminders)
+    .set({ isActive: sql`not ${reminders.isActive}`, updatedAt: sql`now()` })
+    .where(and(eq(reminders.id, reminderId), eq(reminders.userId, userId)))
+    .returning();
+  if (!row) return null;
+  return mapReminder(row);
 }
 
 export async function deleteReminder(reminderId: number, userId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM reminders WHERE id = $1 AND user_id = $2",
-    [reminderId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(reminders)
+    .where(and(eq(reminders.id, reminderId), eq(reminders.userId, userId)))
+    .returning({ id: reminders.id });
+  return rows.length > 0;
 }
 
 export async function updateReminderSound(
@@ -130,96 +114,101 @@ export async function updateReminderSound(
   soundId: number | null,
   soundEnabled: boolean
 ): Promise<boolean> {
-  const { rowCount } = await query(
-    "UPDATE reminders SET sound_id = $1, sound_enabled = $2, updated_at = NOW() WHERE id = $3 AND user_id = $4",
-    [soundId, soundEnabled, reminderId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(reminders)
+    .set({ soundId, soundEnabled, updatedAt: sql`now()` })
+    .where(and(eq(reminders.id, reminderId), eq(reminders.userId, userId)))
+    .returning({ id: reminders.id });
+  return rows.length > 0;
 }
 
 // ─── Scheduler queries ──────────────────────────────────────────────────
 
 export async function getActiveRemindersWithUsers(): Promise<ActiveReminderWithUser[]> {
-  const { rows } = await query<ReminderRow & { telegram_id: string; sound_filename: string | null }>(
-    `SELECT r.*, u.telegram_id,
-            rs.filename AS sound_filename
-     FROM reminders r
-     JOIN users u ON u.id = r.user_id
-     LEFT JOIN reminder_sounds rs ON rs.id = r.sound_id AND r.sound_enabled = true
-     WHERE r.is_active = true
-     ORDER BY r.id`,
-    []
-  );
+  const rows = await db
+    .select({
+      reminder: reminders,
+      telegramId: users.telegramId,
+      soundFilename: reminderSounds.filename,
+    })
+    .from(reminders)
+    .innerJoin(users, eq(users.id, reminders.userId))
+    .leftJoin(
+      reminderSounds,
+      and(eq(reminderSounds.id, reminders.soundId), eq(reminders.soundEnabled, true))
+    )
+    .where(eq(reminders.isActive, true))
+    .orderBy(reminders.id);
   return rows.map((r) => ({
-    ...mapReminder(r),
-    telegramId: Number(r.telegram_id),
-    soundFilename: r.sound_filename,
+    ...mapReminder(r.reminder),
+    telegramId: Number(r.telegramId),
+    soundFilename: r.soundFilename,
   }));
 }
 
 export async function updateLastFiredAt(reminderId: number): Promise<void> {
-  await query(
-    "UPDATE reminders SET last_fired_at = NOW() WHERE id = $1",
-    [reminderId]
-  );
+  await db.update(reminders).set({ lastFiredAt: sql`now()` }).where(eq(reminders.id, reminderId));
 }
 
 export async function deactivateReminder(reminderId: number): Promise<void> {
-  await query(
-    "UPDATE reminders SET is_active = false, updated_at = NOW() WHERE id = $1",
-    [reminderId]
-  );
+  await db
+    .update(reminders)
+    .set({ isActive: false, updatedAt: sql`now()` })
+    .where(eq(reminders.id, reminderId));
 }
 
 // ─── Subscribers ────────────────────────────────────────────────────────
 
 export async function addSubscriber(reminderId: number, subscriberUserId: number): Promise<void> {
-  await query(
-    `INSERT INTO reminder_subscribers (reminder_id, subscriber_user_id)
-     VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-    [reminderId, subscriberUserId]
-  );
+  await db.insert(reminderSubscribers).values({ reminderId, subscriberUserId }).onConflictDoNothing();
 }
 
 export async function removeSubscriber(reminderId: number, subscriberUserId: number): Promise<void> {
-  await query(
-    "DELETE FROM reminder_subscribers WHERE reminder_id = $1 AND subscriber_user_id = $2",
-    [reminderId, subscriberUserId]
-  );
+  await db
+    .delete(reminderSubscribers)
+    .where(
+      and(
+        eq(reminderSubscribers.reminderId, reminderId),
+        eq(reminderSubscribers.subscriberUserId, subscriberUserId)
+      )
+    );
 }
 
 export async function getSubscribers(reminderId: number): Promise<ReminderSubscriber[]> {
-  const { rows } = await query<{
-    id: number;
-    reminder_id: number;
-    subscriber_user_id: number;
-    created_at: Date;
-    telegram_id: string;
-    first_name: string;
-  }>(
-    `SELECT rs.*, u.telegram_id, u.first_name
-     FROM reminder_subscribers rs
-     JOIN users u ON u.id = rs.subscriber_user_id
-     WHERE rs.reminder_id = $1
-     ORDER BY u.first_name`,
-    [reminderId]
-  );
+  const rows = await db
+    .select({
+      id: reminderSubscribers.id,
+      reminderId: reminderSubscribers.reminderId,
+      subscriberUserId: reminderSubscribers.subscriberUserId,
+      createdAt: reminderSubscribers.createdAt,
+      telegramId: users.telegramId,
+      firstName: users.firstName,
+    })
+    .from(reminderSubscribers)
+    .innerJoin(users, eq(users.id, reminderSubscribers.subscriberUserId))
+    .where(eq(reminderSubscribers.reminderId, reminderId))
+    .orderBy(users.firstName);
   return rows.map((r) => ({
     id: r.id,
-    reminderId: r.reminder_id,
-    subscriberUserId: r.subscriber_user_id,
-    createdAt: r.created_at,
-    subscriberTelegramId: Number(r.telegram_id),
-    subscriberName: r.first_name,
+    reminderId: r.reminderId,
+    subscriberUserId: r.subscriberUserId,
+    createdAt: r.createdAt,
+    subscriberTelegramId: Number(r.telegramId),
+    subscriberName: r.firstName,
   }));
 }
 
 export async function isSubscribed(reminderId: number, subscriberUserId: number): Promise<boolean> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM reminder_subscribers WHERE reminder_id = $1 AND subscriber_user_id = $2",
-    [reminderId, subscriberUserId]
-  );
-  return parseInt(rows[0].count, 10) > 0;
+  const [row] = await db
+    .select({ value: count() })
+    .from(reminderSubscribers)
+    .where(
+      and(
+        eq(reminderSubscribers.reminderId, reminderId),
+        eq(reminderSubscribers.subscriberUserId, subscriberUserId)
+      )
+    );
+  return row.value > 0;
 }
 
 // ─── Admin functions ────────────────────────────────────────────────────
@@ -229,62 +218,61 @@ export async function getAllRemindersPaginated(
   limit: number,
   offset: number
 ): Promise<Array<Reminder & { firstName: string }>> {
-  const { rows } = await query<ReminderRow & { first_name: string }>(
-    `SELECT r.*, u.first_name
-     FROM reminders r
-     JOIN users u ON u.id = r.user_id
-     ORDER BY r.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
-  );
-  return rows.map((r) => ({ ...mapReminder(r), firstName: r.first_name }));
+  const rows = await db
+    .select({ reminder: reminders, firstName: users.firstName })
+    .from(reminders)
+    .innerJoin(users, eq(users.id, reminders.userId))
+    .orderBy(desc(reminders.createdAt))
+    .limit(limit)
+    .offset(offset);
+  return rows.map((r) => ({ ...mapReminder(r.reminder), firstName: r.firstName }));
 }
 
 /** Admin: count all reminders. */
 export async function countAllReminders(): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM reminders"
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db.select({ value: count() }).from(reminders);
+  return row.value;
 }
 
 /** Admin: bulk delete reminders by IDs. */
 export async function bulkDeleteReminders(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
-  const { rowCount } = await query(
-    "DELETE FROM reminders WHERE id = ANY($1)",
-    [ids]
-  );
-  return rowCount ?? 0;
+  const rows = await db.delete(reminders).where(inArray(reminders.id, ids)).returning({ id: reminders.id });
+  return rows.length;
 }
 
 /** Admin: delete ALL reminders. */
 export async function deleteAllReminders(): Promise<number> {
-  const { rowCount } = await query("DELETE FROM reminders");
-  return rowCount ?? 0;
+  const rows = await db.delete(reminders).returning({ id: reminders.id });
+  return rows.length;
 }
 
 // ─── Tribe queries ──────────────────────────────────────────────────────
 
 export async function getTribeReminders(tribeId: number, excludeUserId: number): Promise<(Reminder & { ownerName: string })[]> {
-  const { rows } = await query<ReminderRow & { first_name: string }>(
-    `SELECT r.*, u.first_name
-     FROM reminders r
-     JOIN users u ON u.id = r.user_id
-     WHERE r.tribe_id = $1 AND r.user_id != $2 AND r.is_active = true
-     ORDER BY u.first_name, r.created_at DESC`,
-    [tribeId, excludeUserId]
-  );
+  const rows = await db
+    .select({ reminder: reminders, firstName: users.firstName })
+    .from(reminders)
+    .innerJoin(users, eq(users.id, reminders.userId))
+    .where(
+      and(
+        eq(reminders.tribeId, tribeId),
+        ne(reminders.userId, excludeUserId),
+        eq(reminders.isActive, true)
+      )
+    )
+    .orderBy(users.firstName, desc(reminders.createdAt));
   return rows.map((r) => ({
-    ...mapReminder(r),
-    ownerName: r.first_name,
+    ...mapReminder(r.reminder),
+    ownerName: r.firstName,
   }));
 }
 
 export async function getTribeUserReminders(userId: number): Promise<Reminder[]> {
-  const { rows } = await query<ReminderRow>(
-    "SELECT * FROM reminders WHERE user_id = $1 AND is_active = true ORDER BY created_at DESC",
-    [userId]
-  );
+  const rows = await db
+    .select()
+    .from(reminders)
+    .where(and(eq(reminders.userId, userId), eq(reminders.isActive, true)))
+    .orderBy(desc(reminders.createdAt));
   return rows.map(mapReminder);
 }

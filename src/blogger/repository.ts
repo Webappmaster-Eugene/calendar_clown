@@ -1,9 +1,12 @@
 /**
  * CRUD repository for Blogger mode: channels, posts, sources.
- * All queries use raw SQL via query().
+ * Data access via Drizzle query builder; row types inferred from the schema.
  */
 
-import { query } from "../db/connection.js";
+import { and, count, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { db } from "../db/drizzle.js";
+import { bloggerChannels, bloggerPosts, bloggerSources, users } from "../db/schema.js";
 import { MAX_BLOGGER_CHANNELS, MAX_POST_SOURCES } from "../constants.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -45,43 +48,6 @@ export interface BloggerSource {
   createdAt: Date;
 }
 
-// ─── Row types ──────────────────────────────────────────────────────────
-
-interface ChannelRow {
-  id: number;
-  user_id: number;
-  channel_username: string | null;
-  channel_title: string;
-  niche_description: string | null;
-  style_samples: string | null;
-  is_active: boolean;
-  created_at: Date;
-  updated_at: Date;
-}
-
-interface PostRow {
-  id: number;
-  channel_id: number;
-  user_id: number;
-  topic: string;
-  status: string;
-  generated_text: string | null;
-  model_used: string | null;
-  created_at: Date;
-  updated_at: Date;
-  generated_at: Date | null;
-}
-
-interface SourceRow {
-  id: number;
-  post_id: number;
-  source_type: string;
-  content: string;
-  title: string | null;
-  parsed_content: string | null;
-  created_at: Date;
-}
-
 // ─── Channels ───────────────────────────────────────────────────────────
 
 export async function createChannel(
@@ -95,28 +61,32 @@ export async function createChannel(
     throw new Error(`Channel limit reached (max ${MAX_BLOGGER_CHANNELS})`);
   }
 
-  const { rows } = await query<ChannelRow>(
-    `INSERT INTO blogger_channels (user_id, channel_title, channel_username, niche_description)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [userId, channelTitle, channelUsername ?? null, nicheDescription ?? null]
-  );
-  return mapChannel(rows[0]);
+  const [row] = await db
+    .insert(bloggerChannels)
+    .values({
+      userId,
+      channelTitle,
+      channelUsername: channelUsername ?? null,
+      nicheDescription: nicheDescription ?? null,
+    })
+    .returning();
+  return mapChannel(row);
 }
 
 export async function getChannelsByUser(userId: number): Promise<BloggerChannel[]> {
-  const { rows } = await query<ChannelRow & { post_count: string }>(
-    `SELECT bc.*,
-       COUNT(bp.id) AS post_count
-     FROM blogger_channels bc
-     LEFT JOIN blogger_posts bp ON bp.channel_id = bc.id
-     WHERE bc.user_id = $1 AND bc.is_active = true
-     GROUP BY bc.id
-     ORDER BY bc.created_at DESC`,
-    [userId]
-  );
+  const rows = await db
+    .select({
+      ...getTableColumns(bloggerChannels),
+      postCount: sql<number>`count(${bloggerPosts.id})`.mapWith(Number),
+    })
+    .from(bloggerChannels)
+    .leftJoin(bloggerPosts, eq(bloggerPosts.channelId, bloggerChannels.id))
+    .where(and(eq(bloggerChannels.userId, userId), eq(bloggerChannels.isActive, true)))
+    .groupBy(bloggerChannels.id)
+    .orderBy(desc(bloggerChannels.createdAt));
   return rows.map((r) => ({
     ...mapChannel(r),
-    postCount: parseInt(r.post_count, 10),
+    postCount: r.postCount,
   }));
 }
 
@@ -124,13 +94,18 @@ export async function getChannelById(
   channelId: number,
   userId: number
 ): Promise<BloggerChannel | null> {
-  const { rows } = await query<ChannelRow>(
-    `SELECT * FROM blogger_channels
-     WHERE id = $1 AND user_id = $2 AND is_active = true`,
-    [channelId, userId]
-  );
-  if (rows.length === 0) return null;
-  return mapChannel(rows[0]);
+  const [row] = await db
+    .select()
+    .from(bloggerChannels)
+    .where(
+      and(
+        eq(bloggerChannels.id, channelId),
+        eq(bloggerChannels.userId, userId),
+        eq(bloggerChannels.isActive, true)
+      )
+    );
+  if (!row) return null;
+  return mapChannel(row);
 }
 
 export async function updateChannel(
@@ -138,56 +113,53 @@ export async function updateChannel(
   userId: number,
   updates: { channelTitle?: string; channelUsername?: string | null; nicheDescription?: string | null }
 ): Promise<BloggerChannel | null> {
-  const sets: string[] = [];
-  const params: unknown[] = [];
-  let idx = 1;
+  const set: PgUpdateSetSource<typeof bloggerChannels> = {};
+  if (updates.channelTitle !== undefined) set.channelTitle = updates.channelTitle;
+  if (updates.channelUsername !== undefined) set.channelUsername = updates.channelUsername;
+  if (updates.nicheDescription !== undefined) set.nicheDescription = updates.nicheDescription;
 
-  if (updates.channelTitle !== undefined) {
-    sets.push(`channel_title = $${idx++}`);
-    params.push(updates.channelTitle);
-  }
-  if (updates.channelUsername !== undefined) {
-    sets.push(`channel_username = $${idx++}`);
-    params.push(updates.channelUsername);
-  }
-  if (updates.nicheDescription !== undefined) {
-    sets.push(`niche_description = $${idx++}`);
-    params.push(updates.nicheDescription);
-  }
+  if (Object.keys(set).length === 0) return getChannelById(channelId, userId);
 
-  if (sets.length === 0) return getChannelById(channelId, userId);
-
-  sets.push(`updated_at = NOW()`);
-  params.push(channelId, userId);
-
-  const { rows } = await query<ChannelRow>(
-    `UPDATE blogger_channels SET ${sets.join(", ")}
-     WHERE id = $${idx++} AND user_id = $${idx} AND is_active = true
-     RETURNING *`,
-    params
-  );
-  if (rows.length === 0) return null;
-  return mapChannel(rows[0]);
+  set.updatedAt = sql`now()`;
+  const [row] = await db
+    .update(bloggerChannels)
+    .set(set)
+    .where(
+      and(
+        eq(bloggerChannels.id, channelId),
+        eq(bloggerChannels.userId, userId),
+        eq(bloggerChannels.isActive, true)
+      )
+    )
+    .returning();
+  if (!row) return null;
+  return mapChannel(row);
 }
 
 export async function deleteChannel(
   channelId: number,
   userId: number
 ): Promise<boolean> {
-  const { rowCount } = await query(
-    `UPDATE blogger_channels SET is_active = false, updated_at = NOW()
-     WHERE id = $1 AND user_id = $2 AND is_active = true`,
-    [channelId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(bloggerChannels)
+    .set({ isActive: false, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(bloggerChannels.id, channelId),
+        eq(bloggerChannels.userId, userId),
+        eq(bloggerChannels.isActive, true)
+      )
+    )
+    .returning({ id: bloggerChannels.id });
+  return rows.length > 0;
 }
 
 export async function countChannelsByUser(userId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM blogger_channels WHERE user_id = $1 AND is_active = true",
-    [userId]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(bloggerChannels)
+    .where(and(eq(bloggerChannels.userId, userId), eq(bloggerChannels.isActive, true)));
+  return row.value;
 }
 
 export async function updateChannelStyleSamples(
@@ -196,11 +168,16 @@ export async function updateChannelStyleSamples(
   samples: string[]
 ): Promise<void> {
   const serialized = JSON.stringify(samples);
-  await query(
-    `UPDATE blogger_channels SET style_samples = $1, updated_at = NOW()
-     WHERE id = $2 AND user_id = $3 AND is_active = true`,
-    [serialized, channelId, userId]
-  );
+  await db
+    .update(bloggerChannels)
+    .set({ styleSamples: serialized, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(bloggerChannels.id, channelId),
+        eq(bloggerChannels.userId, userId),
+        eq(bloggerChannels.isActive, true)
+      )
+    );
 }
 
 // ─── Posts ───────────────────────────────────────────────────────────────
@@ -211,12 +188,11 @@ export async function createPost(
   topic: string,
   status: string = "collecting"
 ): Promise<BloggerPost> {
-  const { rows } = await query<PostRow>(
-    `INSERT INTO blogger_posts (channel_id, user_id, topic, status)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [channelId, userId, topic, status]
-  );
-  return mapPost(rows[0]);
+  const [row] = await db
+    .insert(bloggerPosts)
+    .values({ channelId, userId, topic, status })
+    .returning();
+  return mapPost(row);
 }
 
 export async function getPostsByChannel(
@@ -224,20 +200,21 @@ export async function getPostsByChannel(
   limit: number = 5,
   offset: number = 0
 ): Promise<BloggerPost[]> {
-  const { rows } = await query<PostRow & { source_count: string }>(
-    `SELECT bp.*,
-       COUNT(bs.id) AS source_count
-     FROM blogger_posts bp
-     LEFT JOIN blogger_sources bs ON bs.post_id = bp.id
-     WHERE bp.channel_id = $1
-     GROUP BY bp.id
-     ORDER BY bp.created_at DESC
-     LIMIT $2 OFFSET $3`,
-    [channelId, limit, offset]
-  );
+  const rows = await db
+    .select({
+      ...getTableColumns(bloggerPosts),
+      sourceCount: sql<number>`count(${bloggerSources.id})`.mapWith(Number),
+    })
+    .from(bloggerPosts)
+    .leftJoin(bloggerSources, eq(bloggerSources.postId, bloggerPosts.id))
+    .where(eq(bloggerPosts.channelId, channelId))
+    .groupBy(bloggerPosts.id)
+    .orderBy(desc(bloggerPosts.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map((r) => ({
     ...mapPost(r),
-    sourceCount: parseInt(r.source_count, 10),
+    sourceCount: r.sourceCount,
   }));
 }
 
@@ -246,20 +223,21 @@ export async function getPostsByUser(
   limit: number = 5,
   offset: number = 0
 ): Promise<BloggerPost[]> {
-  const { rows } = await query<PostRow & { source_count: string }>(
-    `SELECT bp.*,
-       COUNT(bs.id) AS source_count
-     FROM blogger_posts bp
-     LEFT JOIN blogger_sources bs ON bs.post_id = bp.id
-     WHERE bp.user_id = $1
-     GROUP BY bp.id
-     ORDER BY bp.created_at DESC
-     LIMIT $2 OFFSET $3`,
-    [userId, limit, offset]
-  );
+  const rows = await db
+    .select({
+      ...getTableColumns(bloggerPosts),
+      sourceCount: sql<number>`count(${bloggerSources.id})`.mapWith(Number),
+    })
+    .from(bloggerPosts)
+    .leftJoin(bloggerSources, eq(bloggerSources.postId, bloggerPosts.id))
+    .where(eq(bloggerPosts.userId, userId))
+    .groupBy(bloggerPosts.id)
+    .orderBy(desc(bloggerPosts.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map((r) => ({
     ...mapPost(r),
-    sourceCount: parseInt(r.source_count, 10),
+    sourceCount: r.sourceCount,
   }));
 }
 
@@ -267,12 +245,12 @@ export async function getPostById(
   postId: number,
   userId: number
 ): Promise<BloggerPost | null> {
-  const { rows } = await query<PostRow>(
-    `SELECT * FROM blogger_posts WHERE id = $1 AND user_id = $2`,
-    [postId, userId]
-  );
-  if (rows.length === 0) return null;
-  return mapPost(rows[0]);
+  const [row] = await db
+    .select()
+    .from(bloggerPosts)
+    .where(and(eq(bloggerPosts.id, postId), eq(bloggerPosts.userId, userId)));
+  if (!row) return null;
+  return mapPost(row);
 }
 
 export async function updatePostStatus(
@@ -280,11 +258,10 @@ export async function updatePostStatus(
   userId: number,
   status: string
 ): Promise<void> {
-  await query(
-    `UPDATE blogger_posts SET status = $1, updated_at = NOW()
-     WHERE id = $2 AND user_id = $3`,
-    [status, postId, userId]
-  );
+  await db
+    .update(bloggerPosts)
+    .set({ status, updatedAt: sql`now()` })
+    .where(and(eq(bloggerPosts.id, postId), eq(bloggerPosts.userId, userId)));
 }
 
 export async function updatePostGenerated(
@@ -293,24 +270,27 @@ export async function updatePostGenerated(
   generatedText: string,
   modelUsed: string
 ): Promise<void> {
-  await query(
-    `UPDATE blogger_posts
-     SET generated_text = $1, model_used = $2, status = 'generated',
-         generated_at = NOW(), updated_at = NOW()
-     WHERE id = $3 AND user_id = $4`,
-    [generatedText, modelUsed, postId, userId]
-  );
+  await db
+    .update(bloggerPosts)
+    .set({
+      generatedText,
+      modelUsed,
+      status: "generated",
+      generatedAt: sql`now()`,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(bloggerPosts.id, postId), eq(bloggerPosts.userId, userId)));
 }
 
 export async function deletePost(
   postId: number,
   userId: number
 ): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM blogger_posts WHERE id = $1 AND user_id = $2",
-    [postId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(bloggerPosts)
+    .where(and(eq(bloggerPosts.id, postId), eq(bloggerPosts.userId, userId)))
+    .returning({ id: bloggerPosts.id });
+  return rows.length > 0;
 }
 
 // ─── Sources ────────────────────────────────────────────────────────────
@@ -327,38 +307,50 @@ export async function addSource(
     throw new Error(`Source limit reached (max ${MAX_POST_SOURCES})`);
   }
 
-  const { rows } = await query<SourceRow>(
-    `INSERT INTO blogger_sources (post_id, source_type, content, title, parsed_content)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [postId, sourceType, content, title ?? null, parsedContent ?? null]
-  );
-  return mapSource(rows[0]);
+  const [row] = await db
+    .insert(bloggerSources)
+    .values({
+      postId,
+      sourceType,
+      content,
+      title: title ?? null,
+      parsedContent: parsedContent ?? null,
+    })
+    .returning();
+  return mapSource(row);
 }
 
 export async function getSourcesByPost(postId: number): Promise<BloggerSource[]> {
-  const { rows } = await query<SourceRow>(
-    `SELECT * FROM blogger_sources WHERE post_id = $1 ORDER BY created_at`,
-    [postId]
-  );
+  const rows = await db
+    .select()
+    .from(bloggerSources)
+    .where(eq(bloggerSources.postId, postId))
+    .orderBy(bloggerSources.createdAt);
   return rows.map(mapSource);
 }
 
 export async function deleteSource(sourceId: number, userId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    `DELETE FROM blogger_sources
-     WHERE id = $1
-       AND post_id IN (SELECT id FROM blogger_posts WHERE user_id = $2)`,
-    [sourceId, userId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(bloggerSources)
+    .where(
+      and(
+        eq(bloggerSources.id, sourceId),
+        inArray(
+          bloggerSources.postId,
+          db.select({ id: bloggerPosts.id }).from(bloggerPosts).where(eq(bloggerPosts.userId, userId))
+        )
+      )
+    )
+    .returning({ id: bloggerSources.id });
+  return rows.length > 0;
 }
 
 export async function countSourcesByPost(postId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM blogger_sources WHERE post_id = $1",
-    [postId]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(bloggerSources)
+    .where(eq(bloggerSources.postId, postId));
+  return row.value;
 }
 
 // ─── Admin functions ────────────────────────────────────────────────────
@@ -368,86 +360,87 @@ export async function getAllChannelsPaginated(
   limit: number,
   offset: number
 ): Promise<Array<BloggerChannel & { firstName: string; postCount: number }>> {
-  const { rows } = await query<ChannelRow & { first_name: string; post_count: string }>(
-    `SELECT bc.*, u.first_name, COUNT(bp.id) AS post_count
-     FROM blogger_channels bc
-     JOIN users u ON u.id = bc.user_id
-     LEFT JOIN blogger_posts bp ON bp.channel_id = bc.id
-     GROUP BY bc.id, u.first_name
-     ORDER BY bc.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
-  );
+  const rows = await db
+    .select({
+      ...getTableColumns(bloggerChannels),
+      firstName: users.firstName,
+      postCount: sql<number>`count(${bloggerPosts.id})`.mapWith(Number),
+    })
+    .from(bloggerChannels)
+    .innerJoin(users, eq(users.id, bloggerChannels.userId))
+    .leftJoin(bloggerPosts, eq(bloggerPosts.channelId, bloggerChannels.id))
+    .groupBy(bloggerChannels.id, users.firstName)
+    .orderBy(desc(bloggerChannels.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map((r) => ({
     ...mapChannel(r),
-    firstName: r.first_name,
-    postCount: parseInt(r.post_count, 10),
+    firstName: r.firstName,
+    postCount: r.postCount,
   }));
 }
 
 /** Admin: count all channels. */
 export async function countAllChannels(): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM blogger_channels"
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db.select({ value: count() }).from(bloggerChannels);
+  return row.value;
 }
 
 /** Admin: bulk delete channels by IDs. */
 export async function bulkDeleteChannels(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
-  const { rowCount } = await query(
-    "DELETE FROM blogger_channels WHERE id = ANY($1)",
-    [ids]
-  );
-  return rowCount ?? 0;
+  const rows = await db
+    .delete(bloggerChannels)
+    .where(inArray(bloggerChannels.id, ids))
+    .returning({ id: bloggerChannels.id });
+  return rows.length;
 }
 
 /** Admin: delete ALL channels. */
 export async function deleteAllChannels(): Promise<number> {
-  const { rowCount } = await query("DELETE FROM blogger_channels");
-  return rowCount ?? 0;
+  const rows = await db.delete(bloggerChannels).returning({ id: bloggerChannels.id });
+  return rows.length;
 }
 
 // ─── Mappers ────────────────────────────────────────────────────────────
 
-function mapChannel(r: ChannelRow): BloggerChannel {
+function mapChannel(r: typeof bloggerChannels.$inferSelect): BloggerChannel {
   return {
     id: r.id,
-    userId: r.user_id,
-    channelUsername: r.channel_username,
-    channelTitle: r.channel_title,
-    nicheDescription: r.niche_description,
-    styleSamples: r.style_samples,
-    isActive: r.is_active,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    userId: r.userId,
+    channelUsername: r.channelUsername,
+    channelTitle: r.channelTitle,
+    nicheDescription: r.nicheDescription,
+    styleSamples: r.styleSamples,
+    isActive: r.isActive,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }
 
-function mapPost(r: PostRow): BloggerPost {
+function mapPost(r: typeof bloggerPosts.$inferSelect): BloggerPost {
   return {
     id: r.id,
-    channelId: r.channel_id,
-    userId: r.user_id,
+    channelId: r.channelId,
+    userId: r.userId,
     topic: r.topic,
     status: r.status,
-    generatedText: r.generated_text,
-    modelUsed: r.model_used,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    generatedAt: r.generated_at,
+    generatedText: r.generatedText,
+    modelUsed: r.modelUsed,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    generatedAt: r.generatedAt,
   };
 }
 
-function mapSource(r: SourceRow): BloggerSource {
+function mapSource(r: typeof bloggerSources.$inferSelect): BloggerSource {
   return {
     id: r.id,
-    postId: r.post_id,
-    sourceType: r.source_type,
+    postId: r.postId,
+    sourceType: r.sourceType,
     content: r.content,
     title: r.title,
-    parsedContent: r.parsed_content,
-    createdAt: r.created_at,
+    parsedContent: r.parsedContent,
+    createdAt: r.createdAt,
   };
 }

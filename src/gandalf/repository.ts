@@ -1,9 +1,13 @@
 /**
  * CRUD repository for Gandalf mode (База знаний): categories, entries, files.
  * Supports both tribe-scoped and personal (no tribe) queries.
+ * Data access via Drizzle query builder; row types inferred from the schema.
  */
 
-import { query } from "../db/connection.js";
+import { and, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { db } from "../db/drizzle.js";
+import { gandalfCategories, gandalfEntries, gandalfEntryFiles, users } from "../db/schema.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -85,6 +89,28 @@ export interface PersonalScope {
 
 export type GandalfScope = TribeScope | PersonalScope;
 
+// Entry row joined with category name/emoji and author first name, reused
+// across the entry-listing queries.
+const entryWithJoins = {
+  id: gandalfEntries.id,
+  tribeId: gandalfEntries.tribeId,
+  categoryId: gandalfEntries.categoryId,
+  title: gandalfEntries.title,
+  price: gandalfEntries.price,
+  addedByUserId: gandalfEntries.addedByUserId,
+  nextDate: gandalfEntries.nextDate,
+  additionalInfo: gandalfEntries.additionalInfo,
+  inputMethod: gandalfEntries.inputMethod,
+  isImportant: gandalfEntries.isImportant,
+  isUrgent: gandalfEntries.isUrgent,
+  visibility: gandalfEntries.visibility,
+  createdAt: gandalfEntries.createdAt,
+  updatedAt: gandalfEntries.updatedAt,
+  categoryName: gandalfCategories.name,
+  categoryEmoji: gandalfCategories.emoji,
+  firstName: users.firstName,
+};
+
 // ─── Categories ─────────────────────────────────────────────────────────
 
 export async function createCategory(
@@ -93,27 +119,34 @@ export async function createCategory(
   emoji: string = "📁",
   createdByUserId: number
 ): Promise<GandalfCategory> {
-  const { rows } = await query<CategoryRow>(
-    `INSERT INTO gandalf_categories (tribe_id, name, emoji, created_by_user_id)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [tribeId, name, emoji, createdByUserId]
-  );
-  return mapCategory(rows[0]);
+  const [row] = await db
+    .insert(gandalfCategories)
+    .values({ tribeId, name, emoji, createdByUserId })
+    .returning();
+  return mapCategory(row);
 }
 
 export async function getCategoriesByTribe(tribeId: number): Promise<GandalfCategory[]> {
-  const { rows } = await query<CategoryRow>(
-    "SELECT * FROM gandalf_categories WHERE tribe_id = $1 AND is_active = true ORDER BY name",
-    [tribeId]
-  );
+  const rows = await db
+    .select()
+    .from(gandalfCategories)
+    .where(and(eq(gandalfCategories.tribeId, tribeId), eq(gandalfCategories.isActive, true)))
+    .orderBy(gandalfCategories.name);
   return rows.map(mapCategory);
 }
 
 export async function getCategoriesByUser(userId: number): Promise<GandalfCategory[]> {
-  const { rows } = await query<CategoryRow>(
-    "SELECT * FROM gandalf_categories WHERE tribe_id IS NULL AND created_by_user_id = $1 AND is_active = true ORDER BY name",
-    [userId]
-  );
+  const rows = await db
+    .select()
+    .from(gandalfCategories)
+    .where(
+      and(
+        isNull(gandalfCategories.tribeId),
+        eq(gandalfCategories.createdByUserId, userId),
+        eq(gandalfCategories.isActive, true)
+      )
+    )
+    .orderBy(gandalfCategories.name);
   return rows.map(mapCategory);
 }
 
@@ -123,30 +156,31 @@ export async function getCategoriesByScope(scope: GandalfScope): Promise<Gandalf
 }
 
 export async function getCategoryById(categoryId: number, tribeId: number | null): Promise<GandalfCategory | null> {
-  const { rows } = tribeId != null
-    ? await query<CategoryRow>(
-        "SELECT * FROM gandalf_categories WHERE id = $1 AND tribe_id = $2",
-        [categoryId, tribeId]
+  const [row] = await db
+    .select()
+    .from(gandalfCategories)
+    .where(
+      and(
+        eq(gandalfCategories.id, categoryId),
+        tribeId != null ? eq(gandalfCategories.tribeId, tribeId) : isNull(gandalfCategories.tribeId)
       )
-    : await query<CategoryRow>(
-        "SELECT * FROM gandalf_categories WHERE id = $1 AND tribe_id IS NULL",
-        [categoryId]
-      );
-  if (rows.length === 0) return null;
-  return mapCategory(rows[0]);
+    );
+  if (!row) return null;
+  return mapCategory(row);
 }
 
 export async function deleteCategory(categoryId: number, tribeId: number | null): Promise<boolean> {
-  const { rowCount } = tribeId != null
-    ? await query(
-        "UPDATE gandalf_categories SET is_active = false WHERE id = $1 AND tribe_id = $2",
-        [categoryId, tribeId]
+  const rows = await db
+    .update(gandalfCategories)
+    .set({ isActive: false })
+    .where(
+      and(
+        eq(gandalfCategories.id, categoryId),
+        tribeId != null ? eq(gandalfCategories.tribeId, tribeId) : isNull(gandalfCategories.tribeId)
       )
-    : await query(
-        "UPDATE gandalf_categories SET is_active = false WHERE id = $1 AND tribe_id IS NULL",
-        [categoryId]
-      );
-  return (rowCount ?? 0) > 0;
+    )
+    .returning({ id: gandalfCategories.id });
+  return rows.length > 0;
 }
 
 export async function updateCategory(
@@ -154,38 +188,24 @@ export async function updateCategory(
   tribeId: number | null,
   updates: { name?: string; emoji?: string }
 ): Promise<boolean> {
-  const sets: string[] = [];
-  const params: unknown[] = [];
-  let idx = 1;
+  const set: PgUpdateSetSource<typeof gandalfCategories> = {};
+  if (updates.name !== undefined) set.name = updates.name;
+  if (updates.emoji !== undefined) set.emoji = updates.emoji;
 
-  if (updates.name !== undefined) {
-    sets.push(`name = $${idx++}`);
-    params.push(updates.name);
-  }
-  if (updates.emoji !== undefined) {
-    sets.push(`emoji = $${idx++}`);
-    params.push(updates.emoji);
-  }
+  if (Object.keys(set).length === 0) return false;
 
-  if (sets.length === 0) return false;
-
-  params.push(categoryId);
-  const catIdx = idx++;
-
-  if (tribeId != null) {
-    params.push(tribeId);
-    const { rowCount } = await query(
-      `UPDATE gandalf_categories SET ${sets.join(", ")} WHERE id = $${catIdx} AND tribe_id = $${idx} AND is_active = true`,
-      params
-    );
-    return (rowCount ?? 0) > 0;
-  }
-
-  const { rowCount } = await query(
-    `UPDATE gandalf_categories SET ${sets.join(", ")} WHERE id = $${catIdx} AND tribe_id IS NULL AND is_active = true`,
-    params
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(gandalfCategories)
+    .set(set)
+    .where(
+      and(
+        eq(gandalfCategories.id, categoryId),
+        tribeId != null ? eq(gandalfCategories.tribeId, tribeId) : isNull(gandalfCategories.tribeId),
+        eq(gandalfCategories.isActive, true)
+      )
+    )
+    .returning({ id: gandalfCategories.id });
+  return rows.length > 0;
 }
 
 // ─── Entries ────────────────────────────────────────────────────────────
@@ -204,63 +224,53 @@ export async function createEntry(params: {
   visibility?: "tribe" | "private";
 }): Promise<GandalfEntry> {
   const visibility = params.visibility ?? (params.tribeId ? "tribe" : "private");
-  const { rows } = await query<{ id: number }>(
-    `INSERT INTO gandalf_entries
-       (tribe_id, category_id, title, price, added_by_user_id, next_date, additional_info, input_method, is_important, is_urgent, visibility)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     RETURNING id`,
-    [
-      params.tribeId,
-      params.categoryId,
-      params.title,
-      params.price ?? null,
-      params.addedByUserId,
-      params.nextDate ?? null,
-      params.additionalInfo ?? null,
-      params.inputMethod ?? "text",
-      params.isImportant ?? false,
-      params.isUrgent ?? false,
+  const price = params.price ?? null;
+  const [inserted] = await db
+    .insert(gandalfEntries)
+    .values({
+      tribeId: params.tribeId,
+      categoryId: params.categoryId,
+      title: params.title,
+      price: price != null ? String(price) : null,
+      addedByUserId: params.addedByUserId,
+      nextDate: params.nextDate ?? null,
+      additionalInfo: params.additionalInfo ?? null,
+      inputMethod: params.inputMethod ?? "text",
+      isImportant: params.isImportant ?? false,
+      isUrgent: params.isUrgent ?? false,
       visibility,
-    ]
-  );
-  const entry = await getEntryByIdInternal(rows[0].id);
+    })
+    .returning({ id: gandalfEntries.id });
+  const entry = await getEntryByIdInternal(inserted.id);
   return entry!;
 }
 
 /** Internal: get entry by ID without scope check (used after insert). */
 async function getEntryByIdInternal(entryId: number): Promise<GandalfEntry | null> {
-  const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-    `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-     FROM gandalf_entries e
-     JOIN gandalf_categories c ON c.id = e.category_id
-     JOIN users u ON u.id = e.added_by_user_id
-     WHERE e.id = $1`,
-    [entryId]
-  );
-  if (rows.length === 0) return null;
-  return mapEntryWithJoins(rows[0]);
+  const [row] = await db
+    .select(entryWithJoins)
+    .from(gandalfEntries)
+    .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
+    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .where(eq(gandalfEntries.id, entryId));
+  if (!row) return null;
+  return mapEntryWithJoins(row);
 }
 
 export async function getEntryById(entryId: number, tribeId: number | null): Promise<GandalfEntry | null> {
-  const { rows } = tribeId != null
-    ? await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-        `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-         FROM gandalf_entries e
-         JOIN gandalf_categories c ON c.id = e.category_id
-         JOIN users u ON u.id = e.added_by_user_id
-         WHERE e.id = $1 AND e.tribe_id = $2`,
-        [entryId, tribeId]
+  const [row] = await db
+    .select(entryWithJoins)
+    .from(gandalfEntries)
+    .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
+    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .where(
+      and(
+        eq(gandalfEntries.id, entryId),
+        tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId)
       )
-    : await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-        `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-         FROM gandalf_entries e
-         JOIN gandalf_categories c ON c.id = e.category_id
-         JOIN users u ON u.id = e.added_by_user_id
-         WHERE e.id = $1 AND e.tribe_id IS NULL`,
-        [entryId]
-      );
-  if (rows.length === 0) return null;
-  return mapEntryWithJoins(rows[0]);
+    );
+  if (!row) return null;
+  return mapEntryWithJoins(row);
 }
 
 /** Get entry by ID using scope (tribe: shows tribe+own private; personal: own only). */
@@ -269,17 +279,20 @@ export async function getEntryByIdScoped(entryId: number, scope: GandalfScope): 
     return getEntryById(entryId, null);
   }
   // Tribe scope: entry must be in tribe AND (visibility=tribe OR own private)
-  const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-    `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-     FROM gandalf_entries e
-     JOIN gandalf_categories c ON c.id = e.category_id
-     JOIN users u ON u.id = e.added_by_user_id
-     WHERE e.id = $1 AND e.tribe_id = $2
-       AND (e.visibility = 'tribe' OR e.added_by_user_id = $3)`,
-    [entryId, scope.tribeId, scope.userId]
-  );
-  if (rows.length === 0) return null;
-  return mapEntryWithJoins(rows[0]);
+  const [row] = await db
+    .select(entryWithJoins)
+    .from(gandalfEntries)
+    .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
+    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .where(
+      and(
+        eq(gandalfEntries.id, entryId),
+        eq(gandalfEntries.tribeId, scope.tribeId),
+        or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+      )
+    );
+  if (!row) return null;
+  return mapEntryWithJoins(row);
 }
 
 export async function getEntriesByCategory(
@@ -288,30 +301,20 @@ export async function getEntriesByCategory(
   limit: number = 10,
   offset: number = 0
 ): Promise<GandalfEntry[]> {
-  if (tribeId != null) {
-    const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-      `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-       FROM gandalf_entries e
-       JOIN gandalf_categories c ON c.id = e.category_id
-       JOIN users u ON u.id = e.added_by_user_id
-       WHERE e.tribe_id = $1 AND e.category_id = $2
-       ORDER BY e.created_at DESC
-       LIMIT $3 OFFSET $4`,
-      [tribeId, categoryId, limit, offset]
-    );
-    return rows.map(mapEntryWithJoins);
-  }
-
-  const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-    `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-     FROM gandalf_entries e
-     JOIN gandalf_categories c ON c.id = e.category_id
-     JOIN users u ON u.id = e.added_by_user_id
-     WHERE e.tribe_id IS NULL AND e.category_id = $1
-     ORDER BY e.created_at DESC
-     LIMIT $2 OFFSET $3`,
-    [categoryId, limit, offset]
-  );
+  const rows = await db
+    .select(entryWithJoins)
+    .from(gandalfEntries)
+    .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
+    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .where(
+      and(
+        tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId),
+        eq(gandalfEntries.categoryId, categoryId)
+      )
+    )
+    .orderBy(desc(gandalfEntries.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map(mapEntryWithJoins);
 }
 
@@ -321,31 +324,22 @@ export async function getEntriesByScope(
   limit: number = 10,
   offset: number = 0
 ): Promise<GandalfEntry[]> {
-  if (scope.type === "personal") {
-    const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-      `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-       FROM gandalf_entries e
-       JOIN gandalf_categories c ON c.id = e.category_id
-       JOIN users u ON u.id = e.added_by_user_id
-       WHERE e.tribe_id IS NULL AND e.added_by_user_id = $1
-       ORDER BY e.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [scope.userId, limit, offset]
-    );
-    return rows.map(mapEntryWithJoins);
-  }
-  // Tribe: tribe entries (visibility=tribe) + own private
-  const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-    `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-     FROM gandalf_entries e
-     JOIN gandalf_categories c ON c.id = e.category_id
-     JOIN users u ON u.id = e.added_by_user_id
-     WHERE e.tribe_id = $1
-       AND (e.visibility = 'tribe' OR e.added_by_user_id = $2)
-     ORDER BY e.created_at DESC
-     LIMIT $3 OFFSET $4`,
-    [scope.tribeId, scope.userId, limit, offset]
-  );
+  const where =
+    scope.type === "personal"
+      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.addedByUserId, scope.userId))
+      : and(
+          eq(gandalfEntries.tribeId, scope.tribeId),
+          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+        );
+  const rows = await db
+    .select(entryWithJoins)
+    .from(gandalfEntries)
+    .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
+    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .where(where)
+    .orderBy(desc(gandalfEntries.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map(mapEntryWithJoins);
 }
 
@@ -363,73 +357,42 @@ export async function updateEntry(
     categoryId?: number;
   }
 ): Promise<boolean> {
-  const sets: string[] = ["updated_at = NOW()"];
-  const params: unknown[] = [];
-  let idx = 1;
+  const set: PgUpdateSetSource<typeof gandalfEntries> = {};
+  if (updates.title !== undefined) set.title = updates.title;
+  if (updates.price !== undefined) set.price = updates.price != null ? String(updates.price) : null;
+  if (updates.nextDate !== undefined) set.nextDate = updates.nextDate;
+  if (updates.additionalInfo !== undefined) set.additionalInfo = updates.additionalInfo;
+  if (updates.isImportant !== undefined) set.isImportant = updates.isImportant;
+  if (updates.isUrgent !== undefined) set.isUrgent = updates.isUrgent;
+  if (updates.visibility !== undefined) set.visibility = updates.visibility;
+  if (updates.categoryId !== undefined) set.categoryId = updates.categoryId;
 
-  if (updates.title !== undefined) {
-    sets.push(`title = $${idx++}`);
-    params.push(updates.title);
-  }
-  if (updates.price !== undefined) {
-    sets.push(`price = $${idx++}`);
-    params.push(updates.price);
-  }
-  if (updates.nextDate !== undefined) {
-    sets.push(`next_date = $${idx++}`);
-    params.push(updates.nextDate);
-  }
-  if (updates.additionalInfo !== undefined) {
-    sets.push(`additional_info = $${idx++}`);
-    params.push(updates.additionalInfo);
-  }
-  if (updates.isImportant !== undefined) {
-    sets.push(`is_important = $${idx++}`);
-    params.push(updates.isImportant);
-  }
-  if (updates.isUrgent !== undefined) {
-    sets.push(`is_urgent = $${idx++}`);
-    params.push(updates.isUrgent);
-  }
-  if (updates.visibility !== undefined) {
-    sets.push(`visibility = $${idx++}`);
-    params.push(updates.visibility);
-  }
-  if (updates.categoryId !== undefined) {
-    sets.push(`category_id = $${idx++}`);
-    params.push(updates.categoryId);
-  }
+  set.updatedAt = sql`now()`;
 
-  params.push(entryId);
-  const entryIdx = idx++;
-
-  if (tribeId != null) {
-    params.push(tribeId);
-    const { rowCount } = await query(
-      `UPDATE gandalf_entries SET ${sets.join(", ")} WHERE id = $${entryIdx} AND tribe_id = $${idx}`,
-      params
-    );
-    return (rowCount ?? 0) > 0;
-  }
-
-  const { rowCount } = await query(
-    `UPDATE gandalf_entries SET ${sets.join(", ")} WHERE id = $${entryIdx} AND tribe_id IS NULL`,
-    params
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(gandalfEntries)
+    .set(set)
+    .where(
+      and(
+        eq(gandalfEntries.id, entryId),
+        tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId)
+      )
+    )
+    .returning({ id: gandalfEntries.id });
+  return rows.length > 0;
 }
 
 export async function deleteEntry(entryId: number, tribeId: number | null): Promise<boolean> {
-  const { rowCount } = tribeId != null
-    ? await query(
-        "DELETE FROM gandalf_entries WHERE id = $1 AND tribe_id = $2",
-        [entryId, tribeId]
+  const rows = await db
+    .delete(gandalfEntries)
+    .where(
+      and(
+        eq(gandalfEntries.id, entryId),
+        tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId)
       )
-    : await query(
-        "DELETE FROM gandalf_entries WHERE id = $1 AND tribe_id IS NULL",
-        [entryId]
-      );
-  return (rowCount ?? 0) > 0;
+    )
+    .returning({ id: gandalfEntries.id });
+  return rows.length > 0;
 }
 
 /**
@@ -439,54 +402,49 @@ export async function deleteEntry(entryId: number, tribeId: number | null): Prom
 export async function getCategoryEntryCounts(
   tribeId: number | null
 ): Promise<Map<number, { count: number; totalPrice: number | null }>> {
-  const { rows } = tribeId != null
-    ? await query<{ category_id: number; count: string; total_price: string | null }>(
-        `SELECT category_id, COUNT(*) AS count, SUM(price) AS total_price
-         FROM gandalf_entries WHERE tribe_id = $1 GROUP BY category_id`,
-        [tribeId]
-      )
-    : await query<{ category_id: number; count: string; total_price: string | null }>(
-        `SELECT category_id, COUNT(*) AS count, SUM(price) AS total_price
-         FROM gandalf_entries WHERE tribe_id IS NULL GROUP BY category_id`,
-        []
-      );
+  const rows = await db
+    .select({
+      categoryId: gandalfEntries.categoryId,
+      count: sql<string>`count(*)`,
+      totalPrice: sql<string | null>`sum(${gandalfEntries.price})`,
+    })
+    .from(gandalfEntries)
+    .where(tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId))
+    .groupBy(gandalfEntries.categoryId);
 
   const map = new Map<number, { count: number; totalPrice: number | null }>();
   for (const r of rows) {
-    map.set(r.category_id, {
+    map.set(r.categoryId, {
       count: parseInt(r.count, 10),
-      totalPrice: r.total_price != null ? parseFloat(r.total_price) : null,
+      totalPrice: r.totalPrice != null ? parseFloat(r.totalPrice) : null,
     });
   }
   return map;
 }
 
 export async function countEntriesByCategory(tribeId: number | null, categoryId: number): Promise<number> {
-  const { rows } = tribeId != null
-    ? await query<{ count: string }>(
-        "SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id = $1 AND category_id = $2",
-        [tribeId, categoryId]
+  const [row] = await db
+    .select({ value: count() })
+    .from(gandalfEntries)
+    .where(
+      and(
+        tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId),
+        eq(gandalfEntries.categoryId, categoryId)
       )
-    : await query<{ count: string }>(
-        "SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id IS NULL AND category_id = $1",
-        [categoryId]
-      );
-  return parseInt(rows[0].count, 10);
+    );
+  return row.value;
 }
 
 export async function countEntriesByScope(scope: GandalfScope): Promise<number> {
-  if (scope.type === "personal") {
-    const { rows } = await query<{ count: string }>(
-      "SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id IS NULL AND added_by_user_id = $1",
-      [scope.userId]
-    );
-    return parseInt(rows[0].count, 10);
-  }
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id = $1 AND (visibility = 'tribe' OR added_by_user_id = $2)",
-    [scope.tribeId, scope.userId]
-  );
-  return parseInt(rows[0].count, 10);
+  const where =
+    scope.type === "personal"
+      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.addedByUserId, scope.userId))
+      : and(
+          eq(gandalfEntries.tribeId, scope.tribeId),
+          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+        );
+  const [row] = await db.select({ value: count() }).from(gandalfEntries).where(where);
+  return row.value;
 }
 
 // ─── Flag operations ────────────────────────────────────────────────────
@@ -497,31 +455,24 @@ export async function getEntriesByFlag(
   limit: number = 10,
   offset: number = 0
 ): Promise<GandalfEntry[]> {
-  const flagCol = flag === "important" ? "is_important" : "is_urgent";
-  if (scope.type === "personal") {
-    const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-      `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-       FROM gandalf_entries e
-       JOIN gandalf_categories c ON c.id = e.category_id
-       JOIN users u ON u.id = e.added_by_user_id
-       WHERE e.tribe_id IS NULL AND e.added_by_user_id = $1 AND e.${flagCol} = true
-       ORDER BY e.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [scope.userId, limit, offset]
-    );
-    return rows.map(mapEntryWithJoins);
-  }
-  const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-    `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-     FROM gandalf_entries e
-     JOIN gandalf_categories c ON c.id = e.category_id
-     JOIN users u ON u.id = e.added_by_user_id
-     WHERE e.tribe_id = $1 AND e.${flagCol} = true
-       AND (e.visibility = 'tribe' OR e.added_by_user_id = $2)
-     ORDER BY e.created_at DESC
-     LIMIT $3 OFFSET $4`,
-    [scope.tribeId, scope.userId, limit, offset]
-  );
+  const flagCol = flag === "important" ? gandalfEntries.isImportant : gandalfEntries.isUrgent;
+  const where =
+    scope.type === "personal"
+      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.addedByUserId, scope.userId), eq(flagCol, true))
+      : and(
+          eq(gandalfEntries.tribeId, scope.tribeId),
+          eq(flagCol, true),
+          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+        );
+  const rows = await db
+    .select(entryWithJoins)
+    .from(gandalfEntries)
+    .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
+    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .where(where)
+    .orderBy(desc(gandalfEntries.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map(mapEntryWithJoins);
 }
 
@@ -529,19 +480,17 @@ export async function countEntriesByFlag(
   scope: GandalfScope,
   flag: "important" | "urgent"
 ): Promise<number> {
-  const flagCol = flag === "important" ? "is_important" : "is_urgent";
-  if (scope.type === "personal") {
-    const { rows } = await query<{ count: string }>(
-      `SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id IS NULL AND added_by_user_id = $1 AND ${flagCol} = true`,
-      [scope.userId]
-    );
-    return parseInt(rows[0].count, 10);
-  }
-  const { rows } = await query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id = $1 AND ${flagCol} = true AND (visibility = 'tribe' OR added_by_user_id = $2)`,
-    [scope.tribeId, scope.userId]
-  );
-  return parseInt(rows[0].count, 10);
+  const flagCol = flag === "important" ? gandalfEntries.isImportant : gandalfEntries.isUrgent;
+  const where =
+    scope.type === "personal"
+      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.addedByUserId, scope.userId), eq(flagCol, true))
+      : and(
+          eq(gandalfEntries.tribeId, scope.tribeId),
+          eq(flagCol, true),
+          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+        );
+  const [row] = await db.select({ value: count() }).from(gandalfEntries).where(where);
+  return row.value;
 }
 
 export async function toggleEntryFlag(
@@ -549,38 +498,39 @@ export async function toggleEntryFlag(
   tribeId: number | null,
   flag: "important" | "urgent"
 ): Promise<boolean> {
-  const flagCol = flag === "important" ? "is_important" : "is_urgent";
-  const whereClause = tribeId != null
-    ? `id = $1 AND tribe_id = $2`
-    : `id = $1 AND tribe_id IS NULL`;
-  const params = tribeId != null ? [entryId, tribeId] : [entryId];
-
-  const { rowCount } = await query(
-    `UPDATE gandalf_entries SET ${flagCol} = NOT ${flagCol}, updated_at = NOW() WHERE ${whereClause}`,
-    params
-  );
-  return (rowCount ?? 0) > 0;
+  const flagCol = flag === "important" ? gandalfEntries.isImportant : gandalfEntries.isUrgent;
+  const rows = await db
+    .update(gandalfEntries)
+    .set({ [flag === "important" ? "isImportant" : "isUrgent"]: sql`not ${flagCol}`, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(gandalfEntries.id, entryId),
+        tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId)
+      )
+    )
+    .returning({ id: gandalfEntries.id });
+  return rows.length > 0;
 }
 
 export async function toggleEntryVisibility(
   entryId: number,
   tribeId: number | null
 ): Promise<"tribe" | "private" | null> {
-  const whereClause = tribeId != null
-    ? `id = $1 AND tribe_id = $2`
-    : `id = $1 AND tribe_id IS NULL`;
-  const params = tribeId != null ? [entryId, tribeId] : [entryId];
-
-  const { rows } = await query<{ visibility: string }>(
-    `UPDATE gandalf_entries
-     SET visibility = CASE WHEN visibility = 'tribe' THEN 'private' ELSE 'tribe' END,
-         updated_at = NOW()
-     WHERE ${whereClause}
-     RETURNING visibility`,
-    params
-  );
-  if (rows.length === 0) return null;
-  return rows[0].visibility as "tribe" | "private";
+  const [row] = await db
+    .update(gandalfEntries)
+    .set({
+      visibility: sql`case when ${gandalfEntries.visibility} = 'tribe' then 'private' else 'tribe' end`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(gandalfEntries.id, entryId),
+        tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId)
+      )
+    )
+    .returning({ visibility: gandalfEntries.visibility });
+  if (!row) return null;
+  return row.visibility as "tribe" | "private";
 }
 
 export async function moveEntryToCategory(
@@ -588,18 +538,17 @@ export async function moveEntryToCategory(
   tribeId: number | null,
   newCategoryId: number
 ): Promise<boolean> {
-  const whereClause = tribeId != null
-    ? `id = $1 AND tribe_id = $3`
-    : `id = $1 AND tribe_id IS NULL`;
-  const params = tribeId != null
-    ? [entryId, newCategoryId, tribeId]
-    : [entryId, newCategoryId];
-
-  const { rowCount } = await query(
-    `UPDATE gandalf_entries SET category_id = $2, updated_at = NOW() WHERE ${whereClause}`,
-    params
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(gandalfEntries)
+    .set({ categoryId: newCategoryId, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(gandalfEntries.id, entryId),
+        tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId)
+      )
+    )
+    .returning({ id: gandalfEntries.id });
+  return rows.length > 0;
 }
 
 // ─── Files ──────────────────────────────────────────────────────────────
@@ -612,150 +561,128 @@ export async function addFileToEntry(params: {
   mimeType?: string | null;
   fileSizeBytes?: number | null;
 }): Promise<GandalfEntryFile> {
-  const { rows } = await query<FileRow>(
-    `INSERT INTO gandalf_entry_files (entry_id, telegram_file_id, file_type, file_name, mime_type, file_size_bytes)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [
-      params.entryId,
-      params.telegramFileId,
-      params.fileType,
-      params.fileName ?? null,
-      params.mimeType ?? null,
-      params.fileSizeBytes ?? null,
-    ]
-  );
-  return mapFile(rows[0]);
+  const [row] = await db
+    .insert(gandalfEntryFiles)
+    .values({
+      entryId: params.entryId,
+      telegramFileId: params.telegramFileId,
+      fileType: params.fileType,
+      fileName: params.fileName ?? null,
+      mimeType: params.mimeType ?? null,
+      fileSizeBytes: params.fileSizeBytes ?? null,
+    })
+    .returning();
+  return mapFile(row);
 }
 
 export async function getFilesByEntry(entryId: number): Promise<GandalfEntryFile[]> {
-  const { rows } = await query<FileRow>(
-    "SELECT * FROM gandalf_entry_files WHERE entry_id = $1 ORDER BY created_at",
-    [entryId]
-  );
+  const rows = await db
+    .select()
+    .from(gandalfEntryFiles)
+    .where(eq(gandalfEntryFiles.entryId, entryId))
+    .orderBy(gandalfEntryFiles.createdAt);
   return rows.map(mapFile);
 }
 
 export async function deleteFile(fileId: number): Promise<boolean> {
-  const { rowCount } = await query(
-    "DELETE FROM gandalf_entry_files WHERE id = $1",
-    [fileId]
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .delete(gandalfEntryFiles)
+    .where(eq(gandalfEntryFiles.id, fileId))
+    .returning({ id: gandalfEntryFiles.id });
+  return rows.length > 0;
 }
 
 // ─── Aggregation ────────────────────────────────────────────────────────
 
 export async function getStatsByCategory(tribeId: number, year?: number): Promise<CategoryStats[]> {
-  const yearFilter = year
-    ? "AND EXTRACT(YEAR FROM e.created_at) = $2"
-    : "";
-  const params: unknown[] = [tribeId];
-  if (year) params.push(year);
+  const joinCond = year
+    ? and(
+        eq(gandalfEntries.categoryId, gandalfCategories.id),
+        sql`extract(year from ${gandalfEntries.createdAt}) = ${year}`
+      )
+    : eq(gandalfEntries.categoryId, gandalfCategories.id);
 
-  const { rows } = await query<{
-    category_id: number;
-    category_name: string;
-    category_emoji: string;
-    total_entries: string;
-    total_price: string | null;
-  }>(
-    `SELECT c.id AS category_id, c.name AS category_name, c.emoji AS category_emoji,
-            COUNT(e.id) AS total_entries,
-            SUM(e.price) AS total_price
-     FROM gandalf_categories c
-     LEFT JOIN gandalf_entries e ON e.category_id = c.id ${yearFilter}
-     WHERE c.tribe_id = $1 AND c.is_active = true
-     GROUP BY c.id, c.name, c.emoji
-     ORDER BY c.name`,
-    params
-  );
+  const rows = await db
+    .select({
+      categoryId: gandalfCategories.id,
+      categoryName: gandalfCategories.name,
+      categoryEmoji: gandalfCategories.emoji,
+      totalEntries: sql<string>`count(${gandalfEntries.id})`,
+      totalPrice: sql<string | null>`sum(${gandalfEntries.price})`,
+    })
+    .from(gandalfCategories)
+    .leftJoin(gandalfEntries, joinCond)
+    .where(and(eq(gandalfCategories.tribeId, tribeId), eq(gandalfCategories.isActive, true)))
+    .groupBy(gandalfCategories.id, gandalfCategories.name, gandalfCategories.emoji)
+    .orderBy(gandalfCategories.name);
   return rows.map((r) => ({
-    categoryId: r.category_id,
-    categoryName: r.category_name,
-    categoryEmoji: r.category_emoji,
-    totalEntries: parseInt(r.total_entries, 10),
-    totalPrice: r.total_price ? parseFloat(r.total_price) : null,
+    categoryId: r.categoryId,
+    categoryName: r.categoryName,
+    categoryEmoji: r.categoryEmoji ?? "📁",
+    totalEntries: parseInt(r.totalEntries, 10),
+    totalPrice: r.totalPrice ? parseFloat(r.totalPrice) : null,
   }));
 }
 
 export async function getStatsByYear(tribeId: number): Promise<YearStats[]> {
-  const { rows } = await query<{
-    year: number;
-    total_entries: string;
-    total_price: string | null;
-  }>(
-    `SELECT EXTRACT(YEAR FROM created_at)::int AS year,
-            COUNT(*) AS total_entries,
-            SUM(price) AS total_price
-     FROM gandalf_entries
-     WHERE tribe_id = $1
-     GROUP BY year
-     ORDER BY year DESC`,
-    [tribeId]
-  );
+  const rows = await db
+    .select({
+      year: sql<number>`extract(year from ${gandalfEntries.createdAt})::int`,
+      totalEntries: sql<string>`count(*)`,
+      totalPrice: sql<string | null>`sum(${gandalfEntries.price})`,
+    })
+    .from(gandalfEntries)
+    .where(eq(gandalfEntries.tribeId, tribeId))
+    .groupBy(sql`extract(year from ${gandalfEntries.createdAt})::int`)
+    .orderBy(sql`extract(year from ${gandalfEntries.createdAt})::int desc`);
   return rows.map((r) => ({
     year: r.year,
-    totalEntries: parseInt(r.total_entries, 10),
-    totalPrice: r.total_price ? parseFloat(r.total_price) : null,
+    totalEntries: parseInt(r.totalEntries, 10),
+    totalPrice: r.totalPrice ? parseFloat(r.totalPrice) : null,
   }));
 }
 
 export async function getStatsByUser(tribeId: number, year?: number): Promise<UserStats[]> {
-  const yearFilter = year
-    ? "AND EXTRACT(YEAR FROM e.created_at) = $2"
-    : "";
-  const params: unknown[] = [tribeId];
-  if (year) params.push(year);
+  const conds = [eq(gandalfEntries.tribeId, tribeId)];
+  if (year) conds.push(sql`extract(year from ${gandalfEntries.createdAt}) = ${year}`);
 
-  const { rows } = await query<{
-    user_id: number;
-    first_name: string;
-    total_entries: string;
-    total_price: string | null;
-  }>(
-    `SELECT u.id AS user_id, u.first_name,
-            COUNT(e.id) AS total_entries,
-            SUM(e.price) AS total_price
-     FROM gandalf_entries e
-     JOIN users u ON u.id = e.added_by_user_id
-     WHERE e.tribe_id = $1 ${yearFilter}
-     GROUP BY u.id, u.first_name
-     ORDER BY total_entries DESC`,
-    params
-  );
+  const rows = await db
+    .select({
+      userId: users.id,
+      firstName: users.firstName,
+      totalEntries: sql<string>`count(${gandalfEntries.id})`,
+      totalPrice: sql<string | null>`sum(${gandalfEntries.price})`,
+    })
+    .from(gandalfEntries)
+    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .where(and(...conds))
+    .groupBy(users.id, users.firstName)
+    .orderBy(desc(sql`count(${gandalfEntries.id})`));
   return rows.map((r) => ({
-    userId: r.user_id,
-    firstName: r.first_name,
-    totalEntries: parseInt(r.total_entries, 10),
-    totalPrice: r.total_price ? parseFloat(r.total_price) : null,
+    userId: r.userId,
+    firstName: r.firstName,
+    totalEntries: parseInt(r.totalEntries, 10),
+    totalPrice: r.totalPrice ? parseFloat(r.totalPrice) : null,
   }));
 }
 
 /** Get the latest entry for a user (for file attachment). */
 export async function getLatestEntryByUser(tribeId: number | null, userId: number): Promise<GandalfEntry | null> {
-  const { rows } = tribeId != null
-    ? await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-        `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-         FROM gandalf_entries e
-         JOIN gandalf_categories c ON c.id = e.category_id
-         JOIN users u ON u.id = e.added_by_user_id
-         WHERE e.tribe_id = $1 AND e.added_by_user_id = $2
-         ORDER BY e.created_at DESC
-         LIMIT 1`,
-        [tribeId, userId]
+  const [row] = await db
+    .select(entryWithJoins)
+    .from(gandalfEntries)
+    .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
+    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .where(
+      and(
+        tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId),
+        eq(gandalfEntries.addedByUserId, userId)
       )
-    : await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-        `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-         FROM gandalf_entries e
-         JOIN gandalf_categories c ON c.id = e.category_id
-         JOIN users u ON u.id = e.added_by_user_id
-         WHERE e.tribe_id IS NULL AND e.added_by_user_id = $1
-         ORDER BY e.created_at DESC
-         LIMIT 1`,
-        [userId]
-      );
-  if (rows.length === 0) return null;
-  return mapEntryWithJoins(rows[0]);
+    )
+    .orderBy(desc(gandalfEntries.createdAt))
+    .limit(1);
+  if (!row) return null;
+  return mapEntryWithJoins(row);
 }
 
 // ─── Admin functions ────────────────────────────────────────────────────
@@ -765,46 +692,39 @@ export async function updateEntryFields(
   entryId: number,
   fields: { title?: string; price?: number | null }
 ): Promise<boolean> {
-  const sets: string[] = ["updated_at = NOW()"];
-  const params: unknown[] = [];
-  let idx = 1;
+  const set: PgUpdateSetSource<typeof gandalfEntries> = {};
+  if (fields.title !== undefined) set.title = fields.title;
+  if (fields.price !== undefined) set.price = fields.price != null ? String(fields.price) : null;
 
-  if (fields.title !== undefined) {
-    sets.push(`title = $${idx++}`);
-    params.push(fields.title);
-  }
-  if (fields.price !== undefined) {
-    sets.push(`price = $${idx++}`);
-    params.push(fields.price);
-  }
+  if (Object.keys(set).length === 0) return false; // only updated_at
 
-  if (sets.length === 1) return false; // only updated_at
-  params.push(entryId);
+  set.updatedAt = sql`now()`;
 
-  const { rowCount } = await query(
-    `UPDATE gandalf_entries SET ${sets.join(", ")} WHERE id = $${idx}`,
-    params
-  );
-  return (rowCount ?? 0) > 0;
+  const rows = await db
+    .update(gandalfEntries)
+    .set(set)
+    .where(eq(gandalfEntries.id, entryId))
+    .returning({ id: gandalfEntries.id });
+  return rows.length > 0;
 }
 
 /** Admin: bulk delete entries by ID array. */
 export async function bulkDeleteEntries(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
-  const { rowCount } = await query(
-    "DELETE FROM gandalf_entries WHERE id = ANY($1)",
-    [ids]
-  );
-  return rowCount ?? 0;
+  const rows = await db
+    .delete(gandalfEntries)
+    .where(inArray(gandalfEntries.id, ids))
+    .returning({ id: gandalfEntries.id });
+  return rows.length;
 }
 
 /** Admin: delete all entries for a tribe. */
 export async function deleteAllEntries(tribeId: number): Promise<number> {
-  const { rowCount } = await query(
-    "DELETE FROM gandalf_entries WHERE tribe_id = $1",
-    [tribeId]
-  );
-  return rowCount ?? 0;
+  const rows = await db
+    .delete(gandalfEntries)
+    .where(eq(gandalfEntries.tribeId, tribeId))
+    .returning({ id: gandalfEntries.id });
+  return rows.length;
 }
 
 /** Admin: get all entries paginated (with joins). */
@@ -812,118 +732,79 @@ export async function getAllEntriesPaginated(
   limit: number,
   offset: number
 ): Promise<GandalfEntry[]> {
-  const { rows } = await query<EntryRow & { category_name: string; category_emoji: string; first_name: string }>(
-    `SELECT e.*, c.name AS category_name, c.emoji AS category_emoji, u.first_name
-     FROM gandalf_entries e
-     JOIN gandalf_categories c ON c.id = e.category_id
-     JOIN users u ON u.id = e.added_by_user_id
-     ORDER BY e.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
-  );
+  const rows = await db
+    .select(entryWithJoins)
+    .from(gandalfEntries)
+    .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
+    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .orderBy(desc(gandalfEntries.createdAt))
+    .limit(limit)
+    .offset(offset);
   return rows.map(mapEntryWithJoins);
 }
 
 /** Admin: count all entries for a tribe. */
 export async function countAllEntries(tribeId: number): Promise<number> {
-  const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM gandalf_entries WHERE tribe_id = $1",
-    [tribeId]
-  );
-  return parseInt(rows[0].count, 10);
+  const [row] = await db
+    .select({ value: count() })
+    .from(gandalfEntries)
+    .where(eq(gandalfEntries.tribeId, tribeId));
+  return row.value;
 }
 
-// ─── Internal ───────────────────────────────────────────────────────────
+// ─── Mappers ────────────────────────────────────────────────────────────
 
-interface CategoryRow {
-  id: number;
-  tribe_id: number | null;
-  name: string;
-  emoji: string;
-  created_by_user_id: number | null;
-  is_active: boolean;
-  created_at: Date;
-}
-
-interface EntryRow {
-  id: number;
-  tribe_id: number | null;
-  category_id: number;
-  title: string;
-  price: string | null;
-  added_by_user_id: number;
-  next_date: Date | null;
-  additional_info: string | null;
-  input_method: string;
-  is_important: boolean;
-  is_urgent: boolean;
-  visibility: string;
-  created_at: Date;
-  updated_at: Date;
-}
-
-interface FileRow {
-  id: number;
-  entry_id: number;
-  telegram_file_id: string;
-  file_type: string;
-  file_name: string | null;
-  mime_type: string | null;
-  file_size_bytes: number | null;
-  created_at: Date;
-}
-
-function mapCategory(r: CategoryRow): GandalfCategory {
+function mapCategory(r: typeof gandalfCategories.$inferSelect): GandalfCategory {
   return {
     id: r.id,
-    tribeId: r.tribe_id,
+    tribeId: r.tribeId,
     name: r.name,
     emoji: r.emoji ?? "📁",
-    createdByUserId: r.created_by_user_id,
-    isActive: r.is_active,
-    createdAt: r.created_at,
+    createdByUserId: r.createdByUserId,
+    isActive: r.isActive ?? true,
+    createdAt: r.createdAt ?? new Date(),
   };
 }
 
-function mapEntry(r: EntryRow): GandalfEntry {
+function mapEntry(r: typeof gandalfEntries.$inferSelect): GandalfEntry {
   return {
     id: r.id,
-    tribeId: r.tribe_id,
-    categoryId: r.category_id,
+    tribeId: r.tribeId,
+    categoryId: r.categoryId,
     title: r.title,
     price: r.price != null ? parseFloat(r.price) : null,
-    addedByUserId: r.added_by_user_id,
-    nextDate: r.next_date,
-    additionalInfo: r.additional_info,
-    inputMethod: r.input_method,
-    isImportant: r.is_important ?? false,
-    isUrgent: r.is_urgent ?? false,
+    addedByUserId: r.addedByUserId,
+    nextDate: r.nextDate,
+    additionalInfo: r.additionalInfo,
+    inputMethod: r.inputMethod ?? "text",
+    isImportant: r.isImportant ?? false,
+    isUrgent: r.isUrgent ?? false,
     visibility: (r.visibility === "private" ? "private" : "tribe") as "tribe" | "private",
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    createdAt: r.createdAt ?? new Date(),
+    updatedAt: r.updatedAt ?? new Date(),
   };
 }
 
 function mapEntryWithJoins(
-  r: EntryRow & { category_name: string; category_emoji: string; first_name: string }
+  r: typeof gandalfEntries.$inferSelect & { categoryName: string; categoryEmoji: string | null; firstName: string }
 ): GandalfEntry {
   return {
     ...mapEntry(r),
-    categoryName: r.category_name,
-    categoryEmoji: r.category_emoji,
-    addedByName: r.first_name,
+    categoryName: r.categoryName,
+    categoryEmoji: r.categoryEmoji ?? "📁",
+    addedByName: r.firstName,
   };
 }
 
-function mapFile(r: FileRow): GandalfEntryFile {
+function mapFile(r: typeof gandalfEntryFiles.$inferSelect): GandalfEntryFile {
   return {
     id: r.id,
-    entryId: r.entry_id,
-    telegramFileId: r.telegram_file_id,
-    fileType: r.file_type,
-    fileName: r.file_name,
-    mimeType: r.mime_type,
-    fileSizeBytes: r.file_size_bytes,
-    createdAt: r.created_at,
+    entryId: r.entryId,
+    telegramFileId: r.telegramFileId,
+    fileType: r.fileType,
+    fileName: r.fileName,
+    mimeType: r.mimeType,
+    fileSizeBytes: r.fileSizeBytes,
+    createdAt: r.createdAt ?? new Date(),
   };
 }

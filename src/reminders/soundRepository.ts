@@ -2,41 +2,23 @@
  * Repository for reminder_sounds table and fired-reminder queries for Mini App polling.
  */
 
-import { query } from "../db/connection.js";
+import { and, asc, desc, eq, gte, isNotNull } from "drizzle-orm";
+import { db } from "../db/drizzle.js";
+import { reminderSounds, reminders, users } from "../db/schema.js";
 import type { ReminderSound } from "./types.js";
-
-// ─── Row types ──────────────────────────────────────────────────────────
-
-interface ReminderSoundRow {
-  id: number;
-  name: string;
-  emoji: string;
-  filename: string;
-  duration_seconds: number | null;
-  sort_order: number;
-  is_active: boolean;
-  created_at: Date;
-}
-
-interface FiredReminderRow {
-  id: number;
-  text: string;
-  last_fired_at: Date;
-  filename: string;
-}
 
 // ─── Mappers ────────────────────────────────────────────────────────────
 
-function mapSound(r: ReminderSoundRow): ReminderSound {
+function mapSound(r: typeof reminderSounds.$inferSelect): ReminderSound {
   return {
     id: r.id,
     name: r.name,
     emoji: r.emoji,
     filename: r.filename,
-    durationSeconds: r.duration_seconds,
-    sortOrder: r.sort_order,
-    isActive: r.is_active,
-    createdAt: r.created_at,
+    durationSeconds: r.durationSeconds,
+    sortOrder: r.sortOrder,
+    isActive: r.isActive,
+    createdAt: r.createdAt,
   };
 }
 
@@ -44,20 +26,19 @@ function mapSound(r: ReminderSoundRow): ReminderSound {
 
 /** Get all active sounds ordered by sort_order. */
 export async function getAvailableSounds(): Promise<ReminderSound[]> {
-  const { rows } = await query<ReminderSoundRow>(
-    "SELECT * FROM reminder_sounds WHERE is_active = true ORDER BY sort_order, id"
-  );
+  const rows = await db
+    .select()
+    .from(reminderSounds)
+    .where(eq(reminderSounds.isActive, true))
+    .orderBy(asc(reminderSounds.sortOrder), asc(reminderSounds.id));
   return rows.map(mapSound);
 }
 
 /** Get a single sound by ID. */
 export async function getSoundById(soundId: number): Promise<ReminderSound | null> {
-  const { rows } = await query<ReminderSoundRow>(
-    "SELECT * FROM reminder_sounds WHERE id = $1",
-    [soundId]
-  );
-  if (rows.length === 0) return null;
-  return mapSound(rows[0]);
+  const [row] = await db.select().from(reminderSounds).where(eq(reminderSounds.id, soundId));
+  if (!row) return null;
+  return mapSound(row);
 }
 
 /** Fired reminder result shape. */
@@ -76,23 +57,30 @@ export async function getFiredRemindersWithSound(
   telegramId: number,
   since: Date
 ): Promise<FiredReminderResult[]> {
-  const { rows } = await query<FiredReminderRow>(
-    `SELECT r.id, r.text, r.last_fired_at, rs.filename
-     FROM reminders r
-     JOIN users u ON u.id = r.user_id
-     JOIN reminder_sounds rs ON rs.id = r.sound_id
-     WHERE u.telegram_id = $1
-       AND r.is_active = true
-       AND r.sound_enabled = true
-       AND r.sound_id IS NOT NULL
-       AND r.last_fired_at >= $2
-     ORDER BY r.last_fired_at DESC`,
-    [telegramId, since]
-  );
+  const rows = await db
+    .select({
+      id: reminders.id,
+      text: reminders.text,
+      lastFiredAt: reminders.lastFiredAt,
+      filename: reminderSounds.filename,
+    })
+    .from(reminders)
+    .innerJoin(users, eq(users.id, reminders.userId))
+    .innerJoin(reminderSounds, eq(reminderSounds.id, reminders.soundId))
+    .where(
+      and(
+        eq(users.telegramId, BigInt(telegramId)),
+        eq(reminders.isActive, true),
+        eq(reminders.soundEnabled, true),
+        isNotNull(reminders.soundId),
+        gte(reminders.lastFiredAt, since)
+      )
+    )
+    .orderBy(desc(reminders.lastFiredAt));
   return rows.map((r) => ({
     id: r.id,
     text: r.text,
-    firedAt: r.last_fired_at.toISOString(),
+    firedAt: (r.lastFiredAt as Date).toISOString(),
     soundFile: r.filename,
   }));
 }

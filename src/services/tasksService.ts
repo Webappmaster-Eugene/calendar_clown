@@ -10,17 +10,15 @@ import {
   updateTaskWork,
   deleteTaskWork,
   countTaskWorksByUser,
-  createTaskItem,
+  createTaskItemWithReminders,
   getTaskItemsByWork,
   toggleTaskItemCompleted,
-  updateTaskItemDeadline as repoUpdateDeadline,
+  replaceTaskItemDeadline,
   updateTaskItemText,
   deleteTaskItem,
   countTaskItemsByWork,
   getCompletedTaskItems,
   getTaskItemWithOwnership,
-  createTaskReminders,
-  deleteRemindersForTask,
 } from "../tasks/repository.js";
 import type { TaskWork, TaskItem } from "../tasks/repository.js";
 import { calculateTaskReminders } from "../tasks/logic.js";
@@ -185,11 +183,9 @@ export async function addTask(
     throw new Error("Текст задачи должен быть от 1 до 500 символов.");
   }
 
-  const item = await createTaskItem(workId, trimmedText, deadline, inputMethod);
-
   const reminders = calculateTaskReminders(deadline);
+  const item = await createTaskItemWithReminders(workId, trimmedText, deadline, inputMethod, reminders);
   if (reminders.length > 0) {
-    await createTaskReminders(item.id, reminders);
     log.info(`Created ${reminders.length} reminders for task ${item.id}`);
   }
 
@@ -221,13 +217,10 @@ export async function updateDeadline(
   const ownership = await getTaskItemWithOwnership(taskItemId, dbUser.id);
   if (!ownership) return null;
 
-  const updated = await repoUpdateDeadline(taskItemId, deadline);
-  if (!updated) return null;
-
-  await deleteRemindersForTask(taskItemId);
   const reminders = calculateTaskReminders(deadline);
+  const updated = await replaceTaskItemDeadline(taskItemId, deadline, reminders);
+  if (!updated) return null;
   if (reminders.length > 0) {
-    await createTaskReminders(taskItemId, reminders);
     log.info(`Regenerated ${reminders.length} reminders for task ${taskItemId}`);
   }
 
