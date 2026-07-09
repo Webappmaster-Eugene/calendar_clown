@@ -51,7 +51,7 @@ const nutritionistSubModes = new Map<number, NutritionistSubMode>();
 interface CalculatorItem {
   name: string;
   weightG: number;
-  caloriesPer100: number;
+  caloriesPer100G: number;
   proteinsPer100G: number;
   fatsPer100G: number;
   carbsPer100G: number;
@@ -62,7 +62,7 @@ interface ManualItemWizard {
   step: "name" | "weight" | "calories" | "proteins" | "fats" | "carbs";
   name?: string;
   weightG?: number;
-  caloriesPer100?: number;
+  caloriesPer100G?: number;
   proteinsPer100G?: number;
   fatsPer100G?: number;
 }
@@ -120,7 +120,7 @@ interface ProductCreationState {
   name?: string;
   description?: string | null;
   unit?: NutritionProductUnit;
-  caloriesPer100?: number;
+  caloriesPer100G?: number;
   proteinsPer100G?: number;
   fatsPer100G?: number;
   carbsPer100G?: number;
@@ -1017,7 +1017,7 @@ async function handleProductFlowText(ctx: Context, telegramId: number): Promise<
           await ctx.reply("⚠️ Введите число от 0 до 900 (калории на 100).");
           return true;
         }
-        state.caloriesPer100 = value;
+        state.caloriesPer100G = value;
         state.step = "proteins";
         productCreationStates.set(telegramId, state);
         await ctx.reply(`🥩 Введите *белки на 100 ${state.unit}* (0–100, в граммах):`, {
@@ -1128,7 +1128,7 @@ async function finalizeProductCreation(
   if (
     !state.name ||
     !state.unit ||
-    state.caloriesPer100 === undefined ||
+    state.caloriesPer100G === undefined ||
     state.proteinsPer100G === undefined ||
     state.fatsPer100G === undefined ||
     state.carbsPer100G === undefined
@@ -1144,7 +1144,7 @@ async function finalizeProductCreation(
         name: state.name,
         description: state.description ?? null,
         unit: state.unit,
-        caloriesPer100: state.caloriesPer100,
+        caloriesPer100G: state.caloriesPer100G,
         proteinsPer100G: state.proteinsPer100G,
         fatsPer100G: state.fatsPer100G,
         carbsPer100G: state.carbsPer100G,
@@ -1193,7 +1193,7 @@ function buildEditPatch(field: ProductEditField, raw: string): Parameters<typeof
     case "calories": {
       const v = parseMacroNumber(raw, 0, 900);
       if (v === null) throw new Error("Введите число от 0 до 900.");
-      return { caloriesPer100: v };
+      return { caloriesPer100G: v };
     }
     case "proteins": {
       const v = parseMacroNumber(raw, 0, 100);
@@ -1221,7 +1221,7 @@ function formatProductCard(p: NutritionProductDto): string {
   }
   lines.push("");
   lines.push(`На 100 ${p.unit}:`);
-  lines.push(`🔥 ${p.caloriesPer100} ккал`);
+  lines.push(`🔥 ${p.caloriesPer100G} ккал`);
   lines.push(`🥩 Б ${p.proteinsPer100G}г · 🧈 Ж ${p.fatsPer100G}г · 🍞 У ${p.carbsPer100G}г`);
   if (p.hasPackagePhoto) {
     lines.push("");
@@ -1258,7 +1258,7 @@ async function sendProductsPage(
     const num = offset + i + 1;
     return (
       `*${num}.* ${escMd(p.name)} (${p.unit})\n` +
-      `   🔥 ${p.caloriesPer100} ккал | Б ${p.proteinsPer100G} · Ж ${p.fatsPer100G} · У ${p.carbsPer100G}`
+      `   🔥 ${p.caloriesPer100G} ккал | Б ${p.proteinsPer100G} · Ж ${p.fatsPer100G} · У ${p.carbsPer100G}`
     );
   });
 
@@ -1365,7 +1365,7 @@ export async function handleCalcSave(ctx: Context): Promise<void> {
     const items: ManualCalcItemInput[] = state.items.map((item) => ({
       name: item.name,
       weightG: item.weightG,
-      caloriesPer100: item.caloriesPer100,
+      caloriesPer100G: item.caloriesPer100G,
       proteinsPer100G: item.proteinsPer100G,
       fatsPer100G: item.fatsPer100G,
       carbsPer100G: item.carbsPer100G,
@@ -1445,7 +1445,7 @@ async function handleCalculatorFlowText(ctx: Context, telegramId: number): Promi
     state.items.push({
       name: p.name,
       weightG: weight,
-      caloriesPer100: p.caloriesPer100,
+      caloriesPer100G: p.caloriesPer100G,
       proteinsPer100G: p.proteinsPer100G,
       fatsPer100G: p.fatsPer100G,
       carbsPer100G: p.carbsPer100G,
@@ -1488,7 +1488,7 @@ async function handleCalculatorFlowText(ctx: Context, telegramId: number): Promi
         await ctx.reply("⚠️ Введите число от 0 до 900.");
         return true;
       }
-      wizard.caloriesPer100 = v;
+      wizard.caloriesPer100G = v;
       wizard.step = "proteins";
       await ctx.reply("🥩 Введите *белки на 100г* (0–100):", { parse_mode: "Markdown" });
       return true;
@@ -1524,7 +1524,7 @@ async function handleCalculatorFlowText(ctx: Context, telegramId: number): Promi
       state.items.push({
         name: wizard.name!,
         weightG: wizard.weightG!,
-        caloriesPer100: wizard.caloriesPer100!,
+        caloriesPer100G: wizard.caloriesPer100G!,
         proteinsPer100G: wizard.proteinsPer100G!,
         fatsPer100G: wizard.fatsPer100G!,
         carbsPer100G: v,
@@ -1549,7 +1549,7 @@ function parseWeight(raw: string): number | null {
 async function replyItemAdded(ctx: Context, state: CalculatorState): Promise<void> {
   const item = state.items[state.items.length - 1];
   const factor = item.weightG / 100;
-  const cal = Math.round(item.caloriesPer100 * factor);
+  const cal = Math.round(item.caloriesPer100G * factor);
   const badge = item.catalogProductId ? " 🎯" : "";
 
   await safeReplyMarkdown(ctx,
@@ -1577,7 +1577,7 @@ function formatCalculatorTotals(state: CalculatorState): string {
   for (let i = 0; i < state.items.length; i++) {
     const item = state.items[i];
     const factor = item.weightG / 100;
-    const cal = Math.round(item.caloriesPer100 * factor);
+    const cal = Math.round(item.caloriesPer100G * factor);
     const badge = item.catalogProductId ? " 🎯" : "";
     lines.push(
       `${i + 1}. ${escMd(item.name)}${badge} — ${item.weightG}г: ` +
@@ -1590,7 +1590,7 @@ function formatCalculatorTotals(state: CalculatorState): string {
   for (const item of state.items) {
     const factor = item.weightG / 100;
     totalWeight += item.weightG;
-    totalCal += Math.round(item.caloriesPer100 * factor);
+    totalCal += Math.round(item.caloriesPer100G * factor);
     totalP += item.proteinsPer100G * factor;
     totalF += item.fatsPer100G * factor;
     totalC += item.carbsPer100G * factor;
@@ -1675,7 +1675,7 @@ async function sendCalcProductPicker(
 
   const inlineRows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
   for (const p of list.products) {
-    const label = `${p.name} (🔥${p.caloriesPer100} | Б${p.proteinsPer100G} Ж${p.fatsPer100G} У${p.carbsPer100G})`;
+    const label = `${p.name} (🔥${p.caloriesPer100G} | Б${p.proteinsPer100G} Ж${p.fatsPer100G} У${p.carbsPer100G})`;
     // Telegram callback data max 64 bytes — use short format
     inlineRows.push([Markup.button.callback(label.slice(0, 60), `nutri_calc_pick:${p.id}`)]);
   }
@@ -1721,7 +1721,7 @@ async function handleCalculatorCallback(ctx: Context, data: string, telegramId: 
       await ctx.answerCbQuery();
       await ctx.reply(
         `📦 *${escMd(product.name)}*\n` +
-        `🔥 ${product.caloriesPer100} ккал | Б ${product.proteinsPer100G}г | ` +
+        `🔥 ${product.caloriesPer100G} ккал | Б ${product.proteinsPer100G}г | ` +
         `Ж ${product.fatsPer100G}г | У ${product.carbsPer100G}г (на 100${product.unit})\n\n` +
         `⚖️ Введите *вес* в граммах (или ❌ для отмены):`,
         { parse_mode: "Markdown" },

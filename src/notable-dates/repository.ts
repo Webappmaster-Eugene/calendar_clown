@@ -6,7 +6,7 @@ import { notableDates } from "../db/schema.js";
 export interface NotableDate {
   id: number;
   tribeId: number;
-  addedByUserId: number | null;
+  createdByUserId: number | null;
   name: string;
   dateMonth: number;
   dateDay: number;
@@ -21,7 +21,7 @@ export interface NotableDate {
 
 interface AddNotableDateParams {
   tribeId: number;
-  addedByUserId: number | null;
+  createdByUserId: number | null;
   name: string;
   dateMonth: number;
   dateDay: number;
@@ -59,7 +59,7 @@ export async function addNotableDate(params: AddNotableDateParams): Promise<Nota
     .insert(notableDates)
     .values({
       tribeId: params.tribeId,
-      addedByUserId: params.addedByUserId,
+      createdByUserId: params.createdByUserId,
       name: params.name,
       dateMonth: params.dateMonth,
       dateDay: params.dateDay,
@@ -267,7 +267,7 @@ function mapRow(r: typeof notableDates.$inferSelect): NotableDate {
   return {
     id: r.id,
     tribeId: r.tribeId,
-    addedByUserId: r.addedByUserId,
+    createdByUserId: r.createdByUserId,
     name: r.name,
     dateMonth: r.dateMonth,
     dateDay: r.dateDay,

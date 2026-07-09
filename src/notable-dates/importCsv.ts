@@ -92,7 +92,7 @@ async function main(): Promise<void> {
 
       await addNotableDate({
         tribeId: 1,
-        addedByUserId: null,
+        createdByUserId: null,
         name,
         dateMonth: month,
         dateDay: day,

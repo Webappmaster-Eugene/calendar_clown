@@ -51,7 +51,7 @@ export interface CatalogProductForPrompt {
   name: string;
   description: string | null;
   unit: "g" | "ml";
-  caloriesPer100: number;
+  caloriesPer100G: number;
   proteinsPer100G: number;
   fatsPer100G: number;
   carbsPer100G: number;
@@ -212,7 +212,7 @@ export function buildCatalogBlock(catalog: AnalyzeFoodOptions): string {
     const desc = rawDesc.length > 80 ? `${rawDesc.slice(0, 80)}…` : rawDesc;
     const descSuffix = desc ? ` — ${desc}` : "";
     // Numbers with up to 1 decimal place to keep the prompt compact.
-    const cals = formatNumber(p.caloriesPer100);
+    const cals = formatNumber(p.caloriesPer100G);
     const prot = formatNumber(p.proteinsPer100G);
     const fats = formatNumber(p.fatsPer100G);
     const carbs = formatNumber(p.carbsPer100G);

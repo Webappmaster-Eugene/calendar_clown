@@ -22,7 +22,7 @@ interface FormState {
   name: string;
   description: string;
   unit: NutritionProductUnit;
-  caloriesPer100: string;
+  caloriesPer100G: string;
   proteinsPer100G: string;
   fatsPer100G: string;
   carbsPer100G: string;
@@ -35,7 +35,7 @@ const emptyForm: FormState = {
   name: "",
   description: "",
   unit: "g",
-  caloriesPer100: "",
+  caloriesPer100G: "",
   proteinsPer100G: "",
   fatsPer100G: "",
   carbsPer100G: "",
@@ -106,7 +106,7 @@ export function NutritionistCatalog() {
       name: p.name,
       description: p.description ?? "",
       unit: p.unit,
-      caloriesPer100: String(p.caloriesPer100),
+      caloriesPer100G: String(p.caloriesPer100G),
       proteinsPer100G: String(p.proteinsPer100G),
       fatsPer100G: String(p.fatsPer100G),
       carbsPer100G: String(p.carbsPer100G),
@@ -280,7 +280,7 @@ function ProductRow({
           </div>
         )}
         <div className="card-hint" style={{ fontSize: 12, marginTop: 4 }}>
-          🔥 {product.caloriesPer100} ккал · Б {product.proteinsPer100G} · Ж {product.fatsPer100G} · У{" "}
+          🔥 {product.caloriesPer100G} ккал · Б {product.proteinsPer100G} · Ж {product.fatsPer100G} · У{" "}
           {product.carbsPer100G} / 100 {product.unit}
         </div>
       </div>
@@ -436,8 +436,8 @@ function ProductFormModal({
           <Field label={`🔥 Калории / 100 ${form.unit}`}>
             <input
               className="input"
-              value={form.caloriesPer100}
-              onChange={(e) => setForm((f) => ({ ...f, caloriesPer100: e.target.value }))}
+              value={form.caloriesPer100G}
+              onChange={(e) => setForm((f) => ({ ...f, caloriesPer100G: e.target.value }))}
               inputMode="decimal"
               placeholder="0–900"
             />
@@ -542,7 +542,7 @@ function validateForm(form: FormState): string | null {
   if (form.name.trim().length > 200) return "Название слишком длинное (макс. 200 символов).";
   if (form.description.length > 1000) return "Описание слишком длинное (макс. 1000 символов).";
   const ranges: Array<[string, string, number, number]> = [
-    ["Калории", form.caloriesPer100, 0, 900],
+    ["Калории", form.caloriesPer100G, 0, 900],
     ["Белки", form.proteinsPer100G, 0, 100],
     ["Жиры", form.fatsPer100G, 0, 100],
     ["Углеводы", form.carbsPer100G, 0, 100],
@@ -562,7 +562,7 @@ function buildFormData(form: FormState): FormData {
   if (form.description.trim()) fd.append("description", form.description.trim());
   else if (form.id != null) fd.append("description", ""); // explicit clear on edit
   fd.append("unit", form.unit);
-  fd.append("caloriesPer100", form.caloriesPer100.replace(",", "."));
+  fd.append("caloriesPer100G", form.caloriesPer100G.replace(",", "."));
   fd.append("proteinsPer100G", form.proteinsPer100G.replace(",", "."));
   fd.append("fatsPer100G", form.fatsPer100G.replace(",", "."));
   fd.append("carbsPer100G", form.carbsPer100G.replace(",", "."));

@@ -195,7 +195,7 @@ export function SimplifierPage() {
             <div key={s.id} className="card">
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span className="card-hint">
-                  {s.inputType === "voice" ? "🎙" : s.inputType === "mixed" ? "🎙📝" : "📝"}{" "}
+                  {s.inputMethod === "voice" ? "🎙" : s.inputMethod === "mixed" ? "🎙📝" : "📝"}{" "}
                   {s.status === "completed" ? "Готово" : s.status === "failed" ? "Ошибка" : "Обработка..."}
                 </span>
                 <span className="card-hint">

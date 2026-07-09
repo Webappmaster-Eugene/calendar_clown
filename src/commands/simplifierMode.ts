@@ -196,13 +196,13 @@ export async function handleSimplifyButton(ctx: Context): Promise<void> {
   }
 
   const inputTypes = buffer.inputTypes;
-  let inputType: string;
+  let inputMethod: string;
   if (inputTypes.has("text") && inputTypes.has("voice")) {
-    inputType = "mixed";
+    inputMethod = "mixed";
   } else if (inputTypes.has("voice")) {
-    inputType = "voice";
+    inputMethod = "voice";
   } else {
-    inputType = "text";
+    inputMethod = "text";
   }
 
   const dbUser = await getUserByTelegramId(telegramId);
@@ -221,7 +221,7 @@ export async function handleSimplifyButton(ctx: Context): Promise<void> {
   let record;
   try {
     record = await createSimplification(
-      dbUser.id, inputType, combinedText,
+      dbUser.id, inputMethod, combinedText,
       sequenceNumber, chatId, statusMsg.message_id,
     );
   } catch (err) {
@@ -234,7 +234,7 @@ export async function handleSimplifyButton(ctx: Context): Promise<void> {
   }
 
   logAction(dbUser.id, telegramId, "simplifier_submit", {
-    inputType,
+    inputMethod,
     messageCount: buffer.texts.length,
     textLength: combinedText.length,
   });
@@ -363,7 +363,7 @@ async function sendHistoryPage(
       const date = s.createdAt.toLocaleDateString("ru-RU", {
         day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
       });
-      const typeIcon = s.inputType === "voice" ? "🎙" : s.inputType === "mixed" ? "🎙📝" : "📝";
+      const typeIcon = s.inputMethod === "voice" ? "🎙" : s.inputMethod === "mixed" ? "🎙📝" : "📝";
       const preview = s.simplifiedText
         ? s.simplifiedText.length > PREVIEW_LENGTH
           ? s.simplifiedText.slice(0, PREVIEW_LENGTH) + "..."

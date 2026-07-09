@@ -27,7 +27,7 @@ export interface GandalfEntry {
   categoryId: number;
   title: string;
   price: number | null;
-  addedByUserId: number;
+  createdByUserId: number;
   nextDate: Date | null;
   additionalInfo: string | null;
   inputMethod: string;
@@ -97,7 +97,7 @@ const entryWithJoins = {
   categoryId: gandalfEntries.categoryId,
   title: gandalfEntries.title,
   price: gandalfEntries.price,
-  addedByUserId: gandalfEntries.addedByUserId,
+  createdByUserId: gandalfEntries.createdByUserId,
   nextDate: gandalfEntries.nextDate,
   additionalInfo: gandalfEntries.additionalInfo,
   inputMethod: gandalfEntries.inputMethod,
@@ -215,7 +215,7 @@ export async function createEntry(params: {
   categoryId: number;
   title: string;
   price?: number | null;
-  addedByUserId: number;
+  createdByUserId: number;
   nextDate?: Date | null;
   additionalInfo?: string | null;
   inputMethod?: string;
@@ -232,7 +232,7 @@ export async function createEntry(params: {
       categoryId: params.categoryId,
       title: params.title,
       price: price != null ? String(price) : null,
-      addedByUserId: params.addedByUserId,
+      createdByUserId: params.createdByUserId,
       nextDate: params.nextDate ?? null,
       additionalInfo: params.additionalInfo ?? null,
       inputMethod: params.inputMethod ?? "text",
@@ -251,7 +251,7 @@ async function getEntryByIdInternal(entryId: number): Promise<GandalfEntry | nul
     .select(entryWithJoins)
     .from(gandalfEntries)
     .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
-    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .innerJoin(users, eq(users.id, gandalfEntries.createdByUserId))
     .where(eq(gandalfEntries.id, entryId));
   if (!row) return null;
   return mapEntryWithJoins(row);
@@ -262,7 +262,7 @@ export async function getEntryById(entryId: number, tribeId: number | null): Pro
     .select(entryWithJoins)
     .from(gandalfEntries)
     .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
-    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .innerJoin(users, eq(users.id, gandalfEntries.createdByUserId))
     .where(
       and(
         eq(gandalfEntries.id, entryId),
@@ -283,12 +283,12 @@ export async function getEntryByIdScoped(entryId: number, scope: GandalfScope): 
     .select(entryWithJoins)
     .from(gandalfEntries)
     .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
-    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .innerJoin(users, eq(users.id, gandalfEntries.createdByUserId))
     .where(
       and(
         eq(gandalfEntries.id, entryId),
         eq(gandalfEntries.tribeId, scope.tribeId),
-        or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+        or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.createdByUserId, scope.userId))
       )
     );
   if (!row) return null;
@@ -305,7 +305,7 @@ export async function getEntriesByCategory(
     .select(entryWithJoins)
     .from(gandalfEntries)
     .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
-    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .innerJoin(users, eq(users.id, gandalfEntries.createdByUserId))
     .where(
       and(
         tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId),
@@ -326,16 +326,16 @@ export async function getEntriesByScope(
 ): Promise<GandalfEntry[]> {
   const where =
     scope.type === "personal"
-      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.addedByUserId, scope.userId))
+      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.createdByUserId, scope.userId))
       : and(
           eq(gandalfEntries.tribeId, scope.tribeId),
-          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.createdByUserId, scope.userId))
         );
   const rows = await db
     .select(entryWithJoins)
     .from(gandalfEntries)
     .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
-    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .innerJoin(users, eq(users.id, gandalfEntries.createdByUserId))
     .where(where)
     .orderBy(desc(gandalfEntries.createdAt))
     .limit(limit)
@@ -438,10 +438,10 @@ export async function countEntriesByCategory(tribeId: number | null, categoryId:
 export async function countEntriesByScope(scope: GandalfScope): Promise<number> {
   const where =
     scope.type === "personal"
-      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.addedByUserId, scope.userId))
+      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.createdByUserId, scope.userId))
       : and(
           eq(gandalfEntries.tribeId, scope.tribeId),
-          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.createdByUserId, scope.userId))
         );
   const [row] = await db.select({ value: count() }).from(gandalfEntries).where(where);
   return row.value;
@@ -458,17 +458,17 @@ export async function getEntriesByFlag(
   const flagCol = flag === "important" ? gandalfEntries.isImportant : gandalfEntries.isUrgent;
   const where =
     scope.type === "personal"
-      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.addedByUserId, scope.userId), eq(flagCol, true))
+      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.createdByUserId, scope.userId), eq(flagCol, true))
       : and(
           eq(gandalfEntries.tribeId, scope.tribeId),
           eq(flagCol, true),
-          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.createdByUserId, scope.userId))
         );
   const rows = await db
     .select(entryWithJoins)
     .from(gandalfEntries)
     .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
-    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .innerJoin(users, eq(users.id, gandalfEntries.createdByUserId))
     .where(where)
     .orderBy(desc(gandalfEntries.createdAt))
     .limit(limit)
@@ -483,11 +483,11 @@ export async function countEntriesByFlag(
   const flagCol = flag === "important" ? gandalfEntries.isImportant : gandalfEntries.isUrgent;
   const where =
     scope.type === "personal"
-      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.addedByUserId, scope.userId), eq(flagCol, true))
+      ? and(isNull(gandalfEntries.tribeId), eq(gandalfEntries.createdByUserId, scope.userId), eq(flagCol, true))
       : and(
           eq(gandalfEntries.tribeId, scope.tribeId),
           eq(flagCol, true),
-          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.addedByUserId, scope.userId))
+          or(eq(gandalfEntries.visibility, "tribe"), eq(gandalfEntries.createdByUserId, scope.userId))
         );
   const [row] = await db.select({ value: count() }).from(gandalfEntries).where(where);
   return row.value;
@@ -654,7 +654,7 @@ export async function getStatsByUser(tribeId: number, year?: number): Promise<Us
       totalPrice: sql<string | null>`sum(${gandalfEntries.price})`,
     })
     .from(gandalfEntries)
-    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .innerJoin(users, eq(users.id, gandalfEntries.createdByUserId))
     .where(and(...conds))
     .groupBy(users.id, users.firstName)
     .orderBy(desc(sql`count(${gandalfEntries.id})`));
@@ -672,11 +672,11 @@ export async function getLatestEntryByUser(tribeId: number | null, userId: numbe
     .select(entryWithJoins)
     .from(gandalfEntries)
     .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
-    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .innerJoin(users, eq(users.id, gandalfEntries.createdByUserId))
     .where(
       and(
         tribeId != null ? eq(gandalfEntries.tribeId, tribeId) : isNull(gandalfEntries.tribeId),
-        eq(gandalfEntries.addedByUserId, userId)
+        eq(gandalfEntries.createdByUserId, userId)
       )
     )
     .orderBy(desc(gandalfEntries.createdAt))
@@ -736,7 +736,7 @@ export async function getAllEntriesPaginated(
     .select(entryWithJoins)
     .from(gandalfEntries)
     .innerJoin(gandalfCategories, eq(gandalfCategories.id, gandalfEntries.categoryId))
-    .innerJoin(users, eq(users.id, gandalfEntries.addedByUserId))
+    .innerJoin(users, eq(users.id, gandalfEntries.createdByUserId))
     .orderBy(desc(gandalfEntries.createdAt))
     .limit(limit)
     .offset(offset);
@@ -773,7 +773,7 @@ function mapEntry(r: typeof gandalfEntries.$inferSelect): GandalfEntry {
     categoryId: r.categoryId,
     title: r.title,
     price: r.price != null ? parseFloat(r.price) : null,
-    addedByUserId: r.addedByUserId,
+    createdByUserId: r.createdByUserId,
     nextDate: r.nextDate,
     additionalInfo: r.additionalInfo,
     inputMethod: r.inputMethod ?? "text",

@@ -118,7 +118,7 @@ function productRowToDto(row: NutritionProduct): NutritionProductDto {
     name: row.name,
     description: row.description,
     unit: row.unit,
-    caloriesPer100: row.caloriesPer100,
+    caloriesPer100G: row.caloriesPer100G,
     proteinsPer100G: row.proteinsPer100G,
     fatsPer100G: row.fatsPer100G,
     carbsPer100G: row.carbsPer100G,
@@ -134,7 +134,7 @@ function productRowToPromptShape(row: NutritionProduct): CatalogProductForPrompt
     name: row.name,
     description: row.description,
     unit: row.unit,
-    caloriesPer100: row.caloriesPer100,
+    caloriesPer100G: row.caloriesPer100G,
     proteinsPer100G: row.proteinsPer100G,
     fatsPer100G: row.fatsPer100G,
     carbsPer100G: row.carbsPer100G,
@@ -395,7 +395,7 @@ export interface CreateProductRequest {
   name: string;
   description?: string | null;
   unit: NutritionProductUnit;
-  caloriesPer100: number;
+  caloriesPer100G: number;
   proteinsPer100G: number;
   fatsPer100G: number;
   carbsPer100G: number;
@@ -405,7 +405,7 @@ export interface UpdateProductRequest {
   name?: string;
   description?: string | null;
   unit?: NutritionProductUnit;
-  caloriesPer100?: number;
+  caloriesPer100G?: number;
   proteinsPer100G?: number;
   fatsPer100G?: number;
   carbsPer100G?: number;
@@ -429,7 +429,7 @@ function validateMacros(input: CreateProductRequest | UpdateProductRequest): voi
       throw new Error(`Поле "${label}" должно быть в диапазоне ${min}–${max}.`);
     }
   };
-  checkFinite("calories", input.caloriesPer100, 0, 900);
+  checkFinite("calories", input.caloriesPer100G, 0, 900);
   checkFinite("proteins", input.proteinsPer100G, 0, 100);
   checkFinite("fats", input.fatsPer100G, 0, 100);
   checkFinite("carbs", input.carbsPer100G, 0, 100);
@@ -500,7 +500,7 @@ export async function addProduct(
     name: input.name.trim(),
     description: input.description?.trim() || null,
     unit: input.unit,
-    caloriesPer100: input.caloriesPer100,
+    caloriesPer100G: input.caloriesPer100G,
     proteinsPer100G: input.proteinsPer100G,
     fatsPer100G: input.fatsPer100G,
     carbsPer100G: input.carbsPer100G,
@@ -572,7 +572,7 @@ export async function editProduct(
           ? null
           : patch.description.trim() || null,
     unit: patch.unit,
-    caloriesPer100: patch.caloriesPer100,
+    caloriesPer100G: patch.caloriesPer100G,
     proteinsPer100G: patch.proteinsPer100G,
     fatsPer100G: patch.fatsPer100G,
     carbsPer100G: patch.carbsPer100G,
@@ -690,7 +690,7 @@ export async function saveManualCalculation(
     if (!Number.isFinite(item.weightG) || item.weightG <= 0 || item.weightG > 10000) {
       throw new Error(`Некорректный вес для "${item.name.trim()}". Допустимо: 0.1–10000г.`);
     }
-    if (!Number.isFinite(item.caloriesPer100) || item.caloriesPer100 < 0 || item.caloriesPer100 > 900) {
+    if (!Number.isFinite(item.caloriesPer100G) || item.caloriesPer100G < 0 || item.caloriesPer100G > 900) {
       throw new Error(`Некорректные калории для "${item.name.trim()}". Допустимо: 0–900.`);
     }
     if (!Number.isFinite(item.proteinsPer100G) || item.proteinsPer100G < 0 || item.proteinsPer100G > 100) {
@@ -710,7 +710,7 @@ export async function saveManualCalculation(
     return {
       name: item.name.trim(),
       weight_g: round1(item.weightG),
-      calories: Math.round(item.caloriesPer100 * factor),
+      calories: Math.round(item.caloriesPer100G * factor),
       proteins_g: round1(item.proteinsPer100G * factor),
       fats_g: round1(item.fatsPer100G * factor),
       carbs_g: round1(item.carbsPer100G * factor),

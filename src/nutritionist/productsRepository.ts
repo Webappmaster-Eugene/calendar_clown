@@ -17,7 +17,7 @@ export interface NutritionProduct {
   name: string;
   description: string | null;
   unit: NutritionProductUnit;
-  caloriesPer100: number;
+  caloriesPer100G: number;
   proteinsPer100G: number;
   fatsPer100G: number;
   carbsPer100G: number;
@@ -36,7 +36,7 @@ function mapRow(row: typeof nutritionProducts.$inferSelect): NutritionProduct {
     name: row.name,
     description: row.description,
     unit,
-    caloriesPer100: parseFloat(row.caloriesPer100),
+    caloriesPer100G: parseFloat(row.caloriesPer100G),
     proteinsPer100G: parseFloat(row.proteinsPer100G),
     fatsPer100G: parseFloat(row.fatsPer100G),
     carbsPer100G: parseFloat(row.carbsPer100G),
@@ -53,7 +53,7 @@ export interface CreateNutritionProductInput {
   name: string;
   description: string | null;
   unit: NutritionProductUnit;
-  caloriesPer100: number;
+  caloriesPer100G: number;
   proteinsPer100G: number;
   fatsPer100G: number;
   carbsPer100G: number;
@@ -66,7 +66,7 @@ export interface UpdateNutritionProductInput {
   name?: string;
   description?: string | null;
   unit?: NutritionProductUnit;
-  caloriesPer100?: number;
+  caloriesPer100G?: number;
   proteinsPer100G?: number;
   fatsPer100G?: number;
   carbsPer100G?: number;
@@ -88,7 +88,7 @@ export async function createProduct(
       name: input.name,
       description: input.description,
       unit: input.unit,
-      caloriesPer100: String(input.caloriesPer100),
+      caloriesPer100G: String(input.caloriesPer100G),
       proteinsPer100G: String(input.proteinsPer100G),
       fatsPer100G: String(input.fatsPer100G),
       carbsPer100G: String(input.carbsPer100G),
@@ -114,7 +114,7 @@ export async function updateProduct(
   if (patch.name !== undefined) set.name = patch.name;
   if (patch.description !== undefined) set.description = patch.description;
   if (patch.unit !== undefined) set.unit = patch.unit;
-  if (patch.caloriesPer100 !== undefined) set.caloriesPer100 = String(patch.caloriesPer100);
+  if (patch.caloriesPer100G !== undefined) set.caloriesPer100G = String(patch.caloriesPer100G);
   if (patch.proteinsPer100G !== undefined) set.proteinsPer100G = String(patch.proteinsPer100G);
   if (patch.fatsPer100G !== undefined) set.fatsPer100G = String(patch.fatsPer100G);
   if (patch.carbsPer100G !== undefined) set.carbsPer100G = String(patch.carbsPer100G);

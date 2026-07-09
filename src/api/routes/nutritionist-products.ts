@@ -96,7 +96,7 @@ app.post("/", async (c) => {
     const name = parseStringField(form, "name")?.trim() ?? "";
     const description = parseStringField(form, "description")?.trim() || null;
     const unit = parseUnitField(form);
-    const caloriesPer100 = parseNumberField(form, "caloriesPer100");
+    const caloriesPer100G = parseNumberField(form, "caloriesPer100G");
     const proteinsPer100G = parseNumberField(form, "proteinsPer100G");
     const fatsPer100G = parseNumberField(form, "fatsPer100G");
     const carbsPer100G = parseNumberField(form, "carbsPer100G");
@@ -108,7 +108,7 @@ app.post("/", async (c) => {
       return c.json({ ok: false, error: 'Единица измерения должна быть "g" или "ml"' }, 400);
     }
     if (
-      caloriesPer100 === undefined || Number.isNaN(caloriesPer100) ||
+      caloriesPer100G === undefined || Number.isNaN(caloriesPer100G) ||
       proteinsPer100G === undefined || Number.isNaN(proteinsPer100G) ||
       fatsPer100G === undefined || Number.isNaN(fatsPer100G) ||
       carbsPer100G === undefined || Number.isNaN(carbsPer100G)
@@ -133,7 +133,7 @@ app.post("/", async (c) => {
         name,
         description,
         unit,
-        caloriesPer100,
+        caloriesPer100G,
         proteinsPer100G,
         fatsPer100G,
         carbsPer100G,
@@ -195,10 +195,10 @@ app.patch("/:id", async (c) => {
     const unit = parseUnitField(form);
     if (unit !== undefined) patch.unit = unit;
 
-    const cals = parseNumberField(form, "caloriesPer100");
+    const cals = parseNumberField(form, "caloriesPer100G");
     if (cals !== undefined) {
-      if (Number.isNaN(cals)) return c.json({ ok: false, error: "caloriesPer100 must be a number" }, 400);
-      patch.caloriesPer100 = cals;
+      if (Number.isNaN(cals)) return c.json({ ok: false, error: "caloriesPer100G must be a number" }, 400);
+      patch.caloriesPer100G = cals;
     }
     const prot = parseNumberField(form, "proteinsPer100G");
     if (prot !== undefined) {

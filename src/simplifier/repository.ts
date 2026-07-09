@@ -11,7 +11,7 @@ import { thoughtSimplifications } from "../db/schema.js";
 export interface Simplification {
   id: number;
   userId: number;
-  inputType: string;
+  inputMethod: string;
   originalText: string;
   simplifiedText: string | null;
   modelUsed: string | null;
@@ -29,7 +29,7 @@ function mapRow(row: typeof thoughtSimplifications.$inferSelect): Simplification
   return {
     id: row.id,
     userId: row.userId,
-    inputType: row.inputType,
+    inputMethod: row.inputMethod,
     originalText: row.originalText,
     simplifiedText: row.simplifiedText,
     modelUsed: row.modelUsed,
@@ -49,7 +49,7 @@ function mapRow(row: typeof thoughtSimplifications.$inferSelect): Simplification
 /** Insert a new simplification record (status: pending). */
 export async function createSimplification(
   userId: number,
-  inputType: string,
+  inputMethod: string,
   originalText: string,
   sequenceNumber: number,
   chatId: number | null,
@@ -59,7 +59,7 @@ export async function createSimplification(
     .insert(thoughtSimplifications)
     .values({
       userId,
-      inputType,
+      inputMethod,
       originalText,
       status: "pending",
       sequenceNumber,

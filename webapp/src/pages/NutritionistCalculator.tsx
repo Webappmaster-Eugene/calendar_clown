@@ -14,7 +14,7 @@ interface CalcItem {
   localId: string;
   name: string;
   weightG: string;
-  caloriesPer100: string;
+  caloriesPer100G: string;
   proteinsPer100G: string;
   fatsPer100G: string;
   carbsPer100G: string;
@@ -45,7 +45,7 @@ function computeItemMacros(item: CalcItem): ItemMacros {
   const factor = w / 100;
   return {
     weightG: w,
-    calories: Math.round(parseNum(item.caloriesPer100) * factor),
+    calories: Math.round(parseNum(item.caloriesPer100G) * factor),
     proteinsG: round1(parseNum(item.proteinsPer100G) * factor),
     fatsG: round1(parseNum(item.fatsPer100G) * factor),
     carbsG: round1(parseNum(item.carbsPer100G) * factor),
@@ -63,7 +63,7 @@ function emptyItem(expanded: boolean): CalcItem {
     localId: newId(),
     name: "",
     weightG: "",
-    caloriesPer100: "",
+    caloriesPer100G: "",
     proteinsPer100G: "",
     fatsPer100G: "",
     carbsPer100G: "",
@@ -76,7 +76,7 @@ function itemFromProduct(p: NutritionProductDto): CalcItem {
     localId: newId(),
     name: p.name,
     weightG: "100",
-    caloriesPer100: String(p.caloriesPer100),
+    caloriesPer100G: String(p.caloriesPer100G),
     proteinsPer100G: String(p.proteinsPer100G),
     fatsPer100G: String(p.fatsPer100G),
     carbsPer100G: String(p.carbsPer100G),
@@ -179,7 +179,7 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
       items: validItems.map((it) => ({
         name: it.name.trim(),
         weightG: parseNum(it.weightG),
-        caloriesPer100: parseNum(it.caloriesPer100),
+        caloriesPer100G: parseNum(it.caloriesPer100G),
         proteinsPer100G: parseNum(it.proteinsPer100G),
         fatsPer100G: parseNum(it.fatsPer100G),
         carbsPer100G: parseNum(it.carbsPer100G),
@@ -265,8 +265,8 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
                     <div className="card-hint" style={{ fontSize: 11 }}>🔥 Ккал</div>
                     <input
                       className="input"
-                      value={item.caloriesPer100}
-                      onChange={(e) => updateItem(item.localId, { caloriesPer100: e.target.value })}
+                      value={item.caloriesPer100G}
+                      onChange={(e) => updateItem(item.localId, { caloriesPer100G: e.target.value })}
                       inputMode="decimal"
                       placeholder="0"
                       style={{ width: "100%", boxSizing: "border-box" }}
@@ -557,7 +557,7 @@ function ProductPickerModal({
           >
             <div style={{ fontWeight: 500, fontSize: 14 }}>{p.name}</div>
             <div className="card-hint" style={{ fontSize: 12 }}>
-              🔥 {p.caloriesPer100} ккал · Б {p.proteinsPer100G} · Ж {p.fatsPer100G} · У {p.carbsPer100G} / 100{p.unit}
+              🔥 {p.caloriesPer100G} ккал · Б {p.proteinsPer100G} · Ж {p.fatsPer100G} · У {p.carbsPer100G} / 100{p.unit}
             </div>
           </div>
         ))}

@@ -34,7 +34,7 @@ export const users = pgTable(
   "users",
   {
     id: serial("id").primaryKey(),
-    telegramId: bigint("telegram_id", { mode: "bigint" }).notNull().unique(),
+    telegramId: bigint("telegram_id", { mode: "bigint" }).notNull(),
     username: varchar("username", { length: 255 }),
     firstName: varchar("first_name", { length: 255 }).notNull().default(""),
     lastName: varchar("last_name", { length: 255 }),
@@ -69,7 +69,7 @@ export const categories = pgTable("categories", {
   sortOrder: integer("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   // NULL = встроенная категория (нельзя удалять); иначе id создавшего админа.
-  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
 });
 
 // ─── Expenses ────────────────────────────────────────────────────────────────
@@ -106,7 +106,6 @@ export const expenses = pgTable(
     uniqueIndex("idx_expenses_dedup_hash")
       .on(table.dedupHash)
       .where(sql`${table.dedupHash} IS NOT NULL`),
-    check("expenses_amount_check", sql`${table.amount} > 0`),
     check("expenses_amount_range", sql`${table.amount} >= 1 AND ${table.amount} <= 10000000`),
     check(
       "expenses_input_method_check",
@@ -209,7 +208,7 @@ export const thoughtSimplifications = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id),
-    inputType: varchar("input_type", { length: 10 }).notNull().default("text"),
+    inputMethod: varchar("input_method", { length: 10 }).notNull().default("text"),
     originalText: text("original_text").notNull(),
     simplifiedText: text("simplified_text"),
     modelUsed: varchar("model_used", { length: 100 }),
@@ -225,6 +224,14 @@ export const thoughtSimplifications = pgTable(
   (table) => [
     index("idx_thought_simplifications_user_created").on(table.userId, table.createdAt),
     index("idx_ts_delivery").on(table.userId, table.sequenceNumber).where(sql`is_delivered = false`),
+    check(
+      "thought_simplifications_input_method_check",
+      sql`${table.inputMethod} IN ('text', 'voice', 'mixed')`,
+    ),
+    check(
+      "thought_simplifications_status_check",
+      sql`${table.status} IN ('pending', 'processing', 'completed', 'failed')`,
+    ),
   ],
 );
 
@@ -373,7 +380,7 @@ export const notableDates = pgTable(
       .notNull()
       .default(1)
       .references(() => tribes.id),
-    addedByUserId: integer("added_by_user_id").references(() => users.id),
+    createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
     name: varchar("name", { length: 255 }).notNull(),
     dateMonth: smallint("date_month").notNull(),
     dateDay: smallint("date_day").notNull(),
@@ -424,7 +431,7 @@ export const gandalfCategories = pgTable(
       .references(() => tribes.id),
     name: varchar("name", { length: 100 }).notNull(),
     emoji: varchar("emoji", { length: 10 }).default("📁"),
-    createdByUserId: integer("created_by_user_id").references(() => users.id),
+    createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
     isActive: boolean("is_active").default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
@@ -451,7 +458,7 @@ export const gandalfEntries = pgTable(
       .references(() => gandalfCategories.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 500 }).notNull(),
     price: numeric("price", { precision: 12, scale: 2 }),
-    addedByUserId: integer("added_by_user_id")
+    createdByUserId: integer("created_by_user_id")
       .notNull()
       .references(() => users.id),
     nextDate: timestamp("next_date", { withTimezone: true }),
@@ -466,8 +473,7 @@ export const gandalfEntries = pgTable(
   (table) => [
     index("idx_gandalf_entries_tribe_created").on(table.tribeId, table.createdAt),
     index("idx_gandalf_entries_category").on(table.categoryId),
-    index("idx_gandalf_entries_added_user").on(table.addedByUserId),
-    index("idx_gandalf_entries_user_created").on(table.addedByUserId, table.createdAt),
+    index("idx_gandalf_entries_user_created").on(table.createdByUserId, table.createdAt),
     index("idx_gandalf_entries_important").on(table.isImportant).where(sql`is_important = true`),
     index("idx_gandalf_entries_urgent").on(table.isUrgent).where(sql`is_urgent = true`),
     index("idx_gandalf_entries_visibility").on(table.visibility),
@@ -674,7 +680,7 @@ export const wishlistItems = pgTable(
     link: text("link"),
     priority: integer("priority").notNull().default(1),
     isReserved: boolean("is_reserved").default(false),
-    reservedByUserId: integer("reserved_by_user_id").references(() => users.id),
+    reservedByUserId: integer("reserved_by_user_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -906,7 +912,7 @@ export const bloggerSources = pgTable(
   (table) => [
     index("idx_blogger_sources_post").on(table.postId),
     check(
-      "blogger_sources_type_check",
+      "blogger_sources_source_type_check",
       sql`${table.sourceType} IN ('text', 'voice', 'link', 'forward', 'web_search')`,
     ),
   ],
@@ -998,7 +1004,7 @@ export const taskReminders = pgTable(
   (table) => [
     index("idx_task_reminders_pending").on(table.remindAt).where(sql`sent = false`),
     check(
-      "task_reminders_type_check",
+      "task_reminders_reminder_type_check",
       sql`${table.reminderType} IN ('day_before', '4h_before', '1h_before')`,
     ),
   ],
@@ -1051,7 +1057,7 @@ export const nutritionProducts = pgTable(
     name: varchar("name", { length: 200 }).notNull(),
     description: text("description"),
     unit: varchar("unit", { length: 4 }).notNull().default("g"),
-    caloriesPer100: numeric("calories_per_100", { precision: 8, scale: 2 }).notNull(),
+    caloriesPer100G: numeric("calories_per_100_g", { precision: 8, scale: 2 }).notNull(),
     proteinsPer100G: numeric("proteins_per_100_g", { precision: 8, scale: 2 }).notNull(),
     fatsPer100G: numeric("fats_per_100_g", { precision: 8, scale: 2 }).notNull(),
     carbsPer100G: numeric("carbs_per_100_g", { precision: 8, scale: 2 }).notNull(),
@@ -1066,7 +1072,7 @@ export const nutritionProducts = pgTable(
     check("nutrition_products_unit_check", sql`${table.unit} IN ('g', 'ml')`),
     check(
       "nutrition_products_calories_range",
-      sql`${table.caloriesPer100} >= 0 AND ${table.caloriesPer100} <= 900`,
+      sql`${table.caloriesPer100G} >= 0 AND ${table.caloriesPer100G} <= 900`,
     ),
     check(
       "nutrition_products_proteins_range",
@@ -1098,7 +1104,7 @@ export const supportReports = pgTable(
     appVersion: varchar("app_version", { length: 20 }),
     userMessage: text("user_message"),
     adminResponse: text("admin_response"),
-    resolvedBy: integer("resolved_by").references(() => users.id),
+    resolvedBy: integer("resolved_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },

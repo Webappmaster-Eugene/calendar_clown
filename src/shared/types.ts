@@ -968,12 +968,12 @@ export interface TranscribeHistoryResponse {
 
 // ─── Simplifier ──────────────────────────────────────────────
 
-export type SimplificationInputType = "text" | "voice" | "mixed";
+export type SimplificationInputMethod = "text" | "voice" | "mixed";
 export type SimplificationStatus = "pending" | "processing" | "completed" | "failed";
 
 export interface SimplificationDto {
   id: number;
-  inputType: SimplificationInputType;
+  inputMethod: SimplificationInputMethod;
   originalText: string;
   simplifiedText: string | null;
   status: SimplificationStatus;
@@ -1057,7 +1057,7 @@ export interface NutritionProductDto {
   name: string;
   description: string | null;
   unit: NutritionProductUnit;
-  caloriesPer100: number;
+  caloriesPer100G: number;
   proteinsPer100G: number;
   fatsPer100G: number;
   carbsPer100G: number;
@@ -1079,7 +1079,7 @@ export interface NutritionProductsListResponse {
 export interface ManualCalcItemInput {
   name: string;
   weightG: number;
-  caloriesPer100: number;
+  caloriesPer100G: number;
   proteinsPer100G: number;
   fatsPer100G: number;
   carbsPer100G: number;

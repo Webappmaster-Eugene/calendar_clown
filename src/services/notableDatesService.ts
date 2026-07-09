@@ -111,7 +111,7 @@ export async function createDate(
 
   const date = await addNotableDate({
     tribeId: dbUser.tribeId!,
-    addedByUserId: dbUser.id,
+    createdByUserId: dbUser.id,
     name: params.name,
     dateMonth: params.dateMonth,
     dateDay: params.dateDay,
@@ -222,7 +222,7 @@ export async function importDatesFromCsv(
 
       await addNotableDate({
         tribeId: dbUser.tribeId!,
-        addedByUserId: dbUser.id,
+        createdByUserId: dbUser.id,
         name,
         dateMonth: month,
         dateDay: day,

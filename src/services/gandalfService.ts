@@ -204,7 +204,7 @@ export async function addEntry(
     categoryId: params.categoryId,
     title: params.title,
     price: params.price ?? null,
-    addedByUserId: dbUser.id,
+    createdByUserId: dbUser.id,
     nextDate: params.nextDate ? new Date(params.nextDate) : null,
     additionalInfo: params.additionalInfo ?? null,
     inputMethod: params.inputMethod ?? "text",

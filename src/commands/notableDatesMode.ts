@@ -441,7 +441,7 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
   try {
     const date = await addNotableDate({
       tribeId: dbUser.tribeId!,
-      addedByUserId: dbUser.id,
+      createdByUserId: dbUser.id,
       name: parsed.name,
       dateMonth: parsed.dateMonth,
       dateDay: parsed.dateDay,
@@ -826,7 +826,7 @@ export async function handleNotableDatesDocument(ctx: Context): Promise<void> {
 
         await addNotableDate({
           tribeId: dbUser.tribeId!,
-          addedByUserId: dbUser.id,
+          createdByUserId: dbUser.id,
           name,
           dateMonth: month,
           dateDay: day,

@@ -20,7 +20,7 @@ import { createLogger } from "../utils/logger.js";
 import type {
   SimplificationDto,
   SimplifierHistoryResponse,
-  SimplificationInputType,
+  SimplificationInputMethod,
 } from "../shared/types.js";
 
 const log = createLogger("simplifier-service");
@@ -41,7 +41,7 @@ async function requireDbUser(telegramId: number) {
 
 function toDto(s: {
   id: number;
-  inputType: string;
+  inputMethod: string;
   originalText: string;
   simplifiedText: string | null;
   status: string;
@@ -51,7 +51,7 @@ function toDto(s: {
 }): SimplificationDto {
   return {
     id: s.id,
-    inputType: s.inputType as SimplificationInputType,
+    inputMethod: s.inputMethod as SimplificationInputMethod,
     originalText: s.originalText,
     simplifiedText: s.simplifiedText,
     status: s.status as SimplificationDto["status"],
@@ -106,7 +106,7 @@ export async function removeSimplification(
 export async function simplifyFromApi(
   telegramId: number,
   text: string,
-  inputType: SimplificationInputType = "text",
+  inputMethod: SimplificationInputMethod = "text",
 ): Promise<SimplificationDto> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -114,7 +114,7 @@ export async function simplifyFromApi(
   // API records: no chatId/statusMessageId, use Date.now() as sequence number
   const sequenceNumber = Date.now();
   const record = await createSimplification(
-    dbUser.id, inputType, text,
+    dbUser.id, inputMethod, text,
     sequenceNumber, null, null,
   );
 
