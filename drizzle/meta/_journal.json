@@ -29,6 +29,20 @@
       "when": 1783619662165,
       "tag": "0003_rename_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783689172800,
+      "tag": "0004_seed_default_tribe_and_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783692489264,
+      "tag": "0005_seed_reminder_sounds",
+      "breakpoints": true
     }
   ]
 }

@@ -23,11 +23,11 @@ const TEST_TELEGRAM_ID = 999999999;
 
 before(async () => {
   const dotenv = await import("dotenv");
-  dotenv.config();
-  dotenv.config({ path: ".env.local", override: true });
+  dotenv.config(); // base .env only — never load prod .env.local into integration tests
 
-  const { runDrizzleMigrations } = await import("../src/db/migrate.js");
-  await runDrizzleMigrations();
+  const { setupTestDb, seedFixtures } = await import("./helpers/testDb.js");
+  await setupTestDb();
+  await seedFixtures();
 
   const repo = await import("../src/expenses/repository.js");
   ensureUser = repo.ensureUser;
@@ -43,13 +43,9 @@ before(async () => {
 });
 
 after(async () => {
-  // Cleanup test user and their expenses
-  const { query } = await import("../src/db/connection.js");
-  await query("DELETE FROM expenses WHERE user_id IN (SELECT id FROM users WHERE telegram_id = $1)", [TEST_TELEGRAM_ID]);
-  await query("DELETE FROM users WHERE telegram_id = $1", [TEST_TELEGRAM_ID]);
-
-  const { closePool } = await import("../src/db/connection.js");
-  await closePool();
+  const { cleanupTestUser, closeTestDb } = await import("./helpers/testDb.js");
+  await cleanupTestUser(TEST_TELEGRAM_ID);
+  await closeTestDb();
 });
 
 describe("ensureUser", () => {

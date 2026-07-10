@@ -26,6 +26,9 @@ const TEST_TELEGRAM_ID = 999_999_991;
 // data while still being reachable through the service layer's date math.
 const TEST_YEAR = 2099;
 const TEST_MONTH = 6;
+// addExpense defaults created_at to NOW(); tests query the TEST_YEAR/MONTH window,
+// so expenses must be stamped inside it (a far-future month avoids colliding with real data).
+const IN_WINDOW = new Date(Date.UTC(TEST_YEAR, TEST_MONTH - 1, 15));
 
 let userId: number;
 let tribeId: number;
@@ -39,12 +42,11 @@ async function clearTestExpenses() {
 }
 
 before(async () => {
-  const dotenv = await import("dotenv");
-  dotenv.config();
-  dotenv.config({ path: ".env.local", override: true });
+  (await import("dotenv")).config(); // base .env only — never load prod .env.local into integration tests
 
-  const { runDrizzleMigrations } = await import("../src/db/migrate.js");
-  await runDrizzleMigrations();
+  const { setupTestDb, seedFixtures } = await import("./helpers/testDb.js");
+  await setupTestDb();
+  await seedFixtures();
 
   const repo = await import("../src/expenses/repository.js");
   ensureUser = repo.ensureUser;
@@ -94,10 +96,10 @@ describe("getAllExpensesForReport", () => {
     const dateTo = new Date(Date.UTC(TEST_YEAR, TEST_MONTH, 1));
 
     // Insert into both categories to verify cross-category ordering.
-    await addExpense(userId, tribeId, category2Id, 200, "вторая категория, ранее", "text");
-    await addExpense(userId, tribeId, category1Id, 100, "первая категория, ранее", "text");
-    await addExpense(userId, tribeId, category1Id, 150, "первая категория, позже", "text");
-    await addExpense(userId, tribeId, category2Id, 250, "вторая категория, позже", "text");
+    await addExpense(userId, tribeId, category2Id, 200, "вторая категория, ранее", "text", IN_WINDOW);
+    await addExpense(userId, tribeId, category1Id, 100, "первая категория, ранее", "text", IN_WINDOW);
+    await addExpense(userId, tribeId, category1Id, 150, "первая категория, позже", "text", IN_WINDOW);
+    await addExpense(userId, tribeId, category2Id, 250, "вторая категория, позже", "text", IN_WINDOW);
 
     // Backdate two of them inside the test month so the createdAt ordering is observable.
     await query(
@@ -146,9 +148,9 @@ describe("getAllExpensesForReport", () => {
     const dateTo = new Date(Date.UTC(TEST_YEAR, TEST_MONTH, 1));
 
     // Inside the window
-    await addExpense(userId, tribeId, category1Id, 100, "in-range", "text");
+    await addExpense(userId, tribeId, category1Id, 100, "in-range", "text", IN_WINDOW);
     // Force one of them to before the window
-    await addExpense(userId, tribeId, category1Id, 200, "out-of-range", "text");
+    await addExpense(userId, tribeId, category1Id, 200, "out-of-range", "text", IN_WINDOW);
     await query(
       "UPDATE expenses SET created_at = $1 WHERE user_id = $2 AND subcategory = $3",
       [new Date(Date.UTC(TEST_YEAR - 1, 0, 1)).toISOString(), userId, "out-of-range"]
@@ -172,7 +174,7 @@ describe("getAllExpensesForReport", () => {
     const dateFrom = new Date(Date.UTC(TEST_YEAR, TEST_MONTH - 1, 1));
     const dateTo = new Date(Date.UTC(TEST_YEAR, TEST_MONTH, 1));
 
-    await addExpense(userId, tribeId, category1Id, 1234.56, "money", "text");
+    await addExpense(userId, tribeId, category1Id, 1234.56, "money", "text", IN_WINDOW);
     const rows = await getAllExpensesForReport(tribeId, dateFrom, dateTo);
 
     assert.equal(rows.length, 1);
@@ -187,7 +189,7 @@ describe("getAllExpensesForReport", () => {
 
 describe("getMonthReport — includeDetails contract", () => {
   it("does NOT populate byCategoryDetailed when includeDetails is false (default)", async () => {
-    await addExpense(userId, tribeId, category1Id, 500, "x", "text");
+    await addExpense(userId, tribeId, category1Id, 500, "x", "text", IN_WINDOW);
 
     const report = await getMonthReport(TEST_TELEGRAM_ID, TEST_YEAR, TEST_MONTH);
     assert.equal(report.byCategoryDetailed, undefined);
@@ -198,9 +200,9 @@ describe("getMonthReport — includeDetails contract", () => {
 
   it("populates byCategoryDetailed only for categories that have expenses, in the same order as byCategory", async () => {
     // Two expenses in cat1, one in cat2.
-    await addExpense(userId, tribeId, category1Id, 100, "cat1-a", "text");
-    await addExpense(userId, tribeId, category1Id, 200, "cat1-b", "text");
-    await addExpense(userId, tribeId, category2Id, 300, "cat2", "text");
+    await addExpense(userId, tribeId, category1Id, 100, "cat1-a", "text", IN_WINDOW);
+    await addExpense(userId, tribeId, category1Id, 200, "cat1-b", "text", IN_WINDOW);
+    await addExpense(userId, tribeId, category2Id, 300, "cat2", "text", IN_WINDOW);
 
     const report = await getMonthReport(TEST_TELEGRAM_ID, TEST_YEAR, TEST_MONTH, true);
 
@@ -244,7 +246,7 @@ describe("getMonthReport — includeDetails contract", () => {
   });
 
   it("passing includeDetails=true does not change summary fields vs default call", async () => {
-    await addExpense(userId, tribeId, category1Id, 700, "consistency", "text");
+    await addExpense(userId, tribeId, category1Id, 700, "consistency", "text", IN_WINDOW);
 
     const [reportPlain, reportDetailed] = await Promise.all([
       getMonthReport(TEST_TELEGRAM_ID, TEST_YEAR, TEST_MONTH, false),
