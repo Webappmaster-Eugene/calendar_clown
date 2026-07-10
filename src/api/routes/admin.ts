@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   listUsers,
   getPendingUsers,
@@ -30,6 +32,18 @@ const VALID_SUMMARY_PERIODS = new Set<string>(["today", "yesterday", "week", "mo
 
 const app = new Hono<ApiEnv>();
 
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const wishlistIdParam = z.object({ wishlistId: z.coerce.number().int().positive() });
+// :entity is a free-form string key; only :id is numeric here.
+const entityIdParam = z.object({ id: z.coerce.number().int().positive() });
+
+const AddUserSchema = z.object({ telegramId: z.number() });
+const SetTribeSchema = z.object({ tribeId: z.number() });
+const CreateTribeSchema = z.object({ name: z.string(), monthlyLimit: z.number().optional() });
+const EditTribeSchema = z.object({ name: z.string().optional(), monthlyLimit: z.number().optional() });
+const SummaryAiSchema = z.object({ period: z.string() });
+const EditEntitySchema = z.record(z.string(), z.unknown());
+
 /** GET /api/admin/users — list users */
 app.get("/users", async (c) => {
   const initData = c.get("initData");
@@ -59,7 +73,7 @@ app.get("/users/pending", async (c) => {
 });
 
 /** POST /api/admin/users — add user by Telegram ID */
-app.post("/users", async (c) => {
+app.post("/users", zValidator("json", AddUserSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ telegramId: number }>();
@@ -79,7 +93,7 @@ app.post("/users", async (c) => {
 });
 
 /** PUT /api/admin/users/:id/approve — approve user */
-app.put("/users/:id/approve", async (c) => {
+app.put("/users/:id/approve", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const targetTelegramId = parseInt(c.req.param("id"), 10);
@@ -99,7 +113,7 @@ app.put("/users/:id/approve", async (c) => {
 });
 
 /** PUT /api/admin/users/:id/reject — reject user */
-app.put("/users/:id/reject", async (c) => {
+app.put("/users/:id/reject", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const targetTelegramId = parseInt(c.req.param("id"), 10);
@@ -119,7 +133,7 @@ app.put("/users/:id/reject", async (c) => {
 });
 
 /** DELETE /api/admin/users/:id — remove user */
-app.delete("/users/:id", async (c) => {
+app.delete("/users/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const targetTelegramId = parseInt(c.req.param("id"), 10);
@@ -139,7 +153,7 @@ app.delete("/users/:id", async (c) => {
 });
 
 /** PUT /api/admin/users/:id/tribe — set tribe */
-app.put("/users/:id/tribe", async (c) => {
+app.put("/users/:id/tribe", zValidator("param", idParam), zValidator("json", SetTribeSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const targetTelegramId = parseInt(c.req.param("id"), 10);
@@ -163,7 +177,7 @@ app.put("/users/:id/tribe", async (c) => {
 });
 
 /** DELETE /api/admin/users/:id/tribe — remove from tribe */
-app.delete("/users/:id/tribe", async (c) => {
+app.delete("/users/:id/tribe", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const targetTelegramId = parseInt(c.req.param("id"), 10);
@@ -197,7 +211,7 @@ app.get("/tribes", async (c) => {
 });
 
 /** POST /api/admin/tribes — create tribe */
-app.post("/tribes", async (c) => {
+app.post("/tribes", zValidator("json", CreateTribeSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ name: string; monthlyLimit?: number }>();
@@ -217,7 +231,7 @@ app.post("/tribes", async (c) => {
 });
 
 /** PUT /api/admin/tribes/:id — edit tribe */
-app.put("/tribes/:id", async (c) => {
+app.put("/tribes/:id", zValidator("param", idParam), zValidator("json", EditTribeSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const tribeId = parseInt(c.req.param("id"), 10);
@@ -238,7 +252,7 @@ app.put("/tribes/:id", async (c) => {
 });
 
 /** DELETE /api/admin/tribes/:id — delete tribe */
-app.delete("/tribes/:id", async (c) => {
+app.delete("/tribes/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const tribeId = parseInt(c.req.param("id"), 10);
@@ -307,7 +321,7 @@ app.get("/summary", async (c) => {
 });
 
 /** POST /api/admin/summary/ai — generate AI summary for a period */
-app.post("/summary/ai", async (c) => {
+app.post("/summary/ai", zValidator("json", SummaryAiSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ period: SummaryPeriod }>();
@@ -349,7 +363,7 @@ app.get("/data/entities", async (c) => {
 });
 
 /** GET /api/admin/data/wishlists/:wishlistId/items — drill-down into wishlist items */
-app.get("/data/wishlists/:wishlistId/items", async (c) => {
+app.get("/data/wishlists/:wishlistId/items", zValidator("param", wishlistIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const wishlistId = parseInt(c.req.param("wishlistId"), 10);
@@ -391,7 +405,7 @@ app.get("/data/:entity", async (c) => {
 });
 
 /** PUT /api/admin/data/:entity/:id — edit single entity */
-app.put("/data/:entity/:id", async (c) => {
+app.put("/data/:entity/:id", zValidator("param", entityIdParam), zValidator("json", EditEntitySchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const entity = c.req.param("entity");
@@ -415,7 +429,7 @@ app.put("/data/:entity/:id", async (c) => {
 });
 
 /** DELETE /api/admin/data/:entity/:id — delete single entity */
-app.delete("/data/:entity/:id", async (c) => {
+app.delete("/data/:entity/:id", zValidator("param", entityIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const entity = c.req.param("entity");

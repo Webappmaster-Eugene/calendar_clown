@@ -1,7 +1,6 @@
--- Phase 4 (part 1): normalize all constraint names to the Drizzle convention.
--- Guarded with IF EXISTS so it renames the historical _fkey/_key names on the EXISTING prod DB,
--- yet is a no-op on a fresh DB (built from 0000_baseline, which already uses Drizzle names).
--- Pure metadata — no data change.
+-- Normalize constraint names to the Drizzle convention. Guarded with IF EXISTS so it
+-- renames the historical _fkey/_key names on an existing DB, yet no-ops on a fresh DB
+-- (built from 0000_baseline, which already uses Drizzle names). Metadata only.
 
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname='action_logs_user_id_fkey' AND conrelid='"action_logs"'::regclass) THEN

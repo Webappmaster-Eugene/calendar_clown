@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getUserGoalSets,
   createNewGoalSet,
@@ -18,6 +20,35 @@ import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schemas (json bodies + numeric :id params). Handlers keep their own
+//    downstream checks (existence/access). Numeric IDs live under different
+//    param keys (:id, :goalId, :userId), so we have one schema per key name.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const goalIdParam = z.object({ goalId: z.coerce.number().int().positive() });
+const viewerParam = z.object({
+  id: z.coerce.number().int().positive(),
+  userId: z.coerce.number().int().positive(),
+});
+const createGoalSetBody = z.object({
+  name: z.string(),
+  period: z.string(),
+  emoji: z.string().optional(),
+});
+const updateGoalSetBody = z.object({
+  name: z.string().optional(),
+  emoji: z.string().optional(),
+  visibility: z.enum(["public", "private"]).optional(),
+});
+const addViewerBody = z.object({
+  userId: z.number(),
+});
+const addGoalBody = z.object({
+  text: z.string(),
+});
+const goalTextBody = z.object({
+  text: z.string(),
+});
 
 /** GET /api/goals — list goal sets */
 app.get("/", async (c) => {
@@ -48,7 +79,7 @@ app.get("/shared", async (c) => {
 });
 
 /** POST /api/goals — create goal set */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", createGoalSetBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ name: string; period: string; emoji?: string }>();
@@ -73,7 +104,7 @@ app.post("/", async (c) => {
 });
 
 /** GET /api/goals/:id — get goal set with goals */
-app.get("/:id", async (c) => {
+app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalSetId = parseInt(c.req.param("id"), 10);
@@ -95,7 +126,7 @@ app.get("/:id", async (c) => {
 });
 
 /** PUT /api/goals/:id — update goal set (name, emoji, visibility) */
-app.put("/:id", async (c) => {
+app.put("/:id", zValidator("param", idParam), zValidator("json", updateGoalSetBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalSetId = parseInt(c.req.param("id"), 10);
@@ -120,7 +151,7 @@ app.put("/:id", async (c) => {
 });
 
 /** GET /api/goals/:id/viewers — list viewers */
-app.get("/:id/viewers", async (c) => {
+app.get("/:id/viewers", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalSetId = parseInt(c.req.param("id"), 10);
@@ -139,7 +170,7 @@ app.get("/:id/viewers", async (c) => {
 });
 
 /** POST /api/goals/:id/viewers — add viewer */
-app.post("/:id/viewers", async (c) => {
+app.post("/:id/viewers", zValidator("param", idParam), zValidator("json", addViewerBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalSetId = parseInt(c.req.param("id"), 10);
@@ -160,7 +191,7 @@ app.post("/:id/viewers", async (c) => {
 });
 
 /** DELETE /api/goals/:id/viewers/:userId — remove viewer */
-app.delete("/:id/viewers/:userId", async (c) => {
+app.delete("/:id/viewers/:userId", zValidator("param", viewerParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalSetId = parseInt(c.req.param("id"), 10);
@@ -181,7 +212,7 @@ app.delete("/:id/viewers/:userId", async (c) => {
 });
 
 /** POST /api/goals/:id/goals — add goal to set */
-app.post("/:id/goals", async (c) => {
+app.post("/:id/goals", zValidator("param", idParam), zValidator("json", addGoalBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalSetId = parseInt(c.req.param("id"), 10);
@@ -205,7 +236,7 @@ app.post("/:id/goals", async (c) => {
 });
 
 /** PUT /api/goals/goals/:goalId — update goal text */
-app.put("/goals/:goalId", async (c) => {
+app.put("/goals/:goalId", zValidator("param", goalIdParam), zValidator("json", goalTextBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalId = parseInt(c.req.param("goalId"), 10);
@@ -232,7 +263,7 @@ app.put("/goals/:goalId", async (c) => {
 });
 
 /** PUT /api/goals/goals/:goalId/toggle — toggle goal completion */
-app.put("/goals/:goalId/toggle", async (c) => {
+app.put("/goals/:goalId/toggle", zValidator("param", goalIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalId = parseInt(c.req.param("goalId"), 10);
@@ -255,7 +286,7 @@ app.put("/goals/:goalId/toggle", async (c) => {
 });
 
 /** DELETE /api/goals/goals/:goalId — delete individual goal */
-app.delete("/goals/:goalId", async (c) => {
+app.delete("/goals/:goalId", zValidator("param", goalIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalId = parseInt(c.req.param("goalId"), 10);
@@ -275,7 +306,7 @@ app.delete("/goals/:goalId", async (c) => {
 });
 
 /** DELETE /api/goals/:id — delete goal set */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const goalSetId = parseInt(c.req.param("id"), 10);

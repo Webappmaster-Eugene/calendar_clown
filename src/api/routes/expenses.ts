@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getMonthReport,
   getYearReport,
@@ -36,6 +38,41 @@ import { createLogger } from "../../utils/logger.js";
 const log = createLogger("api-expenses");
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schemas (json bodies + :id params). Query params keep the handlers'
+//    own defensive parsing (defaults + caps). Schemas mirror what handlers accept.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const addExpenseBody = z.object({
+  text: z.string().optional(),
+  categoryId: z.number().int().positive().optional(),
+  amount: z.number().positive().optional(),
+  subcategory: z.string().optional(),
+  date: z.string().optional(),
+});
+const setLimitBody = z.object({
+  year: z.number().int(),
+  month: z.number().int().min(1).max(12),
+  amount: z.number().positive(),
+  applyToFuture: z.boolean(),
+});
+const updateExpenseBody = z.object({
+  amount: z.number().positive().optional(),
+  categoryId: z.number().int().positive().optional(),
+  subcategory: z.string().nullable().optional(),
+  date: z.string().optional(),
+});
+const createCategoryBody = z.object({
+  name: z.string().min(1),
+  emoji: z.string().optional(),
+  aliases: z.array(z.string()).optional(),
+  description: z.string().nullable().optional(),
+});
+const updateCategoryBody = z.object({
+  name: z.string().min(1).optional(),
+  emoji: z.string().optional(),
+  aliases: z.array(z.string()).optional(),
+  description: z.string().nullable().optional(),
+});
 
 /** Build a Content-Disposition value safe for Node's HTTP layer.
  *
@@ -76,7 +113,7 @@ app.get("/", async (c) => {
 });
 
 /** POST /api/expenses — add expense (text or structured); optional `date` for backdated entries */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", addExpenseBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{
@@ -200,7 +237,7 @@ app.get("/limit", async (c) => {
 });
 
 /** PUT /api/expenses/limit — set monthly limit (current month only OR this month + future) */
-app.put("/limit", async (c) => {
+app.put("/limit", zValidator("json", setLimitBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
 
@@ -304,7 +341,7 @@ app.post("/excel/send", async (c) => {
 });
 
 /** DELETE /api/expenses/:id — undo expense */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const expenseId = parseInt(c.req.param("id"), 10);
@@ -324,7 +361,7 @@ app.delete("/:id", async (c) => {
 });
 
 /** PUT /api/expenses/:id — edit expense (amount, category, subcategory, date) */
-app.put("/:id", async (c) => {
+app.put("/:id", zValidator("param", idParam), zValidator("json", updateExpenseBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const expenseId = parseInt(c.req.param("id"), 10);
@@ -526,7 +563,7 @@ function categoryErrorResponse(err: unknown): { msg: string; status: ContentfulS
 }
 
 /** POST /api/expenses/categories — create category (admin) */
-app.post("/categories", async (c) => {
+app.post("/categories", zValidator("json", createCategoryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   try {
@@ -541,7 +578,7 @@ app.post("/categories", async (c) => {
 });
 
 /** PUT /api/expenses/categories/:id — update category (admin) */
-app.put("/categories/:id", async (c) => {
+app.put("/categories/:id", zValidator("param", idParam), zValidator("json", updateCategoryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const categoryId = parseInt(c.req.param("id"), 10);
@@ -558,7 +595,7 @@ app.put("/categories/:id", async (c) => {
 });
 
 /** DELETE /api/expenses/categories/:id — deactivate category (admin) */
-app.delete("/categories/:id", async (c) => {
+app.delete("/categories/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const categoryId = parseInt(c.req.param("id"), 10);

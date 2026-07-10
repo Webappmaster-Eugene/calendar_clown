@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import { sendBroadcast } from "../../services/broadcastService.js";
 import { getBotSendMessage } from "../../botInstance.js";
 import { logApiAction } from "../../logging/actionLogger.js";
@@ -6,8 +8,11 @@ import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
 
+// ── Input schema. Emptiness/trim is enforced by the handler (400).
+const broadcastBody = z.object({ text: z.string() });
+
 /** POST /api/broadcast — send broadcast */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", broadcastBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ text: string }>();

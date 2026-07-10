@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   createEventFromText,
   createEventFromIntent,
@@ -15,6 +17,28 @@ import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schemas (json bodies only). Event `:id` params are Google Calendar
+//    string IDs (not numeric), so no numeric param validation applies here.
+//    Schemas mirror CreateEventRequest / handler-accepted shapes; both `text`
+//    and `intent` are optional (handler branches on whichever is present).
+const intentEventSchema = z.object({
+  title: z.string(),
+  startISO: z.string(),
+  endISO: z.string(),
+  recurrence: z.array(z.string()).optional(),
+});
+const createEventBody = z.object({
+  text: z.string().optional(),
+  intent: z
+    .object({
+      events: z.array(intentEventSchema),
+    })
+    .optional(),
+});
+const searchAndCancelBody = z.object({
+  query: z.string(),
+});
 
 /** GET /api/calendar/today */
 app.get("/today", async (c) => {
@@ -49,7 +73,7 @@ app.get("/week", async (c) => {
 });
 
 /** POST /api/calendar/events — create event from text or pre-extracted intent */
-app.post("/events", async (c) => {
+app.post("/events", zValidator("json", createEventBody), async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
   const telegramId = initData.user.id;
@@ -135,7 +159,7 @@ app.delete("/recurring/:recurringEventId", async (c) => {
 });
 
 /** POST /api/calendar/search-and-cancel — search by query, cancel if single match */
-app.post("/search-and-cancel", async (c) => {
+app.post("/search-and-cancel", zValidator("json", searchAndCancelBody), async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
   const telegramId = initData.user.id;

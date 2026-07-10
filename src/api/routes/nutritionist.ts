@@ -2,6 +2,8 @@
  * Nutritionist API routes for Mini App.
  */
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getHistory,
   getAnalysis,
@@ -20,6 +22,24 @@ import productsRoutes from "./nutritionist-products.js";
 const log = createLogger("nutritionist-route");
 
 const app = new Hono<ApiEnv>();
+
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+
+const ManualCalcItemSchema = z.object({
+  name: z.string(),
+  weightG: z.number(),
+  caloriesPer100G: z.number(),
+  proteinsPer100G: z.number(),
+  fatsPer100G: z.number(),
+  carbsPer100G: z.number(),
+  catalogProductId: z.number().optional(),
+});
+
+const ManualCalcSchema = z.object({
+  mealName: z.string().optional(),
+  items: z.array(ManualCalcItemSchema),
+  servings: z.number().optional(),
+});
 
 // Mount the product catalog sub-router FIRST so its paths win over the
 // generic /:id analysis routes below.
@@ -58,7 +78,7 @@ app.get("/daily", async (c) => {
 });
 
 /** POST /api/nutritionist/manual — save manual KBZHU calculation */
-app.post("/manual", async (c) => {
+app.post("/manual", zValidator("json", ManualCalcSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
 
@@ -78,7 +98,7 @@ app.post("/manual", async (c) => {
 });
 
 /** GET /api/nutritionist/:id — single analysis */
-app.get("/:id", async (c) => {
+app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const id = parseInt(c.req.param("id"), 10);
@@ -143,7 +163,7 @@ app.post("/analyze", async (c) => {
 });
 
 /** DELETE /api/nutritionist/:id — delete analysis */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const id = parseInt(c.req.param("id"), 10);

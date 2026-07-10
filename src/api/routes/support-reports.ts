@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import { eq, desc } from "drizzle-orm";
 import { db } from "../../db/drizzle.js";
 import { supportReports, users } from "../../db/schema.js";
@@ -10,10 +12,21 @@ import type { SupportReportDto, CreateSupportReportRequest } from "../../shared/
 
 const app = new Hono<ApiEnv>();
 
+// ── Input schemas (json bodies + :id params). Emptiness checks stay in handlers.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const createReportBody = z.object({
+  diagnostics: z.string(),
+  platform: z.string().optional(),
+  appVersion: z.string().optional(),
+  userMessage: z.string().optional(),
+  category: z.string().optional(),
+});
+const respondBody = z.object({ response: z.string() });
+
 // ─── User: submit report ─────────────────────────────────────
 
 /** POST /api/support-reports — user submits a report */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", createReportBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<CreateSupportReportRequest>();
@@ -145,7 +158,7 @@ app.get("/admin", async (c) => {
 // ─── Admin: respond to report ────────────────────────────────
 
 /** PUT /api/support-reports/admin/:id/respond — admin sends response */
-app.put("/admin/:id/respond", async (c) => {
+app.put("/admin/:id/respond", zValidator("param", idParam), zValidator("json", respondBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   if (!isBootstrapAdmin(telegramId)) {
@@ -208,7 +221,7 @@ app.put("/admin/:id/respond", async (c) => {
 // ─── Admin: resolve without response ─────────────────────────
 
 /** PUT /api/support-reports/admin/:id/resolve — mark as resolved */
-app.put("/admin/:id/resolve", async (c) => {
+app.put("/admin/:id/resolve", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   if (!isBootstrapAdmin(telegramId)) {

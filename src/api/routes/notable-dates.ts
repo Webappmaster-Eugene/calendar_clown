@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getDatesPaginated,
   getUpcoming,
@@ -13,6 +15,29 @@ import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schemas (json bodies + :id params). Query params keep the handlers'
+//    own defensive parsing. Schemas mirror what handlers accept.
+//    dateMonth/dateDay are smallint calendar fields (1–12 / 1–31).
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const createDateBody = z.object({
+  name: z.string().min(1),
+  dateMonth: z.number().int().min(1).max(12),
+  dateDay: z.number().int().min(1).max(31),
+  eventType: z.string().optional(),
+  description: z.string().optional(),
+  emoji: z.string().optional(),
+  isPriority: z.boolean().optional(),
+});
+const updateDateBody = z.object({
+  name: z.string().min(1).optional(),
+  dateMonth: z.number().int().min(1).max(12).optional(),
+  dateDay: z.number().int().min(1).max(31).optional(),
+  description: z.string().nullable().optional(),
+  eventType: z.string().optional(),
+  emoji: z.string().optional(),
+  isPriority: z.boolean().optional(),
+});
 
 /** GET /api/notable-dates — list dates (paginated, with optional filter) */
 app.get("/", async (c) => {
@@ -56,7 +81,7 @@ app.get("/upcoming", async (c) => {
 });
 
 /** POST /api/notable-dates — create date */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", createDateBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{
@@ -92,7 +117,7 @@ app.post("/", async (c) => {
 });
 
 /** PUT /api/notable-dates/:id/toggle — toggle priority */
-app.put("/:id/toggle", async (c) => {
+app.put("/:id/toggle", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const dateId = parseInt(c.req.param("id"), 10);
@@ -115,7 +140,7 @@ app.put("/:id/toggle", async (c) => {
 });
 
 /** PUT /api/notable-dates/:id — update date */
-app.put("/:id", async (c) => {
+app.put("/:id", zValidator("param", idParam), zValidator("json", updateDateBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const dateId = parseInt(c.req.param("id"), 10);
@@ -148,7 +173,7 @@ app.put("/:id", async (c) => {
 });
 
 /** DELETE /api/notable-dates/:id — delete date */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const dateId = parseInt(c.req.param("id"), 10);

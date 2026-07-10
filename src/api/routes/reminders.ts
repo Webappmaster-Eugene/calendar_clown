@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -20,6 +22,27 @@ import { logApiAction } from "../../logging/actionLogger.js";
 import type { ReminderScheduleDto } from "../../shared/types.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schemas (json bodies + :id params). Query params keep the handlers'
+//    own defensive parsing. Schemas mirror what handlers accept.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const scheduleSchema = z.object({
+  times: z.array(z.string()),
+  weekdays: z.array(z.number()),
+  endDate: z.string().nullable().optional(),
+});
+const createReminderBody = z.object({
+  text: z.string(),
+  schedule: scheduleSchema,
+  soundId: z.number().optional(),
+  soundEnabled: z.boolean().optional(),
+});
+const updateReminderBody = z.object({
+  text: z.string().optional(),
+  schedule: scheduleSchema.optional(),
+  soundId: z.number().nullable().optional(),
+  soundEnabled: z.boolean().optional(),
+});
 
 /** GET /api/reminders/sounds — available sounds for selection */
 app.get("/sounds", async (c) => {
@@ -105,7 +128,7 @@ app.get("/tribe", async (c) => {
 });
 
 /** POST /api/reminders — create reminder */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", createReminderBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{
@@ -140,7 +163,7 @@ app.post("/", async (c) => {
 });
 
 /** PUT /api/reminders/:id/toggle — toggle active */
-app.put("/:id/toggle", async (c) => {
+app.put("/:id/toggle", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const reminderId = parseInt(c.req.param("id"), 10);
@@ -163,7 +186,7 @@ app.put("/:id/toggle", async (c) => {
 });
 
 /** PUT /api/reminders/:id — update reminder (text + schedule + sound) */
-app.put("/:id", async (c) => {
+app.put("/:id", zValidator("param", idParam), zValidator("json", updateReminderBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const reminderId = parseInt(c.req.param("id"), 10);
@@ -202,7 +225,7 @@ app.put("/:id", async (c) => {
 });
 
 /** POST /api/reminders/:id/subscribe — subscribe to reminder */
-app.post("/:id/subscribe", async (c) => {
+app.post("/:id/subscribe", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const reminderId = parseInt(c.req.param("id"), 10);
@@ -221,7 +244,7 @@ app.post("/:id/subscribe", async (c) => {
 });
 
 /** DELETE /api/reminders/:id/subscribe — unsubscribe from reminder */
-app.delete("/:id/subscribe", async (c) => {
+app.delete("/:id/subscribe", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const reminderId = parseInt(c.req.param("id"), 10);
@@ -240,7 +263,7 @@ app.delete("/:id/subscribe", async (c) => {
 });
 
 /** DELETE /api/reminders/:id — delete reminder */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const reminderId = parseInt(c.req.param("id"), 10);

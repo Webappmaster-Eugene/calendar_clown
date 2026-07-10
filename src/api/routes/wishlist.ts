@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getUserWishlists,
   getTribeWishlists,
@@ -15,6 +17,27 @@ import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schemas (json bodies + :id/:itemId params). Query params keep the
+//    handlers' own defensive parsing. Schemas mirror what handlers accept.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const itemIdParam = z.object({ itemId: z.coerce.number().int().positive() });
+const createWishlistBody = z.object({
+  name: z.string(),
+  emoji: z.string().optional(),
+});
+const addItemBody = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  link: z.string().optional(),
+  priority: z.number().optional(),
+});
+const editItemBody = z.object({
+  title: z.string().optional(),
+  description: z.string().nullable().optional(),
+  link: z.string().nullable().optional(),
+  priority: z.number().optional(),
+});
 
 /** GET /api/wishlist — list wishlists (own + tribe) */
 app.get("/", async (c) => {
@@ -44,7 +67,7 @@ app.get("/", async (c) => {
 });
 
 /** DELETE /api/wishlist/:id — delete wishlist */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const wishlistId = parseInt(c.req.param("id"), 10);
@@ -64,7 +87,7 @@ app.delete("/:id", async (c) => {
 });
 
 /** POST /api/wishlist — create wishlist */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", createWishlistBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ name: string; emoji?: string }>();
@@ -84,7 +107,7 @@ app.post("/", async (c) => {
 });
 
 /** GET /api/wishlist/:id/items — list items */
-app.get("/:id/items", async (c) => {
+app.get("/:id/items", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const wishlistId = parseInt(c.req.param("id"), 10);
@@ -103,7 +126,7 @@ app.get("/:id/items", async (c) => {
 });
 
 /** POST /api/wishlist/:id/items — add item */
-app.post("/:id/items", async (c) => {
+app.post("/:id/items", zValidator("param", idParam), zValidator("json", addItemBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const wishlistId = parseInt(c.req.param("id"), 10);
@@ -137,7 +160,7 @@ app.post("/:id/items", async (c) => {
 });
 
 /** PUT /api/wishlist/items/:itemId — edit item */
-app.put("/items/:itemId", async (c) => {
+app.put("/items/:itemId", zValidator("param", itemIdParam), zValidator("json", editItemBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const itemId = parseInt(c.req.param("itemId"), 10);
@@ -175,7 +198,7 @@ app.put("/items/:itemId", async (c) => {
 });
 
 /** PUT /api/wishlist/items/:itemId/reserve — toggle reserve */
-app.put("/items/:itemId/reserve", async (c) => {
+app.put("/items/:itemId/reserve", zValidator("param", itemIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const itemId = parseInt(c.req.param("itemId"), 10);
@@ -201,7 +224,7 @@ app.put("/items/:itemId/reserve", async (c) => {
 });
 
 /** DELETE /api/wishlist/items/:itemId — delete item */
-app.delete("/items/:itemId", async (c) => {
+app.delete("/items/:itemId", zValidator("param", itemIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const itemId = parseInt(c.req.param("itemId"), 10);

@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getUserRubrics,
   createNewRubric,
@@ -13,6 +15,26 @@ import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schemas (json bodies + path id params). Query params keep the
+//    handlers' own defensive parsing. Schemas mirror what handlers accept.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const channelIdParam = z.object({ channelId: z.coerce.number().int().positive() });
+const createRubricBody = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  emoji: z.string().optional(),
+  keywords: z.array(z.string()).optional(),
+});
+const editRubricBody = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  emoji: z.string().nullable().optional(),
+  keywords: z.array(z.string()).optional(),
+});
+const addChannelBody = z.object({
+  channelUsername: z.string().min(1),
+});
 
 /** GET /api/digest/rubrics — list rubrics */
 app.get("/rubrics", async (c) => {
@@ -29,7 +51,7 @@ app.get("/rubrics", async (c) => {
 });
 
 /** POST /api/digest/rubrics — create rubric */
-app.post("/rubrics", async (c) => {
+app.post("/rubrics", zValidator("json", createRubricBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{
@@ -59,7 +81,7 @@ app.post("/rubrics", async (c) => {
 });
 
 /** PUT /api/digest/rubrics/:id — edit rubric */
-app.put("/rubrics/:id", async (c) => {
+app.put("/rubrics/:id", zValidator("param", idParam), zValidator("json", editRubricBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const rubricId = parseInt(c.req.param("id"), 10);
@@ -107,7 +129,7 @@ app.put("/rubrics/:id", async (c) => {
 });
 
 /** GET /api/digest/rubrics/:id/channels — list channels */
-app.get("/rubrics/:id/channels", async (c) => {
+app.get("/rubrics/:id/channels", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const rubricId = parseInt(c.req.param("id"), 10);
@@ -126,7 +148,7 @@ app.get("/rubrics/:id/channels", async (c) => {
 });
 
 /** POST /api/digest/rubrics/:id/channels — add channel */
-app.post("/rubrics/:id/channels", async (c) => {
+app.post("/rubrics/:id/channels", zValidator("param", idParam), zValidator("json", addChannelBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const rubricId = parseInt(c.req.param("id"), 10);
@@ -150,7 +172,7 @@ app.post("/rubrics/:id/channels", async (c) => {
 });
 
 /** DELETE /api/digest/channels/:channelId — remove channel */
-app.delete("/channels/:channelId", async (c) => {
+app.delete("/channels/:channelId", zValidator("param", channelIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const channelId = parseInt(c.req.param("channelId"), 10);
@@ -177,7 +199,7 @@ app.delete("/channels/:channelId", async (c) => {
 });
 
 /** DELETE /api/digest/rubrics/:id — delete rubric */
-app.delete("/rubrics/:id", async (c) => {
+app.delete("/rubrics/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const rubricId = parseInt(c.req.param("id"), 10);
@@ -197,7 +219,7 @@ app.delete("/rubrics/:id", async (c) => {
 });
 
 /** PUT /api/digest/rubrics/:id/toggle — toggle rubric active/inactive */
-app.put("/rubrics/:id/toggle", async (c) => {
+app.put("/rubrics/:id/toggle", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const rubricId = parseInt(c.req.param("id"), 10);

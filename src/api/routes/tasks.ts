@@ -4,6 +4,8 @@
  */
 
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getUserWorks,
   getWorkWithTasks,
@@ -34,6 +36,26 @@ function parseMskDeadline(deadline: string): Date {
 
 const app = new Hono<ApiEnv>();
 
+// ── Input schemas (json bodies + numeric :id/:itemId params). Deadline strings
+//    stay lenient (z.string()) — parseMskDeadline still validates the format in
+//    the handler. IDs use distinct param keys, so one schema per key name.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const itemIdParam = z.object({ itemId: z.coerce.number().int().positive() });
+const createWorkBody = z.object({
+  name: z.string(),
+  emoji: z.string().optional(),
+});
+const addItemBody = z.object({
+  text: z.string(),
+  deadline: z.string(),
+});
+const deadlineBody = z.object({
+  deadline: z.string(),
+});
+const itemTextBody = z.object({
+  text: z.string(),
+});
+
 /** GET /api/tasks — list user's works */
 app.get("/", async (c) => {
   const initData = c.get("initData");
@@ -49,7 +71,7 @@ app.get("/", async (c) => {
 });
 
 /** POST /api/tasks — create work */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", createWorkBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ name: string; emoji?: string }>();
@@ -68,7 +90,7 @@ app.post("/", async (c) => {
 });
 
 /** GET /api/tasks/:id — work with tasks */
-app.get("/:id", async (c) => {
+app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const workId = parseInt(c.req.param("id"), 10);
@@ -90,7 +112,7 @@ app.get("/:id", async (c) => {
 });
 
 /** DELETE /api/tasks/:id — delete work */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const workId = parseInt(c.req.param("id"), 10);
@@ -112,7 +134,7 @@ app.delete("/:id", async (c) => {
 });
 
 /** PUT /api/tasks/:id/archive — archive work */
-app.put("/:id/archive", async (c) => {
+app.put("/:id/archive", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const workId = parseInt(c.req.param("id"), 10);
@@ -134,7 +156,7 @@ app.put("/:id/archive", async (c) => {
 });
 
 /** POST /api/tasks/:id/items — add task to work */
-app.post("/:id/items", async (c) => {
+app.post("/:id/items", zValidator("param", idParam), zValidator("json", addItemBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const workId = parseInt(c.req.param("id"), 10);
@@ -166,7 +188,7 @@ app.post("/:id/items", async (c) => {
 });
 
 /** GET /api/tasks/:id/history — completed tasks */
-app.get("/:id/history", async (c) => {
+app.get("/:id/history", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const workId = parseInt(c.req.param("id"), 10);
@@ -185,7 +207,7 @@ app.get("/:id/history", async (c) => {
 });
 
 /** PUT /api/tasks/items/:itemId/toggle — toggle completion */
-app.put("/items/:itemId/toggle", async (c) => {
+app.put("/items/:itemId/toggle", zValidator("param", itemIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const itemId = parseInt(c.req.param("itemId"), 10);
@@ -208,7 +230,7 @@ app.put("/items/:itemId/toggle", async (c) => {
 });
 
 /** PUT /api/tasks/items/:itemId/deadline — update deadline */
-app.put("/items/:itemId/deadline", async (c) => {
+app.put("/items/:itemId/deadline", zValidator("param", itemIdParam), zValidator("json", deadlineBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const itemId = parseInt(c.req.param("itemId"), 10);
@@ -239,7 +261,7 @@ app.put("/items/:itemId/deadline", async (c) => {
 });
 
 /** PUT /api/tasks/items/:itemId/text — update text */
-app.put("/items/:itemId/text", async (c) => {
+app.put("/items/:itemId/text", zValidator("param", itemIdParam), zValidator("json", itemTextBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const itemId = parseInt(c.req.param("itemId"), 10);
@@ -266,7 +288,7 @@ app.put("/items/:itemId/text", async (c) => {
 });
 
 /** DELETE /api/tasks/items/:itemId — delete task */
-app.delete("/items/:itemId", async (c) => {
+app.delete("/items/:itemId", zValidator("param", itemIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const itemId = parseInt(c.req.param("itemId"), 10);

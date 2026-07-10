@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getHistory,
   getTranscription,
@@ -11,6 +13,9 @@ import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schema. Only :id params (no JSON bodies on this router).
+const idParam = z.object({ id: z.coerce.number().int().positive() });
 
 /** GET /api/transcribe — transcription history */
 app.get("/", async (c) => {
@@ -69,7 +74,7 @@ app.delete("/queue", async (c) => {
 });
 
 /** GET /api/transcribe/:id — single transcription */
-app.get("/:id", async (c) => {
+app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const transcriptionId = parseInt(c.req.param("id"), 10);
@@ -91,7 +96,7 @@ app.get("/:id", async (c) => {
 });
 
 /** DELETE /api/transcribe/:id — delete transcription */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const transcriptionId = parseInt(c.req.param("id"), 10);

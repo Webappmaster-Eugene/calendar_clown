@@ -8,7 +8,7 @@ import { shutdownTelemetry } from "./telemetry.js";
 
 import { createBot } from "./bot.js";
 import { setBotSendMessage, setBotSendDocument } from "./botInstance.js";
-import { startOAuthServer } from "./oauthServer.js";
+import { startOAuthServer, setTelegramWebhook } from "./oauthServer.js";
 import { runDrizzleMigrations } from "./db/migrate.js";
 import { query, closePool, setDatabaseAvailable, isDatabaseAvailable } from "./db/connection.js";
 import { ensureUser } from "./expenses/repository.js";
@@ -28,6 +28,7 @@ import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
 import { startRemindersScheduler, stopRemindersScheduler } from "./reminders/scheduler.js";
 import { startTasksScheduler, stopTasksScheduler } from "./tasks/scheduler.js";
+import { startOsintRetention, stopOsintRetention } from "./osint/retentionScheduler.js";
 import { initProxyAgent, initOpenRouterAgent } from "./utils/proxyAgent.js";
 import { startPollWatchdog, stopPollWatchdog } from "./health/pollWatchdog.js";
 import { clearAllBatches } from "./chat/messageBatcher.js";
@@ -62,8 +63,9 @@ async function main(): Promise<void> {
     }
 
     if (dbConnected) {
-      // Docker restarts the process, so a broken migration surfaces as a visible
-      // crash-loop rather than a hidden degradation that swallows schema drift.
+      // A migration failure is fatal (process.exit below): Docker restarts the
+      // process, so a schema problem surfaces as a visible crash-loop instead of a
+      // silently half-migrated bot.
       try {
         await runDrizzleMigrations();
         log.info("Database migrations completed.");
@@ -192,6 +194,8 @@ async function main(): Promise<void> {
 
     startTasksScheduler(bot);
     log.info("Tasks scheduler enabled.");
+
+    startOsintRetention();
   } else if (process.env.DATABASE_URL) {
     log.warn("DATABASE_URL is set but DB is unavailable — schedulers not started.");
   }
@@ -269,6 +273,7 @@ async function main(): Promise<void> {
     stopGoalsScheduler();
     stopRemindersScheduler();
     stopTasksScheduler();
+    stopOsintRetention();
     stopWorkerHealthMonitor();
     stopStaleJobCleaner();
     stopWebTokenCleanup();
@@ -280,6 +285,28 @@ async function main(): Promise<void> {
 
   process.once("SIGINT", () => shutdown("SIGINT"));
   process.once("SIGTERM", () => shutdown("SIGTERM"));
+
+  // Webhook mode (optional): Telegram POSTs updates to <domain><path>, served by
+  // the existing HTTP server. Unlike long polling (one poller per token), this lets
+  // the app run behind a load balancer as multiple instances. Long polling is the
+  // default when TELEGRAM_WEBHOOK_DOMAIN is unset.
+  const webhookDomain = process.env.TELEGRAM_WEBHOOK_DOMAIN?.trim();
+  if (webhookDomain) {
+    const webhookPath = process.env.TELEGRAM_WEBHOOK_PATH?.trim() || "/telegram/webhook";
+    const secretToken = process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || undefined;
+    setTelegramWebhook(webhookPath, bot.webhookCallback(webhookPath, { secretToken }));
+    try {
+      await bot.telegram.setWebhook(
+        `${webhookDomain}${webhookPath}`,
+        secretToken ? { secret_token: secretToken } : undefined,
+      );
+      log.info("Bot started (webhook mode): %s%s", webhookDomain, webhookPath);
+    } catch (err) {
+      log.error("Failed to register Telegram webhook: %s", err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+    return;
+  }
 
   const MAX_RETRIES = 5;
   const BASE_DELAY_MS = 5_000;

@@ -1,7 +1,6 @@
--- Phase 4 (part 2): FK onDelete policy, cleanup of redundant objects, and CHECK reconciliation.
--- Guarded (IF EXISTS / IF NOT EXISTS) so it is idempotent on BOTH the existing prod DB
--- (which carries historical check names + is missing chat_messages_role_check) and a fresh
--- DB built from 0000_baseline. No data change.
+-- FK onDelete policy, cleanup of redundant objects, and CHECK reconciliation.
+-- Guarded (IF EXISTS / IF NOT EXISTS) so it is idempotent whether the DB carries the
+-- historical check names or was built fresh from 0000_baseline. No data change.
 
 -- ── Cleanup: drop redundant objects ──────────────────────────────────────────
 ALTER TABLE "users" DROP CONSTRAINT IF EXISTS "users_telegram_id_unique";--> statement-breakpoint
@@ -32,7 +31,7 @@ DO $$ BEGIN
   END IF;
 END $$;--> statement-breakpoint
 
--- ── CHECK reconciliation: checks on prod but absent from the baseline snapshot ──
+-- ── Checks that some existing DBs are missing (guarded add) ──
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='thought_simplifications_input_type_check' AND conrelid='"thought_simplifications"'::regclass) THEN
     ALTER TABLE "thought_simplifications" ADD CONSTRAINT "thought_simplifications_input_type_check" CHECK ("thought_simplifications"."input_type" IN ('text', 'voice', 'mixed'));
@@ -44,7 +43,7 @@ DO $$ BEGIN
   END IF;
 END $$;--> statement-breakpoint
 
--- ── CHECK reconciliation: check in the baseline but missing on prod (add it there) ──
+-- ── Check missing on older DBs (guarded add) ──
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='chat_messages_role_check' AND conrelid='"chat_messages"'::regclass) THEN
     ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_role_check" CHECK ("chat_messages"."role" IN ('user', 'assistant'));

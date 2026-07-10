@@ -2,6 +2,8 @@
  * Simplifier API routes for Mini App.
  */
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getHistory,
   getSimplification,
@@ -21,6 +23,13 @@ const log = createLogger("simplifier-route");
 
 const app = new Hono<ApiEnv>();
 
+// ── Input schemas (json bodies + :id params). Free-text `text` is validated
+//    only as a string; the handler owns trim/empty/length enforcement.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const simplifyBody = z.object({
+  text: z.string().optional(),
+});
+
 /** GET /api/simplifier — simplification history */
 app.get("/", async (c) => {
   const initData = c.get("initData");
@@ -38,7 +47,7 @@ app.get("/", async (c) => {
 });
 
 /** GET /api/simplifier/:id — single simplification */
-app.get("/:id", async (c) => {
+app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const id = parseInt(c.req.param("id"), 10);
@@ -60,7 +69,7 @@ app.get("/:id", async (c) => {
 });
 
 /** POST /api/simplifier — simplify text */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", simplifyBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
 
@@ -142,7 +151,7 @@ app.post("/voice", async (c) => {
 });
 
 /** DELETE /api/simplifier/:id — delete simplification */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const id = parseInt(c.req.param("id"), 10);

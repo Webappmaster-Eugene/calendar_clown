@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getCategories,
   addCategory,
@@ -16,6 +18,38 @@ import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
 
+// ── Input schemas (json bodies + :id params). Query params keep the handlers'
+//    own defensive parsing. Schemas mirror what handlers accept.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const createCategoryBody = z.object({
+  name: z.string(),
+  emoji: z.string().optional(),
+});
+const updateCategoryBody = z.object({
+  name: z.string().optional(),
+  emoji: z.string().optional(),
+});
+const createEntryBody = z.object({
+  categoryId: z.number(),
+  title: z.string(),
+  price: z.number().nullable().optional(),
+  nextDate: z.string().nullable().optional(),
+  additionalInfo: z.string().nullable().optional(),
+  isImportant: z.boolean().optional(),
+  isUrgent: z.boolean().optional(),
+  visibility: z.enum(["tribe", "private"]).optional(),
+});
+const updateEntryBody = z.object({
+  title: z.string().optional(),
+  price: z.number().nullable().optional(),
+  nextDate: z.string().nullable().optional(),
+  additionalInfo: z.string().nullable().optional(),
+  isImportant: z.boolean().optional(),
+  isUrgent: z.boolean().optional(),
+  visibility: z.enum(["tribe", "private"]).optional(),
+  categoryId: z.number().optional(),
+});
+
 /** GET /api/gandalf/categories — list categories */
 app.get("/categories", async (c) => {
   const initData = c.get("initData");
@@ -31,7 +65,7 @@ app.get("/categories", async (c) => {
 });
 
 /** POST /api/gandalf/categories — create category */
-app.post("/categories", async (c) => {
+app.post("/categories", zValidator("json", createCategoryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ name: string; emoji?: string }>();
@@ -51,7 +85,7 @@ app.post("/categories", async (c) => {
 });
 
 /** PUT /api/gandalf/categories/:id — update category */
-app.put("/categories/:id", async (c) => {
+app.put("/categories/:id", zValidator("param", idParam), zValidator("json", updateCategoryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const categoryId = parseInt(c.req.param("id"), 10);
@@ -83,7 +117,7 @@ app.put("/categories/:id", async (c) => {
 });
 
 /** DELETE /api/gandalf/categories/:id — delete category */
-app.delete("/categories/:id", async (c) => {
+app.delete("/categories/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const categoryId = parseInt(c.req.param("id"), 10);
@@ -103,7 +137,7 @@ app.delete("/categories/:id", async (c) => {
 });
 
 /** GET /api/gandalf/categories/:id/entries — list entries by category (convenience route) */
-app.get("/categories/:id/entries", async (c) => {
+app.get("/categories/:id/entries", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const categoryId = parseInt(c.req.param("id"), 10);
@@ -145,7 +179,7 @@ app.get("/entries", async (c) => {
 });
 
 /** POST /api/gandalf/entries — create entry */
-app.post("/entries", async (c) => {
+app.post("/entries", zValidator("json", createEntryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{
@@ -183,7 +217,7 @@ app.post("/entries", async (c) => {
 });
 
 /** PUT /api/gandalf/entries/:id — update entry */
-app.put("/entries/:id", async (c) => {
+app.put("/entries/:id", zValidator("param", idParam), zValidator("json", updateEntryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const entryId = parseInt(c.req.param("id"), 10);
@@ -217,7 +251,7 @@ app.put("/entries/:id", async (c) => {
 });
 
 /** DELETE /api/gandalf/entries/:id — delete entry */
-app.delete("/entries/:id", async (c) => {
+app.delete("/entries/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const entryId = parseInt(c.req.param("id"), 10);

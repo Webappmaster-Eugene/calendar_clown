@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getSearchHistory,
   getSearch,
@@ -8,6 +10,13 @@ import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schemas (json body + :id param). Query params keep the handler's
+//    own defensive parsing. Schema mirrors what the handler accepts.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const startSearchBody = z.object({
+  query: z.string().min(1),
+});
 
 /** GET /api/osint — search history */
 app.get("/", async (c) => {
@@ -26,7 +35,7 @@ app.get("/", async (c) => {
 });
 
 /** GET /api/osint/:id — search by ID */
-app.get("/:id", async (c) => {
+app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const searchId = parseInt(c.req.param("id"), 10);
@@ -48,7 +57,7 @@ app.get("/:id", async (c) => {
 });
 
 /** POST /api/osint — start search */
-app.post("/", async (c) => {
+app.post("/", zValidator("json", startSearchBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ query: string }>();

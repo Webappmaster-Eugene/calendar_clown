@@ -15,6 +15,16 @@ const log = createLogger("oauth");
 // ── Hono API app (lazy-initialized) ──────────────────────────
 let honoFetch: ((req: Request) => Response | Promise<Response>) | null = null;
 
+// Optional Telegram webhook (native route). Set from index.ts only in webhook mode;
+// in the default long-polling mode this stays null and the branch is skipped.
+type NativeHandler = (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>;
+let telegramWebhook: { path: string; handler: NativeHandler } | null = null;
+
+/** Register the Telegram webhook handler + path (webhook mode). */
+export function setTelegramWebhook(path: string, handler: NativeHandler): void {
+  telegramWebhook = { path, handler };
+}
+
 function getHonoFetch(): (req: Request) => Response | Promise<Response> {
   if (!honoFetch) {
     const app = createApiApp();
@@ -328,6 +338,17 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
         log.error(`MTProto web auth error: ${message}`);
         sendHtml(res, 500, mtprotoErrorHtml("Внутренняя ошибка сервера."));
       }
+      return;
+    }
+
+    // Telegram webhook (only in webhook mode): POST <TELEGRAM_WEBHOOK_PATH>
+    if (telegramWebhook && pathname === telegramWebhook.path) {
+      if (req.method !== "POST") {
+        res.writeHead(405);
+        res.end();
+        return;
+      }
+      await telegramWebhook.handler(req, res);
       return;
     }
 

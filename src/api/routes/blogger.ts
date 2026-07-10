@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   getUserChannels,
   createNewChannel,
@@ -17,6 +19,28 @@ import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
 
+// ── Input schemas (json bodies + :id params). Schemas mirror what handlers
+//    accept; empty-string / "at least one field" checks stay in the handlers.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const createChannelBody = z.object({
+  channelTitle: z.string().min(1),
+  channelUsername: z.string().optional(),
+  nicheDescription: z.string().optional(),
+});
+const updateChannelBody = z.object({
+  channelTitle: z.string().optional(),
+  channelUsername: z.string().nullable().optional(),
+  nicheDescription: z.string().nullable().optional(),
+});
+const createPostBody = z.object({
+  channelId: z.number(),
+  topic: z.string().min(1),
+});
+const addSourceBody = z.object({
+  content: z.string().min(1),
+  title: z.string().optional(),
+});
+
 /** GET /api/blogger/channels — list channels */
 app.get("/channels", async (c) => {
   const initData = c.get("initData");
@@ -32,7 +56,7 @@ app.get("/channels", async (c) => {
 });
 
 /** POST /api/blogger/channels — create channel */
-app.post("/channels", async (c) => {
+app.post("/channels", zValidator("json", createChannelBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{
@@ -60,7 +84,7 @@ app.post("/channels", async (c) => {
 });
 
 /** PUT /api/blogger/channels/:id — edit channel */
-app.put("/channels/:id", async (c) => {
+app.put("/channels/:id", zValidator("param", idParam), zValidator("json", updateChannelBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const channelId = parseInt(c.req.param("id"), 10);
@@ -106,7 +130,7 @@ app.put("/channels/:id", async (c) => {
 });
 
 /** GET /api/blogger/channels/:id/posts — list posts */
-app.get("/channels/:id/posts", async (c) => {
+app.get("/channels/:id/posts", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const channelId = parseInt(c.req.param("id"), 10);
@@ -125,7 +149,7 @@ app.get("/channels/:id/posts", async (c) => {
 });
 
 /** POST /api/blogger/posts — create post */
-app.post("/posts", async (c) => {
+app.post("/posts", zValidator("json", createPostBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ channelId: number; topic: string }>();
@@ -144,7 +168,7 @@ app.post("/posts", async (c) => {
 });
 
 /** GET /api/blogger/posts/:id — get post with sources */
-app.get("/posts/:id", async (c) => {
+app.get("/posts/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const postId = parseInt(c.req.param("id"), 10);
@@ -168,7 +192,7 @@ app.get("/posts/:id", async (c) => {
 });
 
 /** POST /api/blogger/posts/:id/generate — generate post content */
-app.post("/posts/:id/generate", async (c) => {
+app.post("/posts/:id/generate", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const postId = parseInt(c.req.param("id"), 10);
@@ -188,7 +212,7 @@ app.post("/posts/:id/generate", async (c) => {
 });
 
 /** DELETE /api/blogger/channels/:id — delete channel */
-app.delete("/channels/:id", async (c) => {
+app.delete("/channels/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const channelId = parseInt(c.req.param("id"), 10);
@@ -208,7 +232,7 @@ app.delete("/channels/:id", async (c) => {
 });
 
 /** DELETE /api/blogger/posts/:id — delete post */
-app.delete("/posts/:id", async (c) => {
+app.delete("/posts/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const postId = parseInt(c.req.param("id"), 10);
@@ -228,7 +252,7 @@ app.delete("/posts/:id", async (c) => {
 });
 
 /** POST /api/blogger/posts/:id/sources — add text source */
-app.post("/posts/:id/sources", async (c) => {
+app.post("/posts/:id/sources", zValidator("param", idParam), zValidator("json", addSourceBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const postId = parseInt(c.req.param("id"), 10);

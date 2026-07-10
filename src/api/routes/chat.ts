@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import { streamSSE } from "hono/streaming";
 import {
   getUserDialogs,
@@ -15,6 +17,17 @@ import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schemas (json bodies + :id params). Schemas mirror what handlers
+//    accept; query params keep the handlers' own parsing.
+const idParam = z.object({ id: z.coerce.number().int().positive() });
+const sendMessageBody = z.object({
+  dialogId: z.number().optional(),
+  content: z.string().min(1),
+});
+const setProviderBody = z.object({
+  provider: z.string(),
+});
 
 /** GET /api/chat/dialogs — list dialogs */
 app.get("/dialogs", async (c) => {
@@ -47,7 +60,7 @@ app.post("/dialogs", async (c) => {
 });
 
 /** GET /api/chat/dialogs/:id/messages — list messages */
-app.get("/dialogs/:id/messages", async (c) => {
+app.get("/dialogs/:id/messages", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const dialogId = parseInt(c.req.param("id"), 10);
@@ -66,7 +79,7 @@ app.get("/dialogs/:id/messages", async (c) => {
 });
 
 /** POST /api/chat/messages — send message */
-app.post("/messages", async (c) => {
+app.post("/messages", zValidator("json", sendMessageBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ dialogId?: number; content: string }>();
@@ -86,7 +99,7 @@ app.post("/messages", async (c) => {
 });
 
 /** POST /api/chat/messages/stream — send message with SSE streaming response */
-app.post("/messages/stream", async (c) => {
+app.post("/messages/stream", zValidator("json", sendMessageBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ dialogId?: number; content: string }>();
@@ -132,7 +145,7 @@ app.post("/messages/stream", async (c) => {
 });
 
 /** DELETE /api/chat/dialogs/:id — delete dialog */
-app.delete("/dialogs/:id", async (c) => {
+app.delete("/dialogs/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const dialogId = parseInt(c.req.param("id"), 10);
@@ -169,7 +182,7 @@ app.get("/provider", async (c) => {
 });
 
 /** PUT /api/chat/provider — set chat provider */
-app.put("/provider", async (c) => {
+app.put("/provider", zValidator("json", setProviderBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const body = await c.req.json<{ provider: string }>();

@@ -6,6 +6,8 @@
  * (Telegram InitData).
  */
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import {
   addProduct,
   editProduct,
@@ -26,6 +28,8 @@ import type { NutritionProductUnit } from "../../shared/types.js";
 const log = createLogger("nutritionist-products-route");
 
 const app = new Hono<ApiEnv>();
+
+const idParam = z.object({ id: z.coerce.number().int().positive() });
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -153,7 +157,7 @@ app.post("/", async (c) => {
 });
 
 /** GET /api/nutritionist/products/:id — single product. */
-app.get("/:id", async (c) => {
+app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const id = parseInt(c.req.param("id"), 10);
@@ -175,7 +179,7 @@ app.get("/:id", async (c) => {
 });
 
 /** PATCH /api/nutritionist/products/:id — update product (multipart). */
-app.patch("/:id", async (c) => {
+app.patch("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const id = parseInt(c.req.param("id"), 10);
@@ -249,7 +253,7 @@ app.patch("/:id", async (c) => {
 });
 
 /** DELETE /api/nutritionist/products/:id */
-app.delete("/:id", async (c) => {
+app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const id = parseInt(c.req.param("id"), 10);
@@ -271,7 +275,7 @@ app.delete("/:id", async (c) => {
 });
 
 /** GET /api/nutritionist/products/:id/photo — stream package photo. */
-app.get("/:id/photo", async (c) => {
+app.get("/:id/photo", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
   const id = parseInt(c.req.param("id"), 10);

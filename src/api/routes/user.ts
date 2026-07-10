@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "../validate.js";
 import { getUserProfile, switchMode, getAvailableModes } from "../../services/userService.js";
 import { getAuthUrl, hasToken } from "../../calendar/auth.js";
 import { logApiAction } from "../../logging/actionLogger.js";
@@ -6,6 +8,10 @@ import type { ApiEnv } from "../authMiddleware.js";
 import type { UserMode } from "../../shared/types.js";
 
 const app = new Hono<ApiEnv>();
+
+// ── Input schema. `mode` stays lenient (z.string()); switchMode validates the
+//    concrete value and the handler surfaces its error as 400.
+const switchModeBody = z.object({ mode: z.string() });
 
 /** GET /api/user/me — current user profile + available modes */
 app.get("/me", async (c) => {
@@ -25,7 +31,7 @@ app.get("/me", async (c) => {
 });
 
 /** PUT /api/user/mode — switch current mode */
-app.put("/mode", async (c) => {
+app.put("/mode", zValidator("json", switchModeBody), async (c) => {
   const initData = c.get("initData");
   const body = await c.req.json<{ mode: string }>();
 
