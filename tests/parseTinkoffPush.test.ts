@@ -48,6 +48,13 @@ describe("parseTinkoffPush — expenses", () => {
     assert.equal(r.kind, "expense");
     assert.equal(r.amount, 89);
   });
+
+  it("parses real Yota payment push (платеж + multi-line balance)", () => {
+    // Actual prod sample: amount must be the payment, not the balance below it.
+    const r = parseTinkoffPush("Yota", "Платеж на 10 ₽, счет RUB\nБаланс 5 521,51 ₽");
+    assert.equal(r.kind, "expense");
+    assert.equal(r.amount, 10);
+  });
 });
 
 describe("parseTinkoffPush — non-expenses are skipped", () => {

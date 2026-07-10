@@ -9,6 +9,7 @@ import { createApiApp } from "./api/router.js";
 import { getPollHealth } from "./health/pollWatchdog.js";
 import { findUserByWebhookSecret } from "./expenses/bankPush/repository.js";
 import { ingestBankPush } from "./expenses/bankPush/ingest.js";
+import { parseBankWebhookBody } from "./expenses/bankPush/parseWebhookBody.js";
 
 const log = createLogger("oauth");
 
@@ -135,23 +136,6 @@ function bankWebhookRateLimited(secret: string): boolean {
   hits.push(now);
   bankWebhookHits.set(secret, hits);
   return hits.length > BANK_WEBHOOK_MAX;
-}
-
-/** Extract {title, text} from a webhook body (JSON {title,text} or raw text). */
-function parseBankWebhookBody(body: string): { title: string; text: string } {
-  const trimmed = body.trim();
-  if (trimmed.startsWith("{")) {
-    try {
-      const json = JSON.parse(trimmed) as { title?: unknown; text?: unknown };
-      return {
-        title: typeof json.title === "string" ? json.title : "",
-        text: typeof json.text === "string" ? json.text : "",
-      };
-    } catch {
-      // fall through to raw
-    }
-  }
-  return { title: "", text: trimmed };
 }
 
 /**
