@@ -11,6 +11,8 @@
     "dev": "tsx watch src/index.ts",
     "authorize": "tsx scripts/authorize.ts",
     "tg-auth": "tsx scripts/tg-auth.ts",
+    "tg-session": "tsx scripts/tg-session.ts",
+    "bot-smoke": "tsx scripts/bot-smoke.ts",
     "test": "npm run test:unit && npm run test:smoke",
     "test:unit": "tsx --test tests/markdown.test.ts tests/splitMessage.test.ts tests/parseJson.test.ts tests/authMiddleware.test.ts tests/calendarParse.test.ts tests/sharedTypes.test.ts tests/formatDetailedMonthReport.test.ts tests/excelDispositionHeader.test.ts tests/parseMskCalendarDate.test.ts tests/sttClientRetry.test.ts tests/matchWorkName.test.ts tests/parseTinkoffPush.test.ts tests/parseWebhookBody.test.ts tests/reminderSchedule.test.ts tests/calculateTaskReminders.test.ts tests/findCategory.test.ts",
     "test:smoke": "tsx --test tests/smoke-api.test.ts tests/smoke-build.test.ts",

@@ -28,8 +28,10 @@ export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 /** DeepSeek model for intent/expense extraction. */
 export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek/deepseek-chat-v3.1";
 
-/** Free model via OpenRouter (rate-limited but genuinely free). */
-export const DEEPSEEK_FREE_MODEL = process.env.DEEPSEEK_FREE_MODEL || "meta-llama/llama-3.3-70b-instruct:free";
+// Neuro "free" tier model. Was meta-llama/llama-3.3-70b-instruct:free, which the
+// OpenRouter free pool throttles hard (persistent 429). Switched to gemini-2.5-flash:
+// paid but negligible cost and reliable. Env key kept for deploy back-compat.
+export const DEEPSEEK_FREE_MODEL = process.env.DEEPSEEK_FREE_MODEL || "google/gemini-2.5-flash";
 
 /** Uncensored model for neuro chat (via OpenRouter, no content filters). */
 export const NEURO_UNCENSORED_MODEL = process.env.NEURO_UNCENSORED_MODEL || "cognitivecomputations/dolphin-mistral-24b-venice-edition:free";
@@ -104,8 +106,10 @@ export const OSINT_PHASE1_ANALYSIS_LIMIT = 60;
 /** Summarizer: AI model for summary generation (via OpenRouter). */
 export const SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "anthropic/claude-sonnet-4";
 
-/** Blogger: AI model for post generation (via OpenRouter). */
-export const BLOGGER_MODEL = process.env.BLOGGER_MODEL || "anthropic/claude-sonnet-4";
+// Blogger post generation. Was anthropic/claude-sonnet-4, which overran the 30s
+// client timeout on longer posts. Switched to gemini-2.5-flash: fast enough to fit
+// the timeout, lower cost. Env key kept for deploy back-compat.
+export const BLOGGER_MODEL = process.env.BLOGGER_MODEL || "google/gemini-2.5-flash";
 
 /** Simplifier: AI model for text simplification (via OpenRouter). */
 export const SIMPLIFIER_MODEL = process.env.SIMPLIFIER_MODEL || "deepseek/deepseek-chat-v3.1";

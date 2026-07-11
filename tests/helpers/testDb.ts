@@ -18,6 +18,29 @@ import { categories, tribes, users } from "../../src/db/schema.js";
 
 const PROD_MARKERS = ["217.199.254.38", "podbor-minuta", "sovetnik-db"];
 
+/**
+ * Warm up the pool with a retried `SELECT 1` before the migration batch.
+ * `pg_isready` only confirms the postmaster accepts connections; the very first
+ * real query against a just-booted container can still fail/stall while it
+ * finishes init, which would cancel the first test file's before() hook. Retry
+ * until the DB actually answers a query.
+ */
+async function waitForQueryable(attempts = 15, delayMs = 300): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await db.execute(sql`select 1`);
+      return;
+    } catch (err) {
+      lastErr = err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw new Error(
+    `Test DB did not answer 'select 1' after ${attempts} attempts (~${(attempts * delayMs) / 1000}s): ${String(lastErr)}`,
+  );
+}
+
 /** Apply migrations to the configured test DB (refuses to touch production). */
 export async function setupTestDb(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -29,6 +52,8 @@ export async function setupTestDb(): Promise<void> {
   if (PROD_MARKERS.some((m) => url.includes(m))) {
     throw new Error("Refusing to run integration tests against the production database. Use a throwaway DB.");
   }
+  await waitForQueryable();
+
   const { runDrizzleMigrations } = await import("../../src/db/migrate.js");
   await runDrizzleMigrations();
 
