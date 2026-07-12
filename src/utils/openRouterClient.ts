@@ -5,13 +5,14 @@ import { openRouterRequest, type OpenRouterHttpResponse } from "./proxyAgent.js"
  * Hard upper bound for any single non-streaming OpenRouter call. Without this, a
  * stuck upstream (DeepSeek, etc.) silently wedges request handlers — and on the
  * Mini App side leaves the voice button frozen on "Обработка…" beyond the
- * client-side 120s timeout. Tunable via env for staging/debugging.
+ * client-side 120s timeout. Default 60s: long-form generation (e.g. blogger posts)
+ * overran the previous 30s bound. Tunable via OPENROUTER_TIMEOUT_MS env.
  */
 const OPENROUTER_TIMEOUT_MS = (() => {
   const raw = process.env.OPENROUTER_TIMEOUT_MS?.trim();
-  if (!raw) return 30_000;
+  if (!raw) return 60_000;
   const parsed = parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 60_000;
 })();
 
 /** Content part for multimodal messages (text + images). */
