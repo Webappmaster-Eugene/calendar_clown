@@ -268,6 +268,10 @@ async function callSttRaw(options: SttRawOptions): Promise<string> {
   try {
     const body: Record<string, unknown> = {
       model,
+      // Greedy decoding for transcription. Without this the model samples at its
+      // default temperature and "creatively" fabricates content on short/ambiguous
+      // audio (a bare word could come back as an invented meeting). 0 = deterministic.
+      temperature: 0,
       messages: [
         {
           role: "user",
