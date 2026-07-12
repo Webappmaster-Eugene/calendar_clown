@@ -8,12 +8,15 @@ import { openRouterRequest, type OpenRouterHttpResponse } from "./proxyAgent.js"
  * client-side 120s timeout. Default 60s: long-form generation (e.g. blogger posts)
  * overran the previous 30s bound. Tunable via OPENROUTER_TIMEOUT_MS env.
  */
-const OPENROUTER_TIMEOUT_MS = (() => {
-  const raw = process.env.OPENROUTER_TIMEOUT_MS?.trim();
-  if (!raw) return 60_000;
-  const parsed = parseInt(raw, 10);
+/** Resolve the per-call OpenRouter timeout (ms) from a raw env value. Default 60s; invalid/non-positive falls back to 60s. Exported for tests. */
+export function resolveOpenRouterTimeoutMs(raw: string | undefined): number {
+  const trimmed = raw?.trim();
+  if (!trimmed) return 60_000;
+  const parsed = parseInt(trimmed, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 60_000;
-})();
+}
+
+const OPENROUTER_TIMEOUT_MS = resolveOpenRouterTimeoutMs(process.env.OPENROUTER_TIMEOUT_MS);
 
 /** Content part for multimodal messages (text + images). */
 export type ContentPart =
