@@ -1,6 +1,7 @@
 import type { Context } from "telegraf";
 import { parseEventText } from "../calendar/parse.js";
-import { createEvent, listEvents, NoCalendarLinkedError } from "../calendar/client.js";
+import { createEvent, NoCalendarLinkedError } from "../calendar/client.js";
+import { formatEventRange } from "../services/calendarService.js";
 import { saveCalendarEvent } from "../calendar/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -178,28 +179,13 @@ export async function handleCalendarText(ctx: Context): Promise<void> {
   try {
     const intent = await extractVoiceIntent(text);
 
-    if (intent.type === "list_today" || intent.type === "list_week") {
-      const now = new Date();
-      const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
-      const timeMin = new Date(todayStr + "T00:00:00+03:00");
-      const days = intent.type === "list_week" ? 7 : 1;
-      const timeMax = new Date(timeMin.getTime() + days * 24 * 60 * 60 * 1000);
-      const events = await listEvents(timeMin, timeMax, userId);
-      if (events.length === 0) {
-        await ctx.reply(intent.type === "list_week" ? "На эту неделю встреч нет." : "На сегодня встреч нет.");
+    if (intent.type === "list_range") {
+      const view = await formatEventRange(userId, intent.from, intent.days, intent.label);
+      if (view.isEmpty) {
+        await ctx.reply(view.emptyText);
         return;
       }
-      const lines = events.map((e) => {
-        const s = new Date(e.start);
-        const en = new Date(e.end);
-        const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE_MSK };
-        const dayPart = intent.type === "list_week"
-          ? s.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short", timeZone: TIMEZONE_MSK }) + " "
-          : "";
-        return `• ${escapeMarkdown(e.summary)} (${dayPart}${s.toLocaleTimeString("ru-RU", timeOpt)} – ${en.toLocaleTimeString("ru-RU", timeOpt)})`;
-      });
-      const header = intent.type === "list_week" ? "📅 *Неделя:*" : "📅 *Сегодня:*";
-      await replyMarkdownSafe(ctx, header + "\n" + lines.join("\n"));
+      await replyMarkdownSafe(ctx, view.text);
       return;
     }
 

@@ -119,7 +119,7 @@ export interface CreateEventResponse {
 
 // ─── Voice ────────────────────────────────────────────────────
 
-export type VoiceIntentType = "calendar" | "cancel_event" | "list_today" | "list_week" | "unknown";
+export type VoiceIntentType = "calendar" | "cancel_event" | "list_range" | "unknown";
 
 export interface VoiceExtractIntentResponse {
   transcript: string;

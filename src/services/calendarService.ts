@@ -18,6 +18,7 @@ import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
+import { escapeMarkdown } from "../utils/markdown.js";
 import type { CalendarEventDto, CalendarEventInputMethod, CalendarIntentEvent } from "../shared/types.js";
 
 const log = createLogger("calendar-service");
@@ -187,6 +188,61 @@ export async function getEventsWeek(userId: string): Promise<CalendarEventDto[]>
 
   const events = await listEvents(start, end, userId);
   return events.map(toDto);
+}
+
+export interface EventRangeView {
+  isEmpty: boolean;
+  /** Plain-text reply for an empty range. */
+  emptyText: string;
+  /** Markdown reply (header + grouped lines) when the range has events. */
+  text: string;
+}
+
+const HH_MM: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", timeZone: TIMEZONE_MSK };
+
+/**
+ * Fetch and render calendar events for an arbitrary [from, from + days) range as a
+ * ready-to-send message. Single-day ranges render a flat list; multi-day ranges group
+ * by day. Shared by the text and voice calendar handlers.
+ */
+export async function formatEventRange(
+  userId: string,
+  from: Date,
+  days: number,
+  label: string,
+): Promise<EventRangeView> {
+  const timeMin = from;
+  const timeMax = new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
+  const events = await listEvents(timeMin, timeMax, userId);
+
+  if (events.length === 0) {
+    return { isEmpty: true, emptyText: `${label}: встреч нет.`, text: "" };
+  }
+
+  const header = `📅 *${escapeMarkdown(label)}:*`;
+
+  if (days === 1) {
+    const lines = events.map((e) => {
+      const s = new Date(e.start);
+      const en = new Date(e.end);
+      return `• ${escapeMarkdown(e.summary)} (${s.toLocaleTimeString("ru-RU", HH_MM)} – ${en.toLocaleTimeString("ru-RU", HH_MM)})`;
+    });
+    return { isEmpty: false, emptyText: "", text: header + "\n" + lines.join("\n") };
+  }
+
+  const lines: string[] = [];
+  let currentDay = "";
+  for (const e of events) {
+    const s = new Date(e.start);
+    const dayKey = s.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short", timeZone: TIMEZONE_MSK });
+    if (dayKey !== currentDay) {
+      currentDay = dayKey;
+      lines.push(`\n*${escapeMarkdown(dayKey)}*`);
+    }
+    const en = new Date(e.end);
+    lines.push(`• ${escapeMarkdown(e.summary)} (${s.toLocaleTimeString("ru-RU", HH_MM)} – ${en.toLocaleTimeString("ru-RU", HH_MM)})`);
+  }
+  return { isEmpty: false, emptyText: "", text: header + lines.join("\n") };
 }
 
 export async function cancelEventById(

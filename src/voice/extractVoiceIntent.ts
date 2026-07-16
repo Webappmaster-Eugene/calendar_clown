@@ -6,6 +6,7 @@ import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { INSTRUCTION_GUARD, wrapUserContent } from "./promptSafety.js";
+import { normalizeListRange } from "../calendar/listRange.js";
 
 const WEEKDAY_TO_NUM: Record<string, number> = {
   Sunday: 0,
@@ -84,7 +85,7 @@ Options:
    Multiple events: {"type":"calendar","events":[{"title":"...","start":"...","end":"..."},{"title":"...","start":"...","end":"..."}]}
    title: short descriptive title for the calendar event, preserving who and what (e.g. "Ремонт автомобиля у Романа", "Запись к Роману: ремонт авто"). Do not reduce to a single word.
    Timezone: Europe/Moscow (UTC+3). Always use +03:00 in start/end (e.g. ${year}-03-09T10:00:00+03:00).
-   Today is ${dateStr} (${weekday}). Use year ${year}. No date → today. No time → 10:00. Default duration 1 hour.
+   Today is ${dateStr} (${weekday}). Use year ${year}. No date → today. No time → 10:00. Default duration 1 hour. If the user states a duration, set "end" = start + that duration: "на полчаса"/"на 30 минут" → 30 min, "на час" → 1 hour, "на полтора часа" → 90 min, "на 2 часа" → 2 hours, "на 15 минут" → 15 min. If the user gives a time range ("с 15 до 16", "с 10 до 11:30", "15-16", "15:00-16:30"), use the first time as "start" and the second as "end".
    Weekday-to-date (all in ${TIMEZONE_MSK}): вторник (Tuesday) = ${tueStr}, завтра (tomorrow) = ${tomorrowStr}.
    Recurring events:
    - Weekly (specific days): "каждую пятницу", "каждую неделю", "еженедельно", "по понедельникам" → "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=XX"] where XX is MO,TU,WE,TH,FR,SA,SU. Set start/end to the first occurrence.
@@ -94,6 +95,8 @@ Options:
    - "Запиши меня к Роману на ремонт автомобиля во вторник в 10 утра" → {"type":"calendar","title":"Ремонт автомобиля у Романа","start":"${tueStr}T10:00:00+03:00","end":"${tueStr}T11:00:00+03:00"}
    - "Встреча завтра, ремонт Романа автомобиль в 10 утра" → {"type":"calendar","title":"Ремонт автомобиля у Романа","start":"${tomorrowStr}T10:00:00+03:00","end":"${tomorrowStr}T11:00:00+03:00"}
    - "Встреча завтра в 15:00" → {"type":"calendar","title":"Встреча","start":"${tomorrowStr}T15:00:00+03:00","end":"${tomorrowStr}T16:00:00+03:00"}
+   - "Скрининг бэкенда в 15 на полчаса" → {"type":"calendar","title":"Скрининг бэкенда","start":"${dateStr}T15:00:00+03:00","end":"${dateStr}T15:30:00+03:00"}
+   - "Планёрка с 15 до 16:30" → {"type":"calendar","title":"Планёрка","start":"${dateStr}T15:00:00+03:00","end":"${dateStr}T16:30:00+03:00"}
    - "запиши что каждую пятницу в 17:30 мы ходим на массаж" → {"type":"calendar","title":"Массаж всей семьёй","start":"<next Friday>T17:30:00+03:00","end":"<next Friday>T18:30:00+03:00","recurrence":["RRULE:FREQ=WEEKLY;BYDAY=FR"]}
    - "каждый день в 10:30 Daily польза" → {"type":"calendar","title":"Daily, польза","start":"${dateStr}T10:30:00+03:00","end":"${dateStr}T11:30:00+03:00","recurrence":["RRULE:FREQ=DAILY"]}
 
@@ -103,13 +106,18 @@ Options:
    date: the target date in YYYY-MM-DD format (${TIMEZONE_MSK}), or null if no date mentioned. Use the same date rules: "завтра" = ${tomorrowStr}, "вторник" = ${tueStr}, "сегодня" = ${dateStr}, etc.
    Trigger words: отмени, удали, убери, отменить, удалить, убрать, cancel, delete, remove — applied to встреча, событие, запись, приём.
 
-3) Listing today's events (e.g. "что сегодня", "встречи на сегодня", "расписание на сегодня", "какие встречи сегодня"):
-   {"type":"list_today"}
+3) Listing existing calendar events for a day or a range of days. Use type "list_range" for ANY request to show/tell what events, meetings, calls (встречи, созвоны, планы, расписание, события) the user has — for today or any other day(s):
+   {"type":"list_range","from":"YYYY-MM-DD","days":N,"label":"short Russian header"}
+   from: first day of the range (YYYY-MM-DD, ${TIMEZONE_MSK}). days: number of whole days to show (integer >= 1). label: short Russian header for the reply (e.g. "Сегодня", "Завтра", "Неделя", "Воскресенье", "Ближайшие 2 дня").
+   Same date rules as above: "сегодня" = ${dateStr}, "завтра" = ${tomorrowStr}, "вторник" = ${tueStr}. A weekday name → its next occurrence.
+   Examples:
+   - "что сегодня", "какие встречи сегодня" → {"type":"list_range","from":"${dateStr}","days":1,"label":"Сегодня"}
+   - "какие у меня завтра созвоны", "покажи планы на завтра" → {"type":"list_range","from":"${tomorrowStr}","days":1,"label":"Завтра"}
+   - "что на этой неделе", "расписание на неделю" → {"type":"list_range","from":"${dateStr}","days":7,"label":"Неделя"}
+   - "что на два дня вперёд", "ближайшие 2 дня" → {"type":"list_range","from":"${dateStr}","days":2,"label":"Ближайшие 2 дня"}
+   - "какие встречи в воскресенье", "планы на это воскресенье" → {"type":"list_range","from":"<that Sunday>","days":1,"label":"Воскресенье"}
 
-4) Listing this week's events (e.g. "что на этой неделе", "встречи на неделю", "расписание на неделю", "какие планы на неделю"):
-   {"type":"list_week"}
-
-5) Anything else or unclear:
+4) Anything else or unclear:
    {"type":"unknown"}`;
 }
 
@@ -123,8 +131,7 @@ export interface CalendarEventData {
 export type VoiceIntent =
   | { type: "calendar"; events: CalendarEventData[] }
   | { type: "cancel_event"; query: string; date: Date | null }
-  | { type: "list_today" }
-  | { type: "list_week" }
+  | { type: "list_range"; from: Date; days: number; label: string }
   | { type: "unknown" };
 
 
@@ -182,12 +189,21 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
   const json = tryParseJson(content);
   if (!json || typeof json.type !== "string") return { type: "unknown" };
 
-  if (json.type === "list_today") {
-    return { type: "list_today" };
-  }
+  // list_today/list_week are accepted for backward-compat with older model outputs.
+  if (json.type === "list_range" || json.type === "list_today" || json.type === "list_week") {
+    const todayMskStr = new Date().toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
+    const range = normalizeListRange(json as Record<string, unknown>, todayMskStr, json.type);
 
-  if (json.type === "list_week") {
-    return { type: "list_week" };
+    // Snap a single named weekday ("это воскресенье") to that weekday, ignoring LLM date math.
+    if (range.days === 1) {
+      const mentioned = getMentionedWeekdayRu(transcript);
+      if (mentioned !== null && getWeekdayInMSK(range.from) !== mentioned) {
+        const correctDateStr = nextWeekdayDateStrInMSK(todayMskStr, mentioned);
+        range.from = new Date(correctDateStr + "T00:00:00+03:00");
+      }
+    }
+
+    return { type: "list_range", from: range.from, days: range.days, label: range.label };
   }
 
   if (json.type === "cancel_event") {

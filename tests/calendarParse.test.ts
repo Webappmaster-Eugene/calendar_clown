@@ -41,4 +41,38 @@ describe("parseEventText", () => {
       assert.ok(result.title.includes("Обед"), `Title should contain 'Обед', got: ${result.title}`);
     }
   });
+
+  it("honours an explicit 'на полчаса' duration and strips it from the title", () => {
+    const result = parseEventText("Скрининг бэкенд @BrOks_141 в 15 на полчаса");
+    assert.notEqual(result, null);
+    const diff = result!.end.getTime() - result!.start.getTime();
+    assert.equal(diff, 30 * 60 * 1000, "End should be start + 30 minutes");
+    assert.ok(
+      !/полчаса/i.test(result!.title),
+      `Duration phrase should be stripped from title, got: ${result!.title}`,
+    );
+    assert.ok(result!.title.includes("Скрининг"), `Title should keep the subject, got: ${result!.title}`);
+  });
+
+  it("honours an explicit 'на 2 часа' duration", () => {
+    const result = parseEventText("Тренировка завтра в 10 на 2 часа");
+    assert.notEqual(result, null);
+    const diff = result!.end.getTime() - result!.start.getTime();
+    assert.equal(diff, 2 * 60 * 60 * 1000, "End should be start + 2 hours");
+  });
+
+  it("honours a 'с 15 до 16' time range", () => {
+    const result = parseEventText("Созвон с 15 до 16");
+    assert.notEqual(result, null);
+    const diff = result!.end.getTime() - result!.start.getTime();
+    assert.equal(diff, 60 * 60 * 1000, "Range should span exactly 1 hour");
+    assert.ok(result!.title.includes("Созвон"), `Title should keep the subject, got: ${result!.title}`);
+  });
+
+  it("honours a 'с 10 до 11:30' half-hour-precision range", () => {
+    const result = parseEventText("Встреча с 10 до 11:30");
+    assert.notEqual(result, null);
+    const diff = result!.end.getTime() - result!.start.getTime();
+    assert.equal(diff, 90 * 60 * 1000, "Range should span 90 minutes");
+  });
 });

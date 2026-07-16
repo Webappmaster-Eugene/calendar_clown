@@ -2,7 +2,8 @@ import type { Context } from "telegraf";
 import { mkdir, unlink } from "fs/promises";
 import { join } from "path";
 import { Markup } from "telegraf";
-import { createEvent, deleteEvent, searchEvents, listEvents, NoCalendarLinkedError } from "../calendar/client.js";
+import { createEvent, deleteEvent, searchEvents, NoCalendarLinkedError } from "../calendar/client.js";
+import { formatEventRange } from "../services/calendarService.js";
 import { extractCalendarEvents } from "../calendar/extractViaOpenRouter.js";
 import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
@@ -430,64 +431,18 @@ async function handleVoiceInCalendarMode(
     return;
   }
 
-  if (intent.type === "list_today") {
-    const now = new Date();
-    const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
-    const timeMin = new Date(todayStr + "T00:00:00+03:00");
-    const timeMax = new Date(timeMin.getTime() + 24 * 60 * 60 * 1000);
-    const events = await listEvents(timeMin, timeMax, userId);
-    if (events.length === 0) {
+  if (intent.type === "list_range") {
+    const view = await formatEventRange(userId, intent.from, intent.days, intent.label);
+    if (view.isEmpty) {
       await ctx.telegram.editMessageText(
         ctx.chat!.id, statusMsgId, undefined,
-        transcriptLine + "На сегодня встреч нет."
+        transcriptLine + view.emptyText
       );
       return;
     }
-    const lines = events.map((e) => {
-      const s = new Date(e.start);
-      const en = new Date(e.end);
-      const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE_MSK };
-      return `• ${escapeMarkdown(e.summary)} (${s.toLocaleTimeString("ru-RU", timeOpt)} – ${en.toLocaleTimeString("ru-RU", timeOpt)})`;
-    });
     await ctx.telegram.editMessageText(
       ctx.chat!.id, statusMsgId, undefined,
-      transcriptLine + "📅 *Сегодня:*\n" + lines.join("\n"),
-      { parse_mode: "Markdown" }
-    );
-    return;
-  }
-
-  if (intent.type === "list_week") {
-    const now = new Date();
-    const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
-    const timeMin = new Date(todayStr + "T00:00:00+03:00");
-    const timeMax = new Date(timeMin.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const events = await listEvents(timeMin, timeMax, userId);
-    if (events.length === 0) {
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id, statusMsgId, undefined,
-        transcriptLine + "На эту неделю встреч нет."
-      );
-      return;
-    }
-    const lines: string[] = [];
-    let currentDay = "";
-    for (const e of events) {
-      const d = new Date(e.start);
-      const dayKey = d.toLocaleDateString("ru-RU", {
-        weekday: "short", day: "numeric", month: "short", timeZone: TIMEZONE_MSK,
-      });
-      if (dayKey !== currentDay) {
-        currentDay = dayKey;
-        lines.push(`\n*${escapeMarkdown(dayKey)}*`);
-      }
-      const en = new Date(e.end);
-      const timeOpt = { hour: "2-digit" as const, minute: "2-digit" as const, timeZone: TIMEZONE_MSK };
-      lines.push(`• ${escapeMarkdown(e.summary)} (${d.toLocaleTimeString("ru-RU", timeOpt)} – ${en.toLocaleTimeString("ru-RU", timeOpt)})`);
-    }
-    await ctx.telegram.editMessageText(
-      ctx.chat!.id, statusMsgId, undefined,
-      transcriptLine + "📅 *Неделя:*" + lines.join("\n"),
+      transcriptLine + view.text,
       { parse_mode: "Markdown" }
     );
     return;
