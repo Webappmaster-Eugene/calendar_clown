@@ -96,4 +96,25 @@ describe("findCategory", () => {
     assert.equal(m.category.name, "Продукты");
     assert.equal(m.matchedText, "пятёрочка");
   });
+
+  it("routes a brand alias with trailing words via the prefix path", () => {
+    // Bank/receipt merchant like "Пятёрочка №123 Москва" — the brand is the prefix.
+    const m = findCategory("пятёрочка №123 москва", CATEGORIES);
+    assert.ok(m);
+    assert.equal(m.category.name, "Продукты");
+    assert.equal(m.matchedText, "пятёрочка");
+    assert.ok(m.score >= 40);
+  });
+
+  it("routes a glued bank-push merchant via its exact-token alias", () => {
+    // Bank pushes arrive as one glued token ("ypdomylandsbp через СБП…"); the
+    // matcher is prefix-anchored, so ЖКХ carries the literal merchant token
+    // (migration 0009). A plain "domyland" alias would NOT catch it — the string
+    // starts with "yp…", not "domyland". The exact token must win confidently.
+    const cats = [...CATEGORIES, cat(5, "ЖКХ", "🏠", ["domyland", "ypdomylandsbp"])];
+    const m = findCategory("ypdomylandsbp через СБП на счет RUB", cats);
+    assert.ok(m);
+    assert.equal(m.category.name, "ЖКХ");
+    assert.ok(m.score >= 40, `expected confident match, got ${m?.score}`);
+  });
 });

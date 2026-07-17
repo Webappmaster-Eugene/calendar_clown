@@ -1,6 +1,6 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
-import { getRecentExpenses, undoExpense } from "../services/expenseService.js";
+import { getRecentExpenses, undoExpense, editExpense, getCategoryDtos } from "../services/expenseService.js";
 import { formatMoney } from "../expenses/formatter.js";
 import { TIMEZONE_MSK } from "../constants.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -58,18 +58,15 @@ async function buildRecentMessage(telegramId: number, page: number = 1): Promise
 
   const text = `🕐 *Последние записи* (${page}/${totalPages}, всего: ${total})\n\n${lines.join("\n\n")}`;
 
-  // Delete buttons — only for expenses owned by current user
-  const deleteButtons = expenses
-    .map((e, idx) => ({ e, idx }))
+  // Action rows — only for expenses owned by current user. Each owned record gets
+  // its own row with a "move to another category" and a delete button.
+  const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = expenses
+    .map((e, idx) => ({ e, num: startIdx + idx + 1 }))
     .filter(({ e }) => e.isOwn)
-    .map(({ e, idx }) =>
-      Markup.button.callback(`🗑 #${startIdx + idx + 1}`, `rdel:${e.id}:${page}`)
-    );
-
-  const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
-  for (let i = 0; i < deleteButtons.length; i += 4) {
-    rows.push(deleteButtons.slice(i, i + 4));
-  }
+    .map(({ e, num }) => [
+      Markup.button.callback(`🔀 #${num}`, `rmov:${e.id}:${page}`),
+      Markup.button.callback(`🗑 #${num}`, `rdel:${e.id}:${page}`),
+    ]);
 
   const navRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (page > 1) {
@@ -82,6 +79,29 @@ async function buildRecentMessage(telegramId: number, page: number = 1): Promise
   rows.push(navRow);
 
   return { text, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+/**
+ * Build the category-picker inline keyboard shown after tapping "🔀 move" on a
+ * recent expense. Each category becomes a button that moves the expense; the last
+ * row cancels back to the recent list at the same page.
+ */
+async function buildMovePickerKeyboard(
+  expenseId: number,
+  page: number
+): Promise<ReturnType<typeof Markup.inlineKeyboard>> {
+  const categories = await getCategoryDtos();
+  const catButtons = categories.map((c) =>
+    Markup.button.callback(`${c.emoji} ${c.name}`, `rmvto:${expenseId}:${c.id}:${page}`)
+  );
+
+  const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
+  for (let i = 0; i < catButtons.length; i += 2) {
+    rows.push(catButtons.slice(i, i + 2));
+  }
+  rows.push([Markup.button.callback("❌ Отмена", `rcnt:${page}`)]);
+
+  return Markup.inlineKeyboard(rows);
 }
 
 /**
@@ -120,6 +140,8 @@ export async function handleRecentButton(ctx: Context): Promise<void> {
  * - rcnt:<page> — navigate to page
  * - rdel:<id>:<page> — request delete confirmation
  * - rdel_y:<id>:<page> — confirm delete
+ * - rmov:<id>:<page> — show category picker to move the expense
+ * - rmvto:<id>:<categoryId>:<page> — move the expense to the chosen category
  * - recent:refresh — legacy refresh (page 1)
  * - rdel:<id> / rdel_y:<id> — legacy (no page, defaults to 1)
  */
@@ -164,6 +186,55 @@ export async function handleRecentCallback(ctx: Context): Promise<void> {
       });
     } catch {
       // Message may be unchanged
+    }
+    return;
+  }
+
+  // Move request: rmov:<expenseId>:<page> — swap the keyboard for a category picker
+  const moveMatch = data.match(/^rmov:(\d+):(\d+)$/);
+  if (moveMatch) {
+    const expenseId = parseInt(moveMatch[1], 10);
+    const page = parseInt(moveMatch[2], 10);
+    if (isNaN(expenseId)) return;
+
+    await ctx.answerCbQuery("Выберите категорию");
+    try {
+      const keyboard = await buildMovePickerKeyboard(expenseId, page);
+      await ctx.editMessageReplyMarkup(keyboard.reply_markup);
+    } catch {
+      // Message may be already edited
+    }
+    return;
+  }
+
+  // Move to category: rmvto:<expenseId>:<categoryId>:<page>
+  const moveToMatch = data.match(/^rmvto:(\d+):(\d+):(\d+)$/);
+  if (moveToMatch) {
+    const expenseId = parseInt(moveToMatch[1], 10);
+    const categoryId = parseInt(moveToMatch[2], 10);
+    const page = parseInt(moveToMatch[3], 10);
+    if (isNaN(expenseId) || isNaN(categoryId)) return;
+
+    try {
+      const updated = await editExpense(telegramId, expenseId, { categoryId });
+      if (!updated) {
+        await ctx.answerCbQuery("Запись не найдена или не ваша.");
+      } else {
+        await ctx.answerCbQuery(`✅ Перемещено в «${updated.categoryName}»`);
+        log.info(`Expense ${expenseId} moved to category ${categoryId} by user ${telegramId}`);
+        logAction(null, telegramId, "expense_move_category", { expenseId, categoryId });
+      }
+
+      const result = await buildRecentMessage(telegramId, page);
+      if (result) {
+        await ctx.editMessageText(result.text, {
+          parse_mode: "Markdown",
+          ...result.keyboard,
+        });
+      }
+    } catch (err) {
+      log.error("Error moving expense category from recent:", err);
+      await ctx.answerCbQuery("❌ Ошибка при перемещении.");
     }
     return;
   }

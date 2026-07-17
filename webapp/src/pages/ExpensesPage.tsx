@@ -788,6 +788,7 @@ function CategoryAccordion({
   });
 
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [movingId, setMovingId] = useState<number | null>(null);
 
   const expenses = data?.expenses ?? [];
   const totalCount = data?.total ?? 0;
@@ -833,6 +834,19 @@ function CategoryAccordion({
                   queryClient.invalidateQueries({ queryKey: ["expenses"] });
                 }}
               />
+            ) : movingId === exp.id ? (
+              <MoveCategoryRow
+                key={exp.id}
+                expenseId={exp.id}
+                // The drilldown is filtered by categoryId, so it is the current one.
+                currentCategoryId={categoryId}
+                categories={categories ?? []}
+                onCancel={() => setMovingId(null)}
+                onMoved={() => {
+                  setMovingId(null);
+                  queryClient.invalidateQueries({ queryKey: ["expenses"] });
+                }}
+              />
             ) : (
               <div key={exp.id} className="expense-row">
                 <div className="expense-row-content">
@@ -852,7 +866,21 @@ function CategoryAccordion({
                 <div className="expense-row-actions">
                   <button
                     className="btn btn-icon"
-                    onClick={() => setEditingId(exp.id)}
+                    onClick={() => {
+                      setEditingId(null);
+                      setMovingId(exp.id);
+                    }}
+                    disabled={deleteMutation.isPending}
+                    title="Переместить в другую категорию"
+                  >
+                    🔀
+                  </button>
+                  <button
+                    className="btn btn-icon"
+                    onClick={() => {
+                      setMovingId(null);
+                      setEditingId(exp.id);
+                    }}
                     disabled={deleteMutation.isPending}
                     title="Редактировать"
                   >
@@ -1003,6 +1031,71 @@ function EditExpenseRow({
           disabled={editMutation.isPending}
         >
           {editMutation.isPending ? "Сохранение…" : "Сохранить"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Move Category Row (inline quick-move) ───────────────────
+
+function MoveCategoryRow({
+  expenseId,
+  currentCategoryId,
+  categories,
+  onCancel,
+  onMoved,
+}: {
+  expenseId: number;
+  currentCategoryId: number;
+  categories: CategoryDto[];
+  onCancel: () => void;
+  onMoved: () => void;
+}) {
+  const [categoryId, setCategoryId] = useState(currentCategoryId);
+
+  const moveMutation = useMutation({
+    mutationFn: (targetCategoryId: number) =>
+      api.put<ExpenseDto>(`/api/expenses/${expenseId}`, { categoryId: targetCategoryId }),
+    onSuccess: onMoved,
+  });
+
+  const submit = () => {
+    if (categoryId === currentCategoryId) {
+      onCancel();
+      return;
+    }
+    moveMutation.mutate(categoryId);
+  };
+
+  return (
+    <div className="expense-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">Переместить в категорию</label>
+        <select
+          className="input"
+          value={categoryId}
+          onChange={(e) => setCategoryId(Number(e.target.value))}
+        >
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+          ))}
+        </select>
+      </div>
+      {moveMutation.error && (
+        <div className="error-msg">{(moveMutation.error as Error).message}</div>
+      )}
+      <div className="form-row">
+        <button type="button" className="btn" onClick={onCancel} disabled={moveMutation.isPending}>
+          Отмена
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={submit}
+          disabled={moveMutation.isPending}
+        >
+          {moveMutation.isPending ? "Перемещение…" : "Переместить"}
         </button>
       </div>
     </div>

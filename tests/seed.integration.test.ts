@@ -2,22 +2,27 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 
 /**
- * Integration test for the reference-data seed migrations (0004, 0005) against a
+ * Integration test for the reference-data seed migrations (0004–0007) against a
  * real DB. The collapsed DDL-only baseline no longer carries seed rows, so these
  * migrations re-add them idempotently. This guards against the seed gap regressing:
- * a fresh DB must come up with the default tribe, all 23 expense categories, and
- * the 5 built-in reminder sounds — each present exactly once (no duplicates).
+ * a fresh DB must come up with the default tribe, the current expense categories,
+ * and the 5 built-in reminder sounds — each present exactly once (no duplicates).
+ *
+ * The expected set reflects the net of all category seed migrations: 0004 seeds 23,
+ * 0006 adds "Одежда и обувь" + "Товары для красоты", 0007 drops "Массаж" (folded
+ * into "Услуги (стрижка, эпиляция)") and adds "Помощь родителям" + "Дача" → 26.
  *
  * Run: DATABASE_URL=postgres://... npx tsx --test tests/seed.integration.test.ts
  */
 
 const SEED_CATEGORY_NAMES = [
   "Продукты", "Здоровье (врачи и процедуры)", "Подарки", "Кафе, доставка, фастфуд",
-  "Ремонт машины и эксплуатация", "Аптека", "Массаж", "Путешествия и билеты",
+  "Ремонт машины и эксплуатация", "Аптека", "Путешествия и билеты",
   "Бензин и расходники на машину", "Спорт взрослых", "Садик", "Кружки и секции детей",
   "Сервисы, интернет, связь", "ЖКХ", "Такси", "Ипотека", "Развлечения (кино, театр)",
   "Услуги (стрижка, эпиляция)", "Хобби", "Ремонт и обустройство квартиры",
   "Детские товары", "Товары для дома", "Другое",
+  "Одежда и обувь", "Товары для красоты", "Помощь родителям", "Дача",
 ];
 
 const SEED_SOUND_FILES = [
@@ -47,12 +52,23 @@ describe("reference-data seeds", () => {
     assert.equal(rows.length, 1, "default tribe 'Семья' must exist exactly once");
   });
 
-  it("seeds all 23 expense categories, each exactly once (0004)", async () => {
+  it("seeds all 26 expense categories, each exactly once (0004+0006+0007)", async () => {
     const rows = await db.select().from(schema.categories);
     const counts = new Map<string, number>();
     for (const r of rows) counts.set(r.name, (counts.get(r.name) ?? 0) + 1);
     for (const name of SEED_CATEGORY_NAMES) {
       assert.equal(counts.get(name), 1, `category "${name}" must be present exactly once (no dup, no missing)`);
+    }
+    // 0007 removed the standalone "Массаж" (folded into "Услуги (стрижка, эпиляция)").
+    assert.equal(counts.get("Массаж"), undefined, `category "Массаж" must be removed by 0007`);
+  });
+
+  it("gives every category a non-empty description (0008)", async () => {
+    const rows = await db.select().from(schema.categories);
+    const byName = new Map(rows.map((r) => [r.name, r.description]));
+    for (const name of SEED_CATEGORY_NAMES) {
+      const descr = byName.get(name);
+      assert.ok(descr && descr.trim().length > 0, `category "${name}" must have a description`);
     }
   });
 
