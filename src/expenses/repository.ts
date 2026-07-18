@@ -534,6 +534,68 @@ export async function addExpense(
   };
 }
 
+/**
+ * Insert an expense guarded by an idempotency key (dedup_hash). If a row with the
+ * same hash already exists (partial unique index idx_expenses_dedup_hash), no new
+ * row is created and the existing one is returned with deduped=true — so a retried
+ * request (e.g. a voice upload the gateway timed out on) stays idempotent instead
+ * of creating a duplicate.
+ */
+export async function addExpenseWithDedup(
+  userId: number,
+  tribeId: number,
+  categoryId: number,
+  amount: number,
+  subcategory: string | null,
+  inputMethod: "text" | "voice",
+  dedupHash: string,
+  createdAt?: Date | null
+): Promise<{ expense: Expense; deduped: boolean }> {
+  if (amount < MIN_EXPENSE_AMOUNT || amount > MAX_EXPENSE_AMOUNT) {
+    throw new Error(`Сумма должна быть от ${MIN_EXPENSE_AMOUNT} до ${MAX_EXPENSE_AMOUNT.toLocaleString("ru-RU")} ₽`);
+  }
+  if (!Number.isFinite(amount)) {
+    throw new Error("Некорректная сумма");
+  }
+  const sanitizedSub = subcategory
+    ? subcategory.slice(0, MAX_SUBCATEGORY_LENGTH).trim() || null
+    : null;
+
+  const inserted = await db
+    .insert(expenses)
+    .values({
+      userId,
+      tribeId,
+      categoryId,
+      subcategory: sanitizedSub,
+      amount: String(amount),
+      inputMethod,
+      dedupHash,
+      createdAt: createdAt ?? sql`now()`,
+    })
+    .onConflictDoNothing({ target: expenses.dedupHash, where: sql`${expenses.dedupHash} is not null` })
+    .returning();
+
+  const row =
+    inserted[0] ??
+    (await db.select().from(expenses).where(eq(expenses.dedupHash, dedupHash)).limit(1))[0];
+  if (!row) throw new Error("Не удалось сохранить трату");
+
+  return {
+    expense: {
+      id: row.id,
+      userId: row.userId,
+      tribeId: row.tribeId,
+      categoryId: row.categoryId,
+      subcategory: row.subcategory,
+      amount: parseFloat(row.amount),
+      inputMethod: row.inputMethod as "text" | "voice",
+      createdAt: row.createdAt,
+    },
+    deduped: inserted.length === 0,
+  };
+}
+
 /** Get a single expense by ID with category info. */
 export async function getExpenseById(expenseId: number): Promise<ExpenseWithCategory | null> {
   const [r] = await db

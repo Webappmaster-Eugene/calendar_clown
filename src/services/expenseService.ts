@@ -5,6 +5,7 @@
 import { parseExpenseText, parseMultipleExpenses, getCategoriesListWithAliases } from "../expenses/parser.js";
 import {
   addExpense,
+  addExpenseWithDedup,
   ensureUser,
   getMonthTotal,
   getCategoryTotals,
@@ -44,6 +45,7 @@ import { generateMonthlyExcel, generateYearlyExcel } from "../expenses/excel.js"
 import { getMskNow, getMskYmd, getMonthRange, getMonthLimit } from "../utils/date.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { createLogger } from "../utils/logger.js";
+import { createHash } from "node:crypto";
 import type {
   ExpenseDto,
   CategoryDto,
@@ -293,7 +295,12 @@ export async function addExpenseFromVoice(
   isAdmin: boolean,
   categoryName: string,
   subcategory: string | null,
-  amount: number
+  amount: number,
+  // When true, the insert is idempotent: a retry with the same user/amount/category/
+  // subcategory within the same minute returns the existing row instead of a dup.
+  // Used by the Mini App API path (a gateway timeout can make the client re-send);
+  // the bot processes each voice message once and leaves this off.
+  dedup: boolean = false
 ): Promise<AddExpenseResult> {
   requireDb();
 
@@ -325,14 +332,21 @@ export async function addExpenseFromVoice(
       ? categoryName
       : subcategory;
 
-  const expense = await addExpense(
-    dbUser.id,
-    dbUser.tribeId,
-    cat.id,
-    amount,
-    effectiveSubcategory,
-    "voice"
-  );
+  let expense: Awaited<ReturnType<typeof addExpense>>;
+  if (dedup) {
+    const now = new Date();
+    const minuteBucket = now.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM (UTC)
+    const dedupHash = createHash("sha256")
+      .update(`voice|${telegramId}|${amount.toFixed(2)}|${cat.id}|${(effectiveSubcategory ?? "").toLowerCase().trim()}|${minuteBucket}`)
+      .digest("hex");
+    const res = await addExpenseWithDedup(dbUser.id, dbUser.tribeId, cat.id, amount, effectiveSubcategory, "voice", dedupHash, now);
+    expense = res.expense;
+    if (res.deduped) {
+      log.info(`Voice expense deduped (idempotent retry) for user ${telegramId}`);
+    }
+  } else {
+    expense = await addExpense(dbUser.id, dbUser.tribeId, cat.id, amount, effectiveSubcategory, "voice");
+  }
 
   const { year, month } = getMskNow();
   const total = await getMonthTotal(dbUser.tribeId, year, month);

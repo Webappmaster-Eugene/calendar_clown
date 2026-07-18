@@ -169,7 +169,8 @@ app.post("/expense", async (c) => {
       false,
       intent.category,
       intent.subcategory,
-      intent.amount
+      intent.amount,
+      true // idempotent: a gateway-timeout retry of the same upload must not duplicate
     );
 
     return c.json({
