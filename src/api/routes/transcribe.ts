@@ -8,14 +8,21 @@ import {
   removeTranscription,
   getPending,
   clearUserQueue,
+  updateTranscript,
 } from "../../services/transcribeService.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schema. Only :id params (no JSON bodies on this router).
+// ── Input schemas.
 const idParam = z.object({ id: z.coerce.number().int().positive() });
+
+// STT output can be long, but cap it to guard against abusive payloads.
+const MAX_TRANSCRIPT_LENGTH = 20_000;
+const updateBody = z.object({
+  transcript: z.string().trim().min(1, "Текст не может быть пустым").max(MAX_TRANSCRIPT_LENGTH),
+});
 
 /** GET /api/transcribe — transcription history */
 app.get("/", async (c) => {
@@ -91,6 +98,30 @@ app.get("/:id", zValidator("param", idParam), async (c) => {
     return c.json({ ok: true, data: transcription });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get transcription";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/transcribe/:id — edit transcription text */
+app.put("/:id", zValidator("param", idParam), zValidator("json", updateBody), async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const transcriptionId = parseInt(c.req.param("id"), 10);
+  const { transcript } = c.req.valid("json");
+
+  if (isNaN(transcriptionId)) {
+    return c.json({ ok: false, error: "Invalid transcription ID" }, 400);
+  }
+
+  try {
+    const updated = await updateTranscript(telegramId, transcriptionId, transcript);
+    if (!updated) {
+      return c.json({ ok: false, error: "Transcription not found" }, 404);
+    }
+    logApiAction(telegramId, "transcribe_edit", { transcriptionId });
+    return c.json({ ok: true, data: updated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update transcription";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

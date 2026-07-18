@@ -317,7 +317,7 @@ export function ExpensesPage() {
         />
       )}
       {tab === "recent" && (
-        <RecentView data={recentData} isLoading={recentLoading} page={recentPage} onPageChange={setRecentPage} />
+        <RecentView data={recentData} isLoading={recentLoading} page={recentPage} onPageChange={setRecentPage} categories={categories ?? []} />
       )}
       {tab === "categories" && isAdmin && (
         <CategoriesManager categories={categories ?? []} />
@@ -1452,13 +1452,16 @@ function RecentView({
   isLoading,
   page,
   onPageChange,
+  categories,
 }: {
   data: RecentExpensesResponse | undefined;
   isLoading: boolean;
   page: number;
   onPageChange: (page: number) => void;
+  categories: CategoryDto[];
 }) {
   const queryClient = useQueryClient();
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.del<void>(`/api/expenses/${id}`),
@@ -1492,39 +1495,66 @@ function RecentView({
       )}
       <div className="list">
         {items.map((exp) => (
-          <div key={exp.id} className="list-item">
-            <span className="list-item-emoji">{exp.categoryEmoji}</span>
-            <div className="list-item-content">
-              <div className="list-item-title">
-                {exp.amount.toLocaleString("ru-RU")} ₽
-                {exp.subcategory ? ` — ${exp.subcategory}` : ""}
-              </div>
-              <div className="list-item-hint">
-                {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </div>
+          editingId === exp.id ? (
+            <div key={exp.id} className="list-item" style={{ display: "block" }}>
+              <EditExpenseRow
+                expense={{
+                  id: exp.id,
+                  amount: exp.amount,
+                  subcategory: exp.subcategory,
+                  createdAt: exp.createdAt,
+                  categoryId: exp.categoryId,
+                }}
+                categories={categories}
+                onCancel={() => setEditingId(null)}
+                onSaved={() => {
+                  queryClient.invalidateQueries({ queryKey: ["expenses"] });
+                  setEditingId(null);
+                }}
+              />
             </div>
-            {exp.isOwn && (
-              <div className="list-item-actions">
-                <button
-                  className="btn btn-icon btn-danger"
-                  onClick={() => {
-                    if (confirm("Удалить эту запись?")) {
-                      deleteMutation.mutate(exp.id);
-                    }
-                  }}
-                  disabled={deleteMutation.isPending}
-                  title="Удалить"
-                >
-                  🗑️
-                </button>
+          ) : (
+            <div key={exp.id} className="list-item">
+              <span className="list-item-emoji">{exp.categoryEmoji}</span>
+              <div className="list-item-content">
+                <div className="list-item-title">
+                  {exp.amount.toLocaleString("ru-RU")} ₽
+                  {exp.subcategory ? ` — ${exp.subcategory}` : ""}
+                </div>
+                <div className="list-item-hint">
+                  {exp.firstName} &middot; {new Date(exp.createdAt).toLocaleDateString("ru-RU", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
               </div>
-            )}
-          </div>
+              {exp.isOwn && (
+                <div className="list-item-actions">
+                  <button
+                    className="btn btn-icon"
+                    onClick={() => setEditingId(exp.id)}
+                    title="Редактировать"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    className="btn btn-icon btn-danger"
+                    onClick={() => {
+                      if (confirm("Удалить эту запись?")) {
+                        deleteMutation.mutate(exp.id);
+                      }
+                    }}
+                    disabled={deleteMutation.isPending}
+                    title="Удалить"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              )}
+            </div>
+          )
         ))}
       </div>
       {/* Pagination controls */}

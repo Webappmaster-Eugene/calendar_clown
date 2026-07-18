@@ -1,6 +1,8 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
+import { useHaptic } from "../hooks/useHaptic";
 import { useDragScroll } from "../hooks/useDragScroll";
 import { useTelegram } from "../hooks/useTelegram";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
@@ -19,6 +21,7 @@ export function NotableDatesPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
   const { showConfirm } = useTelegram();
+  const { selection } = useHaptic();
   const [tab, setTab] = useState<DateTab>("upcoming");
   const [offset, setOffset] = useState(0);
   const [showForm, setShowForm] = useState(false);
@@ -118,6 +121,7 @@ export function NotableDatesPage() {
   const togglePriorityMutation = useMutation({
     mutationFn: (id: number) =>
       api.put<{ toggled: boolean }>(`/api/notable-dates/${id}/toggle`),
+    meta: { skipHapticSuccess: true },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notable-dates"] });
     },
@@ -199,7 +203,7 @@ export function NotableDatesPage() {
         </button>
       </div>
 
-      {isLoading && <div className="loading">Загрузка...</div>}
+      {isLoading && <ListSkeleton />}
 
       {dates && dates.length === 0 && !showForm && (
         <div className="empty-state">
@@ -231,7 +235,7 @@ export function NotableDatesPage() {
               <div className="list-item-actions">
                 <button
                   className="btn btn-icon"
-                  onClick={() => togglePriorityMutation.mutate(d.id)}
+                  onClick={() => { selection(); togglePriorityMutation.mutate(d.id); }}
                   disabled={togglePriorityMutation.isPending}
                   title={d.isPriority ? "Убрать приоритет" : "Сделать приоритетной"}
                 >

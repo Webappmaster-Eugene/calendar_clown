@@ -16,6 +16,8 @@ export function ChatPage() {
   const queryClient = useQueryClient();
   const { showAlert, showConfirm } = useTelegram();
   const [selectedDialogId, setSelectedDialogId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
 
   const { data: dialogs, isLoading, error } = useQuery({
     queryKey: ["chat", "dialogs"],
@@ -63,10 +65,40 @@ export function ChatPage() {
     },
   });
 
+  const renameDialogMutation = useMutation({
+    mutationFn: ({ id, title }: { id: number; title: string }) =>
+      api.put<{ id: number; title: string }>(`/api/chat/dialogs/${id}`, { title }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
+      setEditingId(null);
+      setEditingTitle("");
+    },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : "Не удалось переименовать диалог";
+      showAlert(msg);
+    },
+  });
+
   const handleDeleteDialog = (id: number, title: string) => {
     showConfirm(`Удалить диалог "${title}"?`, (confirmed) => {
       if (confirmed) deleteDialogMutation.mutate(id);
     });
+  };
+
+  const startEditing = (id: number, title: string) => {
+    setEditingId(id);
+    setEditingTitle(title);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditingTitle("");
+  };
+
+  const saveEditing = (id: number) => {
+    const title = editingTitle.trim();
+    if (!title || renameDialogMutation.isPending) return;
+    renameDialogMutation.mutate({ id, title: title.slice(0, 100) });
   };
 
   if (selectedDialogId !== null) {
@@ -135,25 +167,69 @@ export function ChatPage() {
         <div className="list">
           {dialogs.map((d) => (
             <div key={d.id} className="list-item">
-              <div
-                className="list-item-content"
-                style={{ cursor: createDialogMutation.isPending ? "default" : "pointer", opacity: createDialogMutation.isPending ? 0.6 : 1 }}
-                onClick={() => { if (!createDialogMutation.isPending) setSelectedDialogId(d.id); }}
-              >
-                <div className="list-item-title">{d.title}</div>
-                <div className="list-item-hint">
-                  {d.messageCount ?? 0} сообщений &middot; {new Date(d.updatedAt).toLocaleDateString("ru-RU")}
-                </div>
-              </div>
-              <div className="list-item-actions">
-                <button
-                  className="btn btn-icon btn-danger"
-                  onClick={() => handleDeleteDialog(d.id, d.title)}
-                  title="Удалить"
-                >
-                  🗑️
-                </button>
-              </div>
+              {editingId === d.id ? (
+                <>
+                  <input
+                    className="input"
+                    style={{ flex: 1 }}
+                    value={editingTitle}
+                    maxLength={100}
+                    autoFocus
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditing(d.id);
+                      if (e.key === "Escape") cancelEditing();
+                    }}
+                  />
+                  <div className="list-item-actions">
+                    <button
+                      className="btn btn-icon"
+                      onClick={() => saveEditing(d.id)}
+                      disabled={!editingTitle.trim() || renameDialogMutation.isPending}
+                      title="Сохранить"
+                    >
+                      ✅
+                    </button>
+                    <button
+                      className="btn btn-icon"
+                      onClick={cancelEditing}
+                      disabled={renameDialogMutation.isPending}
+                      title="Отмена"
+                    >
+                      ❌
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div
+                    className="list-item-content"
+                    style={{ cursor: createDialogMutation.isPending ? "default" : "pointer", opacity: createDialogMutation.isPending ? 0.6 : 1 }}
+                    onClick={() => { if (!createDialogMutation.isPending) setSelectedDialogId(d.id); }}
+                  >
+                    <div className="list-item-title">{d.title}</div>
+                    <div className="list-item-hint">
+                      {d.messageCount ?? 0} сообщений &middot; {new Date(d.updatedAt).toLocaleDateString("ru-RU")}
+                    </div>
+                  </div>
+                  <div className="list-item-actions">
+                    <button
+                      className="btn btn-icon"
+                      onClick={() => startEditing(d.id, d.title)}
+                      title="Переименовать"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className="btn btn-icon btn-danger"
+                      onClick={() => handleDeleteDialog(d.id, d.title)}
+                      title="Удалить"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>

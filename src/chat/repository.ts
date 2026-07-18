@@ -87,6 +87,29 @@ export async function updateDialogTitle(
     .where(eq(chatDialogs.id, dialogId));
 }
 
+/**
+ * Rename a dialog with an ownership check. Returns true if a row was updated,
+ * false if the dialog was not found, not owned, or already deleted.
+ */
+export async function renameDialog(
+  dialogId: number,
+  userId: number,
+  title: string
+): Promise<boolean> {
+  const rows = await db
+    .update(chatDialogs)
+    .set({ title, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(chatDialogs.id, dialogId),
+        eq(chatDialogs.userId, userId),
+        eq(chatDialogs.isActive, true)
+      )
+    )
+    .returning({ id: chatDialogs.id });
+  return rows.length > 0;
+}
+
 /** Soft-delete a dialog (is_active=false). If it was active dialog, switch to latest. */
 export async function deleteDialog(
   dialogId: number,

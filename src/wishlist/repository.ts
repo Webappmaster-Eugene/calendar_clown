@@ -103,6 +103,25 @@ export async function getWishlistById(wishlistId: number, tribeId: number): Prom
   return { ...mapWishlist(row), ownerName: row.firstName };
 }
 
+export async function updateWishlist(
+  wishlistId: number,
+  userId: number,
+  updates: { name?: string; emoji?: string }
+): Promise<Wishlist | null> {
+  const set: PgUpdateSetSource<typeof wishlists> = {};
+  if (updates.name !== undefined) set.name = updates.name;
+  if (updates.emoji !== undefined) set.emoji = updates.emoji;
+  set.updatedAt = sql`now()`;
+
+  const [row] = await db
+    .update(wishlists)
+    .set(set)
+    .where(and(eq(wishlists.id, wishlistId), eq(wishlists.userId, userId), eq(wishlists.isActive, true)))
+    .returning();
+  if (!row) return null;
+  return mapWishlist(row);
+}
+
 export async function deleteWishlist(wishlistId: number, userId: number): Promise<boolean> {
   const rows = await db
     .update(wishlists)

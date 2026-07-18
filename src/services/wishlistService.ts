@@ -7,6 +7,7 @@ import {
   getWishlistsByUser,
   getWishlistsByTribe,
   getWishlistById,
+  updateWishlist,
   deleteWishlist,
   countWishlistsByUser,
   createItem,
@@ -126,6 +127,33 @@ export async function removeWishlist(telegramId: number, wishlistId: number): Pr
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   return deleteWishlist(wishlistId, dbUser.id);
+}
+
+/**
+ * Update a wishlist's name/emoji. Ownership is enforced in the repository
+ * (userId + isActive filter), so a non-owner or missing list yields null.
+ */
+export async function updateWishlistDetails(
+  telegramId: number,
+  wishlistId: number,
+  updates: { name?: string; emoji?: string }
+): Promise<WishlistDto | null> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+
+  const wishlist = await updateWishlist(wishlistId, dbUser.id, updates);
+  if (!wishlist) return null;
+
+  const itemCount = await countItemsByWishlist(wishlist.id);
+  return {
+    id: wishlist.id,
+    name: wishlist.name,
+    emoji: wishlist.emoji,
+    ownerName: dbUser.firstName,
+    itemCount,
+    isOwn: true,
+    createdAt: wishlist.createdAt.toISOString(),
+  };
 }
 
 export async function getWishlistItems(

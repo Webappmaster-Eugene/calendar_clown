@@ -4,6 +4,7 @@ import { zValidator } from "../validate.js";
 import {
   createEventFromText,
   createEventFromIntent,
+  updateEventById,
   getEventsToday,
   getEventsWeek,
   cancelEventById,
@@ -35,6 +36,11 @@ const createEventBody = z.object({
       events: z.array(intentEventSchema),
     })
     .optional(),
+});
+const updateEventBody = z.object({
+  title: z.string().min(1),
+  startISO: z.string(),
+  endISO: z.string(),
 });
 const searchAndCancelBody = z.object({
   query: z.string(),
@@ -118,6 +124,32 @@ app.post("/events", zValidator("json", createEventBody), async (c) => {
       return c.json({ ok: false, error: err.message, code: "PAST_DATE" }, 400);
     }
     const msg = err instanceof Error ? err.message : "Failed to create event";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/calendar/events/:id — update single event (title, start, end) */
+app.put("/events/:id", zValidator("json", updateEventBody), async (c) => {
+  const initData = c.get("initData");
+  const userId = String(initData.user.id);
+  const telegramId = initData.user.id;
+  const eventId = c.req.param("id");
+  const body = await c.req.json<{ title: string; startISO: string; endISO: string }>();
+
+  const title = body.title.trim();
+  if (!title) {
+    return c.json({ ok: false, error: "title is required" }, 400);
+  }
+
+  try {
+    const result = await updateEventById(userId, telegramId, eventId, title, body.startISO, body.endISO);
+    logApiAction(telegramId, "calendar_event_update", { eventId });
+    return c.json({ ok: true, data: result });
+  } catch (err) {
+    if (err instanceof NoCalendarLinkedError) {
+      return c.json({ ok: false, error: err.message, code: "NO_CALENDAR" }, 400);
+    }
+    const msg = err instanceof Error ? err.message : "Failed to update event";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

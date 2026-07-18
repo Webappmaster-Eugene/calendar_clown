@@ -6,31 +6,11 @@ import { useHaptic } from "../hooks/useHaptic";
 import { useAddToHomeScreen } from "../hooks/useAddToHomeScreen";
 import type { UserProfile, CreateSupportReportRequest } from "@shared/types";
 import { MODE_LABELS } from "@shared/constants";
+import { MODE_ROUTES } from "../lib/modes";
 
 interface UserProfileWithModes extends UserProfile {
   availableModes: string[];
 }
-
-const MODE_ROUTES: Record<string, string> = {
-  calendar: "/calendar",
-  expenses: "/expenses",
-  gandalf: "/gandalf",
-  goals: "/goals",
-  reminders: "/reminders",
-  wishlist: "/wishlist",
-  notable_dates: "/dates",
-  digest: "/digest",
-  osint: "/osint",
-  neuro: "/neuro",
-  transcribe: "/transcribe",
-  simplifier: "/simplifier",
-  tasks: "/tasks",
-  summarizer: "/summarizer",
-  blogger: "/blogger",
-  broadcast: "/broadcast",
-  nutritionist: "/nutritionist",
-  admin: "/admin",
-};
 
 export function ModeSelectorPage() {
   const navigate = useNavigate();

@@ -89,6 +89,38 @@ export async function createEvent(
   };
 }
 
+export async function updateEvent(
+  eventId: string,
+  summary: string,
+  start: Date,
+  end: Date,
+  userId: string
+): Promise<CalendarEvent> {
+  const auth = await getAuthClient(userId);
+  const calendar = google.calendar({ version: "v3", auth });
+  const res = await calendar.events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: {
+      summary,
+      start: { dateTime: formatDateTimeMsk(start), timeZone: "Europe/Moscow" },
+      end: { dateTime: formatDateTimeMsk(end), timeZone: "Europe/Moscow" },
+    },
+  });
+  const e = res.data;
+  if (!e.id || !e.summary || !e.start?.dateTime || !e.end?.dateTime) {
+    throw new Error("Invalid event response");
+  }
+  return {
+    id: e.id,
+    summary: e.summary,
+    start: e.start.dateTime,
+    end: e.end.dateTime,
+    htmlLink: e.htmlLink ?? undefined,
+    recurringEventId: e.recurringEventId ?? undefined,
+  };
+}
+
 export async function deleteEvent(
   eventId: string,
   userId: string

@@ -42,6 +42,34 @@ export async function markEventDeleted(googleEventId: string, userId: number): P
   return rows.length > 0;
 }
 
+/**
+ * Update the audit row for a calendar event (summary/times) by its Google Event ID.
+ * Returns true if a row was updated.
+ */
+export async function markEventUpdated(
+  googleEventId: string,
+  userId: number,
+  params: { summary: string; startTime: Date; endTime: Date }
+): Promise<boolean> {
+  const rows = await db
+    .update(calendarEvents)
+    .set({
+      summary: params.summary,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(calendarEvents.googleEventId, googleEventId),
+        eq(calendarEvents.userId, userId),
+        eq(calendarEvents.status, "created"),
+      ),
+    )
+    .returning({ id: calendarEvents.id });
+  return rows.length > 0;
+}
+
 // ─── Admin functions ────────────────────────────────────────────────────
 
 /** Admin: get all calendar events paginated (all users). */

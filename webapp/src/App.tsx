@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
+import { hapticFeedback } from "@telegram-apps/sdk-react";
 import { TelegramProvider } from "./hooks/useTelegram";
 import { ReminderAudioProvider } from "./hooks/useReminderAudio";
 import { AppShell } from "./components/layout/AppShell";
@@ -32,7 +33,24 @@ const TasksPage = lazy(() => import("./pages/TasksPage").then((m) => ({ default:
 const NutritionistPage = lazy(() => import("./pages/NutritionistPage").then((m) => ({ default: m.NutritionistPage })));
 const BankHookPage = lazy(() => import("./pages/BankHookPage").then((m) => ({ default: m.BankHookPage })));
 
+/** Fire a Telegram notification haptic; no-op outside a Telegram client. */
+function notifyHaptic(type: "success" | "error"): void {
+  if (hapticFeedback.notificationOccurred.isAvailable()) {
+    hapticFeedback.notificationOccurred(type);
+  }
+}
+
 const queryClient = new QueryClient({
+  // Global success/error haptics for every mutation (form submits, edits,
+  // deletes) — the single place that "finishes" haptic feedback across all
+  // forms. Toggles opt out of the success buzz via `meta.skipHapticSuccess`
+  // because they already fire a lighter selection() tick on tap.
+  mutationCache: new MutationCache({
+    onSuccess: (_data, _vars, _ctx, mutation) => {
+      if (!mutation.meta?.skipHapticSuccess) notifyHaptic("success");
+    },
+    onError: () => notifyHaptic("error"),
+  }),
   defaultOptions: {
     queries: {
       retry: 1,

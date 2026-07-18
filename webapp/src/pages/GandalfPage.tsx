@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import { VoiceButton } from "../components/VoiceButton";
 import { useTelegram } from "../hooks/useTelegram";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
@@ -83,7 +84,7 @@ export function GandalfPage() {
     }
   };
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedCategoryId !== null) {
@@ -203,7 +204,7 @@ function GandalfStatsTab() {
     queryFn: () => api.get<GandalfStats>("/api/gandalf/stats"),
   });
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="error-msg">{(error as Error).message}</div>;
   if (!stats) return null;
 
@@ -292,7 +293,7 @@ function GandalfAllEntries({ onSelectCategory }: { onSelectCategory: (id: number
   const total = data?.total ?? 0;
   const hasMore = page * LIMIT < total;
 
-  if (isLoading && page === 1) return <div className="loading">Загрузка...</div>;
+  if (isLoading && page === 1) return <div className="page"><ListSkeleton /></div>;
 
   if (entries.length === 0 && page === 1) {
     return (
@@ -471,7 +472,7 @@ function GandalfEntries({
         К категориям
       </button>
 
-      {isLoading && <div className="loading">Загрузка записей...</div>}
+      {isLoading && <ListSkeleton />}
 
       {entries && entries.length === 0 && (
         <div className="empty-state">

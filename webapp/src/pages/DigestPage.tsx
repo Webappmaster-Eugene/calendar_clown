@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import type {
   DigestRubricDto,
   DigestChannelDto,
@@ -8,9 +9,13 @@ import type {
   UpdateRubricRequest,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { useTelegram } from "../hooks/useTelegram";
+import { useHaptic } from "../hooks/useHaptic";
 
 export function DigestPage() {
   useClosingConfirmation();
+  const { showConfirm } = useTelegram();
+  const { selection } = useHaptic();
   const [selectedRubricId, setSelectedRubricId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingRubricId, setEditingRubricId] = useState<number | null>(null);
@@ -52,6 +57,7 @@ export function DigestPage() {
   const toggleRubricMutation = useMutation({
     mutationFn: (id: number) =>
       api.put<DigestRubricDto>(`/api/digest/rubrics/${id}/toggle`),
+    meta: { skipHapticSuccess: true },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["digest", "rubrics"] });
     },
@@ -83,7 +89,7 @@ export function DigestPage() {
     }
   };
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedRubricId !== null) {
@@ -130,7 +136,7 @@ export function DigestPage() {
               <div className="list-item-actions" style={{ display: "flex", gap: 4 }}>
                 <button
                   className="btn btn-icon"
-                  onClick={(e) => { e.stopPropagation(); toggleRubricMutation.mutate(r.id); }}
+                  onClick={(e) => { e.stopPropagation(); selection(); toggleRubricMutation.mutate(r.id); }}
                   disabled={toggleRubricMutation.isPending}
                   title={r.isActive ? "Поставить на паузу" : "Возобновить"}
                 >
@@ -145,7 +151,12 @@ export function DigestPage() {
                 </button>
                 <button
                   className="btn btn-icon btn-danger"
-                  onClick={(e) => { e.stopPropagation(); deleteRubricMutation.mutate(r.id); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    showConfirm(`Удалить рубрику "${r.name}" и все её каналы?`, (confirmed) => {
+                      if (confirmed) deleteRubricMutation.mutate(r.id);
+                    });
+                  }}
                   disabled={deleteRubricMutation.isPending}
                   title="Удалить"
                 >
@@ -186,6 +197,7 @@ export function DigestPage() {
 
 function RubricChannels({ rubricId, onBack }: { rubricId: number; onBack: () => void }) {
   const queryClient = useQueryClient();
+  const { showConfirm } = useTelegram();
   const [showAdd, setShowAdd] = useState(false);
   const [username, setUsername] = useState("");
 
@@ -206,7 +218,7 @@ function RubricChannels({ rubricId, onBack }: { rubricId: number; onBack: () => 
 
   const deleteMutation = useMutation({
     mutationFn: (channelId: number) =>
-      api.del<void>(`/api/digest/channels/${channelId}`),
+      api.del<void>(`/api/digest/channels/${channelId}?rubricId=${rubricId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["digest", "channels", rubricId] });
     },
@@ -217,7 +229,7 @@ function RubricChannels({ rubricId, onBack }: { rubricId: number; onBack: () => 
       <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>Назад</button>
       <h2 className="page-title">Каналы</h2>
 
-      {isLoading && <div className="loading">Загрузка каналов...</div>}
+      {isLoading && <ListSkeleton />}
 
       {channels && channels.length === 0 && (
         <div className="empty-state"><div className="empty-state-text">Нет каналов в этой рубрике</div></div>
@@ -232,7 +244,18 @@ function RubricChannels({ rubricId, onBack }: { rubricId: number; onBack: () => 
                 <div className="list-item-hint">{ch.channelTitle ?? "Неизвестно"}</div>
               </div>
               <div className="list-item-actions">
-                <button className="btn btn-icon btn-danger" onClick={() => deleteMutation.mutate(ch.id)} title="Удалить">🗑️</button>
+                <button
+                  className="btn btn-icon btn-danger"
+                  onClick={() => {
+                    showConfirm(`Удалить канал @${ch.channelUsername} из рубрики?`, (confirmed) => {
+                      if (confirmed) deleteMutation.mutate(ch.id);
+                    });
+                  }}
+                  disabled={deleteMutation.isPending}
+                  title="Удалить"
+                >
+                  🗑️
+                </button>
               </div>
             </div>
           ))}

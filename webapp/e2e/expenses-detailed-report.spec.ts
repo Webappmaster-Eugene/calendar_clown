@@ -1,5 +1,5 @@
 /**
- * E2E tests for the inline-accordion report and authenticated Excel download
+ * E2E tests for the inline-accordion report and authenticated Excel delivery
  * added in tasks/20260414/task2 (detailed report rework).
  *
  *   - Clicking a category expands it inline and lists every operation.
@@ -123,38 +123,30 @@ test.describe("Expenses — Inline Accordion (Report tab)", () => {
   });
 });
 
-test.describe("Expenses — Excel button (authenticated download)", () => {
-  test("clicking Excel issues an authenticated request, not a window.open redirect", async ({ appPage }) => {
+test.describe("Expenses — Excel button (bot delivery)", () => {
+  // On mobile/unknown platforms (the mock's default) the Excel button delivers
+  // the file through the bot via an authenticated POST — not a window.open
+  // redirect. Desktop/web builds get a direct download instead; that path needs
+  // a real desktop platform in launch params and isn't exercised here.
+  test("clicking Excel issues an authenticated POST, not a window.open redirect", async ({ appPage }) => {
     await appPage.goto("/expenses");
     await appPage.waitForSelector(".expense-cat-header");
 
-    // We will capture the API request that the click triggers and assert it
-    // carries the Authorization header that proves we did NOT take the
-    // unauthenticated `window.open` path.
-    const excelRequestPromise = appPage.waitForRequest(
-      (req) => req.url().includes("/api/expenses/excel") && req.method() === "GET",
+    // Capture the request the click triggers: an authenticated POST to the
+    // bot-send endpoint proves we did NOT take an unauthenticated redirect path.
+    const sendRequestPromise = appPage.waitForRequest(
+      (req) => req.url().includes("/api/expenses/excel/send") && req.method() === "POST",
       { timeout: 5_000 }
     );
 
-    // Stub the binary response so the click can complete cleanly.
-    await appPage.route("**/api/expenses/excel*", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers: { "Content-Disposition": 'attachment; filename="report.xlsx"' },
-        body: Buffer.from("PKfake-xlsx-bytes"),
-      });
-    });
+    await appPage.getByRole("button", { name: "Excel", exact: true }).click();
 
-    await appPage.locator("button", { hasText: "Excel" }).click();
-
-    const req = await excelRequestPromise;
-    expect(req.url()).toContain("month=");
-    expect(req.url()).toContain("year=");
-    // The api.getBlob path always sets the Telegram tma header. We don't have
-    // real init-data here (mock context), so the header may be absent or empty,
-    // but the request itself must have happened — i.e. we did NOT navigate away.
+    const req = await sendRequestPromise;
+    expect(req.url()).toContain("/api/expenses/excel/send");
+    // We stayed on the page: no navigation/redirect.
     expect(appPage.url()).toContain("/expenses");
+    // Inline success feedback appears.
+    await expect(appPage.locator("text=Файл отправлен")).toBeVisible();
   });
 
   test("button enters loading state while the request is in-flight", async ({ appPage }) => {
@@ -165,32 +157,32 @@ test.describe("Expenses — Excel button (authenticated download)", () => {
     let release: (() => void) | null = null;
     const releaseGate = new Promise<void>((resolve) => { release = resolve; });
 
-    await appPage.route("**/api/expenses/excel*", async (route) => {
+    await appPage.route("**/api/expenses/excel/send*", async (route) => {
       await releaseGate;
       await route.fulfill({
         status: 200,
-        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        body: Buffer.from("fake"),
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, data: { filename: "report.xlsx" } }),
       });
     });
 
-    const button = appPage.locator("button", { hasText: "Excel" });
-    await button.click();
+    await appPage.getByRole("button", { name: "Excel", exact: true }).click();
 
-    await expect(appPage.locator("button", { hasText: "Формирую…" })).toBeVisible();
-    await expect(appPage.locator("button", { hasText: "Формирую…" })).toBeDisabled();
+    // While in-flight the button leaves its default label (shows the loading
+    // glyph) and is disabled, so the exact "Excel" button is momentarily gone.
+    await expect(appPage.getByRole("button", { name: "Excel", exact: true })).toHaveCount(0);
 
     release!();
 
     // Eventually the button returns to its default state.
-    await expect(appPage.locator("button", { hasText: "Excel" })).toBeVisible();
+    await expect(appPage.getByRole("button", { name: "Excel", exact: true })).toBeVisible();
   });
 
   test("API failure surfaces an inline error and re-enables the button", async ({ appPage }) => {
     await appPage.goto("/expenses");
     await appPage.waitForSelector(".expense-cat-header");
 
-    await appPage.route("**/api/expenses/excel*", async (route) => {
+    await appPage.route("**/api/expenses/excel/send*", async (route) => {
       await route.fulfill({
         status: 500,
         contentType: "application/json",
@@ -198,9 +190,9 @@ test.describe("Expenses — Excel button (authenticated download)", () => {
       });
     });
 
-    await appPage.locator("button", { hasText: "Excel" }).click();
+    await appPage.getByRole("button", { name: "Excel", exact: true }).click();
 
-    await expect(appPage.locator(".error-msg")).toContainText(/Failed|boom|Не удалось/);
-    await expect(appPage.locator("button", { hasText: "Excel" })).toBeEnabled();
+    await expect(appPage.locator(".error-msg").filter({ hasText: /Failed|boom|Не удалось/ })).toBeVisible();
+    await expect(appPage.getByRole("button", { name: "Excel", exact: true })).toBeEnabled();
   });
 });

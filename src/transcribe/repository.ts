@@ -205,6 +205,21 @@ export async function deleteTranscriptionForUser(id: number, userId: number): Pr
   return rows.length > 0;
 }
 
+/** Update a transcription's transcript text by ID with ownership check. */
+export async function updateTranscriptForUser(
+  id: number,
+  userId: number,
+  transcript: string
+): Promise<VoiceTranscription | null> {
+  const [row] = await db
+    .update(voiceTranscriptions)
+    .set({ transcript })
+    .where(and(eq(voiceTranscriptions.id, id), eq(voiceTranscriptions.userId, userId)))
+    .returning();
+  if (!row) return null;
+  return mapRow(row);
+}
+
 /** Admin: delete ALL transcriptions across all users. */
 export async function deleteAllTranscriptions(): Promise<number> {
   const rows = await db.delete(voiceTranscriptions).returning({ id: voiceTranscriptions.id });

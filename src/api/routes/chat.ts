@@ -9,6 +9,7 @@ import {
   sendMessage,
   sendMessageStream,
   removeDialog,
+  renameUserDialog,
 } from "../../services/chatService.js";
 import { getUserByTelegramId } from "../../expenses/repository.js";
 import { getChatProvider, setChatProvider } from "../../chat/repository.js";
@@ -27,6 +28,9 @@ const sendMessageBody = z.object({
 });
 const setProviderBody = z.object({
   provider: z.string(),
+});
+const renameDialogBody = z.object({
+  title: z.string().trim().min(1).max(100),
 });
 
 /** GET /api/chat/dialogs — list dialogs */
@@ -143,6 +147,38 @@ app.post("/messages/stream", zValidator("json", sendMessageBody), async (c) => {
     }
   });
 });
+
+/** PUT /api/chat/dialogs/:id — rename dialog */
+app.put(
+  "/dialogs/:id",
+  zValidator("param", idParam),
+  zValidator("json", renameDialogBody),
+  async (c) => {
+    const initData = c.get("initData");
+    const telegramId = initData.user.id;
+    const dialogId = parseInt(c.req.param("id"), 10);
+
+    if (isNaN(dialogId)) {
+      return c.json({ ok: false, error: "Invalid dialog ID" }, 400);
+    }
+
+    const body = await c.req.json<{ title: string }>();
+    const title = body.title.trim();
+
+    if (!title || title.length > 100) {
+      return c.json({ ok: false, error: "title must be 1-100 characters" }, 400);
+    }
+
+    try {
+      await renameUserDialog(telegramId, dialogId, title);
+      logApiAction(telegramId, "chat_dialog_rename", { dialogId });
+      return c.json({ ok: true, data: { id: dialogId, title } });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to rename dialog";
+      return c.json({ ok: false, error: msg }, 500);
+    }
+  }
+);
 
 /** DELETE /api/chat/dialogs/:id — delete dialog */
 app.delete("/dialogs/:id", zValidator("param", idParam), async (c) => {

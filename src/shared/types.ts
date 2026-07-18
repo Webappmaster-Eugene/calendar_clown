@@ -508,6 +508,11 @@ export interface CreateWishlistRequest {
   emoji?: string;
 }
 
+export interface UpdateWishlistRequest {
+  name?: string;
+  emoji?: string;
+}
+
 export interface CreateWishlistItemRequest {
   wishlistId: number;
   title: string;

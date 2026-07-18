@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import { MessageBubble } from "../components/ui/MessageBubble";
 import type {
   BloggerChannelDto,
@@ -88,7 +89,7 @@ export function BloggerPage() {
     }
   };
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedChannelId !== null) {
@@ -212,6 +213,14 @@ function ChannelPosts({ channelId, onBack }: { channelId: number; onBack: () => 
     },
   });
 
+  const generateMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.post<BloggerPostDto>(`/api/blogger/posts/${id}/generate`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blogger", "posts", channelId] });
+    },
+  });
+
   return (
     <div className="page">
       <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>Назад</button>
@@ -226,11 +235,11 @@ function ChannelPosts({ channelId, onBack }: { channelId: number; onBack: () => 
         </div>
         {createMutation.error && <div className="error-msg">{(createMutation.error as Error).message}</div>}
         <button type="submit" className="btn btn-primary btn-block" disabled={createMutation.isPending || !topic.trim()}>
-          {createMutation.isPending ? "Генерация..." : "Сгенерировать пост"}
+          {createMutation.isPending ? "Создание..." : "Создать пост"}
         </button>
       </form>
 
-      {isLoading && <div className="loading">Загрузка постов...</div>}
+      {isLoading && <ListSkeleton />}
 
       {posts && posts.length === 0 && (
         <div className="empty-state"><div className="empty-state-text">Нет постов</div></div>
@@ -269,6 +278,20 @@ function ChannelPosts({ channelId, onBack }: { channelId: number; onBack: () => 
                   style={{ maxWidth: "100%" }}
                 />
               )}
+              {generateMutation.isPending && generateMutation.variables === p.id && (
+                <div className="loading" style={{ marginTop: 8 }}>Генерирую текст…</div>
+              )}
+              {generateMutation.error && generateMutation.variables === p.id && (
+                <div className="error-msg" style={{ marginTop: 8 }}>{(generateMutation.error as Error).message}</div>
+              )}
+              <button
+                className="btn btn-block"
+                style={{ marginTop: 8 }}
+                disabled={generateMutation.isPending}
+                onClick={() => generateMutation.mutate(p.id)}
+              >
+                {p.generatedText ? "🔄 Перегенерировать текст" : "🚀 Сгенерировать текст"}
+              </button>
             </div>
           ))}
         </div>

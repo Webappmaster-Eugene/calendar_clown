@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import { VoiceButton } from "../components/VoiceButton";
 import type {
   WorkplaceDto,
@@ -78,7 +79,7 @@ export function SummarizerPage() {
     }
   };
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedId !== null) {
@@ -250,7 +251,7 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
 
       <div className="section-title">Достижения</div>
 
-      {isLoading && <div className="loading">Загрузка...</div>}
+      {isLoading && <ListSkeleton />}
 
       {achievements && achievements.length === 0 && (
         <div className="empty-state"><div className="empty-state-text">Нет достижений</div></div>

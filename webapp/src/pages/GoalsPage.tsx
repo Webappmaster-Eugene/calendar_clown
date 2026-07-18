@@ -8,8 +8,11 @@ import type {
   CreateGoalSetRequest,
   CreateGoalRequest,
   GoalPeriod,
+  GoalSetVisibility,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
+import { useHaptic } from "../hooks/useHaptic";
 
 const PERIOD_LABELS: Record<GoalPeriod, string> = {
   current: "Текущий",
@@ -24,6 +27,10 @@ export function GoalsPage() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [period, setPeriod] = useState<GoalPeriod>("current");
+  const [editingSetId, setEditingSetId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmoji, setEditEmoji] = useState("");
+  const [editVisibility, setEditVisibility] = useState<GoalSetVisibility>("private");
   const queryClient = useQueryClient();
 
   const { data: sets, isLoading, error } = useQuery({
@@ -48,7 +55,24 @@ export function GoalsPage() {
     },
   });
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  const updateSetMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name: string; emoji: string; visibility: GoalSetVisibility }) =>
+      api.put<GoalSetDto>(`/api/goals/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+      setEditingSetId(null);
+    },
+  });
+
+  const startEditSet = (s: GoalSetDto) => {
+    setEditingSetId(s.id);
+    setEditName(s.name);
+    setEditEmoji(s.emoji ?? "");
+    setEditVisibility(s.visibility);
+    setShowForm(false);
+  };
+
+  if (isLoading) return <div className="page"><h1 className="page-title">Цели</h1><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedSetId !== null) {
@@ -74,6 +98,59 @@ export function GoalsPage() {
       {sets && sets.length > 0 && (
         <div className="list">
           {sets.map((s) => (
+            editingSetId === s.id ? (
+              <div key={s.id} className="card" style={{ marginBottom: 8 }}>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (editName.trim()) {
+                      updateSetMutation.mutate({
+                        id: s.id,
+                        name: editName.trim(),
+                        emoji: editEmoji.trim() || "🎯",
+                        visibility: editVisibility,
+                      });
+                    }
+                  }}
+                >
+                  <div className="form-row">
+                    <input
+                      className="input"
+                      value={editEmoji}
+                      onChange={(e) => setEditEmoji(e.target.value)}
+                      placeholder="🎯"
+                      style={{ width: 56, textAlign: "center" }}
+                      maxLength={4}
+                    />
+                    <input
+                      className="input"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Название набора"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginTop: 8 }}>
+                    <label className="form-label">Видимость</label>
+                    <select
+                      className="input"
+                      value={editVisibility}
+                      onChange={(e) => setEditVisibility(e.target.value as GoalSetVisibility)}
+                    >
+                      <option value="private">Приватный</option>
+                      <option value="public">Публичный</option>
+                    </select>
+                  </div>
+                  {updateSetMutation.error && <div className="error-msg">{(updateSetMutation.error as Error).message}</div>}
+                  <div className="form-row" style={{ marginTop: 8 }}>
+                    <button type="button" className="btn" onClick={() => setEditingSetId(null)}>Отмена</button>
+                    <button type="submit" className="btn btn-primary" disabled={updateSetMutation.isPending || !editName.trim()}>
+                      {updateSetMutation.isPending ? "Сохранение..." : "Сохранить"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
             <div key={s.id} className="list-item">
               <span className="list-item-emoji">{s.emoji || "🎯"}</span>
               <div
@@ -84,10 +161,18 @@ export function GoalsPage() {
                 <div className="list-item-title">{s.name}</div>
                 <div className="list-item-hint">
                   {s.completedCount}/{s.totalCount} выполнено &middot; {PERIOD_LABELS[s.period] ?? s.period}
+                  {s.visibility === "public" ? " · 🌐 публичный" : ""}
                   {s.deadline ? ` · до ${new Date(s.deadline).toLocaleDateString("ru-RU")}` : ""}
                 </div>
               </div>
               <div className="list-item-actions">
+                <button
+                  className="btn btn-icon"
+                  onClick={() => startEditSet(s)}
+                  title="Редактировать"
+                >
+                  ✏️
+                </button>
                 <button
                   className="btn btn-icon btn-danger"
                   onClick={() => {
@@ -101,6 +186,7 @@ export function GoalsPage() {
                 </button>
               </div>
             </div>
+            )
           ))}
         </div>
       )}
@@ -141,6 +227,7 @@ export function GoalsPage() {
 
 function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => void }) {
   const queryClient = useQueryClient();
+  const { selection } = useHaptic();
   const [text, setText] = useState("");
   const [editingGoalId, setEditingGoalId] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
@@ -175,7 +262,29 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
   const toggleMutation = useMutation({
     mutationFn: (goalId: number) =>
       api.put<GoalDto>(`/api/goals/goals/${goalId}/toggle`),
-    onSuccess: () => {
+    meta: { skipHapticSuccess: true },
+    onMutate: async (goalId: number) => {
+      const key = ["goals", "list", goalSetId];
+      await queryClient.cancelQueries({ queryKey: key });
+      const prev = queryClient.getQueryData<{ goalSet: GoalSetDto; goals: GoalDto[] }>(key);
+      if (prev) {
+        const target = prev.goals.find((g) => g.id === goalId);
+        const delta = target ? (target.isCompleted ? -1 : 1) : 0;
+        queryClient.setQueryData(key, {
+          goalSet: { ...prev.goalSet, completedCount: prev.goalSet.completedCount + delta },
+          goals: prev.goals.map((g) =>
+            g.id === goalId
+              ? { ...g, isCompleted: !g.isCompleted, completedAt: g.isCompleted ? null : new Date().toISOString() }
+              : g,
+          ),
+        });
+      }
+      return { prev };
+    },
+    onError: (_err, _goalId, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["goals", "list", goalSetId], ctx.prev);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["goals"] });
     },
   });
@@ -230,7 +339,7 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
             <div key={goal.id} className="list-item">
               <button
                 className={`toggle ${goal.isCompleted ? "active" : ""}`}
-                onClick={() => toggleMutation.mutate(goal.id)}
+                onClick={() => { selection(); toggleMutation.mutate(goal.id); }}
               />
               <div className="list-item-content">
                 {editingGoalId === goal.id ? (

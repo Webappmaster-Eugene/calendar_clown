@@ -6,10 +6,12 @@ import type {
   WishlistItemDto,
   WishlistsListResponse,
   CreateWishlistRequest,
+  UpdateWishlistRequest,
   CreateWishlistItemRequest,
   UpdateWishlistItemRequest,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 
 type WishlistTab = "own" | "tribe";
 
@@ -19,6 +21,9 @@ export function WishlistPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmoji, setEditEmoji] = useState("");
   const queryClient = useQueryClient();
 
   const { data: wishlistData, isLoading, error } = useQuery({
@@ -43,7 +48,34 @@ export function WishlistPage() {
     },
   });
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  const editMutation = useMutation({
+    mutationFn: ({ id, ...data }: UpdateWishlistRequest & { id: number }) =>
+      api.put<WishlistDto>(`/api/wishlist/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["wishlists"] });
+      cancelEdit();
+    },
+  });
+
+  const startEdit = (w: WishlistDto) => {
+    setEditingId(w.id);
+    setEditName(w.name);
+    setEditEmoji(w.emoji || "");
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName("");
+    setEditEmoji("");
+  };
+
+  const submitEdit = (id: number) => {
+    const trimmed = editName.trim();
+    if (!trimmed) return;
+    editMutation.mutate({ id, name: trimmed, emoji: editEmoji.trim() || undefined });
+  };
+
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedId !== null) {
@@ -85,30 +117,68 @@ export function WishlistPage() {
       {wishlists.length > 0 && (
         <div className="list">
           {wishlists.map((w) => (
-            <div key={w.id} className="list-item" style={{ display: "flex", alignItems: "center" }}>
-              <button
-                style={{ cursor: "pointer", border: "none", background: "none", flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 8, padding: 0 }}
-                onClick={() => setSelectedId(w.id)}
-              >
-                <span className="list-item-emoji">{w.emoji || "🎁"}</span>
-                <div className="list-item-content">
-                  <div className="list-item-title">{w.name}</div>
-                  <div className="list-item-hint">
-                    {w.ownerName} · {w.itemCount} элементов
+            editingId === w.id ? (
+              <div key={w.id} className="list-item" style={{ display: "block" }}>
+                <form onSubmit={(e) => { e.preventDefault(); submitEdit(w.id); }}>
+                  <div className="form-row" style={{ gap: 8, alignItems: "center" }}>
+                    <input
+                      className="input"
+                      value={editEmoji}
+                      onChange={(e) => setEditEmoji(e.target.value)}
+                      placeholder="🎁"
+                      style={{ width: 56, textAlign: "center", flex: "0 0 auto" }}
+                      maxLength={8}
+                    />
+                    <input
+                      className="input"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Название списка"
+                      style={{ flex: 1 }}
+                    />
                   </div>
-                </div>
-              </button>
-              {w.isOwn && (
+                  {editMutation.error && <div className="error-msg">{(editMutation.error as Error).message}</div>}
+                  <div className="form-row" style={{ marginTop: 8 }}>
+                    <button type="button" className="btn btn-small" onClick={cancelEdit}>Отмена</button>
+                    <button type="submit" className="btn btn-small btn-primary" disabled={editMutation.isPending || !editName.trim()}>Сохранить</button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div key={w.id} className="list-item" style={{ display: "flex", alignItems: "center" }}>
                 <button
-                  className="btn btn-icon btn-danger"
-                  onClick={() => deleteMutation.mutate(w.id)}
-                  disabled={deleteMutation.isPending}
-                  title="Удалить"
+                  style={{ cursor: "pointer", border: "none", background: "none", flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 8, padding: 0 }}
+                  onClick={() => setSelectedId(w.id)}
                 >
-                  🗑️
+                  <span className="list-item-emoji">{w.emoji || "🎁"}</span>
+                  <div className="list-item-content">
+                    <div className="list-item-title">{w.name}</div>
+                    <div className="list-item-hint">
+                      {w.ownerName} · {w.itemCount} элементов
+                    </div>
+                  </div>
                 </button>
-              )}
-            </div>
+                {w.isOwn && (
+                  <div className="list-item-actions">
+                    <button
+                      className="btn btn-icon"
+                      onClick={() => startEdit(w)}
+                      title="Редактировать"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className="btn btn-icon btn-danger"
+                      onClick={() => deleteMutation.mutate(w.id)}
+                      disabled={deleteMutation.isPending}
+                      title="Удалить"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
           ))}
         </div>
       )}
@@ -139,7 +209,9 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
   const [showForm, setShowForm] = useState(false);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [link, setLink] = useState("");
+  const [priority, setPriority] = useState(1);
 
   const { data: itemsData, isLoading } = useQuery({
     queryKey: ["wishlist", "items", wishlistId],
@@ -189,13 +261,17 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
     setShowForm(false);
     setEditingItemId(null);
     setTitle("");
+    setDescription("");
     setLink("");
+    setPriority(1);
   };
 
   const startEdit = (item: WishlistItemDto) => {
     setEditingItemId(item.id);
     setTitle(item.title);
+    setDescription(item.description ?? "");
     setLink(item.link ?? "");
+    setPriority(item.priority ?? 1);
     setShowForm(true);
   };
 
@@ -207,13 +283,17 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
       updateMutation.mutate({
         itemId: editingItemId,
         title: title.trim(),
+        description: description.trim() || null,
         link: link.trim() || null,
+        priority,
       });
     } else {
       addMutation.mutate({
         wishlistId,
         title: title.trim(),
+        description: description.trim() || undefined,
         link: link.trim() || undefined,
+        priority,
       });
     }
   };
@@ -237,11 +317,31 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
           {items.map((item) => (
             <div key={item.id} className="list-item">
               <div className="list-item-content">
-                <div className="list-item-title">{item.title}</div>
+                <div className="list-item-title">
+                  {item.title}
+                  <span className="badge" style={{ marginLeft: 6, fontSize: 12, opacity: 0.7 }} title="Приоритет (1 = самый важный)">
+                    ⭐{item.priority}
+                  </span>
+                </div>
+                {item.description && (
+                  <div className="list-item-hint" style={{ whiteSpace: "pre-wrap" }}>
+                    {item.description.length > 120 ? `${item.description.slice(0, 120)}…` : item.description}
+                  </div>
+                )}
                 <div className="list-item-hint">
                   {item.isReserved ? `Забронировал ${item.reservedByName}` : "Свободно"}
-                  {item.link ? " / есть ссылка" : ""}
                 </div>
+                {item.link && (
+                  <a
+                    href={item.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn-small"
+                    style={{ marginTop: 4, display: "inline-block", textDecoration: "none" }}
+                  >
+                    🔗 Открыть
+                  </a>
+                )}
               </div>
               <div className="list-item-actions">
                 {(item.canUnreserve || !item.isReserved) && (
@@ -280,8 +380,22 @@ function WishlistItems({ wishlistId, onBack }: { wishlistId: number; onBack: () 
               <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название элемента" />
             </div>
             <div className="form-group">
+              <label className="form-label">Описание (необязательно)</label>
+              <textarea className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Комментарий, размер, цвет..." rows={3} />
+            </div>
+            <div className="form-group">
               <label className="form-label">Ссылка (необязательно)</label>
               <input className="input" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Приоритет</label>
+              <select className="input" value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
+                <option value={1}>1 — самый важный</option>
+                <option value={2}>2 — важно</option>
+                <option value={3}>3 — средне</option>
+                <option value={4}>4 — не срочно</option>
+                <option value={5}>5 — когда-нибудь</option>
+              </select>
             </div>
             {mutationError && <div className="error-msg">{(mutationError as Error).message}</div>}
             <div className="form-row">

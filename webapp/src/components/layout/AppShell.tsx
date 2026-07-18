@@ -2,31 +2,18 @@ import { useEffect, useCallback, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { backButton, hapticFeedback } from "@telegram-apps/sdk-react";
 import { MODE_LABELS } from "@shared/constants";
+import { ROUTE_TO_MODE as BASE_ROUTE_TO_MODE } from "../../lib/modes";
+import { useRecentModes } from "../../hooks/useRecentModes";
+import { BottomTabBar } from "./BottomTabBar";
 
 interface AppShellProps {
   children: ReactNode;
 }
 
-/** Maps route paths to mode keys from MODE_LABELS */
+/** Route → mode key. Extends the shared map with subroutes that still belong to a mode. */
 const ROUTE_TO_MODE: Record<string, string> = {
-  "/calendar": "calendar",
+  ...BASE_ROUTE_TO_MODE,
   "/calendar/new": "calendar",
-  "/expenses": "expenses",
-  "/gandalf": "gandalf",
-  "/goals": "goals",
-  "/reminders": "reminders",
-  "/wishlist": "wishlist",
-  "/dates": "notable_dates",
-  "/digest": "digest",
-  "/osint": "osint",
-  "/neuro": "neuro",
-  "/transcribe": "transcribe",
-  "/simplifier": "simplifier",
-  "/summarizer": "summarizer",
-  "/blogger": "blogger",
-  "/broadcast": "broadcast",
-  "/admin": "admin",
-  "/tasks": "tasks",
 };
 
 /** Top-level mode routes (direct children of root) */
@@ -39,10 +26,18 @@ const TOP_LEVEL_ROUTES = new Set(
 export function AppShell({ children }: AppShellProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { recent, record } = useRecentModes();
 
   const isRoot = location.pathname === "/";
   const modeKey = ROUTE_TO_MODE[location.pathname];
   const modeMeta = modeKey ? MODE_LABELS[modeKey] : null;
+  // The chat composer owns the bottom edge (fixed input row) — the quick-switch
+  // bar would cover it, so it's suppressed on that immersive route.
+  const showTabBar = !isRoot && modeKey !== "neuro";
+
+  useEffect(() => {
+    if (modeKey) record(modeKey);
+  }, [modeKey, record]);
 
   const handleBack = useCallback(() => {
     hapticFeedback.impactOccurred.ifAvailable("light");
@@ -73,7 +68,7 @@ export function AppShell({ children }: AppShellProps) {
   }, [isRoot, handleBack]);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${showTabBar ? " has-tabbar" : ""}`}>
       {modeMeta && (
         <button className="mode-indicator" onClick={handleHome} type="button">
           <span className="mode-indicator-chevron">&#8249;</span>
@@ -82,6 +77,7 @@ export function AppShell({ children }: AppShellProps) {
         </button>
       )}
       {children}
+      {showTabBar && <BottomTabBar recent={recent} currentMode={modeKey} />}
     </div>
   );
 }

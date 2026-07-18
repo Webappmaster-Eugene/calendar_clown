@@ -9,7 +9,7 @@ import { api } from "../api/client";
 /** Hard upper bound on `isProcessing`. WebView timers can pause when the app is
  *  backgrounded — this watchdog guarantees the UI always recovers, so the
  *  voice button can never get permanently stuck on "Обработка…". */
-const PROCESSING_WATCHDOG_MS = 150_000;
+const PROCESSING_WATCHDOG_MS = 45_000;
 
 /** Derive correct file extension from the actual MIME type of the recording. */
 function getExtFromMime(mimeType: string): string {

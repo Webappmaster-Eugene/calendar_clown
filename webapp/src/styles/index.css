@@ -222,6 +222,38 @@ select.input {
   color: var(--tg-theme-hint-color, #999);
 }
 
+.list-item-editing {
+  display: block;
+}
+
+.list-item-editing:active {
+  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.edit-form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--tg-theme-hint-color, #999);
+}
+
+.edit-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-form-actions .btn {
+  flex: 1;
+}
+
 .list-item-emoji {
   font-size: 24px;
   flex-shrink: 0;
@@ -526,7 +558,8 @@ select.input {
 
 .fab {
   position: fixed;
-  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  /* Lifted clear of the fixed bottom quick-switch bar (~46px tall). */
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
   right: 20px;
   width: 56px;
   height: 56px;
@@ -1046,6 +1079,57 @@ select.input {
   overscroll-behavior-y: contain;
 }
 
+/* Leave room for the fixed quick-switch bar so it never covers page content. */
+.app-shell.has-tabbar {
+  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ─── Bottom quick-switch bar ─────────────────────────────── */
+
+.bottom-tab-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  border-top: 1px solid var(--tg-theme-section-separator-color, rgba(0, 0, 0, 0.08));
+}
+
+.bottom-tab {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--tg-theme-hint-color, #999);
+}
+
+.bottom-tab:active {
+  opacity: 0.6;
+}
+
+.bottom-tab-emoji {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.bottom-tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
 /* ─── Page enter animation ───────────────────────────────── */
 
 @keyframes page-enter {
@@ -1092,6 +1176,13 @@ select.input {
 .skeleton-block {
   height: 80px;
   border-radius: 12px;
+}
+
+.skeleton-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 @keyframes skeleton-shimmer {

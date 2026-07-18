@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import { VoiceButton } from "../components/VoiceButton";
 import type { OsintSearchDto, OsintSearchHistoryResponse, StartOsintSearchRequest } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
@@ -52,7 +53,7 @@ export function OsintPage() {
     ? searches.find((s) => s.id === selectedId) ?? null
     : null;
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedSearch) {

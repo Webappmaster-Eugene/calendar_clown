@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useTelegram } from "../hooks/useTelegram";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
+import { useHaptic } from "../hooks/useHaptic";
 import type { ReminderDto, ReminderScheduleDto, CreateReminderRequest, ReminderSoundDto } from "@shared/types";
 
 type ReminderTab = "own" | "tribe";
@@ -24,6 +26,7 @@ export function RemindersPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
   const { showConfirm } = useTelegram();
+  const { selection } = useHaptic();
   const [tab, setTab] = useState<ReminderTab>("own");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -76,7 +79,22 @@ export function RemindersPage() {
   const toggleMutation = useMutation({
     mutationFn: (id: number) =>
       api.put<ReminderDto>(`/api/reminders/${id}/toggle`),
-    onSuccess: () => {
+    meta: { skipHapticSuccess: true },
+    onMutate: async (id: number) => {
+      await queryClient.cancelQueries({ queryKey: ["reminders"] });
+      const prev = queryClient.getQueryData<ReminderDto[]>(["reminders"]);
+      if (prev) {
+        queryClient.setQueryData(
+          ["reminders"],
+          prev.map((r) => (r.id === id ? { ...r, isActive: !r.isActive } : r)),
+        );
+      }
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["reminders"], ctx.prev);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["reminders"] });
     },
   });
@@ -167,7 +185,7 @@ export function RemindersPage() {
   const updateTime = (idx: number, val: string) =>
     setTimes((prev) => prev.map((t, i) => (i === idx ? val : t)));
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   return (
@@ -239,7 +257,7 @@ export function RemindersPage() {
                 <div key={r.id} className="list-item" style={{ flexWrap: "wrap" }}>
                   <button
                     className={`toggle ${r.isActive ? "active" : ""}`}
-                    onClick={() => toggleMutation.mutate(r.id)}
+                    onClick={() => { selection(); toggleMutation.mutate(r.id); }}
                   />
                   <div className="list-item-content">
                     <div className="list-item-title">{r.text}</div>

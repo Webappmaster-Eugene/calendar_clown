@@ -5,6 +5,7 @@ import {
   getUserWishlists,
   getTribeWishlists,
   createNewWishlist,
+  updateWishlistDetails,
   getWishlistItems,
   addWishlistItem,
   editWishlistItem,
@@ -24,6 +25,10 @@ const idParam = z.object({ id: z.coerce.number().int().positive() });
 const itemIdParam = z.object({ itemId: z.coerce.number().int().positive() });
 const createWishlistBody = z.object({
   name: z.string(),
+  emoji: z.string().optional(),
+});
+const updateWishlistBody = z.object({
+  name: z.string().optional(),
   emoji: z.string().optional(),
 });
 const addItemBody = z.object({
@@ -82,6 +87,37 @@ app.delete("/:id", zValidator("param", idParam), async (c) => {
     return c.json({ ok: true, data: { deleted } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete wishlist";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** PUT /api/wishlist/:id — update wishlist (name, emoji) */
+app.put("/:id", zValidator("param", idParam), zValidator("json", updateWishlistBody), async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const wishlistId = parseInt(c.req.param("id"), 10);
+  const body = await c.req.json<{ name?: string; emoji?: string }>();
+
+  if (isNaN(wishlistId)) {
+    return c.json({ ok: false, error: "Invalid wishlist ID" }, 400);
+  }
+  if (body.name !== undefined && !body.name.trim()) {
+    return c.json({ ok: false, error: "name cannot be empty" }, 400);
+  }
+
+  try {
+    const updates: { name?: string; emoji?: string } = {};
+    if (body.name !== undefined) updates.name = body.name.trim();
+    if (body.emoji !== undefined) updates.emoji = body.emoji;
+
+    const wishlist = await updateWishlistDetails(telegramId, wishlistId, updates);
+    if (!wishlist) {
+      return c.json({ ok: false, error: "Wishlist not found or access denied" }, 404);
+    }
+    logApiAction(telegramId, "wishlist_update", { wishlistId });
+    return c.json({ ok: true, data: wishlist });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to update wishlist";
     return c.json({ ok: false, error: msg }, 500);
   }
 });

@@ -5,6 +5,7 @@
 import { parseEventText } from "../calendar/parse.js";
 import {
   createEvent,
+  updateEvent,
   listEvents,
   searchEvents,
   deleteEvent,
@@ -13,7 +14,7 @@ import {
   PastDateError,
   type CalendarEvent,
 } from "../calendar/client.js";
-import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
+import { saveCalendarEvent, markEventDeleted, markEventUpdated } from "../calendar/repository.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { TIMEZONE_MSK } from "../constants.js";
@@ -166,6 +167,49 @@ export async function createEventFromIntent(
   }
 
   return results;
+}
+
+/**
+ * Update an existing single event's title and time range.
+ * Recurring series are out of scope — this edits the addressed event/instance only.
+ * @param userId - Google Calendar userId (telegram_id as string)
+ * @param telegramId - Numeric telegram ID for DB operations
+ */
+export async function updateEventById(
+  userId: string,
+  telegramId: number,
+  eventId: string,
+  title: string,
+  startISO: string,
+  endISO: string,
+): Promise<CreateEventResult> {
+  const start = new Date(startISO);
+  const end = new Date(endISO);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    throw new Error("Некорректная дата или время события.");
+  }
+  if (end.getTime() <= start.getTime()) {
+    throw new Error("Время окончания должно быть позже времени начала.");
+  }
+
+  const event = await updateEvent(eventId, title, start, end, userId);
+  log.info(`Event updated: id=${eventId}, by user ${userId}`);
+
+  let savedToDb = false;
+  const dbUser = await getDbUser(telegramId);
+  if (dbUser) {
+    try {
+      savedToDb = await markEventUpdated(event.id, dbUser.id, {
+        summary: event.summary,
+        startTime: new Date(event.start),
+        endTime: new Date(event.end),
+      });
+    } catch (err) {
+      log.error("Failed to update calendar event in DB:", err);
+    }
+  }
+
+  return { event: toDto(event), savedToDb };
 }
 
 export async function getEventsToday(userId: string): Promise<CalendarEventDto[]> {

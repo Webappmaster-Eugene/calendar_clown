@@ -5,6 +5,28 @@
 import { test, expect, getComputedStyle, getComputedStyles } from "./fixtures";
 import { MOCK_EXPENSE_REPORT, MOCK_COMPARISON_DRILLDOWN } from "./mock-data";
 
+// The month header is derived from the current date in the app (defaults to the
+// current calendar month), so compute the expected labels here instead of
+// hardcoding a specific month — otherwise these tests rot every month.
+const RU_MONTHS = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
+const RU_MONTHS_GENITIVE = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+];
+const NOW = new Date();
+const CUR_M = NOW.getMonth();
+const CUR_Y = NOW.getFullYear();
+const PREV = new Date(CUR_Y, CUR_M - 1, 1);
+const PREV_M = PREV.getMonth();
+const PREV_Y = PREV.getFullYear();
+const CUR_MONTH_LABEL = `${RU_MONTHS[CUR_M]} ${CUR_Y}`;
+const PREV_MONTH_LABEL = `${RU_MONTHS[PREV_M]} ${PREV_Y}`;
+const COMPARISON_DAY = MOCK_EXPENSE_REPORT.comparisonDay ?? 13;
+const PARTIAL_LABEL = `1–${COMPARISON_DAY} ${RU_MONTHS_GENITIVE[CUR_M]} vs 1–${COMPARISON_DAY} ${RU_MONTHS_GENITIVE[PREV_M]}`;
+
 test.describe("Expenses — Tab Navigation", () => {
   test.beforeEach(async ({ appPage }) => {
     await appPage.goto("/expenses");
@@ -67,16 +89,16 @@ test.describe("Expenses — Report View", () => {
   });
 
   test("month navigation arrows work", async ({ appPage }) => {
-    // Find month display
-    const monthDisplay = appPage.locator("text=Апрель 2026");
+    // Current month display (derived from the current date).
+    const monthDisplay = appPage.locator(`text=${CUR_MONTH_LABEL}`);
     await expect(monthDisplay).toBeVisible();
 
     // Click left arrow
     const leftArrow = appPage.locator("button", { hasText: "◀" });
     await leftArrow.click();
 
-    // Should show March
-    await expect(appPage.locator("text=Март 2026")).toBeVisible();
+    // Should show the previous month
+    await expect(appPage.locator(`text=${PREV_MONTH_LABEL}`)).toBeVisible();
   });
 });
 
@@ -97,8 +119,8 @@ test.describe("Expenses — Comparison View", () => {
   });
 
   test("shows partial-month label when comparisonDay is present", async ({ appPage }) => {
-    // MOCK_EXPENSE_REPORT has comparisonDay: 13
-    const label = appPage.locator("text=/1–13 апреля vs 1–13 марта/");
+    // MOCK_EXPENSE_REPORT has comparisonDay: 13; the month names track the current date.
+    const label = appPage.locator(`text=${PARTIAL_LABEL}`);
     await expect(label).toBeVisible();
   });
 
@@ -150,8 +172,8 @@ test.describe("Expenses — Comparison Drilldown", () => {
     await appPage.locator(".list-item").first().click();
 
     // Should show drilldown with both months
-    await expect(appPage.locator("text=Апрель 2026")).toBeVisible();
-    await expect(appPage.locator("text=Март 2026")).toBeVisible();
+    await expect(appPage.locator(`text=${CUR_MONTH_LABEL}`)).toBeVisible();
+    await expect(appPage.locator(`text=${PREV_MONTH_LABEL}`)).toBeVisible();
 
     // Should show the comparison day label
     await expect(appPage.locator("text=/1–13/")).toBeVisible();

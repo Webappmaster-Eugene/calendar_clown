@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import { VoiceButton } from "../components/VoiceButton";
 import type { TranscribeHistoryResponse, TranscriptionDto } from "@shared/types";
 import { MessageBubble } from "../components/ui/MessageBubble";
@@ -22,6 +23,8 @@ export function TranscribePage() {
   const queryClient = useQueryClient();
   const [lastTranscript, setLastTranscript] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
 
   const { data: historyData, isLoading, error } = useQuery({
     queryKey: ["transcriptions", offset],
@@ -52,6 +55,16 @@ export function TranscribePage() {
     },
   });
 
+  const editMutation = useMutation({
+    mutationFn: ({ id, transcript }: { id: number; transcript: string }) =>
+      api.put<TranscriptionDto>(`/api/transcribe/${id}`, { transcript }),
+    onSuccess: () => {
+      setEditingId(null);
+      setEditText("");
+      queryClient.invalidateQueries({ queryKey: ["transcriptions"] });
+    },
+  });
+
   const clearQueueMutation = useMutation({
     mutationFn: () => api.del<{ cleared: number }>("/api/transcribe/queue"),
     onSuccess: () => {
@@ -59,7 +72,7 @@ export function TranscribePage() {
     },
   });
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   return (
@@ -145,29 +158,67 @@ export function TranscribePage() {
                   {Math.floor(t.durationSeconds / 60)}:{String(t.durationSeconds % 60).padStart(2, "0")}
                 </div>
               )}
-              {t.transcript ? (
+              {editingId === t.id ? (
+                <>
+                  <textarea
+                    className="input"
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    rows={5}
+                    maxLength={20000}
+                    style={{ width: "100%", fontSize: 14, lineHeight: 1.5, resize: "vertical" }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 6 }}>
+                    <button
+                      className="btn btn-small"
+                      onClick={() => { setEditingId(null); setEditText(""); }}
+                      disabled={editMutation.isPending}
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      className="btn btn-small btn-primary"
+                      onClick={() => editMutation.mutate({ id: t.id, transcript: editText.trim() })}
+                      disabled={editMutation.isPending || editText.trim().length === 0}
+                    >
+                      Сохранить
+                    </button>
+                  </div>
+                </>
+              ) : t.transcript ? (
                 <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", userSelect: "text", WebkitUserSelect: "text" }}>
                   {t.transcript}
                 </div>
               ) : t.status === "failed" ? (
                 <div className="error-msg">{t.errorMessage ?? "Ошибка транскрибации"}</div>
               ) : null}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 6 }}>
-                <span className="card-hint">
-                  {new Date(t.createdAt).toLocaleString("ru-RU")}
-                </span>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {t.transcript && <CopyButton text={t.transcript} size="sm" />}
-                  <button
-                    className="btn btn-icon btn-danger"
-                    onClick={() => deleteMutation.mutate(t.id)}
-                    disabled={deleteMutation.isPending}
-                    title="Удалить"
-                  >
-                    🗑️
-                  </button>
+              {editingId !== t.id && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 6 }}>
+                  <span className="card-hint">
+                    {new Date(t.createdAt).toLocaleString("ru-RU")}
+                  </span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {t.transcript && <CopyButton text={t.transcript} size="sm" />}
+                    {t.transcript && (
+                      <button
+                        className="btn btn-icon"
+                        onClick={() => { setEditingId(t.id); setEditText(t.transcript ?? ""); }}
+                        title="Редактировать"
+                      >
+                        ✏️
+                      </button>
+                    )}
+                    <button
+                      className="btn btn-icon btn-danger"
+                      onClick={() => deleteMutation.mutate(t.id)}
+                      disabled={deleteMutation.isPending}
+                      title="Удалить"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ))}
         </div>

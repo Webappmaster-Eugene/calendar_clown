@@ -12,6 +12,7 @@ import {
   getDialogById,
   setActiveDialogId,
   updateDialogTitle,
+  renameDialog,
 } from "../chat/repository.js";
 import { chatCompletion, chatCompletionStream, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
 import { getChatProvider } from "../chat/repository.js";
@@ -93,6 +94,18 @@ export async function removeDialog(telegramId: number, dialogId: number): Promis
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   await deleteDialog(dialogId, dbUser.id);
+}
+
+/** Rename a dialog owned by the given user. Throws if the dialog is not found or not owned. */
+export async function renameUserDialog(
+  telegramId: number,
+  dialogId: number,
+  title: string
+): Promise<void> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  const updated = await renameDialog(dialogId, dbUser.id, title);
+  if (!updated) throw new Error("Диалог не найден.");
 }
 
 export async function getDialogMessages(

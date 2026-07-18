@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import type {
   TaskWorkDto,
   TaskItemDto,
@@ -8,6 +9,7 @@ import type {
   CreateTaskItemRequest,
 } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { useHaptic } from "../hooks/useHaptic";
 
 export function TasksPage() {
   useClosingConfirmation();
@@ -38,7 +40,7 @@ export function TasksPage() {
     },
   });
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   if (selectedWorkId !== null) {
@@ -163,6 +165,7 @@ function TaskList({ workId, onBack }: { workId: number; onBack: () => void }) {
   const [deadline, setDeadline] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const queryClient = useQueryClient();
+  const { selection } = useHaptic();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["tasks", workId],
@@ -185,7 +188,25 @@ function TaskList({ workId, onBack }: { workId: number; onBack: () => void }) {
   const toggleMutation = useMutation({
     mutationFn: (itemId: number) =>
       api.put<TaskItemDto>(`/api/tasks/items/${itemId}/toggle`),
-    onSuccess: () => {
+    meta: { skipHapticSuccess: true },
+    onMutate: async (itemId: number) => {
+      const key = ["tasks", workId];
+      await queryClient.cancelQueries({ queryKey: key });
+      const prev = queryClient.getQueryData<{ work: TaskWorkDto; tasks: TaskItemDto[] }>(key);
+      if (prev) {
+        queryClient.setQueryData(key, {
+          ...prev,
+          tasks: prev.tasks.map((t) =>
+            t.id === itemId ? { ...t, isCompleted: !t.isCompleted } : t,
+          ),
+        });
+      }
+      return { prev };
+    },
+    onError: (_err, _itemId, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["tasks", workId], ctx.prev);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks", workId] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
@@ -200,7 +221,7 @@ function TaskList({ workId, onBack }: { workId: number; onBack: () => void }) {
     },
   });
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
   if (!data) return <div className="page">Проект не найден</div>;
 
@@ -243,7 +264,7 @@ function TaskList({ workId, onBack }: { workId: number; onBack: () => void }) {
             <div key={task.id} className={`list-item${isOverdue ? " overdue" : ""}`}>
               <button
                 className="btn btn-icon"
-                onClick={() => toggleMutation.mutate(task.id)}
+                onClick={() => { selection(); toggleMutation.mutate(task.id); }}
                 title="Отметить выполненной"
               >
                 ⬜
@@ -279,7 +300,7 @@ function TaskList({ workId, onBack }: { workId: number; onBack: () => void }) {
               <div key={task.id} className="list-item">
                 <button
                   className="btn btn-icon"
-                  onClick={() => toggleMutation.mutate(task.id)}
+                  onClick={() => { selection(); toggleMutation.mutate(task.id); }}
                   title="Вернуть в работу"
                 >
                   ✅
@@ -386,7 +407,7 @@ function TaskHistory({
     queryFn: () => api.get<TaskItemDto[]>(`/api/tasks/${workId}/history`),
   });
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   return (

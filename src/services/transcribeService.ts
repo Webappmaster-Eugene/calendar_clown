@@ -6,6 +6,7 @@ import {
   getRecentTranscriptionsPaginated,
   countCompletedTranscriptions,
   getTranscriptionByIdForUser,
+  updateTranscriptForUser,
   deleteTranscriptionForUser,
   getPendingForUser,
   markUserPendingAsFailed,
@@ -85,6 +86,18 @@ export async function getTranscription(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
   const t = await getTranscriptionByIdForUser(transcriptionId, dbUser.id);
+  if (!t) return null;
+  return transcriptionToDto(t);
+}
+
+export async function updateTranscript(
+  telegramId: number,
+  transcriptionId: number,
+  transcript: string
+): Promise<TranscriptionDto | null> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  const t = await updateTranscriptForUser(transcriptionId, dbUser.id, transcript);
   if (!t) return null;
   return transcriptionToDto(t);
 }

@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
 import { VoiceButton } from "../components/VoiceButton";
 import type { CreateEventRequest, CreateEventResponse, VoiceExtractIntentResponse, CalendarIntentEvent } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
+import { useMainButton } from "../hooks/useMainButton";
 
 export function CreateEventPage() {
   useClosingConfirmation();
@@ -49,10 +50,9 @@ export function CreateEventPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const doSubmit = useCallback(() => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || mutation.isPending) return;
 
     // If we have pre-extracted intent from voice (and user didn't edit), use it directly
     if (extractedEvents) {
@@ -60,7 +60,20 @@ export function CreateEventPage() {
     } else {
       mutation.mutate({ text: trimmed });
     }
+  }, [text, extractedEvents, mutation]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    doSubmit();
   };
+
+  const canSubmit = !!text.trim() && !mutation.isPending;
+  const usingMainButton = useMainButton({
+    text: mutation.isPending ? "Создание..." : "Создать событие",
+    isEnabled: canSubmit,
+    isLoaderVisible: mutation.isPending,
+    onClick: doSubmit,
+  });
 
   return (
     <div className="page">
@@ -97,13 +110,15 @@ export function CreateEventPage() {
           </div>
         )}
 
-        <button
-          type="submit"
-          className="btn btn-primary btn-block"
-          disabled={mutation.isPending || !text.trim()}
-        >
-          {mutation.isPending ? "Создание..." : "Создать событие"}
-        </button>
+        {!usingMainButton && (
+          <button
+            type="submit"
+            className="btn btn-primary btn-block"
+            disabled={mutation.isPending || !text.trim()}
+          >
+            {mutation.isPending ? "Создание..." : "Создать событие"}
+          </button>
+        )}
       </form>
     </div>
   );
