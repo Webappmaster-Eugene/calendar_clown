@@ -115,7 +115,22 @@ export async function addExpenseFromText(
 ): Promise<AddExpenseResult> {
   requireDb();
 
-  const parsed = await parseExpenseText(text);
+  // Multi-expense input (2+ parseable lines) is handled by addMultipleExpenses
+  // before we get here. If the message spans several lines but only ONE is a real
+  // expense (the rest are notes/junk), record that line cleanly — otherwise a
+  // whole-text parse folds the junk lines into the subcategory.
+  let parsed = await parseExpenseText(text);
+  if (text.includes("\n")) {
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length > 1) {
+      const perLine: NonNullable<typeof parsed>[] = [];
+      for (const line of lines) {
+        const p = await parseExpenseText(line);
+        if (p) perLine.push(p);
+      }
+      if (perLine.length === 1) parsed = perLine[0];
+    }
+  }
   if (!parsed) {
     throw new Error("Не удалось разобрать трату.");
   }
