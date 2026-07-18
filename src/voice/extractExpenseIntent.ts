@@ -49,6 +49,8 @@ Examples:
 - "кроссовки пять тысяч" → {"type":"expense","category":"Одежда и обувь","subcategory":"Кроссовки","amount":5000}
 - "косметика тысяча двести" → {"type":"expense","category":"Товары для красоты","subcategory":null,"amount":1200}
 - "родителям на лекарства две тысячи" → {"type":"expense","category":"Помощь родителям","subcategory":"Лекарства","amount":2000}
+- "налоговая пять тысяч" → {"type":"expense","category":"Налоги","subcategory":null,"amount":5000}
+- "штраф гибдд пятьсот" → {"type":"expense","category":"Налоги","subcategory":"Штраф ГИБДД","amount":500}
 - "рассада на дачу пятьсот" → {"type":"expense","category":"Дача","subcategory":"Рассада","amount":500}
 - "такси пятьсот рублей" → {"type":"expense","category":"Такси","subcategory":null,"amount":500}
 - "обед пятьсот" → {"type":"expense","category":"Кафе, доставка, фастфуд","subcategory":"Обед","amount":500}

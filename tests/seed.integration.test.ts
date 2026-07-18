@@ -10,7 +10,8 @@ import assert from "node:assert/strict";
  *
  * The expected set reflects the net of all category seed migrations: 0004 seeds 23,
  * 0006 adds "Одежда и обувь" + "Товары для красоты", 0007 drops "Массаж" (folded
- * into "Услуги (стрижка, эпиляция)") and adds "Помощь родителям" + "Дача" → 26.
+ * into "Услуги (стрижка, эпиляция)") and adds "Помощь родителям" + "Дача", 0010
+ * adds "Налоги" → 27.
  *
  * Run: DATABASE_URL=postgres://... npx tsx --test tests/seed.integration.test.ts
  */
@@ -22,7 +23,7 @@ const SEED_CATEGORY_NAMES = [
   "Сервисы, интернет, связь", "ЖКХ", "Такси", "Ипотека", "Развлечения (кино, театр)",
   "Услуги (стрижка, эпиляция)", "Хобби", "Ремонт и обустройство квартиры",
   "Детские товары", "Товары для дома", "Другое",
-  "Одежда и обувь", "Товары для красоты", "Помощь родителям", "Дача",
+  "Одежда и обувь", "Товары для красоты", "Помощь родителям", "Дача", "Налоги",
 ];
 
 const SEED_SOUND_FILES = [
@@ -52,7 +53,7 @@ describe("reference-data seeds", () => {
     assert.equal(rows.length, 1, "default tribe 'Семья' must exist exactly once");
   });
 
-  it("seeds all 26 expense categories, each exactly once (0004+0006+0007)", async () => {
+  it("seeds all 27 expense categories, each exactly once (0004+0006+0007+0010)", async () => {
     const rows = await db.select().from(schema.categories);
     const counts = new Map<string, number>();
     for (const r of rows) counts.set(r.name, (counts.get(r.name) ?? 0) + 1);
