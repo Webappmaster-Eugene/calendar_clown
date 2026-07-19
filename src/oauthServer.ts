@@ -356,6 +356,15 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
     sendJson(res, 404, { error: "Not Found" });
   });
 
+  // Behind Traefik (reverse proxy) these defaults cause intermittent 502s and cut
+  // long requests. Node's default keepAliveTimeout is 5s — the proxy reuses an
+  // upstream connection Node just closed → "502 Bad Gateway". Raise it well above
+  // the proxy's idle reuse, keep headersTimeout above keepAliveTimeout, and lift
+  // requestTimeout so slow voice requests (STT + AI, up to ~2 min) aren't severed.
+  server.keepAliveTimeout = 75_000;
+  server.headersTimeout = 76_000;
+  server.requestTimeout = 300_000;
+
   server.listen(port, host, () => {
     const hasWebapp = fs.existsSync(WEBAPP_DIST);
     log.info(

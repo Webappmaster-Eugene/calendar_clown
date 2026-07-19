@@ -90,8 +90,10 @@ export function getTranscribePromptForContext(context: TranscribeContext): strin
 
 /** Calculate dynamic timeout based on file size in bytes. */
 function getTimeoutMs(fileSizeBytes: number): number {
-  if (fileSizeBytes < 1_000_000) return 60_000;        // <1MB: 1min
-  if (fileSizeBytes < 5_000_000) return 120_000;        // 1-5MB: 2min
+  // Headroom for OpenRouter/STT latency spikes so a normal short voice message
+  // (small file) doesn't 503 mid-transcription during a slow-provider window.
+  if (fileSizeBytes < 1_000_000) return 90_000;         // <1MB: 1.5min
+  if (fileSizeBytes < 5_000_000) return 180_000;        // 1-5MB: 3min
   if (fileSizeBytes < 15_000_000) return 300_000;       // 5-15MB: 5min
   return 600_000;                                        // >15MB: 10min
 }
