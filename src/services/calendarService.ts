@@ -234,6 +234,19 @@ export async function getEventsWeek(userId: string): Promise<CalendarEventDto[]>
   return events.map(toDto);
 }
 
+/**
+ * Events for an arbitrary [from, from + days) window. Powers the Mini App voice
+ * "покажи расписание" flow: `from` is the start-of-day instant already resolved by
+ * the LLM intent (list_range), so it is used as-is rather than re-snapped to a
+ * server-local midnight (which would be the wrong timezone).
+ */
+export async function getEventsInRange(userId: string, from: Date, days: number): Promise<CalendarEventDto[]> {
+  const start = new Date(from);
+  const end = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
+  const events = await listEvents(start, end, userId);
+  return events.map(toDto);
+}
+
 export interface EventRangeView {
   isEmpty: boolean;
   /** Plain-text reply for an empty range. */

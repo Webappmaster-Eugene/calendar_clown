@@ -4,7 +4,8 @@ import { useNavigate } from "react-router";
 import { api, ApiError } from "../api/client";
 import { useTelegram } from "../hooks/useTelegram";
 import { ListSkeleton } from "../components/ui/ListSkeleton";
-import type { CalendarEventDto } from "@shared/types";
+import { VoiceButton } from "../components/VoiceButton";
+import type { CalendarEventDto, VoiceExtractIntentResponse } from "@shared/types";
 
 type Tab = "today" | "week";
 
@@ -18,6 +19,9 @@ export function CalendarPage() {
   const [tab, setTab] = useState<Tab>("today");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({ title: "", start: "", end: "" });
+  // Voice "покажи расписание": a resolved list_range window overrides the today/week tabs.
+  const [voiceRange, setVoiceRange] = useState<{ from: string; days: number; label: string } | null>(null);
+  const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showConfirm } = useTelegram();
@@ -25,7 +29,37 @@ export function CalendarPage() {
   const { data: events, isLoading, error } = useQuery({
     queryKey: ["calendar", tab],
     queryFn: () => api.get<CalendarEventDto[]>(`/api/calendar/${tab}`),
+    enabled: !voiceRange,
   });
+
+  const { data: rangeEvents, isLoading: rangeLoading, error: rangeError } = useQuery({
+    queryKey: ["calendar", "range", voiceRange?.from, voiceRange?.days],
+    queryFn: () =>
+      api.get<CalendarEventDto[]>(
+        `/api/calendar/range?from=${encodeURIComponent(voiceRange!.from)}&days=${voiceRange!.days}`
+      ),
+    enabled: !!voiceRange,
+  });
+
+  const handleVoiceSchedule = (_transcript: string, data?: unknown) => {
+    setVoiceMsg(null);
+    const intent = (data as Partial<VoiceExtractIntentResponse> | undefined)?.intent;
+    if (intent?.type === "list_range" && intent.listFrom) {
+      setEditingId(null);
+      setVoiceRange({
+        from: intent.listFrom,
+        days: intent.listDays ?? 1,
+        label: intent.listLabel ?? "Расписание",
+      });
+    } else {
+      setVoiceMsg("Скажите, что показать — например «что у меня завтра» или «расписание на неделю».");
+    }
+  };
+
+  const exitVoice = () => {
+    setVoiceRange(null);
+    setVoiceMsg(null);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: (eventId: string) => api.del<void>(`/api/calendar/events/${eventId}`),
@@ -43,7 +77,7 @@ export function CalendarPage() {
       }),
     onSuccess: () => {
       setEditingId(null);
-      queryClient.invalidateQueries({ queryKey: ["calendar", tab] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
     },
   });
 
@@ -74,8 +108,13 @@ export function CalendarPage() {
     });
   };
 
+  const inVoice = !!voiceRange;
+  const displayEvents = inVoice ? rangeEvents : events;
+  const displayLoading = inVoice ? rangeLoading : isLoading;
+  const displayError = inVoice ? rangeError : error;
+
   const isNoCalendar =
-    error instanceof ApiError && error.code === "NO_CALENDAR";
+    displayError instanceof ApiError && displayError.code === "NO_CALENDAR";
 
   if (isNoCalendar) {
     return <NoCalendarLinked />;
@@ -87,34 +126,56 @@ export function CalendarPage() {
 
       <div className="tabs">
         <button
-          className={`tab ${tab === "today" ? "active" : ""}`}
-          onClick={() => setTab("today")}
+          className={`tab ${!inVoice && tab === "today" ? "active" : ""}`}
+          onClick={() => { exitVoice(); setTab("today"); }}
         >
           Сегодня
         </button>
         <button
-          className={`tab ${tab === "week" ? "active" : ""}`}
-          onClick={() => setTab("week")}
+          className={`tab ${!inVoice && tab === "week" ? "active" : ""}`}
+          onClick={() => { exitVoice(); setTab("week"); }}
         >
           Неделя
         </button>
       </div>
 
-      {isLoading && <ListSkeleton />}
-      {error && !isNoCalendar && (
-        <div className="error-msg">{(error as Error).message}</div>
-      )}
+      <VoiceButton
+        endpoint="/api/voice/extract-intent"
+        onResult={handleVoiceSchedule}
+        onError={(msg) => setVoiceMsg(msg)}
+        label="🎤 Покажи расписание"
+        hint="Например: «что у меня завтра» или «расписание на неделю»"
+      />
 
-      {events && events.length === 0 && (
-        <div className="empty-state">
-          <div className="empty-state-emoji">📭</div>
-          <div className="empty-state-text">{tab === "today" ? "На сегодня событий нет" : "На неделю событий нет"}</div>
+      {voiceMsg && <div className="card-hint" style={{ marginTop: 8 }}>{voiceMsg}</div>}
+
+      {inVoice && (
+        <div className="list-item" style={{ marginTop: 8 }}>
+          <div className="list-item-content">
+            <div className="list-item-title">🎤 {voiceRange!.label}</div>
+            <div className="list-item-hint">Голосовой запрос</div>
+          </div>
+          <button className="btn btn-small" onClick={exitVoice}>✕ Обычный вид</button>
         </div>
       )}
 
-      {events && events.length > 0 && (
+      {displayLoading && <ListSkeleton />}
+      {displayError && !isNoCalendar && (
+        <div className="error-msg">{(displayError as Error).message}</div>
+      )}
+
+      {displayEvents && displayEvents.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-state-emoji">📭</div>
+          <div className="empty-state-text">
+            {inVoice ? `На «${voiceRange!.label}» событий нет` : tab === "today" ? "На сегодня событий нет" : "На неделю событий нет"}
+          </div>
+        </div>
+      )}
+
+      {displayEvents && displayEvents.length > 0 && (
         <div className="list">
-          {events.map((event) =>
+          {displayEvents.map((event) =>
             editingId === event.id ? (
               <div key={event.id} className="list-item list-item-editing">
                 <div className="edit-form">
