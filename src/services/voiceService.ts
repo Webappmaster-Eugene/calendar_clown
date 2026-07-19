@@ -24,6 +24,9 @@ export interface VoiceIntentResult {
   }>;
   cancelQuery?: string;
   cancelDate?: string | null;
+  listFrom?: string;
+  listDays?: number;
+  listLabel?: string;
 }
 
 export interface TranscribeResult {
@@ -37,7 +40,8 @@ export interface TranscribeAndExtractResult {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-function intentToResult(intent: VoiceIntent): VoiceIntentResult {
+// Exported for unit testing (pure mapping of the LLM intent to the API DTO).
+export function intentToResult(intent: VoiceIntent): VoiceIntentResult {
   if (intent.type === "calendar") {
     return {
       type: "calendar",
@@ -55,6 +59,15 @@ function intentToResult(intent: VoiceIntent): VoiceIntentResult {
       type: "cancel_event",
       cancelQuery: intent.query,
       cancelDate: intent.date?.toISOString() ?? null,
+    };
+  }
+
+  if (intent.type === "list_range") {
+    return {
+      type: "list_range",
+      listFrom: intent.from.toISOString(),
+      listDays: intent.days,
+      listLabel: intent.label,
     };
   }
 

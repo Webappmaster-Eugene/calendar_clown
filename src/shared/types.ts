@@ -128,6 +128,10 @@ export interface VoiceExtractIntentResponse {
     events?: CalendarIntentEvent[];
     cancelQuery?: string;
     cancelDate?: string | null;
+    /** list_range: start of the range (ISO), number of days, and a short RU header. */
+    listFrom?: string;
+    listDays?: number;
+    listLabel?: string;
   };
 }
 
