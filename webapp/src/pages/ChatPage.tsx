@@ -9,6 +9,8 @@ import type {
   ChatDialogDto,
   ChatMessageDto,
   ChatProvider,
+  UpdateDialogRequest,
+  OpenRouterModelDto,
 } from "@shared/types";
 
 export function ChatPage() {
@@ -253,6 +255,24 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
       api.get<ChatMessageDto[]>(`/api/chat/dialogs/${dialogId}/messages`),
   });
 
+  // The dialog's own settings live in the shared dialogs list (same query key →
+  // deduped). Re-read after a settings PUT invalidates it.
+  const { data: dialogs } = useQuery({
+    queryKey: ["chat", "dialogs"],
+    queryFn: () => api.get<ChatDialogDto[]>("/api/chat/dialogs"),
+  });
+  const dialog = dialogs?.find((d) => d.id === dialogId) ?? null;
+  const [showSettings, setShowSettings] = useState(false);
+
+  const updateSettings = useMutation({
+    mutationFn: (patch: UpdateDialogRequest) =>
+      api.put<ChatDialogDto>(`/api/chat/dialogs/${dialogId}`, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
+      setShowSettings(false);
+    },
+  });
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent, isSending]);
@@ -302,9 +322,33 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
 
   return (
     <div className="page" style={{ paddingBottom: 70 }}>
-      <button className="btn btn-small" onClick={onBack} style={{ marginBottom: 12 }}>
-        Назад
-      </button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+        <button className="btn btn-small" onClick={onBack}>Назад</button>
+        <button className="btn btn-small" onClick={() => setShowSettings((s) => !s)}>
+          ⚙️ {showSettings ? "Скрыть" : "Настройки"}
+        </button>
+      </div>
+
+      {/* Applied model / settings summary */}
+      {dialog && (
+        <div className="card-hint" style={{ marginBottom: 8, fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <span>🤖 {dialog.model ?? "по умолчанию"}</span>
+          {dialog.temperature != null && <span>🌡 {dialog.temperature}</span>}
+          {dialog.maxTokens != null && <span>✂️ {dialog.maxTokens}т</span>}
+          {dialog.systemPrompt && <span title={dialog.systemPrompt}>📝 промпт</span>}
+          {dialog.theme && <span>🏷 {dialog.theme}</span>}
+        </div>
+      )}
+
+      {showSettings && dialog && (
+        <DialogSettings
+          dialog={dialog}
+          onSave={(patch) => updateSettings.mutate(patch)}
+          saving={updateSettings.isPending}
+          error={updateSettings.error ? (updateSettings.error as Error).message : null}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
 
       <div className="chat-messages" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {displayMessages.map((msg) => (
@@ -358,6 +402,149 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
           Отправить
         </button>
       </form>
+    </div>
+  );
+}
+
+// ─── Dialog settings (title + per-dialog AI overrides) ───────────
+
+function DialogSettings({
+  dialog,
+  onSave,
+  saving,
+  error,
+  onClose,
+}: {
+  dialog: ChatDialogDto;
+  onSave: (patch: UpdateDialogRequest) => void;
+  saving: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(dialog.title);
+  const [theme, setTheme] = useState(dialog.theme ?? "");
+  const [model, setModel] = useState<string | null>(dialog.model);
+  const [systemPrompt, setSystemPrompt] = useState(dialog.systemPrompt ?? "");
+  const [temperature, setTemperature] = useState(dialog.temperature != null ? String(dialog.temperature) : "");
+  const [maxTokens, setMaxTokens] = useState(dialog.maxTokens != null ? String(dialog.maxTokens) : "");
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const save = () => {
+    const patch: UpdateDialogRequest = {};
+    const t = title.trim();
+    if (t && t !== dialog.title) patch.title = t;
+    const th = theme.trim();
+    if (th !== (dialog.theme ?? "")) patch.theme = th || null;
+    if (model !== dialog.model) patch.model = model;
+    const sp = systemPrompt.trim();
+    if (sp !== (dialog.systemPrompt ?? "")) patch.systemPrompt = sp || null;
+    const temp = temperature.trim() === "" ? null : Number(temperature);
+    if (!(temp != null && Number.isNaN(temp)) && temp !== dialog.temperature) patch.temperature = temp;
+    const mt = maxTokens.trim() === "" ? null : parseInt(maxTokens, 10);
+    if (!(mt != null && Number.isNaN(mt)) && mt !== dialog.maxTokens) patch.maxTokens = mt;
+    if (Object.keys(patch).length === 0) { onClose(); return; }
+    onSave(patch);
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">Название</label>
+        <input className="input" value={title} maxLength={100} onChange={(e) => setTitle(e.target.value)} />
+      </div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">Тема / описание</label>
+        <input className="input" value={theme} maxLength={200} placeholder="напр. Код на Python" onChange={(e) => setTheme(e.target.value)} />
+      </div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">Нейросеть</label>
+        <button type="button" className="btn btn-block" style={{ textAlign: "left" }} onClick={() => setPickerOpen(true)}>
+          🤖 {model ?? "По умолчанию (провайдер)"}
+        </button>
+      </div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">Системный промпт (роль/инструкции)</label>
+        <textarea className="input" rows={3} value={systemPrompt} placeholder="Ты — ... (пусто = по умолчанию)" onChange={(e) => setSystemPrompt(e.target.value)} />
+      </div>
+      <div className="form-row">
+        <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+          <label className="form-label">Температура (0–2)</label>
+          <input className="input" type="number" step="0.1" min="0" max="2" value={temperature} placeholder="авто" onChange={(e) => setTemperature(e.target.value)} />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+          <label className="form-label">Макс. токенов</label>
+          <input className="input" type="number" min="1" value={maxTokens} placeholder="без лимита" onChange={(e) => setMaxTokens(e.target.value)} />
+        </div>
+      </div>
+      {error && <div className="error-msg">{error}</div>}
+      <div className="form-row">
+        <button type="button" className="btn" onClick={onClose} disabled={saving}>Отмена</button>
+        <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</button>
+      </div>
+      {pickerOpen && (
+        <ModelPicker
+          current={model}
+          onSelect={(id) => { setModel(id); setPickerOpen(false); }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── OpenRouter model picker (searchable bottom sheet) ───────────
+
+function ModelPicker({
+  current,
+  onSelect,
+  onClose,
+}: {
+  current: string | null;
+  onSelect: (id: string | null) => void;
+  onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const { data: models, isLoading } = useQuery({
+    queryKey: ["chat", "models", debouncedQ],
+    queryFn: () => api.get<OpenRouterModelDto[]>(`/api/chat/models?search=${encodeURIComponent(debouncedQ)}`),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const perM = (p: number | null) => (p == null ? "" : `$${(p * 1_000_000).toFixed(2)}/1M`);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
+      <div className="card" style={{ width: "100%", maxHeight: "82vh", overflowY: "auto", borderRadius: "16px 16px 0 0" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div className="card-title">Выбор нейросети</div>
+          <button className="btn btn-small" onClick={onClose}>✕</button>
+        </div>
+        <input className="input" placeholder="Поиск: gpt, claude, gemini, deepseek…" value={q} autoFocus onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 8 }} />
+        <button type="button" className="list-item" style={{ width: "100%", textAlign: "left" }} onClick={() => onSelect(null)}>
+          <div className="list-item-content">
+            <div className="list-item-title">По умолчанию (глобальный провайдер){current == null ? " ✓" : ""}</div>
+            <div className="list-item-hint">Модель из тоггла Free/Paid/Без цензуры</div>
+          </div>
+        </button>
+        {isLoading && <div className="card-hint" style={{ padding: 8 }}>Загрузка каталога…</div>}
+        {models?.map((m) => (
+          <button key={m.id} type="button" className="list-item" style={{ width: "100%", textAlign: "left", background: m.id === current ? "var(--tg-theme-secondary-bg-color, #eee)" : undefined }} onClick={() => onSelect(m.id)}>
+            <div className="list-item-content">
+              <div className="list-item-title">{m.name}{m.isFree ? " 🆓" : ""}{m.id === current ? " ✓" : ""}</div>
+              <div className="list-item-hint">
+                {m.id}{m.contextLength ? ` · ctx ${(m.contextLength / 1000).toFixed(0)}k` : ""}{m.promptPrice != null && !m.isFree ? ` · ${perM(m.promptPrice)}` : ""}
+              </div>
+            </div>
+          </button>
+        ))}
+        {models && models.length === 0 && !isLoading && <div className="card-hint" style={{ padding: 8 }}>Ничего не найдено</div>}
+      </div>
     </div>
   );
 }

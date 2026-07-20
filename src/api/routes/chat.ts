@@ -9,8 +9,10 @@ import {
   sendMessage,
   sendMessageStream,
   removeDialog,
-  renameUserDialog,
+  updateDialogForUser,
+  getModels,
 } from "../../services/chatService.js";
+import type { UpdateDialogRequest } from "../../shared/types.js";
 import { getUserByTelegramId } from "../../expenses/repository.js";
 import { getChatProvider, setChatProvider } from "../../chat/repository.js";
 import type { ChatProvider } from "../../shared/types.js";
@@ -29,8 +31,15 @@ const sendMessageBody = z.object({
 const setProviderBody = z.object({
   provider: z.string(),
 });
-const renameDialogBody = z.object({
-  title: z.string().trim().min(1).max(100),
+// Title + per-dialog AI overrides. Every field optional; an explicit null clears an
+// override (falls back to the global provider default).
+const dialogUpdateBody = z.object({
+  title: z.string().trim().min(1).max(100).optional(),
+  model: z.string().trim().max(120).nullable().optional(),
+  systemPrompt: z.string().max(8000).nullable().optional(),
+  temperature: z.number().min(0).max(2).nullable().optional(),
+  maxTokens: z.number().int().min(1).max(200_000).nullable().optional(),
+  theme: z.string().trim().max(200).nullable().optional(),
 });
 
 /** GET /api/chat/dialogs — list dialogs */
@@ -148,37 +157,47 @@ app.post("/messages/stream", zValidator("json", sendMessageBody), async (c) => {
   });
 });
 
-/** PUT /api/chat/dialogs/:id — rename dialog */
+/** PUT /api/chat/dialogs/:id — update title + per-dialog AI settings */
 app.put(
   "/dialogs/:id",
   zValidator("param", idParam),
-  zValidator("json", renameDialogBody),
+  zValidator("json", dialogUpdateBody),
   async (c) => {
     const initData = c.get("initData");
     const telegramId = initData.user.id;
     const dialogId = parseInt(c.req.param("id"), 10);
-
     if (isNaN(dialogId)) {
       return c.json({ ok: false, error: "Invalid dialog ID" }, 400);
     }
 
-    const body = await c.req.json<{ title: string }>();
-    const title = body.title.trim();
-
-    if (!title || title.length > 100) {
-      return c.json({ ok: false, error: "title must be 1-100 characters" }, 400);
+    const patch = c.req.valid("json") as UpdateDialogRequest;
+    if (Object.keys(patch).length === 0) {
+      return c.json({ ok: false, error: "no fields to update" }, 400);
     }
 
     try {
-      await renameUserDialog(telegramId, dialogId, title);
-      logApiAction(telegramId, "chat_dialog_rename", { dialogId });
-      return c.json({ ok: true, data: { id: dialogId, title } });
+      const dialog = await updateDialogForUser(telegramId, dialogId, patch);
+      logApiAction(telegramId, "chat_dialog_update", { dialogId, fields: Object.keys(patch) });
+      return c.json({ ok: true, data: dialog });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to rename dialog";
-      return c.json({ ok: false, error: msg }, 500);
+      const msg = err instanceof Error ? err.message : "Failed to update dialog";
+      const status = msg === "Диалог не найден." ? 404 : 500;
+      return c.json({ ok: false, error: msg }, status);
     }
   }
 );
+
+/** GET /api/chat/models?search=<q> — OpenRouter model catalog for the picker */
+app.get("/models", async (c) => {
+  const search = c.req.query("search") ?? "";
+  try {
+    const models = await getModels(search);
+    return c.json({ ok: true, data: models });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to load models";
+    return c.json({ ok: false, error: msg }, 502);
+  }
+});
 
 /** DELETE /api/chat/dialogs/:id — delete dialog */
 app.delete("/dialogs/:id", zValidator("param", idParam), async (c) => {

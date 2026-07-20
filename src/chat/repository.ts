@@ -1,4 +1,5 @@
 import { and, count, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
 import { chatDialogs, chatMessages, users } from "../db/schema.js";
 import type { ChatProvider } from "../shared/types.js";
@@ -9,6 +10,11 @@ export interface ChatDialog {
   id: number;
   userId: number;
   title: string;
+  model: string | null;
+  systemPrompt: string | null;
+  temperature: number | null;
+  maxTokens: number | null;
+  theme: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -108,6 +114,39 @@ export async function renameDialog(
     )
     .returning({ id: chatDialogs.id });
   return rows.length > 0;
+}
+
+/**
+ * Update any subset of a dialog's settings (title + per-dialog AI overrides), with
+ * an ownership check. Only keys present in `patch` are written; `null` clears an
+ * override. Returns the updated dialog, or null if not found / not owned.
+ */
+export async function updateDialogSettings(
+  dialogId: number,
+  userId: number,
+  patch: {
+    title?: string;
+    model?: string | null;
+    systemPrompt?: string | null;
+    temperature?: number | null;
+    maxTokens?: number | null;
+    theme?: string | null;
+  }
+): Promise<ChatDialog | null> {
+  const set: PgUpdateSetSource<typeof chatDialogs> = { updatedAt: sql`now()` };
+  if (patch.title !== undefined) set.title = patch.title;
+  if (patch.model !== undefined) set.model = patch.model;
+  if (patch.systemPrompt !== undefined) set.systemPrompt = patch.systemPrompt;
+  if (patch.temperature !== undefined) set.temperature = patch.temperature;
+  if (patch.maxTokens !== undefined) set.maxTokens = patch.maxTokens;
+  if (patch.theme !== undefined) set.theme = patch.theme;
+
+  const [row] = await db
+    .update(chatDialogs)
+    .set(set)
+    .where(and(eq(chatDialogs.id, dialogId), eq(chatDialogs.userId, userId), eq(chatDialogs.isActive, true)))
+    .returning();
+  return row ? mapDialog(row) : null;
 }
 
 /** Soft-delete a dialog (is_active=false). If it was active dialog, switch to latest. */
@@ -327,6 +366,11 @@ function mapDialog(r: typeof chatDialogs.$inferSelect): ChatDialog {
     id: r.id,
     userId: r.userId,
     title: r.title,
+    model: r.model,
+    systemPrompt: r.systemPrompt,
+    temperature: r.temperature,
+    maxTokens: r.maxTokens,
+    theme: r.theme,
     isActive: r.isActive,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,

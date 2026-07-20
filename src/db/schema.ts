@@ -499,6 +499,13 @@ export const chatDialogs = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 200 }).notNull().default("Новый диалог"),
+    // Per-dialog AI overrides. NULL → fall back to the user's global provider
+    // preference (users.chat_provider) at send time.
+    model: varchar("model", { length: 120 }),
+    systemPrompt: text("system_prompt"),
+    temperature: real("temperature"),
+    maxTokens: integer("max_tokens"),
+    theme: varchar("theme", { length: 200 }),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

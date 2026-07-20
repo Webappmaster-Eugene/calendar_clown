@@ -62,10 +62,16 @@ export interface ChatCompletionResult {
 }
 
 /** Send a chat completion request to OpenRouter. Falls back to paid model if free model is unavailable. */
+export interface ChatCompletionOpts {
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export async function chatCompletion(
   messages: Array<{ role: string; content: MessageContent }>,
   model?: string,
-  systemPromptOverride?: string
+  systemPromptOverride?: string,
+  opts?: ChatCompletionOpts
 ): Promise<ChatCompletionResult> {
   const systemPrompt = systemPromptOverride ?? buildSystemPrompt();
   const fullMessages: Array<{ role: string; content: MessageContent }> = [
@@ -74,11 +80,13 @@ export async function chatCompletion(
   ];
 
   const requestedModel = model ?? DEEPSEEK_MODEL;
+  const tuning = { temperature: opts?.temperature, max_tokens: opts?.maxTokens };
 
   try {
     return await callOpenRouterWithUsage({
       model: requestedModel,
       messages: fullMessages,
+      ...tuning,
     });
   } catch (err) {
     if (isFreeModel(requestedModel) && isModelNotFoundError(err)) {
@@ -86,6 +94,7 @@ export async function chatCompletion(
       return callOpenRouterWithUsage({
         model: DEEPSEEK_MODEL,
         messages: fullMessages,
+        ...tuning,
       });
     }
     throw err;
@@ -102,7 +111,8 @@ export async function chatCompletionStream(
   messages: Array<{ role: string; content: MessageContent }>,
   onChunk: (text: string) => void | Promise<void>,
   model?: string,
-  systemPromptOverride?: string
+  systemPromptOverride?: string,
+  opts?: ChatCompletionOpts
 ): Promise<StreamResult> {
   const systemPrompt = systemPromptOverride ?? buildSystemPrompt();
   const fullMessages: Array<{ role: string; content: MessageContent }> = [
@@ -111,17 +121,18 @@ export async function chatCompletionStream(
   ];
 
   const requestedModel = model ?? DEEPSEEK_MODEL;
+  const tuning = { temperature: opts?.temperature, max_tokens: opts?.maxTokens };
 
   try {
     return await callOpenRouterStream(
-      { model: requestedModel, messages: fullMessages },
+      { model: requestedModel, messages: fullMessages, ...tuning },
       onChunk
     );
   } catch (err) {
     if (isFreeModel(requestedModel) && isModelNotFoundError(err)) {
       log.warn(`Free model "${requestedModel}" unavailable (stream), falling back to "${DEEPSEEK_MODEL}"`);
       return callOpenRouterStream(
-        { model: DEEPSEEK_MODEL, messages: fullMessages },
+        { model: DEEPSEEK_MODEL, messages: fullMessages, ...tuning },
         onChunk
       );
     }

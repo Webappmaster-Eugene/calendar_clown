@@ -659,6 +659,33 @@ export interface ChatDialogDto {
   messageCount?: number;
   createdAt: string;
   updatedAt: string;
+  /** Per-dialog AI overrides. NULL → the user's global provider default is used. */
+  model: string | null;
+  systemPrompt: string | null;
+  temperature: number | null;
+  maxTokens: number | null;
+  theme: string | null;
+}
+
+/** Patch for PUT /api/chat/dialogs/:id. Any field omitted is left unchanged; an
+ *  explicit null clears an override (falls back to the global default). */
+export interface UpdateDialogRequest {
+  title?: string;
+  model?: string | null;
+  systemPrompt?: string | null;
+  temperature?: number | null;
+  maxTokens?: number | null;
+  theme?: string | null;
+}
+
+/** One OpenRouter model, as surfaced by GET /api/chat/models for the picker. */
+export interface OpenRouterModelDto {
+  id: string;
+  name: string;
+  contextLength: number | null;
+  promptPrice: number | null;
+  completionPrice: number | null;
+  isFree: boolean;
 }
 
 export interface ChatMessageDto {

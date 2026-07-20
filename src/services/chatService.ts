@@ -13,9 +13,12 @@ import {
   setActiveDialogId,
   updateDialogTitle,
   renameDialog,
+  updateDialogSettings,
+  type ChatDialog,
 } from "../chat/repository.js";
 import { chatCompletion, chatCompletionStream, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
 import { getChatProvider } from "../chat/repository.js";
+import { searchModels } from "../chat/models.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_UNCENSORED_MODEL } from "../constants.js";
@@ -25,6 +28,8 @@ import type {
   ChatDialogDto,
   ChatMessageDto,
   SendChatMessageResponse,
+  UpdateDialogRequest,
+  OpenRouterModelDto,
 } from "../shared/types.js";
 
 const log = createLogger("chat-service");
@@ -39,6 +44,24 @@ function resolveModelAndPrompt(provider: ChatProvider): { model: string; systemP
   }
 }
 
+/**
+ * Effective AI config for a dialog: per-dialog overrides win, otherwise the user's
+ * global provider preference. Model → dialog.model or the provider model; system
+ * prompt → dialog.systemPrompt or the provider's; temperature/maxTokens → dialog-only.
+ */
+function resolveDialogAiConfig(
+  dialog: ChatDialog,
+  provider: ChatProvider
+): { model: string; systemPrompt?: string; temperature?: number; maxTokens?: number } {
+  const base = resolveModelAndPrompt(provider);
+  return {
+    model: dialog.model || base.model,
+    systemPrompt: dialog.systemPrompt ?? base.systemPrompt,
+    temperature: dialog.temperature ?? undefined,
+    maxTokens: dialog.maxTokens ?? undefined,
+  };
+}
+
 function requireDb(): void {
   if (!isDatabaseAvailable()) {
     throw new Error("База данных недоступна.");
@@ -51,7 +74,7 @@ async function requireDbUser(telegramId: number) {
   return dbUser;
 }
 
-function dialogToDto(d: { id: number; title: string; isActive: boolean; createdAt: Date; updatedAt: Date }, messageCount?: number): ChatDialogDto {
+function dialogToDto(d: ChatDialog, messageCount?: number): ChatDialogDto {
   return {
     id: d.id,
     title: d.title,
@@ -59,6 +82,11 @@ function dialogToDto(d: { id: number; title: string; isActive: boolean; createdA
     messageCount,
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
+    model: d.model,
+    systemPrompt: d.systemPrompt,
+    temperature: d.temperature,
+    maxTokens: d.maxTokens,
+    theme: d.theme,
   };
 }
 
@@ -108,6 +136,24 @@ export async function renameUserDialog(
   if (!updated) throw new Error("Диалог не найден.");
 }
 
+/** Update a dialog's title + per-dialog AI settings (model/prompt/temp/max/theme). */
+export async function updateDialogForUser(
+  telegramId: number,
+  dialogId: number,
+  patch: UpdateDialogRequest
+): Promise<ChatDialogDto> {
+  requireDb();
+  const dbUser = await requireDbUser(telegramId);
+  const updated = await updateDialogSettings(dialogId, dbUser.id, patch);
+  if (!updated) throw new Error("Диалог не найден.");
+  return dialogToDto(updated);
+}
+
+/** OpenRouter model catalog for the picker, optionally filtered by a search query. */
+export async function getModels(search: string): Promise<OpenRouterModelDto[]> {
+  return searchModels(search);
+}
+
 export async function getDialogMessages(
   telegramId: number,
   dialogId: number,
@@ -150,7 +196,7 @@ export async function sendMessage(
   }
 
   const provider = await getChatProvider(dbUser.id);
-  const { model, systemPrompt } = resolveModelAndPrompt(provider);
+  const { model, systemPrompt, temperature, maxTokens } = resolveDialogAiConfig(dialog, provider);
 
   // Get conversation history BEFORE saving user message (to build context)
   const history = await getRecentMessages(dialog.id, 20);
@@ -163,7 +209,7 @@ export async function sendMessage(
   ];
 
   // Call AI first — if it fails, we don't save orphaned user messages
-  const result = await chatCompletion(messages, model, systemPrompt);
+  const result = await chatCompletion(messages, model, systemPrompt, { temperature, maxTokens });
 
   // Save both messages only after successful AI call
   const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
@@ -218,7 +264,7 @@ export async function sendMessageStream(
   }
 
   const provider = await getChatProvider(dbUser.id);
-  const { model, systemPrompt } = resolveModelAndPrompt(provider);
+  const { model, systemPrompt, temperature, maxTokens } = resolveDialogAiConfig(dialog, provider);
 
   // Get conversation history BEFORE saving user message (to build context)
   const history = await getRecentMessages(dialog.id, 20);
@@ -231,7 +277,7 @@ export async function sendMessageStream(
   ];
 
   // Stream AI response first — if it fails, we don't save orphaned user messages
-  const result = await chatCompletionStream(messages, onChunk, model, systemPrompt);
+  const result = await chatCompletionStream(messages, onChunk, model, systemPrompt, { temperature, maxTokens });
 
   // Save both messages only after successful AI call
   const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
