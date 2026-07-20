@@ -505,14 +505,27 @@ function ModelPicker({
 }) {
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
+  const [freeOnly, setFreeOnly] = useState(false);
+  const [vendor, setVendor] = useState("");
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(q), 300);
     return () => clearTimeout(t);
   }, [q]);
 
+  const { data: vendors } = useQuery({
+    queryKey: ["chat", "models", "vendors"],
+    queryFn: () => api.get<string[]>("/api/chat/models/vendors"),
+    staleTime: 30 * 60 * 1000,
+  });
+
   const { data: models, isLoading } = useQuery({
-    queryKey: ["chat", "models", debouncedQ],
-    queryFn: () => api.get<OpenRouterModelDto[]>(`/api/chat/models?search=${encodeURIComponent(debouncedQ)}`),
+    queryKey: ["chat", "models", debouncedQ, freeOnly, vendor],
+    queryFn: () => {
+      const p = new URLSearchParams({ search: debouncedQ });
+      if (freeOnly) p.set("free", "1");
+      if (vendor) p.set("vendor", vendor);
+      return api.get<OpenRouterModelDto[]>(`/api/chat/models?${p.toString()}`);
+    },
     staleTime: 5 * 60 * 1000,
   });
 
@@ -526,6 +539,21 @@ function ModelPicker({
           <button className="btn btn-small" onClick={onClose}>✕</button>
         </div>
         <input className="input" placeholder="Поиск: gpt, claude, gemini, deepseek…" value={q} autoFocus onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 8 }} />
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <button
+            type="button"
+            className={`btn btn-small${freeOnly ? " btn-primary" : ""}`}
+            onClick={() => setFreeOnly((v) => !v)}
+          >
+            🆓 Бесплатные
+          </button>
+          <select className="input" value={vendor} onChange={(e) => setVendor(e.target.value)} style={{ flex: 1 }}>
+            <option value="">Все вендоры</option>
+            {vendors?.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        </div>
         <button type="button" className="list-item" style={{ width: "100%", textAlign: "left" }} onClick={() => onSelect(null)}>
           <div className="list-item-content">
             <div className="list-item-title">По умолчанию (глобальный провайдер){current == null ? " ✓" : ""}</div>

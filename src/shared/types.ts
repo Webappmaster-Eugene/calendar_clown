@@ -682,6 +682,8 @@ export interface UpdateDialogRequest {
 export interface OpenRouterModelDto {
   id: string;
   name: string;
+  /** Provider prefix of the id (e.g. "anthropic" for "anthropic/claude-..."). */
+  vendor: string;
   contextLength: number | null;
   promptPrice: number | null;
   completionPrice: number | null;

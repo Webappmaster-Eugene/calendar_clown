@@ -18,7 +18,7 @@ import {
 } from "../chat/repository.js";
 import { chatCompletion, chatCompletionStream, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
 import { getChatProvider } from "../chat/repository.js";
-import { searchModels } from "../chat/models.js";
+import { searchModels, listModelVendors } from "../chat/models.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_UNCENSORED_MODEL } from "../constants.js";
@@ -149,9 +149,17 @@ export async function updateDialogForUser(
   return dialogToDto(updated);
 }
 
-/** OpenRouter model catalog for the picker, optionally filtered by a search query. */
-export async function getModels(search: string): Promise<OpenRouterModelDto[]> {
-  return searchModels(search);
+/** OpenRouter model catalog for the picker: search query + free-only / vendor filters. */
+export async function getModels(
+  search: string,
+  opts: { free?: boolean; vendor?: string } = {}
+): Promise<OpenRouterModelDto[]> {
+  return searchModels(search, opts);
+}
+
+/** Distinct vendors for the picker's vendor dropdown. */
+export async function getModelVendors(): Promise<string[]> {
+  return listModelVendors();
 }
 
 export async function getDialogMessages(

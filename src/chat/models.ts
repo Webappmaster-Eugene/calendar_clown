@@ -30,6 +30,7 @@ function mapModel(m: RawModel): OpenRouterModelDto {
   return {
     id: m.id,
     name: m.name || m.id,
+    vendor: m.id.includes("/") ? m.id.split("/")[0] : "other",
     contextLength: m.context_length ?? null,
     promptPrice,
     completionPrice,
@@ -66,14 +67,28 @@ export async function listOpenRouterModels(): Promise<OpenRouterModelDto[]> {
   return models;
 }
 
-/** Search the catalog by id/name substring (case-insensitive). Empty query → the
- *  full list (capped). Ranks id/name prefix matches first, then free models. */
-export async function searchModels(query: string, limit = 50): Promise<OpenRouterModelDto[]> {
+export interface ModelSearchOpts {
+  free?: boolean;
+  vendor?: string;
+  limit?: number;
+}
+
+/** Search the catalog by id/name substring (case-insensitive) with optional
+ *  free-only / vendor filters. Filters apply BEFORE the cap so nothing is hidden by
+ *  it. Ranks id/name prefix matches first. */
+export async function searchModels(query: string, opts: ModelSearchOpts = {}): Promise<OpenRouterModelDto[]> {
+  const { free, vendor, limit = 50 } = opts;
   const all = await listOpenRouterModels();
   const q = query.trim().toLowerCase();
-  let matched = all;
+
+  let matched = all.filter((m) => {
+    if (free && !m.isFree) return false;
+    if (vendor && m.vendor !== vendor) return false;
+    if (q && !(m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))) return false;
+    return true;
+  });
+
   if (q) {
-    matched = all.filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
     matched.sort((a, b) => {
       const ap = a.id.toLowerCase().startsWith(q) || a.name.toLowerCase().startsWith(q) ? 0 : 1;
       const bp = b.id.toLowerCase().startsWith(q) || b.name.toLowerCase().startsWith(q) ? 0 : 1;
@@ -81,4 +96,10 @@ export async function searchModels(query: string, limit = 50): Promise<OpenRoute
     });
   }
   return matched.slice(0, limit);
+}
+
+/** Distinct vendors in the catalog (sorted), for the picker's vendor filter. */
+export async function listModelVendors(): Promise<string[]> {
+  const all = await listOpenRouterModels();
+  return Array.from(new Set(all.map((m) => m.vendor))).sort((a, b) => a.localeCompare(b));
 }

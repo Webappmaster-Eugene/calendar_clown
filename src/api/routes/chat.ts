@@ -11,6 +11,7 @@ import {
   removeDialog,
   updateDialogForUser,
   getModels,
+  getModelVendors,
 } from "../../services/chatService.js";
 import type { UpdateDialogRequest } from "../../shared/types.js";
 import { getUserByTelegramId } from "../../expenses/repository.js";
@@ -187,14 +188,27 @@ app.put(
   }
 );
 
-/** GET /api/chat/models?search=<q> — OpenRouter model catalog for the picker */
+/** GET /api/chat/models?search=<q>&free=1&vendor=<v> — OpenRouter catalog for the picker */
 app.get("/models", async (c) => {
   const search = c.req.query("search") ?? "";
+  const free = c.req.query("free") === "1" || c.req.query("free") === "true";
+  const vendor = c.req.query("vendor") || undefined;
   try {
-    const models = await getModels(search);
+    const models = await getModels(search, { free, vendor });
     return c.json({ ok: true, data: models });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to load models";
+    return c.json({ ok: false, error: msg }, 502);
+  }
+});
+
+/** GET /api/chat/models/vendors — distinct vendors for the picker's vendor filter */
+app.get("/models/vendors", async (c) => {
+  try {
+    const vendors = await getModelVendors();
+    return c.json({ ok: true, data: vendors });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to load vendors";
     return c.json({ ok: false, error: msg }, 502);
   }
 });
