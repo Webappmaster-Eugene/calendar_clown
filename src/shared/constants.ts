@@ -15,6 +15,11 @@ export const MAX_SUBCATEGORY_LENGTH = 200;
 /** Reminders */
 export const MAX_REMINDERS_PER_USER = 10;
 
+/** Neuro chat: max messages a single dialog can hold. Equal to the context window,
+ *  so the whole dialog always fits in context (nothing silently forgotten). Once a
+ *  dialog reaches this, writing is blocked — the user must start a new chat. */
+export const CHAT_DIALOG_MESSAGE_LIMIT = 50;
+
 /** OSINT */
 export const OSINT_DAILY_LIMIT = 10;
 

@@ -14,8 +14,10 @@ import {
   updateDialogTitle,
   renameDialog,
   updateDialogSettings,
+  countDialogMessages,
   type ChatDialog,
 } from "../chat/repository.js";
+import { CHAT_DIALOG_MESSAGE_LIMIT } from "../shared/constants.js";
 import { chatCompletion, chatCompletionStream, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
 import { getChatProvider } from "../chat/repository.js";
 import { searchModels, listModelVendors } from "../chat/models.js";
@@ -206,8 +208,14 @@ export async function sendMessage(
   const provider = await getChatProvider(dbUser.id);
   const { model, systemPrompt, temperature, maxTokens } = resolveDialogAiConfig(dialog, provider);
 
+  // Reject writes to a dialog that has hit the message cap (= the context window,
+  // so nothing is silently forgotten). The user must start a new chat.
+  if ((await countDialogMessages(dialog.id)) >= CHAT_DIALOG_MESSAGE_LIMIT) {
+    throw new Error(`Диалог достиг лимита в ${CHAT_DIALOG_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
+  }
+
   // Get conversation history BEFORE saving user message (to build context)
-  const history = await getRecentMessages(dialog.id, 20);
+  const history = await getRecentMessages(dialog.id, CHAT_DIALOG_MESSAGE_LIMIT);
   const messages = [
     ...history.map((m) => ({
       role: m.role,
@@ -274,8 +282,14 @@ export async function sendMessageStream(
   const provider = await getChatProvider(dbUser.id);
   const { model, systemPrompt, temperature, maxTokens } = resolveDialogAiConfig(dialog, provider);
 
+  // Reject writes to a dialog that has hit the message cap (= the context window,
+  // so nothing is silently forgotten). The user must start a new chat.
+  if ((await countDialogMessages(dialog.id)) >= CHAT_DIALOG_MESSAGE_LIMIT) {
+    throw new Error(`Диалог достиг лимита в ${CHAT_DIALOG_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
+  }
+
   // Get conversation history BEFORE saving user message (to build context)
-  const history = await getRecentMessages(dialog.id, 20);
+  const history = await getRecentMessages(dialog.id, CHAT_DIALOG_MESSAGE_LIMIT);
   const messages = [
     ...history.map((m) => ({
       role: m.role,

@@ -12,6 +12,7 @@ import type {
   UpdateDialogRequest,
   OpenRouterModelDto,
 } from "@shared/types";
+import { CHAT_DIALOG_MESSAGE_LIMIT } from "@shared/constants";
 
 export function ChatPage() {
   useClosingConfirmation();
@@ -255,6 +256,10 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
       api.get<ChatMessageDto[]>(`/api/chat/dialogs/${dialogId}/messages`),
   });
 
+  // Per-dialog message cap: once reached, writing is blocked (start a new chat).
+  const msgCount = messages?.length ?? 0;
+  const atLimit = msgCount >= CHAT_DIALOG_MESSAGE_LIMIT;
+
   // The dialog's own settings live in the shared dialogs list (same query key →
   // deduped). Re-read after a settings PUT invalidates it.
   const { data: dialogs } = useQuery({
@@ -280,7 +285,7 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
   const handleSend = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     const text = input.trim();
-    if (!text || isSending) return;
+    if (!text || isSending || atLimit) return;
 
     setInput("");
     setError(null);
@@ -315,7 +320,7 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
     } finally {
       setIsSending(false);
     }
-  }, [input, isSending, dialogId, queryClient]);
+  }, [input, isSending, atLimit, dialogId, queryClient]);
 
   // Combine server messages with the current user input + streaming response
   const displayMessages = messages ?? [];
@@ -383,25 +388,41 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
         </div>
       )}
 
-      <form className="chat-input-row" onSubmit={handleSend}>
-        <input
-          className="input"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Введите сообщение..."
-        />
-        <VoiceButton
-          mode="neuro"
-          onResult={(transcript) => setInput((prev) => prev ? `${prev} ${transcript}` : transcript)}
-        />
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={isSending || !input.trim()}
-        >
-          Отправить
-        </button>
-      </form>
+      {atLimit ? (
+        <div className="card" style={{ textAlign: "center" }}>
+          <div className="card-title">Достигнут лимит {CHAT_DIALOG_MESSAGE_LIMIT} сообщений</div>
+          <div className="card-hint" style={{ marginBottom: 10 }}>
+            Чтобы весь диалог помещался в контекст, писать сюда больше нельзя. Создайте новый чат.
+          </div>
+          <button className="btn btn-primary btn-block" onClick={onBack}>← К списку чатов</button>
+        </div>
+      ) : (
+        <form className="chat-input-row" onSubmit={handleSend}>
+          <input
+            className="input"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Введите сообщение..."
+          />
+          <VoiceButton
+            mode="neuro"
+            onResult={(transcript) => setInput((prev) => prev ? `${prev} ${transcript}` : transcript)}
+          />
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={isSending || !input.trim()}
+          >
+            Отправить
+          </button>
+        </form>
+      )}
+
+      {!atLimit && msgCount >= CHAT_DIALOG_MESSAGE_LIMIT - 6 && (
+        <div className="card-hint" style={{ textAlign: "center", marginTop: 6, fontSize: 12 }}>
+          Сообщений: {msgCount}/{CHAT_DIALOG_MESSAGE_LIMIT}
+        </div>
+      )}
     </div>
   );
 }

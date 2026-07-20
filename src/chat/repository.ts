@@ -186,6 +186,15 @@ export async function countActiveDialogs(userId: number): Promise<number> {
   return row.value;
 }
 
+/** Number of messages in a dialog (for the per-dialog message-limit check). */
+export async function countDialogMessages(dialogId: number): Promise<number> {
+  const [row] = await db
+    .select({ value: count() })
+    .from(chatMessages)
+    .where(eq(chatMessages.dialogId, dialogId));
+  return row.value;
+}
+
 /** Get active_dialog_id from users. */
 export async function getActiveDialogId(userId: number): Promise<number | null> {
   const [row] = await db
