@@ -256,10 +256,6 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
       api.get<ChatMessageDto[]>(`/api/chat/dialogs/${dialogId}/messages`),
   });
 
-  // Per-dialog message cap: once reached, writing is blocked (start a new chat).
-  const msgCount = messages?.length ?? 0;
-  const atLimit = msgCount >= CHAT_DIALOG_MESSAGE_LIMIT;
-
   // The dialog's own settings live in the shared dialogs list (same query key →
   // deduped). Re-read after a settings PUT invalidates it.
   const { data: dialogs } = useQuery({
@@ -268,6 +264,11 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
   });
   const dialog = dialogs?.find((d) => d.id === dialogId) ?? null;
   const [showSettings, setShowSettings] = useState(false);
+
+  // Per-dialog message cap: once reached, writing is blocked (start a new chat).
+  // dialog.messageCount is the authoritative total; messages.length is a fallback.
+  const msgCount = dialog?.messageCount ?? messages?.length ?? 0;
+  const atLimit = msgCount >= CHAT_DIALOG_MESSAGE_LIMIT;
 
   const updateSettings = useMutation({
     mutationFn: (patch: UpdateDialogRequest) =>

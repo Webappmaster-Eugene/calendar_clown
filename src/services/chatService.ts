@@ -167,7 +167,7 @@ export async function getModelVendors(): Promise<string[]> {
 export async function getDialogMessages(
   telegramId: number,
   dialogId: number,
-  limit: number = 20
+  limit: number = CHAT_DIALOG_MESSAGE_LIMIT
 ): Promise<ChatMessageDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
