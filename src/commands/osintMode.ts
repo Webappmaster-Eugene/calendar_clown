@@ -49,7 +49,6 @@ function getOsintKeyboard(isAdmin: boolean) {
 
 // ─── Commands ───────────────────────────────────────────────────────────
 
-/** Handle /osint command — enter OSINT mode. */
 export async function handleOsintCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -95,7 +94,6 @@ export async function handleOsintCommand(ctx: Context): Promise<void> {
 
 // ─── Text input ─────────────────────────────────────────────────────────
 
-/** Handle text input in OSINT mode. */
 export async function handleOsintText(ctx: Context): Promise<boolean> {
   if (!ctx.message || !("text" in ctx.message)) return false;
   const text = ctx.message.text;
@@ -106,7 +104,6 @@ export async function handleOsintText(ctx: Context): Promise<boolean> {
     return false;
   }
 
-  // Check if there is a pending search — treat text as supplement
   const pending = pendingSearches.get(telegramId);
   if (pending) {
     const combinedQuery = `${pending.originalQuery}, ${text}`;
@@ -121,7 +118,6 @@ export async function handleOsintText(ctx: Context): Promise<boolean> {
     pending.originalQuery = combinedQuery;
     pending.parsedSubject = parseResult.subject;
 
-    // Send new confirmation card (delete old one is not reliable, send new)
     await showConfirmationCard(ctx, telegramId, parseResult.subject, combinedQuery, pending.inputMethod);
     return true;
   }
@@ -142,7 +138,6 @@ export async function handleOsintText(ctx: Context): Promise<boolean> {
 
 // ─── Voice input ────────────────────────────────────────────────────────
 
-/** Handle voice input in OSINT mode. */
 export async function handleOsintVoice(
   ctx: Context,
   transcript: string,
@@ -162,7 +157,7 @@ export async function handleOsintVoice(
       `🎤 Расшифровка: "${safeTranscript}"\n\n🔍 Анализирую запрос...`
     );
   } catch {
-    // ignore edit errors
+    /* ignore */
   }
 
   const parseResult = await parseSearchSubject(transcript);
@@ -184,7 +179,7 @@ export async function handleOsintVoice(
   try {
     await ctx.telegram.deleteMessage(chatId, statusMsgId);
   } catch {
-    // ignore delete errors
+    /* ignore */
   }
 
   await showConfirmationCard(ctx, telegramId, parseResult.subject, transcript, "voice");
@@ -246,7 +241,6 @@ async function showConfirmationCard(
 
 // ─── Confirmation callbacks ─────────────────────────────────────────────
 
-/** Handle "✅ Начать поиск" callback. */
 export async function handleOsintConfirmCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   await ctx.answerCbQuery("Запускаю поиск...");
@@ -268,7 +262,6 @@ export async function handleOsintConfirmCallback(ctx: Context): Promise<void> {
     searchType: pending.parsedSubject.searchType,
   });
 
-  // Edit the confirmation card to show search started
   try {
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
   } catch {
@@ -278,7 +271,6 @@ export async function handleOsintConfirmCallback(ctx: Context): Promise<void> {
   await executeOsintSearch(ctx, pending.originalQuery, pending.inputMethod);
 }
 
-/** Handle "✏️ Ввести заново" callback. */
 export async function handleOsintReenterCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   await ctx.answerCbQuery();
@@ -297,7 +289,6 @@ export async function handleOsintReenterCallback(ctx: Context): Promise<void> {
   await ctx.reply("📝 Отправьте новый запрос для OSINT-поиска.");
 }
 
-/** Handle "❌ Отмена" callback. */
 export async function handleOsintCancelCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   await ctx.answerCbQuery("Поиск отменён");
@@ -318,7 +309,6 @@ export async function handleOsintCancelCallback(ctx: Context): Promise<void> {
 
 // ─── Mode buttons ───────────────────────────────────────────────────────
 
-/** Handle "🔍 Новый поиск" button. */
 export async function handleNewSearchButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -334,7 +324,6 @@ export async function handleNewSearchButton(ctx: Context): Promise<void> {
   );
 }
 
-/** Handle "📋 История поисков" button. */
 export async function handleHistoryButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id ?? 0;
   const dbUser = await getUserByTelegramId(telegramId);
@@ -344,7 +333,6 @@ export async function handleHistoryButton(ctx: Context): Promise<void> {
 
 // ─── History callbacks ──────────────────────────────────────────────────
 
-/** Handle history pagination callback. */
 export async function handleHistoryPageCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const page = parseInt(ctx.callbackQuery.data.replace("osint_hist:", ""), 10);
@@ -353,7 +341,6 @@ export async function handleHistoryPageCallback(ctx: Context): Promise<void> {
   await showHistory(ctx, page);
 }
 
-/** Handle view single search callback. */
 export async function handleViewSearchCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const searchId = parseInt(ctx.callbackQuery.data.replace("osint_view:", ""), 10);
@@ -440,7 +427,6 @@ async function showHistory(ctx: Context, page: number): Promise<void> {
       timeZone: TIMEZONE_MSK,
     });
 
-    // Use parsed name if available, otherwise query preview
     const displayName = s.parsedSubject?.name && s.parsedSubject.name.length > 0
       ? s.parsedSubject.name
       : s.query;
@@ -479,7 +465,6 @@ async function showHistory(ctx: Context, page: number): Promise<void> {
       ...Markup.inlineKeyboard(buttons),
     });
   } catch {
-    // Fallback: plain text
     await ctx.reply(text.replace(/\\/g, ""), {
       ...Markup.inlineKeyboard(buttons),
     });
@@ -512,7 +497,7 @@ async function executeOsintSearch(
     try {
       await ctx.telegram.editMessageText(chatId, statusMsg.message_id, undefined, text);
     } catch {
-      // Ignore edit errors (message not modified, etc.)
+      /* ignore */
     }
   };
 

@@ -1,7 +1,3 @@
-/**
- * Central Action Registry. All catalog modules register here; every surface
- * (`/do` router, MCP server, text parity) reads actions from this one place.
- */
 import type { Action } from "./types.js";
 import type { UserMenuContext } from "../shared/auth.js";
 import { canAccessMode } from "../shared/auth.js";
@@ -53,17 +49,14 @@ for (const action of ALL_ACTIONS) {
   BY_NAME.set(action.name, action);
 }
 
-/** Every registered action, regardless of access. */
 export function getAllActions(): Action[] {
   return ALL_ACTIONS;
 }
 
-/** Look up an action by its stable name. */
 export function getAction(name: string): Action | undefined {
   return BY_NAME.get(name);
 }
 
-/** Actions visible to a user given their access context (mode allowlist). */
 export function getActions(menu: UserMenuContext): Action[] {
   return ALL_ACTIONS.filter((a) => canAccessMode(a.mode, menu));
 }

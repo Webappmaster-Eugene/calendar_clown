@@ -1,7 +1,3 @@
-/**
- * Main API router. Aggregates all route modules under /api prefix.
- * Mounted on the existing HTTP server in oauthServer.ts.
- */
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { apiAuthMiddleware, requireApproved } from "./authMiddleware.js";
@@ -54,13 +50,10 @@ export function createApiApp(): Hono<ApiEnv> {
     maxAge: 86400,
   }));
 
-  // Auth middleware for all API routes
   api.use("*", apiAuthMiddleware());
 
-  // Require approved status for all routes
   api.use("*", requireApproved());
 
-  // Audit: log every API request to action_logs
   api.use("*", requestLoggerMiddleware());
 
   // Global per-user soft cap to prevent client loops from hammering the API.
@@ -77,8 +70,7 @@ export function createApiApp(): Hono<ApiEnv> {
   api.use("/nutritionist/*", heavyLimit);
   api.use("/broadcast/*", heavyLimit);
 
-  // ── Health check (no auth needed — registered before middleware) ──
-  // Note: health is mounted on the parent, not here
+  // Health is mounted on the parent, not here.
 
   // ── Route modules ──────────────────────────────────────────
   api.route("/user", userRoutes);

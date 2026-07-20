@@ -1,7 +1,3 @@
-/**
- * Wishlist actions — wrappers over wishlistService (mirrors src/api/routes/wishlist.ts).
- * Tribe mode.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

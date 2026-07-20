@@ -1,8 +1,3 @@
-/**
- * Cron scheduler for daily digest.
- * Runs at configured time (default 13:00 MSK) and triggers digest for all users.
- */
-
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
@@ -18,11 +13,6 @@ const log = createLogger("digest");
 
 let digestCron: Cron | null = null;
 
-/**
- * Start the daily digest scheduler.
- * @param bot Telegraf instance for sending messages.
- * @param cronExpr Cron expression (default: "0 13 * * *" = 13:00 daily).
- */
 export function startDigestScheduler(bot: Telegraf, cronExpr?: string): void {
   const expr = cronExpr ?? process.env.DIGEST_CRON ?? "0 13 * * *";
 
@@ -34,7 +24,6 @@ export function startDigestScheduler(bot: Telegraf, cronExpr?: string): void {
   log.info(`Digest scheduler started: "${expr}" (Europe/Moscow)`);
 }
 
-/** Stop the digest scheduler. */
 export function stopDigestScheduler(): void {
   if (digestCron) {
     digestCron.stop();
@@ -43,10 +32,6 @@ export function stopDigestScheduler(): void {
   }
 }
 
-/**
- * Run digest for all users with active rubrics.
- * Called by cron or manually via /digest now.
- */
 export async function runAllDigests(bot: Telegraf): Promise<number> {
   if (!await isDigestReady()) {
     log.warn("Digest skipped: session not ready.");
@@ -66,7 +51,6 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
       return 0;
     }
 
-    // Resolve DB user IDs to telegram IDs
     for (const dbUserId of dbUserIds) {
       const [row] = await db
         .select({ telegramId: users.telegramId })
@@ -86,7 +70,6 @@ export async function runAllDigests(bot: Telegraf): Promise<number> {
         log.error(`Digest failed for user ${telegramId}:`, err);
       }
 
-      // Pause between users
       if (dbUserIds.indexOf(dbUserId) < dbUserIds.length - 1) {
         await new Promise((r) => setTimeout(r, 5_000));
       }

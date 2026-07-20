@@ -35,13 +35,10 @@ import { classifySearchNeed, executeWebSearch, formatSearchResultsForContext } f
 
 const log = createLogger("neuro");
 
-/** Max file size for document processing (15 MB). */
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 
-/** Max total context from search + links. */
 const MAX_AUGMENTED_CONTEXT_LENGTH = 15_000;
 
-/** MIME types treated as plain text (sent to the user's selected chat model). */
 const TEXT_MIME_TYPES = new Set([
   "text/plain",
   "text/csv",
@@ -52,13 +49,10 @@ const TEXT_MIME_TYPES = new Set([
   "application/xml",
 ]);
 
-/** File extensions treated as text even without explicit MIME. */
 const TEXT_EXTENSIONS = new Set([".txt", ".csv", ".md", ".json", ".xml", ".html", ".log", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".env"]);
 
-/** MIME types natively supported by Gemini vision (as base64 image). */
 const IMAGE_MIME_PREFIXES = ["image/"];
 
-/** Document MIME types supported by Gemini natively (PDF, DOCX, XLSX). */
 const GEMINI_DOC_MIME_TYPES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -84,7 +78,6 @@ function getNeuroKeyboard(isAdmin: boolean, provider: ChatProvider = "free") {
   ]).resize();
 }
 
-/** Resolve model name from chat provider. */
 function resolveModel(provider: ChatProvider): string {
   switch (provider) {
     case "free": return DEEPSEEK_FREE_MODEL;
@@ -93,12 +86,10 @@ function resolveModel(provider: ChatProvider): string {
   }
 }
 
-/** Return systemPromptOverride for uncensored mode, undefined for others. */
 function resolveSystemPrompt(provider: ChatProvider): string | undefined {
   return provider === "uncensored" ? buildUncensoredSystemPrompt() : undefined;
 }
 
-/** Fire-and-forget: auto-generate dialog title after first message. */
 function autoNameDialog(dialogId: number, firstMessage: string, model?: string): void {
   generateDialogTitle(firstMessage, model)
     .then((title) => {
@@ -111,7 +102,6 @@ function autoNameDialog(dialogId: number, firstMessage: string, model?: string):
     });
 }
 
-/** Build augmented text with links + search context. Returns { augmented, linksContext, searchContext }. */
 async function augmentWithLinksAndSearch(
   text: string,
   historyMessages: Array<{ role: string; content: string }>,
@@ -160,7 +150,6 @@ async function augmentWithLinksAndSearch(
   return parts.join("\n\n");
 }
 
-/** Handle /neuro command — enter neuro chat mode. */
 export async function handleNeuroCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -197,7 +186,6 @@ export async function handleNeuroCommand(ctx: Context): Promise<void> {
   );
 }
 
-/** Handle text messages in neuro mode. Returns true if handled. */
 export async function handleNeuroText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
@@ -229,7 +217,6 @@ export async function handleNeuroText(ctx: Context): Promise<boolean> {
   return true;
 }
 
-/** Handle "🗑 Очистить историю" button — clears only the active dialog. */
 export async function handleNeuroClearButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -250,7 +237,6 @@ export async function handleNeuroClearButton(ctx: Context): Promise<void> {
   await ctx.reply(`🗑 История диалога «${dialog.title}» очищена (удалено ${deleted} сообщений).`);
 }
 
-/** Handle "💬 Диалоги" button — show list of dialogs with inline buttons. */
 export async function handleNeuroDialogsButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -289,7 +275,6 @@ export async function handleNeuroDialogsButton(ctx: Context): Promise<void> {
   });
 }
 
-/** Handle "➕ Новый диалог" button. */
 export async function handleNeuroNewDialogButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -319,7 +304,6 @@ export async function handleNeuroNewDialogButton(ctx: Context): Promise<void> {
   }
 }
 
-/** Inline callback: switch to a dialog. */
 export async function handleNeuroDialogSwitch(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -347,7 +331,6 @@ export async function handleNeuroDialogSwitch(ctx: Context): Promise<void> {
   logAction(dbUser.id, telegramId, "chat_dialog_switch", { dialogId: dialog.id });
   await ctx.answerCbQuery(`Переключено на «${dialog.title}»`);
 
-  // Update the message to reflect the new active dialog
   const dialogs = await getDialogsByUser(dbUser.id);
   const buttons = dialogs.map((d) => {
     const marker = d.id === dialog.id ? " ✅" : "";
@@ -364,11 +347,10 @@ export async function handleNeuroDialogSwitch(ctx: Context): Promise<void> {
       ...Markup.inlineKeyboard(buttons),
     });
   } catch {
-    // Message might not have changed
+    /* ignore */
   }
 }
 
-/** Inline callback: show delete mode (list dialogs with delete buttons). */
 export async function handleNeuroDialogDeleteMode(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -407,7 +389,6 @@ export async function handleNeuroDialogDeleteMode(ctx: Context): Promise<void> {
   }
 }
 
-/** Inline callback: delete a specific dialog. */
 export async function handleNeuroDialogDelete(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -433,7 +414,6 @@ export async function handleNeuroDialogDelete(ctx: Context): Promise<void> {
   logAction(dbUser.id, telegramId, "chat_dialog_delete", { dialogId });
   await ctx.answerCbQuery(`Диалог «${dialog.title}» удалён`);
 
-  // Refresh the delete list
   const remaining = await getDialogsByUser(dbUser.id);
 
   if (remaining.length === 0) {
@@ -458,7 +438,6 @@ export async function handleNeuroDialogDelete(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle voice messages in neuro mode. Called after transcription. */
 export async function handleNeuroVoice(
   ctx: Context,
   transcript: string,
@@ -479,7 +458,6 @@ export async function handleNeuroVoice(
   if (!dbUser) return;
 
   try {
-    // Flush pending text batch if any, preserving its dialogId
     let prependText = "";
     let pendingDialogId: number | undefined;
     if (hasPendingBatch(dbUser.id)) {
@@ -511,7 +489,6 @@ export async function handleNeuroVoice(
 
     const result = await chatCompletion(messages, model, systemPrompt);
 
-    // Save original text only (no search/links context)
     const userEntry = prependText
       ? `${prependText}[Голос] ${transcript}`
       : `[Голос] ${transcript}`;
@@ -554,7 +531,6 @@ export async function handleNeuroVoice(
   }
 }
 
-/** Handle photo messages in neuro mode. */
 export async function handleNeuroPhoto(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -572,7 +548,6 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
   const photos = ctx.message.photo;
   if (!photos || photos.length === 0) return;
 
-  // Flush pending text batch if any, preserving its dialogId
   let prependText = "";
   let pendingDialogId: number | undefined;
   if (hasPendingBatch(dbUser.id)) {
@@ -589,7 +564,6 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
   try {
     await ctx.sendChatAction("typing");
 
-    // Get largest photo (last in array)
     const photo = photos[photos.length - 1];
     const link = await ctx.telegram.getFileLink(photo.file_id);
     const res = await telegramFetch(link.toString());
@@ -599,7 +573,6 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
     const base64 = buffer.toString("base64");
     const dataUrl = `data:image/jpeg;base64,${base64}`;
 
-    // Build multimodal message — use pending batch's dialog if available
     const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
       ?? await getOrCreateActiveDialog(dbUser.id);
     const photoProvider = await getChatProvider(dbUser.id);
@@ -628,14 +601,13 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
 
     const result = await chatCompletion(messages, NEURO_VISION_MODEL, photoSystemPrompt);
 
-    // Save text-only representation to history (original text only)
     const userEntry = prependText
       ? `${prependText}[Фото] ${caption}`
       : `[Фото] ${caption}`;
     await saveMessage(dbUser.id, dialog.id, "user", userEntry);
     await saveMessage(dbUser.id, dialog.id, "assistant", result.content, NEURO_VISION_MODEL, result.tokensUsed ?? undefined);
 
-    // Auto-name dialog on first message (uses user's chat model, not vision model)
+    // Auto-name uses the user's chat model, not the vision model.
     if (dialog.title === "Новый диалог") {
       autoNameDialog(dialog.id, caption, photoModel);
     }
@@ -654,7 +626,6 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle document messages in neuro mode. */
 export async function handleNeuroDocument(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -672,7 +643,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
   const doc = ctx.message.document;
   if (!doc) return;
 
-  // Flush pending text batch if any, preserving its dialogId
   let prependText = "";
   let pendingDialogId: number | undefined;
   if (hasPendingBatch(dbUser.id)) {
@@ -708,7 +678,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     const isGeminiDoc = GEMINI_DOC_MIME_TYPES.has(mimeType);
     const isText = TEXT_MIME_TYPES.has(mimeType) || TEXT_EXTENSIONS.has(ext);
 
-    // Use pending batch's dialog if available, fall back to active dialog
     const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
       ?? await getOrCreateActiveDialog(dbUser.id);
     const docProviderPref = await getChatProvider(dbUser.id);
@@ -729,7 +698,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     let modelUsed: string;
 
     if (isImage) {
-      // Image document — send as base64 to vision model
       const base64 = buffer.toString("base64");
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
@@ -746,7 +714,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
       result = await chatCompletion(messages, NEURO_VISION_MODEL, docSystemPrompt);
       modelUsed = NEURO_VISION_MODEL;
     } else if (isGeminiDoc) {
-      // PDF, DOCX, XLSX — send as base64 to Gemini (native support)
       const base64 = buffer.toString("base64");
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
@@ -763,7 +730,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
       result = await chatCompletion(messages, NEURO_VISION_MODEL, docSystemPrompt);
       modelUsed = NEURO_VISION_MODEL;
     } else if (isText) {
-      // Text file — read as UTF-8 and send to the user's selected chat model
       const textContent = buffer.toString("utf-8");
       const truncated = textContent.length > 50000
         ? textContent.slice(0, 50000) + "\n\n[...файл обрезан, показаны первые 50000 символов]"
@@ -786,14 +752,13 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
       return;
     }
 
-    // Save text-only representation to history (original text only)
     const userEntry = prependText
       ? `${prependText}[Документ: ${fileName}] ${caption}`
       : `[Документ: ${fileName}] ${caption}`;
     await saveMessage(dbUser.id, dialog.id, "user", userEntry);
     await saveMessage(dbUser.id, dialog.id, "assistant", result.content, modelUsed, result.tokensUsed ?? undefined);
 
-    // Auto-name dialog on first message (uses user's chat model, not vision model)
+    // Auto-name uses the user's chat model, not the vision model.
     if (dialog.title === "Новый диалог") {
       autoNameDialog(dialog.id, `${fileName}: ${caption}`, docTitleModel);
     }
@@ -812,7 +777,6 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
   }
 }
 
-/** Parse ChatProvider from button text (e.g. "✅ Free" → "free", "💎 Paid" → "paid"). */
 function parseProviderFromButton(text: string): ChatProvider | null {
   if (text.includes("Free")) return "free";
   if (text.includes("Paid")) return "paid";
@@ -820,7 +784,6 @@ function parseProviderFromButton(text: string): ChatProvider | null {
   return null;
 }
 
-/** Handle provider select button (🆓 Free / 💎 Paid / 🔥 Без цензуры / ✅ variants). */
 export async function handleProviderSelect(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;

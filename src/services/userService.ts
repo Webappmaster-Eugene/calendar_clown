@@ -1,7 +1,3 @@
-/**
- * User service — profile, mode switching, access control.
- * Extracted from middleware/auth.ts and bot.ts.
- */
 import { getUserMenuContext, canAccessMode, isBootstrapAdmin } from "../middleware/auth.js";
 import { invalidateUserModeCache } from "../middleware/userMode.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -14,7 +10,6 @@ const log = createLogger("user-service");
 
 export async function getUserProfile(telegramId: number, firstName: string, username?: string): Promise<UserProfile | null> {
   if (!isDatabaseAvailable()) {
-    // Fallback for bootstrap admin
     if (isBootstrapAdmin(telegramId)) {
       const calendarLinked = await hasToken(String(telegramId));
       return {

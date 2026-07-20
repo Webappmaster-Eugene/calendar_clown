@@ -24,7 +24,6 @@ import type {
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import { useTelegram } from "../hooks/useTelegram";
 
-/** Format Date as YYYY-MM-DD for `<input type="date">`. */
 function toIsoDay(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -62,14 +61,12 @@ export function ExpensesPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();
 
-  // Navigation state
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [tab, setTab] = useState<ExpenseTab>("report");
   const [yearForYearTab, setYearForYearTab] = useState(now.getFullYear());
 
-  // Input state
   const [showForm, setShowForm] = useState(false);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
@@ -208,7 +205,6 @@ export function ExpensesPage() {
         </Link>
       </div>
 
-      {/* Quick input */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
         <input
           className="input"
@@ -236,9 +232,7 @@ export function ExpensesPage() {
           }}
           onError={(err, data) => {
             setVoiceError(err);
-            // When recognition succeeded but expense extraction failed, the API
-            // returns the raw transcript so the user can edit it manually instead
-            // of re-recording.
+            // On extraction failure the API still returns the raw transcript, so prefill it for manual editing.
             const d = data as { transcript?: unknown } | null | undefined;
             if (d && typeof d.transcript === "string" && d.transcript.trim()) {
               setVoiceText(d.transcript);
@@ -251,7 +245,6 @@ export function ExpensesPage() {
       {addTextMutation.error && <div className="error-msg">{(addTextMutation.error as Error).message}</div>}
       {addTextMutation.isPending && <div className="card-hint" style={{ marginBottom: 8 }}>Добавление...</div>}
 
-      {/* Tabs */}
       <div className="tabs tabs--scroll" ref={tabsRef}>
         {([
           "report", "comparison", "stats", "year", "recent",
@@ -267,7 +260,6 @@ export function ExpensesPage() {
         ))}
       </div>
 
-      {/* Month navigator (for report/comparison/stats) */}
       {tab !== "year" && tab !== "recent" && tab !== "categories" && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <button className="btn btn-small" onClick={() => goMonth(-1)}>◀</button>
@@ -282,7 +274,6 @@ export function ExpensesPage() {
         </div>
       )}
 
-      {/* Tab content */}
       {tab === "report" && (
         <ReportView
           report={report}
@@ -323,7 +314,6 @@ export function ExpensesPage() {
         <CategoriesManager categories={categories ?? []} />
       )}
 
-      {/* FAB form (hidden on the categories tab, which has its own management UI) */}
       {tab === "categories" ? null : !showForm ? (
         <button className="fab" onClick={() => setShowForm(true)}>+</button>
       ) : (
@@ -520,7 +510,6 @@ function CategoriesManager({ categories }: { categories: CategoryDto[] }) {
 
 // ─── Download helpers ────────────────────────────────────────
 
-/** Read a Blob as a base64 `data:` URL (in-process, doesn't leak to OS). */
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -530,7 +519,6 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-/** Programmatic <a download> click. Caller controls the href (blob: or data:). */
 function triggerDownload(href: string, filename: string): void {
   const a = document.createElement("a");
   a.href = href;
@@ -574,21 +562,14 @@ function ReportView({
     });
   };
 
-  // When the user changes month/year, drop expanded state — different data, fresh view.
   useEffect(() => {
     setExpanded(new Set());
     setExcelError(null);
     setExcelSuccess(null);
   }, [year, month]);
 
-  /**
-   * Deliver Excel through the bot DM. `<a download>` clicks inside Telegram WebView
-   * (especially WKWebView on iOS/macOS) frequently produce no UI feedback at all —
-   * the user reports "ничего не происходит". Sending the document via Bot API to the
-   * user's chat with the bot is the only delivery path that works reliably across
-   * platforms (mobile, desktop, web). For desktop platforms we still offer a direct
-   * download as a quick path; for everything else we go straight through the bot.
-   */
+  // `<a download>` inside Telegram WebView (esp. WKWebView on iOS/macOS) often does nothing;
+  // Bot API delivery is the only path that works reliably across all platforms.
   const sendExcelViaBot = async (period: "month" | "year") => {
     if (excelLoading) return;
     setExcelLoading(true);
@@ -607,11 +588,7 @@ function ReportView({
     }
   };
 
-  /**
-   * Direct download path for desktop Telegram and the web build, where
-   * `<a download>` works reliably. Apple WebViews go through `data:` URLs to
-   * avoid blob-URL leakage to the OS opener.
-   */
+  // Apple WebViews go through `data:` URLs to avoid blob-URL leakage to the OS opener.
   const downloadExcelDirect = async (period: "month" | "year") => {
     if (excelLoading) return;
     setExcelLoading(true);
@@ -644,9 +621,7 @@ function ReportView({
     }
   };
 
-  // Bot delivery is the default — `<a download>` is unreliable in Telegram WebViews
-  // (WKWebView on iOS/macOS especially). Only tdesktop and the web build get the
-  // direct path because they're real browsers/Chromium-based shells.
+  // Only tdesktop and the web build are real browsers where direct download is reliable; everything else uses bot delivery.
   const isDesktopOrWeb =
     platform === "tdesktop" || platform === "web" || platform === "weba" || platform === "webk";
   const handleExcelClick = (period: "month" | "year") =>
@@ -761,7 +736,6 @@ function CategoryAccordion({
   const [page, setPage] = useState(1);
   const LIMIT = 20;
 
-  // Reset pagination when the user collapses the row.
   useEffect(() => {
     if (!isExpanded) setPage(1);
   }, [isExpanded]);
@@ -824,7 +798,7 @@ function CategoryAccordion({
                   amount: exp.amount,
                   subcategory: exp.subcategory,
                   createdAt: exp.createdAt,
-                  // The drilldown response is filtered by categoryId so we know it.
+                  // Drilldown response is filtered by categoryId, so it's the current one.
                   categoryId,
                 }}
                 categories={categories ?? []}
@@ -838,7 +812,7 @@ function CategoryAccordion({
               <MoveCategoryRow
                 key={exp.id}
                 expenseId={exp.id}
-                // The drilldown is filtered by categoryId, so it is the current one.
+                // Drilldown is filtered by categoryId, so it's the current one.
                 currentCategoryId={categoryId}
                 categories={categories ?? []}
                 onCancel={() => setMovingId(null)}
@@ -1144,7 +1118,6 @@ function LimitEditDialog({
   return (
     <>
       <div
-        // Backdrop: blocks clicks below and dismisses on tap-outside.
         onClick={() => { if (!saveMutation.isPending) onClose(); }}
         style={{
           position: "fixed",
@@ -1155,7 +1128,7 @@ function LimitEditDialog({
       />
       <div
         className="card"
-        // Stop propagation so clicks inside the dialog don't bubble to the backdrop.
+        // Keep clicks inside the dialog from bubbling to the backdrop's dismiss handler.
         onClick={(e) => e.stopPropagation()}
         style={{
           position: "fixed",
@@ -1235,7 +1208,7 @@ function ComparisonView({
   }
 
   const totalPrev = comparison.reduce((s, c) => s + c.prevTotal, 0);
-  // When partial-month comparison, use comparison currTotals (partial) instead of full-month total
+  // For a partial-month comparison, sum the partial currTotals instead of the full-month total.
   const totalCurr = comparisonDay ? comparison.reduce((s, c) => s + c.currTotal, 0) : total;
   const totalDiff = totalCurr - totalPrev;
 
@@ -1243,14 +1216,12 @@ function ComparisonView({
 
   return (
     <>
-      {/* Partial-month label */}
       {comparisonDay && (
         <div style={{ fontSize: 13, color: "var(--tg-theme-hint-color, #999)", marginBottom: 10, textAlign: "center" }}>
           1–{comparisonDay} {RU_MONTHS_GENITIVE[month - 1]} vs 1–{comparisonDay} {RU_MONTHS_GENITIVE[prevMonth - 1]}
         </div>
       )}
 
-      {/* Summary card */}
       <div className="stat-row">
         <div className="stat-card">
           <div className="card-hint">Пред. месяц</div>
@@ -1268,7 +1239,6 @@ function ComparisonView({
         </div>
       </div>
 
-      {/* Category rows */}
       <div className="list">
         {comparison
           .filter((c) => c.prevTotal > 0 || c.currTotal > 0)
@@ -1355,7 +1325,6 @@ function StatsView({
           })}
       </div>
 
-      {/* Total */}
       <div className="card" style={{ marginTop: 12 }}>
         <div className="card-hint">Итого</div>
         <div style={{ fontSize: 22, fontWeight: 700 }}>{total.toLocaleString("ru-RU")}</div>
@@ -1386,7 +1355,6 @@ function YearView({
 
   return (
     <>
-      {/* Year navigator */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <button className="btn btn-small" onClick={() => onYearChange(year - 1)}>◀</button>
         <span style={{ fontWeight: 600, fontSize: 15 }}>{year}</span>
@@ -1557,7 +1525,6 @@ function RecentView({
           )
         ))}
       </div>
-      {/* Pagination controls */}
       {(page > 1 || hasMore) && (
         <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12, paddingBottom: 12 }}>
           {page > 1 && (
@@ -1645,7 +1612,6 @@ function ComparisonDrilldownView({
 
       {data && (
         <>
-          {/* Current month */}
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
             {RU_MONTHS[month - 1]} {year}
             {data.currExpenses.length > 0 && (
@@ -1664,7 +1630,6 @@ function ComparisonDrilldownView({
             </div>
           )}
 
-          {/* Previous month */}
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
             {RU_MONTHS[prevMonth - 1]} {prevYear}
             {data.prevExpenses.length > 0 && (
@@ -1683,7 +1648,6 @@ function ComparisonDrilldownView({
             </div>
           )}
 
-          {/* Pagination */}
           {(hasMorePrev || hasMoreCurr || page > 1) && (
             <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 8 }}>
               <button

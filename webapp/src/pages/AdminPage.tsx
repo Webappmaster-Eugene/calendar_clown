@@ -148,7 +148,6 @@ function StatsTab() {
         </div>
       )}
 
-      {/* Client diagnostics */}
       <div className="card" style={{ marginTop: 12, fontSize: 13 }}>
         <div style={{ fontWeight: 600, marginBottom: 8 }}>Клиент</div>
         <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px" }}>
@@ -243,7 +242,6 @@ function SummaryTab() {
 
       {summary && !isEmpty && (
         <>
-          {/* AI Summary */}
           <div style={{ marginBottom: 16 }}>
             {aiText ? (
               <div className="card">
@@ -266,7 +264,6 @@ function SummaryTab() {
             )}
           </div>
 
-          {/* Expenses */}
           {summary.expenses.count > 0 && (
             <div className="card summary-section">
               <div className="summary-section-title">Расходы</div>
@@ -319,7 +316,6 @@ function SummaryTab() {
             </div>
           )}
 
-          {/* Calendar */}
           {(summary.calendarEvents.created > 0 || summary.calendarEvents.deleted > 0) && (
             <div className="card summary-section">
               <div className="summary-section-title">Календарь</div>
@@ -345,7 +341,6 @@ function SummaryTab() {
             </div>
           )}
 
-          {/* Transcriptions */}
           {summary.transcriptions.total > 0 && (
             <div className="card summary-section">
               <div className="summary-section-title">Транскрибация</div>
@@ -375,10 +370,8 @@ function SummaryTab() {
             </div>
           )}
 
-          {/* Other modules — compact */}
           <SummaryCompactModules summary={summary} />
 
-          {/* Action logs */}
           {summary.actionLogs.length > 0 && (
             <div className="card summary-section">
               <div className="summary-section-title">Топ действий</div>
@@ -540,7 +533,6 @@ function UsersTab() {
               </div>
             </div>
             <div style={{ marginTop: 6, width: "100%", display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {/* Tribe management */}
               {u.tribeName ? (
                 <button
                   className="btn btn-small"
@@ -566,7 +558,6 @@ function UsersTab() {
                 </select>
               ) : null}
 
-              {/* Change tribe for users already in a tribe */}
               {u.tribeName && tribes && tribes.length > 1 && (
                 <select
                   className="input"
@@ -1393,7 +1384,6 @@ function SupportReportsTab() {
               </div>
             )}
 
-            {/* Expandable diagnostics */}
             <button
               style={{ fontSize: 11, background: "none", border: "none", color: "var(--tg-theme-hint-color, #999)", cursor: "pointer", padding: "4px 0", textAlign: "left" }}
               onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
@@ -1406,7 +1396,6 @@ function SupportReportsTab() {
               </pre>
             )}
 
-            {/* Actions for open reports */}
             {r.status === "open" && (
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 {respondingId === r.id ? (

@@ -1,10 +1,3 @@
-/**
- * Transcribe audio file to text using the shared STT client.
- * Supports three contexts: "calendar", "expense" (expense-specific with number examples), and "general".
- * Non-OGG files (e.g. WebM from Mini App) are compressed to OGG Opus before STT.
- * Large files are delegated to the HQ transcriber which supports chunking.
- */
-
 import { stat, unlink } from "fs/promises";
 import { callStt } from "./sttClient.js";
 import { TRANSCRIBE_MODEL } from "../constants.js";
@@ -77,7 +70,6 @@ const TRANSCRIBE_PROMPT_TASKS = `Расшифруй это аудиосообщ�
 - Если часть аудио неразборчива — пропусти этот фрагмент, не додумывай
 - ВАЖНО: если аудио пустое, это тишина, только шум/музыка, речь целиком на другом языке или всё полностью неразборчиво — верни ПУСТУЮ строку. Никогда не выдумывай события, даты, время, имена, суммы или задачи, которых нет в аудио. Пустая строка лучше выдуманного текста`;
 
-/** Resolve the STT prompt for a transcription context. Exported for prompt-integrity tests. */
 export function getTranscribePromptForContext(context: TranscribeContext): string {
   const prompts: Record<TranscribeContext, string> = {
     calendar: TRANSCRIBE_PROMPT_CALENDAR,
@@ -88,7 +80,6 @@ export function getTranscribePromptForContext(context: TranscribeContext): strin
   return prompts[context];
 }
 
-/** Calculate dynamic timeout based on file size in bytes. */
 function getTimeoutMs(fileSizeBytes: number): number {
   // Headroom for OpenRouter/STT latency spikes so a normal short voice message
   // (small file) doesn't 503 mid-transcription during a slow-provider window.
@@ -99,9 +90,7 @@ function getTimeoutMs(fileSizeBytes: number): number {
 }
 
 export async function transcribeVoice(filePath: string, context: TranscribeContext = "calendar"): Promise<string> {
-  // Compress non-OGG files (WebM from Mini App, MP4 from iOS) to OGG Opus.
-  // For .ogg files (bot path) this is a no-op with zero overhead.
-  // If ffmpeg is unavailable, returns the original file unchanged (graceful degradation).
+  // No-op for .ogg (bot path); if ffmpeg is unavailable, returns the original unchanged.
   const { path: effectivePath, converted } = await compressToOggIfNeeded(filePath);
 
   try {

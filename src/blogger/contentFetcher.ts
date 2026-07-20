@@ -8,7 +8,6 @@ interface FetchedContent {
   content: string;
 }
 
-/** Fetch readable content from a URL. Returns null on failure or unsafe URL. */
 export async function fetchUrlContent(url: string): Promise<FetchedContent | null> {
   try {
     const safeUrl = await assertPublicUrl(url);
@@ -48,13 +47,11 @@ export async function fetchUrlContent(url: string): Promise<FetchedContent | nul
   }
 }
 
-/** Extract <title> from HTML. */
 function extractTitle(html: string): string {
   const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   return match ? decodeHtmlEntities(match[1].trim()) : "";
 }
 
-/** Extract readable text from HTML, preferring <article>, then <main>, then <body>. */
 function extractReadableContent(html: string): string {
   let content = extractTag(html, "article");
   if (!content) content = extractTag(html, "main");

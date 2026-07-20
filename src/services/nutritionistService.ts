@@ -1,7 +1,3 @@
-/**
- * Nutritionist business logic.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   createAnalysis,
   createManualAnalysis,
@@ -141,11 +137,7 @@ function productRowToPromptShape(row: NutritionProduct): CatalogProductForPrompt
   };
 }
 
-/**
- * Normalize a product name for fuzzy matching: lowercase, trimmed, with
- * common quote characters removed so the AI-returned name and the stored
- * name collapse to the same key.
- */
+// Collapse AI-returned and stored names to the same key (quotes/case/whitespace) for fuzzy matching.
 function normalizeForMatch(value: string): string {
   return value.trim().toLowerCase().replace(/[«»"'`]/g, "").replace(/\s+/g, " ");
 }
@@ -251,7 +243,6 @@ export async function removeAnalysis(
   return deleteAnalysis(analysisId, dbUser.id);
 }
 
-/** Analyze a food photo (create record, call AI, update record). */
 export async function analyzePhoto(
   telegramId: number,
   imageBase64: string,
@@ -330,10 +321,7 @@ export async function analyzePhoto(
   }
 }
 
-/**
- * Defense-in-depth for AI-returned matched_product_id and fuzzy fallback
- * for items the AI did not match. Mutates items in place.
- */
+// Defense-in-depth against hallucinated matched_product_id, plus fuzzy fallback; mutates items in place.
 async function enrichItemsWithCatalogMatches(
   items: FoodItem[],
   userDbId: number,
@@ -471,7 +459,6 @@ function validateUnit(unit: string | undefined, { required }: { required: boolea
   }
 }
 
-/** Create a new product in the user's catalog (with optional package photo). */
 export async function addProduct(
   telegramId: number,
   input: CreateProductRequest,
@@ -524,7 +511,6 @@ export async function addProduct(
   return productRowToDto(created);
 }
 
-/** Update a product (optionally replacing or removing its photo). */
 export async function editProduct(
   telegramId: number,
   productId: number,
@@ -587,7 +573,6 @@ export async function editProduct(
   return updated ? productRowToDto(updated) : null;
 }
 
-/** Delete a product (and its photo, if any). Returns true if deleted. */
 export async function removeProduct(
   telegramId: number,
   productId: number,
@@ -603,7 +588,6 @@ export async function removeProduct(
   return true;
 }
 
-/** List products with pagination and optional search. */
 export async function listUserProducts(
   telegramId: number,
   limit: number,
@@ -627,7 +611,6 @@ export async function listUserProducts(
   };
 }
 
-/** Get a single product by id (with ownership check). */
 export async function getUserProduct(
   telegramId: number,
   productId: number,
@@ -638,11 +621,6 @@ export async function getUserProduct(
   return row ? productRowToDto(row) : null;
 }
 
-/**
- * Load the binary package photo for a product (with ownership check).
- * Returns null if the product does not exist, does not belong to the
- * user, or has no photo.
- */
 export async function getProductPhoto(
   telegramId: number,
   productId: number,
@@ -662,7 +640,6 @@ export async function getProductPhoto(
 
 // ─── Manual Calculator ──────────────────────────────────────────
 
-/** Save a manual KBZHU calculation (no AI). */
 export async function saveManualCalculation(
   telegramId: number,
   input: ManualCalcRequest,
@@ -774,7 +751,6 @@ export async function saveManualCalculation(
 
 // ─── Formatting ─────────────────────────────────────────────────
 
-/** Format a human-readable summary of the nutrition analysis. */
 function formatSummaryText(result: NutritionResult): string {
   if (result.items.length === 0) {
     return result.meal_assessment || "На фотографии не обнаружена еда.";
@@ -803,7 +779,6 @@ function formatSummaryText(result: NutritionResult): string {
   return lines.join("\n");
 }
 
-/** Format a human-readable summary of a manual KBZHU calculation. */
 function formatManualSummaryText(
   items: FoodItem[],
   perServingTotal: NutritionResult["total"],

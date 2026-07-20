@@ -1,8 +1,3 @@
-/**
- * CRUD repository for Reminders: create/get/update/delete + subscribers.
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
-
 import { and, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../db/drizzle.js";
 import { reminderSounds, reminderSubscribers, reminders, users } from "../db/schema.js";
@@ -213,7 +208,6 @@ export async function isSubscribed(reminderId: number, subscriberUserId: number)
 
 // ─── Admin functions ────────────────────────────────────────────────────
 
-/** Admin: get all reminders paginated (all users, with user info). */
 export async function getAllRemindersPaginated(
   limit: number,
   offset: number
@@ -228,20 +222,17 @@ export async function getAllRemindersPaginated(
   return rows.map((r) => ({ ...mapReminder(r.reminder), firstName: r.firstName }));
 }
 
-/** Admin: count all reminders. */
 export async function countAllReminders(): Promise<number> {
   const [row] = await db.select({ value: count() }).from(reminders);
   return row.value;
 }
 
-/** Admin: bulk delete reminders by IDs. */
 export async function bulkDeleteReminders(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db.delete(reminders).where(inArray(reminders.id, ids)).returning({ id: reminders.id });
   return rows.length;
 }
 
-/** Admin: delete ALL reminders. */
 export async function deleteAllReminders(): Promise<number> {
   const rows = await db.delete(reminders).returning({ id: reminders.id });
   return rows.length;

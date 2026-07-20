@@ -25,7 +25,6 @@ const DEFAULT_BIRTHDAY_GREETING = [
   "С праздником! Пусть этот год станет по-настоящему особенным — полным любви, здоровья, достижений и счастья! 🥂✨",
 ].join("\n");
 
-/** Format a notable date as a reminder message. */
 export function formatNotableDateReminder(date: NotableDate): string {
   const lines: string[] = [];
 
@@ -51,7 +50,6 @@ export function formatNotableDateReminder(date: NotableDate): string {
   return lines.join("\n");
 }
 
-/** Format multiple notable dates for a single day into a broadcast message. */
 export function formatDayReminders(dates: NotableDate[]): string {
   if (dates.length === 0) return "";
 
@@ -63,14 +61,12 @@ export function formatDayReminders(dates: NotableDate[]): string {
   return header + "\n" + blocks.join("\n\n");
 }
 
-/** Parse a text input like "Иванов Иван 15.03 Коллега" into notable date params. */
 export function parseNotableDateInput(text: string): {
   name: string;
   dateMonth: number;
   dateDay: number;
   description: string | null;
 } | null {
-  // Try format: "Name DD.MM Description" or "Name DD.MM"
   const match = text.match(/^(.+?)\s+(\d{1,2})\.(\d{1,2})(?:\s+(.+))?$/);
   if (!match) return null;
 

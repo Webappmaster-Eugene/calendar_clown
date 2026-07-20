@@ -4,14 +4,10 @@ import { MODE_ROUTES } from "../../lib/modes";
 import { useHaptic } from "../../hooks/useHaptic";
 
 interface BottomTabBarProps {
-  /** Recently visited mode keys, most-recent-first. */
   recent: string[];
-  /** Mode key of the current route (excluded from the quick-switch list). */
   currentMode?: string;
 }
 
-/** Persistent bottom bar for fast switching between recently used modes,
- *  plus a shortcut back to the full mode grid. */
 export function BottomTabBar({ recent, currentMode }: BottomTabBarProps) {
   const navigate = useNavigate();
   const { impact } = useHaptic();

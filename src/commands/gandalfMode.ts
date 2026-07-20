@@ -1,9 +1,3 @@
-/**
- * База знаний (formerly Gandalf) mode command handler.
- * Structured information tracker with categories, entries, files.
- * Supports both tribe-scoped and personal (no tribe) use.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
@@ -59,10 +53,8 @@ interface EntryCreationState {
 const creationStates = new Map<number, EntryCreationState>();
 const categoryCreationWaiting = new Set<number>();
 
-// Track which entry user wants to add optional fields to
 const optionalFieldStates = new Map<number, { entryId: number; field: "next_date" | "additional_info" }>();
 
-// Track which entry field user is editing
 const editFieldStates = new Map<number, { entryId: number; field: "title" | "price" | "date" | "info" }>();
 
 function buildScope(dbUser: { id: number; tribeId: number | null }): GandalfScope {
@@ -926,10 +918,6 @@ export async function handleGandalfStatsCallback(ctx: Context): Promise<void> {
 
 // ─── Text Handler ───────────────────────────────────────────────────────
 
-/**
- * Handle text input in gandalf mode.
- * Returns true if the message was consumed.
- */
 export async function handleGandalfText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
@@ -944,7 +932,6 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
   const scope = buildScope(dbUser);
   const tribeId = getScopeTribeId(scope);
 
-  // Category creation flow
   if (categoryCreationWaiting.has(telegramId)) {
     categoryCreationWaiting.delete(telegramId);
     try {
@@ -967,7 +954,6 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Edit field input
   const editState = editFieldStates.get(telegramId);
   if (editState) {
     editFieldStates.delete(telegramId);
@@ -1019,7 +1005,6 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Optional field input
   const optState = optionalFieldStates.get(telegramId);
   if (optState) {
     optionalFieldStates.delete(telegramId);
@@ -1043,7 +1028,6 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Entry creation flow
   const state = creationStates.get(telegramId);
   if (!state) return false;
 
@@ -1067,7 +1051,6 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
     }
     state.price = price;
 
-    // If user has tribe — ask for visibility
     if (state.hasTribe) {
       state.step = "visibility";
       creationStates.set(telegramId, state);
@@ -1082,7 +1065,6 @@ export async function handleGandalfText(ctx: Context): Promise<boolean> {
       return true;
     }
 
-    // No tribe — create immediately as private
     creationStates.delete(telegramId);
 
     try {
@@ -1219,7 +1201,6 @@ export async function handleGandalfVoice(
       return;
     }
 
-    // Full gandalf_entry
     const cat = categories.find(
       (c) => c.name.toLowerCase() === result.category.toLowerCase()
     );
@@ -1312,7 +1293,6 @@ export async function handleGandalfFileAttachment(ctx: Context): Promise<boolean
 
   if (!fileId) return false;
 
-  // Check if in creation flow — attach to entry being created
   const state = creationStates.get(telegramId);
   if (state?.step === "optional" && state.entryId) {
     try {
@@ -1332,7 +1312,6 @@ export async function handleGandalfFileAttachment(ctx: Context): Promise<boolean
     return true;
   }
 
-  // Otherwise, attach to latest entry
   const latestEntry = await getLatestEntryByUser(tribeId, dbUser.id);
   if (!latestEntry) {
     await ctx.reply("Нет записей для прикрепления файла. Сначала создайте запись.");
@@ -1436,7 +1415,6 @@ function buildSingleEntryButtons(entry: GandalfEntry, filesCount: number, scope:
     Markup.button.callback(urgLabel, `gandalf_urg:${entry.id}`),
   ]);
 
-  // Visibility toggle (only for tribe users)
   if (scope.type === "tribe") {
     const visLabel = entry.visibility === "private" ? "🌐 Сделать публичной" : "🔒 Сделать приватной";
     buttons.push([

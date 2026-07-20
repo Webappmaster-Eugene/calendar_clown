@@ -44,7 +44,6 @@ const EditTribeSchema = z.object({ name: z.string().optional(), monthlyLimit: z.
 const SummaryAiSchema = z.object({ period: z.string() });
 const EditEntitySchema = z.record(z.string(), z.unknown());
 
-/** GET /api/admin/users — list users */
 app.get("/users", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -58,7 +57,6 @@ app.get("/users", async (c) => {
   }
 });
 
-/** GET /api/admin/users/pending — pending users */
 app.get("/users/pending", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -72,7 +70,6 @@ app.get("/users/pending", async (c) => {
   }
 });
 
-/** POST /api/admin/users — add user by Telegram ID */
 app.post("/users", zValidator("json", AddUserSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -92,7 +89,6 @@ app.post("/users", zValidator("json", AddUserSchema), async (c) => {
   }
 });
 
-/** PUT /api/admin/users/:id/approve — approve user */
 app.put("/users/:id/approve", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -112,7 +108,6 @@ app.put("/users/:id/approve", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PUT /api/admin/users/:id/reject — reject user */
 app.put("/users/:id/reject", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -132,7 +127,6 @@ app.put("/users/:id/reject", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** DELETE /api/admin/users/:id — remove user */
 app.delete("/users/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -152,7 +146,6 @@ app.delete("/users/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PUT /api/admin/users/:id/tribe — set tribe */
 app.put("/users/:id/tribe", zValidator("param", idParam), zValidator("json", SetTribeSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -176,7 +169,6 @@ app.put("/users/:id/tribe", zValidator("param", idParam), zValidator("json", Set
   }
 });
 
-/** DELETE /api/admin/users/:id/tribe — remove from tribe */
 app.delete("/users/:id/tribe", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -196,7 +188,6 @@ app.delete("/users/:id/tribe", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** GET /api/admin/tribes — list tribes */
 app.get("/tribes", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -210,7 +201,6 @@ app.get("/tribes", async (c) => {
   }
 });
 
-/** POST /api/admin/tribes — create tribe */
 app.post("/tribes", zValidator("json", CreateTribeSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -230,7 +220,6 @@ app.post("/tribes", zValidator("json", CreateTribeSchema), async (c) => {
   }
 });
 
-/** PUT /api/admin/tribes/:id — edit tribe */
 app.put("/tribes/:id", zValidator("param", idParam), zValidator("json", EditTribeSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -251,7 +240,6 @@ app.put("/tribes/:id", zValidator("param", idParam), zValidator("json", EditTrib
   }
 });
 
-/** DELETE /api/admin/tribes/:id — delete tribe */
 app.delete("/tribes/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -271,7 +259,6 @@ app.delete("/tribes/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** GET /api/admin/stats — global stats */
 app.get("/stats", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -285,7 +272,6 @@ app.get("/stats", async (c) => {
   }
 });
 
-/** GET /api/admin/summary — usage analytics for a given period */
 app.get("/summary", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -320,7 +306,6 @@ app.get("/summary", async (c) => {
   }
 });
 
-/** POST /api/admin/summary/ai — generate AI summary for a period */
 app.post("/summary/ai", zValidator("json", SummaryAiSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -350,7 +335,6 @@ app.post("/summary/ai", zValidator("json", SummaryAiSchema), async (c) => {
   }
 });
 
-/** GET /api/admin/data/entities — list available entity types */
 app.get("/data/entities", async (c) => {
   const { ENTITY_LABELS, ENTITY_EDIT_FIELDS } = await import("../../services/adminDataService.js");
   const entities = Object.entries(ENTITY_LABELS).map(([key, val]) => ({
@@ -362,7 +346,6 @@ app.get("/data/entities", async (c) => {
   return c.json({ ok: true, data: entities });
 });
 
-/** GET /api/admin/data/wishlists/:wishlistId/items — drill-down into wishlist items */
 app.get("/data/wishlists/:wishlistId/items", zValidator("param", wishlistIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -385,7 +368,6 @@ app.get("/data/wishlists/:wishlistId/items", zValidator("param", wishlistIdParam
   }
 });
 
-/** GET /api/admin/data/:entity — paginated entity list */
 app.get("/data/:entity", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -404,7 +386,6 @@ app.get("/data/:entity", async (c) => {
   }
 });
 
-/** PUT /api/admin/data/:entity/:id — edit single entity */
 app.put("/data/:entity/:id", zValidator("param", entityIdParam), zValidator("json", EditEntitySchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -428,7 +409,6 @@ app.put("/data/:entity/:id", zValidator("param", entityIdParam), zValidator("jso
   }
 });
 
-/** DELETE /api/admin/data/:entity/:id — delete single entity */
 app.delete("/data/:entity/:id", zValidator("param", entityIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -450,7 +430,6 @@ app.delete("/data/:entity/:id", zValidator("param", entityIdParam), async (c) =>
   }
 });
 
-/** DELETE /api/admin/data/:entity — delete all entities of type */
 app.delete("/data/:entity", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -472,7 +451,6 @@ app.delete("/data/:entity", async (c) => {
   }
 });
 
-/** GET /api/admin/logs — paginated action log viewer */
 app.get("/logs", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -501,7 +479,6 @@ app.get("/logs", async (c) => {
   }
 });
 
-/** GET /api/admin/logs/actions — distinct action names for filter dropdown */
 app.get("/logs/actions", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -519,7 +496,6 @@ app.get("/logs/actions", async (c) => {
   }
 });
 
-/** GET /api/admin/build-info — build & runtime diagnostics */
 app.get("/build-info", async (c) => {
   const uptimeSeconds = Math.floor(process.uptime());
   const hours = Math.floor(uptimeSeconds / 3600);

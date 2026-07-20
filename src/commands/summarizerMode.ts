@@ -1,8 +1,3 @@
-/**
- * Summarizer mode command handler.
- * Manage workplaces and work achievements, generate AI-powered summaries.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
@@ -37,7 +32,7 @@ const PAGE_SIZE = 5;
 // ─── State ──────────────────────────────────────────────────────────────
 
 const creationStates = new Map<number, { step: "title" }>();
-const addingStates = new Map<number, number>(); // telegramId → workplaceId
+const addingStates = new Map<number, number>();
 const editStates = new Map<number, { type: "rename_wp" | "edit_ach"; id: number }>();
 
 // ─── Keyboard ───────────────────────────────────────────────────────────
@@ -168,14 +163,12 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
   if (!dbUser) return;
 
   try {
-    // sum_wp:{id} — view workplace
     if (data.startsWith("sum_wp:")) {
       const wpId = parseInt(data.split(":")[1], 10);
       await showWorkplace(ctx, wpId, dbUser.id);
       return;
     }
 
-    // sum_add:{id} — enter achievement adding mode
     if (data.startsWith("sum_add:")) {
       const wpId = parseInt(data.split(":")[1], 10);
       const wp = await getWorkplaceById(wpId, dbUser.id);
@@ -199,7 +192,6 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // sum_done — finish adding achievements
     if (data === "sum_done") {
       const wpId = addingStates.get(telegramId);
       addingStates.delete(telegramId);
@@ -211,7 +203,6 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // sum_list:{id}:{offset} — paginated achievements
     if (data.startsWith("sum_list:")) {
       const parts = data.split(":");
       const wpId = parseInt(parts[1], 10);
@@ -220,7 +211,6 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // sum_gen:{id} — generate summary
     if (data.startsWith("sum_gen:")) {
       const wpId = parseInt(data.split(":")[1], 10);
       await ctx.editMessageText("⏳ Генерирую саммари...");
@@ -230,7 +220,6 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // sum_wp_del:{id} — confirm workplace deletion
     if (data.startsWith("sum_wp_del:") && !data.startsWith("sum_wp_del_yes:")) {
       const wpId = parseInt(data.split(":")[1], 10);
       const wp = await getWorkplaceById(wpId, dbUser.id);
@@ -251,7 +240,6 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // sum_wp_del_yes:{id} — actually delete workplace
     if (data.startsWith("sum_wp_del_yes:")) {
       const wpId = parseInt(data.split(":")[1], 10);
       const deleted = await deleteWorkplace(wpId, dbUser.id);
@@ -263,7 +251,6 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // sum_rename:{id} — start rename
     if (data.startsWith("sum_rename:")) {
       const wpId = parseInt(data.split(":")[1], 10);
       const wp = await getWorkplaceById(wpId, dbUser.id);
@@ -279,7 +266,6 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // sum_ach_edit:{id} — start editing achievement text
     if (data.startsWith("sum_ach_edit:")) {
       const achId = parseInt(data.split(":")[1], 10);
       editStates.set(telegramId, { type: "edit_ach", id: achId });
@@ -290,15 +276,10 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
       return;
     }
 
-    // sum_ach_del:{id} — delete achievement
     if (data.startsWith("sum_ach_del:")) {
       const achId = parseInt(data.split(":")[1], 10);
       await deleteAchievement(achId);
 
-      // Find which workplace this belongs to — refresh list
-      // We need workplaceId; extract from the message or re-derive.
-      // Since we can't easily get workplaceId from achId alone,
-      // we attempt to find it from the addingStates or show a confirmation.
       await ctx.editMessageText("🗑 Запись удалена.");
       return;
     }
@@ -321,7 +302,6 @@ export async function handleSummarizerText(ctx: Context): Promise<boolean> {
   if (!ctx.message || !("text" in ctx.message)) return false;
   const text = ctx.message.text;
 
-  // Creation wizard — title step
   const state = creationStates.get(telegramId);
   if (state?.step === "title") {
     const title = text.trim();
@@ -351,7 +331,6 @@ export async function handleSummarizerText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Achievement adding mode
   const wpId = addingStates.get(telegramId);
   if (wpId != null) {
     const achText = text.trim();
@@ -378,7 +357,6 @@ export async function handleSummarizerText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Edit states
   const edit = editStates.get(telegramId);
   if (edit) {
     const newText = text.trim();
@@ -448,7 +426,6 @@ export async function handleSummarizerText(ctx: Context): Promise<boolean> {
 
 // ─── Voice Handler ──────────────────────────────────────────────────────
 
-/** Handle voice transcript in summarizer mode. */
 export async function handleSummarizerVoice(
   ctx: Context,
   transcript: string,
@@ -602,7 +579,6 @@ async function showAchievementsList(
 
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
 
-  // Edit/delete buttons for each achievement
   for (const a of achievements) {
     buttons.push([
       Markup.button.callback("✏️", `sum_ach_edit:${a.id}`),
@@ -610,7 +586,6 @@ async function showAchievementsList(
     ]);
   }
 
-  // Pagination
   const navRow: ReturnType<typeof Markup.button.callback>[] = [];
   if (offset > 0) {
     navRow.push(
@@ -624,7 +599,6 @@ async function showAchievementsList(
   }
   if (navRow.length > 0) buttons.push(navRow);
 
-  // Back button
   buttons.push([Markup.button.callback(BTN_BACK, `sum_wp:${workplaceId}`)]);
 
   try {

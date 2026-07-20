@@ -1,15 +1,9 @@
-/**
- * Channel discovery: find new channels from forwarded messages
- * in already-tracked channels.
- */
-
 import type { RawChannelPost } from "./types.js";
 import { createLogger } from "../utils/logger.js";
 import { getChannelInfo } from "./telegramClient.js";
 
 const log = createLogger("digest");
 
-/** Extract @username mentions from post text. */
 function extractMentions(text: string): string[] {
   const re = /@([a-zA-Z][a-zA-Z0-9_]{4,31})/g;
   const mentions: string[] = [];
@@ -20,7 +14,6 @@ function extractMentions(text: string): string[] {
   return mentions;
 }
 
-/** Extract t.me/username links from post text. */
 function extractTmeLinks(text: string): string[] {
   const re = /(?:https?:\/\/)?t\.me\/([a-zA-Z][a-zA-Z0-9_]{4,31})(?:\/\d+)?/gi;
   const links: string[] = [];
@@ -34,11 +27,6 @@ function extractTmeLinks(text: string): string[] {
   return links;
 }
 
-/**
- * Discover potential new channels from posts of tracked channels.
- * Extracts @mentions and t.me/ links, filters out already-tracked channels.
- * Returns a deduplicated list of new channel usernames with mention count.
- */
 export function discoverChannels(
   posts: RawChannelPost[],
   trackedUsernames: Set<string>
@@ -65,16 +53,10 @@ export function discoverChannels(
   return discovered;
 }
 
-/** Delay helper for rate limiting. */
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/**
- * Validate discovered channels via Telegram API.
- * Filters out bots, users, non-existent, private, and tiny channels.
- * Returns validated channels with title and subscriber count.
- */
 export async function validateDiscoveredChannels(
   candidates: Array<{ username: string; mentionCount: number }>,
   maxResults: number = 5,
@@ -87,7 +69,6 @@ export async function validateDiscoveredChannels(
   for (let i = 0; i < toCheck.length; i++) {
     const candidate = toCheck[i];
 
-    // Rate limiting: pause between API calls (skip before first)
     if (i > 0) {
       await delay(1500);
     }
@@ -113,7 +94,6 @@ export async function validateDiscoveredChannels(
 
       log.info(`Discovery: @${candidate.username} ✓ (${info.title}, ${info.subscriberCount} subs)`);
 
-      // Early exit once we have enough
       if (validated.length >= maxResults) break;
     } catch (err) {
       log.warn(`Discovery: failed to validate @${candidate.username}:`, err);

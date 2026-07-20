@@ -1,8 +1,3 @@
-/**
- * Single guard + execution pipeline shared by every surface that runs actions
- * (`/do`, MCP, future retrofit into REST). Reuses the existing access, rate-limit
- * and audit primitives — no new access mechanisms.
- */
 import { ZodError } from "zod";
 import type { Action, ActionCtx, ActionResult } from "./types.js";
 import { canAccessMode } from "../shared/auth.js";
@@ -20,10 +15,7 @@ export class ActionError extends Error {
   }
 }
 
-/**
- * Resolve the acting user into an ActionCtx, enforcing approved access. Used by
- * surfaces that don't already have a middleware-verified principal (MCP).
- */
+// For surfaces (MCP) that don't already have a middleware-verified principal.
 export async function resolveActor(telegramId: number): Promise<ActionCtx> {
   const menu = await getUserMenuContext(telegramId);
   if (!menu) {
@@ -35,11 +27,8 @@ export async function resolveActor(telegramId: number): Promise<ActionCtx> {
   return { telegramId, menu };
 }
 
-/**
- * Validate args, enforce mode access + rate limit for writes, run the handler,
- * and audit. Throws ActionError on guard failure; handler errors (human-readable
- * Russian messages from services) propagate as-is for the surface to render.
- */
+// Handler errors (human-readable Russian messages from services) propagate as-is
+// for the surface to render; only guard failures throw ActionError.
 export async function executeAction(
   action: Action,
   ctx: ActionCtx,
@@ -49,9 +38,8 @@ export async function executeAction(
     throw new ActionError("ACCESS_DENIED", `Нет доступа к режиму «${action.mode}».`);
   }
 
-  // Only heavy actions (LLM/STT/OSINT) use the strict expense-style bucket. Plain
-  // CRUD is cheap and left unthrottled here so an agent isn't hobbled by the 10/min
-  // limiter; a dedicated per-actor write-rate-limit can be added later if needed.
+  // Only heavy actions (LLM/STT/OSINT) use the strict expense-style bucket; plain
+  // CRUD is left unthrottled so an agent isn't hobbled by the 10/min limiter.
   if (action.heavy) {
     if (!checkRateLimit(ctx.telegramId)) {
       throw new ActionError("RATE_LIMITED", "Слишком много запросов. Подождите минуту.");

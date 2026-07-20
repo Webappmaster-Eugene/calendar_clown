@@ -1,22 +1,16 @@
-/**
- * API client with Telegram initData authorization.
- */
 import type { ApiResult } from "@shared/types";
 
 let initDataRaw = "";
 
-/** Set initData from Telegram SDK. Called once on app init. */
 export function setInitData(raw: string): void {
   initDataRaw = raw;
 }
 
-/** Get current initData (for components that need it). */
 export function getInitData(): string {
   return initDataRaw;
 }
 
 class ApiError extends Error {
-  /** Optional payload included in error responses (e.g. partial data like a transcript). */
   public data: unknown;
   constructor(
     public status: number,
@@ -100,11 +94,6 @@ export interface StreamDoneEvent {
   messageId: number;
 }
 
-/**
- * POST with SSE streaming response.
- * Calls onChunk for each content delta.
- * Returns final metadata when stream completes.
- */
 async function streamRequest(
   path: string,
   body: unknown,
@@ -128,7 +117,7 @@ async function streamRequest(
     try {
       const json = (await res.json()) as { error?: string };
       if (json.error) errorMsg = json.error;
-    } catch { /* use default */ }
+    } catch { /* ignore */ }
     throw new ApiError(res.status, undefined, errorMsg);
   }
 
@@ -176,7 +165,6 @@ async function streamRequest(
           }
         } catch (err) {
           if (err instanceof ApiError) throw err;
-          // skip malformed JSON
         }
       }
     }
@@ -189,12 +177,7 @@ async function streamRequest(
   return doneEvent;
 }
 
-/**
- * Fetch a binary response (e.g. a protected image) with InitData auth and
- * return the raw Blob. Used for rendering authenticated images via
- * URL.createObjectURL — a plain <img src=...> tag cannot attach the
- * Authorization header that our API middleware requires.
- */
+// For authenticated images: a plain <img src=...> can't attach the Authorization header our API requires.
 async function getBlob(path: string, timeoutMs = 30_000): Promise<Blob> {
   const headers: Record<string, string> = {};
   if (initDataRaw) {

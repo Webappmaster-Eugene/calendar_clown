@@ -1,7 +1,3 @@
-/**
- * Single OpenRouter call: detect voice intent (calendar/cancel_event/unknown) and extract fields.
- */
-
 import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
@@ -18,19 +14,16 @@ const WEEKDAY_TO_NUM: Record<string, number> = {
   Saturday: 6,
 };
 
-/** Tomorrow's date (YYYY-MM-DD) in Moscow. */
 function tomorrowDateStrInMSK(dateStr: string): string {
   const midnightMsk = new Date(dateStr + "T00:00:00+03:00");
   const tomorrowMsk = new Date(midnightMsk.getTime() + 24 * 60 * 60 * 1000);
   return tomorrowMsk.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
 }
 
-/** Next Tuesday's date (YYYY-MM-DD) in Moscow. Uses weekday in MSK, not server time. */
 function nextTuesdayDateStrInMSK(dateStr: string): string {
-  return nextWeekdayDateStrInMSK(dateStr, 2); // 2 = Tuesday
+  return nextWeekdayDateStrInMSK(dateStr, 2);
 }
 
-/** Next occurrence of weekday (0=Sun..6=Sat) in MSK. Returns YYYY-MM-DD. */
 function nextWeekdayDateStrInMSK(dateStr: string, targetWeekdayNum: number): string {
   const midnightMsk = new Date(dateStr + "T00:00:00+03:00");
   const currentWeekdayNum = getWeekdayInMSK(midnightMsk);
@@ -40,13 +33,12 @@ function nextWeekdayDateStrInMSK(dateStr: string, targetWeekdayNum: number): str
   return nextMsk.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
 }
 
-/** Day of week (0=Sun..6=Sat) for the given date in Moscow. */
 function getWeekdayInMSK(date: Date): number {
   const name = date.toLocaleDateString("en-GB", { weekday: "long", timeZone: TIMEZONE_MSK });
   return WEEKDAY_TO_NUM[name] ?? 0;
 }
 
-/** Russian weekday names to getDay() number (0=Sun..6=Sat). First match in transcript wins. */
+// First match in transcript wins.
 const RU_WEEKDAY_MENTIONS: [RegExp, number][] = [
   [/понедельник/i, 1],
   [/вторник/i, 2],
@@ -135,7 +127,6 @@ export type VoiceIntent =
   | { type: "unknown" };
 
 
-/** Russian words indicating specific date/day was mentioned. */
 const RU_DATE_MENTIONS = [
   /завтра/i, /послезавтра/i, /сегодня/i,
   /понедельник/i, /вторник/i, /сред[ау]/i, /четверг/i, /пятниц/i, /суббот/i, /воскресень/i,
@@ -147,11 +138,10 @@ function mentionsSpecificDate(transcript: string): boolean {
   return RU_DATE_MENTIONS.some((re) => re.test(transcript));
 }
 
-/** If no specific date was mentioned and the resulting time is already past → shift to tomorrow. */
+// If no specific date was mentioned and the resulting time is already past, shift to tomorrow.
 function shiftPastTimeToTomorrow(transcript: string, intent: VoiceIntent): VoiceIntent {
   if (intent.type !== "calendar") return intent;
 
-  // Only shift if user didn't explicitly mention a date
   if (mentionsSpecificDate(transcript)) return intent;
 
   const now = new Date();
@@ -189,7 +179,7 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
   const json = tryParseJson(content);
   if (!json || typeof json.type !== "string") return { type: "unknown" };
 
-  // list_today/list_week are accepted for backward-compat with older model outputs.
+  // list_today/list_week accepted for backward-compat with older model outputs.
   if (json.type === "list_range" || json.type === "list_today" || json.type === "list_week") {
     const todayMskStr = new Date().toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
     const range = normalizeListRange(json as Record<string, unknown>, todayMskStr, json.type);
@@ -258,7 +248,7 @@ export async function extractVoiceIntent(transcript: string): Promise<VoiceInten
   return { type: "unknown" };
 }
 
-/** If transcript mentions a weekday and LLM returned a different day in MSK, fix start/end to that weekday. */
+// If transcript mentions a weekday and LLM returned a different day in MSK, fix start/end to that weekday.
 function correctCalendarIntentWeekday(transcript: string, intent: VoiceIntent): VoiceIntent {
   if (intent.type !== "calendar") return intent;
   const mentioned = getMentionedWeekdayRu(transcript);

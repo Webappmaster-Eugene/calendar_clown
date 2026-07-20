@@ -1,14 +1,8 @@
 import { OPENROUTER_URL, OPENROUTER_REFERER } from "../constants.js";
 import { openRouterRequest, type OpenRouterHttpResponse } from "./proxyAgent.js";
 
-/**
- * Hard upper bound for any single non-streaming OpenRouter call. Without this, a
- * stuck upstream (DeepSeek, etc.) silently wedges request handlers — and on the
- * Mini App side leaves the voice button frozen on "Обработка…" beyond the
- * client-side 120s timeout. Default 60s: long-form generation (e.g. blogger posts)
- * overran the previous 30s bound. Tunable via OPENROUTER_TIMEOUT_MS env.
- */
-/** Resolve the per-call OpenRouter timeout (ms) from a raw env value. Default 60s; invalid/non-positive falls back to 60s. Exported for tests. */
+// Hard per-call timeout: a stuck upstream otherwise silently wedges request
+// handlers and freezes the Mini App voice button past its client-side 120s bound.
 export function resolveOpenRouterTimeoutMs(raw: string | undefined): number {
   const trimmed = raw?.trim();
   if (!trimmed) return 60_000;
@@ -18,15 +12,12 @@ export function resolveOpenRouterTimeoutMs(raw: string | undefined): number {
 
 const OPENROUTER_TIMEOUT_MS = resolveOpenRouterTimeoutMs(process.env.OPENROUTER_TIMEOUT_MS);
 
-/** Content part for multimodal messages (text + images). */
 export type ContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
-/** Message content: plain string or multimodal array. */
 export type MessageContent = string | ContentPart[];
 
-/** OpenRouter request with a hard timeout, normalizing the timeout error message. */
 async function fetchWithTimeout(
   url: string,
   init: { method: string; headers: Record<string, string>; body: string },
@@ -42,7 +33,6 @@ async function fetchWithTimeout(
   }
 }
 
-/** Send a chat completion request to OpenRouter and return the text content, or null. */
 export async function callOpenRouter(options: {
   model: string;
   messages: Array<{ role: string; content: MessageContent }>;
@@ -86,7 +76,6 @@ export async function callOpenRouter(options: {
   return data?.choices?.[0]?.message?.content?.trim() ?? null;
 }
 
-/** Variant that also returns usage info (for chat client). */
 export async function callOpenRouterWithUsage(options: {
   model: string;
   messages: Array<{ role: string; content: MessageContent }>;
@@ -137,17 +126,11 @@ export async function callOpenRouterWithUsage(options: {
   return { content, tokensUsed };
 }
 
-/** Result collected after streaming completes. */
 export interface StreamResult {
   content: string;
   tokensUsed: number | null;
 }
 
-/**
- * Send a streaming chat completion request to OpenRouter.
- * Returns a callback-based stream: call `onChunk(text)` for each content delta.
- * The returned promise resolves with the full accumulated result when done.
- */
 export async function callOpenRouterStream(
   options: {
     model: string;
@@ -221,7 +204,7 @@ export async function callOpenRouterStream(
           tokensUsed = parsed.usage.total_tokens;
         }
       } catch {
-        // skip malformed JSON lines
+        /* empty */
       }
     }
   }
@@ -243,7 +226,7 @@ export async function callOpenRouterStream(
           tokensUsed = parsed.usage.total_tokens;
         }
       } catch {
-        // skip
+        /* empty */
       }
     }
   }

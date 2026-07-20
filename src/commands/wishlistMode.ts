@@ -1,8 +1,3 @@
-/**
- * Wishlist mode command handler.
- * Tribe-wide wishlists with items, priorities, reservations, and file attachments.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
@@ -287,7 +282,6 @@ export async function handleWlItemDelCallback(ctx: Context): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser?.tribeId) { await ctx.answerCbQuery(); return; }
 
-  // Verify ownership
   const item = await getItemById(itemId);
   if (!item) {
     await ctx.answerCbQuery("\u042D\u043B\u0435\u043C\u0435\u043D\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D");
@@ -498,7 +492,6 @@ export async function handleWishlistText(ctx: Context): Promise<boolean> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser?.tribeId) return false;
 
-  // Wishlist creation flow
   if (wishlistCreationWaiting.has(telegramId)) {
     wishlistCreationWaiting.delete(telegramId);
     try {
@@ -521,7 +514,6 @@ export async function handleWishlistText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Item creation flow
   const state = itemCreationStates.get(telegramId);
   if (!state) return false;
 
@@ -623,7 +615,6 @@ export async function handleWishlistFileAttachment(ctx: Context): Promise<boolea
 
   if (!fileId) return false;
 
-  // Attach to latest item
   const latestItem = await getLatestItemByOwner(dbUser.id);
   if (!latestItem) {
     await ctx.reply("\u041D\u0435\u0442 \u044D\u043B\u0435\u043C\u0435\u043D\u0442\u043E\u0432 \u0434\u043B\u044F \u043F\u0440\u0438\u043A\u0440\u0435\u043F\u043B\u0435\u043D\u0438\u044F \u0444\u0430\u0439\u043B\u0430. \u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0434\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u0436\u0435\u043B\u0430\u043D\u0438\u0435.");

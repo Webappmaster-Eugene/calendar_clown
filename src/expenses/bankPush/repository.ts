@@ -1,7 +1,3 @@
-/**
- * Database access for the bank push-notification webhook feature.
- * Kept separate from the general expenses repository to keep the feature cohesive.
- */
 import { randomBytes } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../../db/drizzle.js";
@@ -25,13 +21,11 @@ function mapUser(r: typeof users.$inferSelect): DbUser {
   };
 }
 
-/** Generate a 32-byte (64 hex chars) webhook secret — same shape as the MTProto token. */
 function generateSecret(): string {
   return randomBytes(32).toString("hex");
 }
 
 /**
- * Return the user's webhook secret, creating one on first use.
  * Race-safe: the UPDATE only writes when the column is still NULL; on a lost race we
  * re-read the value the winner stored.
  */
@@ -40,7 +34,7 @@ export async function getOrCreateWebhookSecret(telegramId: number): Promise<stri
     .select({ webhookSecret: users.webhookSecret })
     .from(users)
     .where(eq(users.telegramId, BigInt(telegramId)));
-  if (!existing) return null; // user not provisioned yet
+  if (!existing) return null;
   if (existing.webhookSecret) return existing.webhookSecret;
 
   const secret = generateSecret();
@@ -51,7 +45,6 @@ export async function getOrCreateWebhookSecret(telegramId: number): Promise<stri
     .returning({ webhookSecret: users.webhookSecret });
   if (updated?.webhookSecret) return updated.webhookSecret;
 
-  // Lost the race — return whatever the concurrent call stored.
   const [fresh] = await db
     .select({ webhookSecret: users.webhookSecret })
     .from(users)
@@ -59,7 +52,6 @@ export async function getOrCreateWebhookSecret(telegramId: number): Promise<stri
   return fresh?.webhookSecret ?? null;
 }
 
-/** Rotate the user's webhook secret (invalidates the previous URL). */
 export async function regenerateWebhookSecret(telegramId: number): Promise<string | null> {
   const secret = generateSecret();
   const [row] = await db
@@ -70,7 +62,6 @@ export async function regenerateWebhookSecret(telegramId: number): Promise<strin
   return row?.webhookSecret ?? null;
 }
 
-/** Resolve an inbound webhook secret to its owner. Returns null if unknown. */
 export async function findUserByWebhookSecret(secret: string): Promise<DbUser | null> {
   const [row] = await db.select().from(users).where(eq(users.webhookSecret, secret));
   return row ? mapUser(row) : null;
@@ -91,10 +82,7 @@ export interface InsertedBankPushExpense {
   createdAt: Date;
 }
 
-/**
- * Insert an expense originating from a bank push. Idempotent: if a row with the same
- * dedup_hash already exists (repeated delivery), returns null and inserts nothing.
- */
+/** Idempotent: on a repeated delivery (same dedup_hash) returns null and inserts nothing. */
 export async function insertBankPushExpense(
   input: InsertBankPushExpenseInput
 ): Promise<InsertedBankPushExpense | null> {
@@ -125,6 +113,6 @@ export async function insertBankPushExpense(
     .onConflictDoNothing({ target: expenses.dedupHash, where: sql`${expenses.dedupHash} is not null` })
     .returning({ id: expenses.id, createdAt: expenses.createdAt });
 
-  if (!row) return null; // duplicate — already recorded
+  if (!row) return null;
   return { id: row.id, createdAt: row.createdAt };
 }

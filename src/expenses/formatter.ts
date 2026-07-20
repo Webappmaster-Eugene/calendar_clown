@@ -165,15 +165,11 @@ export function formatYearReport(
   ].join("\n");
 }
 
-/** Maximum length of a single Telegram message segment. Telegram allows 4096
- *  characters; we keep a comfortable margin for the «(продолжение N/M)» suffix
- *  and any client-specific quirks. */
+/** Below Telegram's 4096-char limit, leaving margin for the «(продолжение N/M)» suffix. */
 const MAX_SEGMENT_LENGTH = 3800;
 
-/** Subcategory text is truncated to this length to keep individual lines compact. */
 const MAX_SUBCATEGORY_DISPLAY = 60;
 
-/** Single detailed expense for the bot's per-category report block. */
 export interface DetailedReportExpense {
   subcategory: string | null;
   amount: number;
@@ -181,7 +177,6 @@ export interface DetailedReportExpense {
   createdAt: Date;
 }
 
-/** Per-category block for the detailed monthly report. */
 export interface DetailedReportCategory {
   categoryEmoji: string;
   categoryName: string;
@@ -208,19 +203,6 @@ function formatDetailedExpenseLine(e: DetailedReportExpense): string {
   return `  • ${formatMoney(e.amount)}${sub} · ${escapeMarkdown(e.firstName)} · ${date}`;
 }
 
-/**
- * Render the fully-detailed monthly expense report for the bot, splitting it
- * into one or more segments each fitting into a single Telegram message.
- *
- * Layout per segment:
- *   - Header: «📊 Расходы за <месяц> <год>» (with «(продолжение N/M)» on later parts)
- *   - Per-category blocks: «<emoji> <name> — <total>» followed by every operation
- *   - Trailing footer (only on the last segment): grand total and limit progress
- *
- * The function packs lines greedily, allowing a category block to span multiple
- * segments when it alone exceeds the per-message budget. Lines are atomic — a
- * single line is never split mid-string.
- */
 export function formatDetailedMonthReport(
   categories: DetailedReportCategory[],
   grandTotal: number,
@@ -247,7 +229,6 @@ export function formatDetailedMonthReport(
   }
   const footerBlock = footerLines.join("\n");
 
-  // Build a flat list of "atomic" lines, then pack them into segments.
   const lines: string[] = [];
   for (const cat of categories) {
     lines.push(`${cat.categoryEmoji} *${escapeMarkdown(cat.categoryName)}* — ${formatMoney(cat.total)}`);
@@ -256,9 +237,8 @@ export function formatDetailedMonthReport(
     }
   }
 
-  // Reserve a worst-case continuation-header length so that even when the final
-  // header gets long indices like «(продолжение 99/99)», segment length stays
-  // within the budget. The actual header is computed after the total count is known.
+  // Reserve worst-case continuation-header length so long indices like «(продолжение 99/99)»
+  // never push a segment over budget; the real header is filled in once the total is known.
   const continuationHeaderPlaceholder =
     `📊 *Расходы за ${monthName(month)} ${year}* _(продолжение 99/99)_`;
   const continuationHeaderLen = continuationHeaderPlaceholder.length;
@@ -267,9 +247,7 @@ export function formatDetailedMonthReport(
 
   const segments: string[] = [];
   let current = `${baseHeader}\n${separator}`;
-  // Per-segment budget for current = MAX_SEGMENT_LENGTH minus any expansion at finalize.
-  // For segment 0 the header is final; for later segments we account for the
-  // delta between the placeholder length and the worst-case continuation header.
+  // Segment 0's header is final; later segments must budget for the placeholder→continuation-header delta.
   let placeholderDelta = 0;
 
   const pushAndReset = () => {
@@ -292,11 +270,9 @@ export function formatDetailedMonthReport(
     }
   }
 
-  // Append footer to the final (in-progress) segment before flushing it.
   current = `${current}\n${footerBlock}`;
   segments.push(current);
 
-  // Resolve placeholders now that we know the total segment count.
   const total = segments.length;
   return segments.map((seg, idx) => {
     if (idx === 0) return seg;

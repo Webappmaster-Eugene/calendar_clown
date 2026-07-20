@@ -1,7 +1,3 @@
-/**
- * Expenses actions — wrappers over expenseService (mirrors src/api/routes/expenses.ts).
- * Tribe mode. Excel/drilldown stay in the Mini App; core add/report/recent/limit here.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {
@@ -14,7 +10,6 @@ import {
 } from "../../services/expenseService.js";
 import { getUserByTelegramId } from "../../expenses/repository.js";
 
-/** Current MSK year/month for report/limit defaults. */
 function mskYearMonth(now: Date = new Date()): { year: number; month: number } {
   const msk = new Date(now.getTime() + 3 * 3600_000);
   return { year: msk.getUTCFullYear(), month: msk.getUTCMonth() + 1 };

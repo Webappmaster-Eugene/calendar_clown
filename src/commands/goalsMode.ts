@@ -1,8 +1,3 @@
-/**
- * Goals mode command handler.
- * Personal goal sets with progress tracking, sharing, and reminders.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
@@ -484,7 +479,6 @@ export async function handleGoalsText(ctx: Context): Promise<boolean> {
   if (!ctx.message || !("text" in ctx.message)) return false;
   const text = ctx.message.text;
 
-  // Creation wizard — name step
   const state = creationStates.get(telegramId);
   if (state?.step === "name") {
     const name = text.trim();
@@ -516,7 +510,6 @@ export async function handleGoalsText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Goal adding mode — add goal text
   const goalSetId = goalAddingStates.get(telegramId);
   if (goalSetId != null) {
     const goalText = text.trim();
@@ -545,7 +538,6 @@ export async function handleGoalsText(ctx: Context): Promise<boolean> {
 
 // ─── Voice Handler ──────────────────────────────────────────────────────
 
-/** Handle voice transcript in goals mode. */
 export async function handleGoalsVoice(
   ctx: Context,
   transcript: string,
@@ -655,7 +647,6 @@ async function showGoalSet(ctx: Context, goalSetId: number, userId: number, offs
       }
     }
 
-    // Pagination
     const navRow: ReturnType<typeof Markup.button.callback>[] = [];
     if (offset > 0) {
       navRow.push(Markup.button.callback(BTN_PREV, `goal_page:${goalSetId}:${Math.max(0, offset - GOALS_PAGE_SIZE)}`));

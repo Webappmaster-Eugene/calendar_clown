@@ -1,7 +1,3 @@
-/**
- * Goals actions — wrappers over goalsService (mirrors src/api/routes/goals.ts).
- * Individual mode.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

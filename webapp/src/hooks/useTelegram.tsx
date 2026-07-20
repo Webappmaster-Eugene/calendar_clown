@@ -1,11 +1,4 @@
-/**
- * Telegram Mini Apps SDK v3 integration.
- * Provides user data, initDataRaw for API auth, and utility wrappers.
- *
- * SDK initialization (init, mount, expand, ready) happens in ../init.ts
- * BEFORE React renders. This hook only reads launch params and provides
- * convenience wrappers for popup/link APIs.
- */
+// SDK initialization (init, mount, expand, ready) happens in ../init.ts BEFORE React renders.
 import { createContext, useContext, useEffect, useCallback, type ReactNode } from "react";
 import {
   openPopup,
@@ -32,11 +25,8 @@ interface TelegramContextValue {
   colorScheme: "light" | "dark";
   platform: string;
   isReady: boolean;
-  /** Show a simple alert popup. */
   showAlert: (message: string, callback?: () => void) => void;
-  /** Show a confirmation popup with OK/Cancel buttons. */
   showConfirm: (message: string, callback: (confirmed: boolean) => void) => void;
-  /** Open an external URL. */
   openLink: (url: string) => void;
 }
 
@@ -111,7 +101,6 @@ const TelegramContext = createContext<TelegramContextValue>(defaultCtx);
 export function TelegramProvider({ children }: { children: ReactNode }) {
   const data = extractTelegramData();
 
-  // Stable wrappers for popup/link APIs.
   const showAlert = useCallback((message: string, callback?: () => void) => {
     if (openPopup.isAvailable()) {
       openPopup({ message, buttons: [{ type: "ok", id: "ok" }] })
@@ -141,7 +130,6 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Ensure API client has initData.
   useEffect(() => {
     if (data.initDataRaw) {
       setInitData(data.initDataRaw);

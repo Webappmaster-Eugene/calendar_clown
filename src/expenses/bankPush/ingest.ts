@@ -1,9 +1,5 @@
 /**
- * Orchestration for a single inbound bank push: parse → classify → categorize →
- * record (idempotently) → confirm to the user.
- *
- * Called by the webhook route in oauthServer.ts. Returns a small status object; it
- * never throws for "expected" outcomes (skipped/duplicate/not-in-tribe) so the webhook
+ * Never throws for "expected" outcomes (skipped/duplicate/not-in-tribe) so the webhook
  * can always answer 200 and avoid MacroDroid's 24h retry storm.
  */
 import { createHash } from "node:crypto";
@@ -19,14 +15,13 @@ import { createLogger } from "../../utils/logger.js";
 const log = createLogger("bank-push-ingest");
 
 const FALLBACK_CATEGORY_NAME = "Другое";
-/** Fuzzy-match confidence threshold (aligned with parseExpenseText). */
+/** Fuzzy-match confidence threshold, aligned with parseExpenseText. */
 const CONFIDENT_SCORE = 40;
 
 export type IngestStatus = "recorded" | "duplicate" | "skipped" | "no_tribe" | "error";
 
 export interface IngestResult {
   status: IngestStatus;
-  /** For non-expense pushes: what kind it was. */
   kind?: PushKind;
   expenseId?: number;
 }
@@ -53,7 +48,6 @@ function buildDedupHash(telegramId: number, amount: number, merchant: string, mi
     .digest("hex");
 }
 
-/** Resolve a category for a merchant: fast fuzzy match → AI fallback → "Другое". */
 async function resolveCategory(merchant: string | null, amount: number, categories: Category[]): Promise<Category> {
   const fallback = categories.find((c) => c.name === FALLBACK_CATEGORY_NAME) ?? categories[0];
 
@@ -62,8 +56,8 @@ async function resolveCategory(merchant: string | null, amount: number, categori
     if (match && match.score >= CONFIDENT_SCORE) {
       return match.category;
     }
-    // Low confidence — ask the AI. Feed "merchant amount" so the existing text
-    // categorizer (which expects an amount) works; we only use its category.
+    // Feed "merchant amount" so the existing text categorizer (which expects an
+    // amount) works; we only use its category.
     try {
       const ai = await categorizeExpenseText(`${merchant} ${amount}`, categories);
       if (ai) {
@@ -72,7 +66,6 @@ async function resolveCategory(merchant: string | null, amount: number, categori
     } catch (err) {
       log.warn("AI categorization failed, using fallback:", err);
     }
-    // Fuzzy had *some* match but below threshold — better than nothing.
     if (match) return match.category;
   }
 
@@ -99,7 +92,7 @@ export async function ingestBankPush(input: IngestInput): Promise<IngestResult> 
   const category = await resolveCategory(parsed.merchant, parsed.amount, categories);
 
   const now = input.now ?? new Date();
-  const minuteBucket = now.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM (UTC)
+  const minuteBucket = now.toISOString().slice(0, 16);
   const dedupHash = buildDedupHash(user.telegramId, parsed.amount, parsed.merchant ?? "", minuteBucket);
 
   const inserted = await insertBankPushExpense({
@@ -117,7 +110,7 @@ export async function ingestBankPush(input: IngestInput): Promise<IngestResult> 
     return { status: "duplicate" };
   }
 
-  // Fire-and-forget confirmation; the expense is already saved.
+  // Fire-and-forget: the expense is already saved.
   void sendBankPushConfirmation({
     telegramId: user.telegramId,
     expenseId: inserted.id,

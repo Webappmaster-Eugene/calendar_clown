@@ -1,10 +1,7 @@
 /**
- * Shared STT client with provider routing and model fallback.
- * Forces Vertex AI provider (no geo-blocks) and falls back to a chain of
- * alternative models if the primary returns a transient or geo-block error.
- *
- * User-facing errors are wrapped in SttError with a friendly Russian message;
- * raw OpenRouter response bodies are kept only in logs.
+ * Forces the Vertex AI provider (no geo-blocks) and falls back through a chain of
+ * alternative models on transient or geo-block errors. User-facing errors are
+ * wrapped in SttError with a friendly Russian message; raw response bodies stay in logs.
  */
 
 import { readFile } from "fs/promises";
@@ -16,16 +13,15 @@ import type { OnProgressCallback } from "../transcribe/types.js";
 const log = createLogger("stt-client");
 
 /**
- * Pin Google STT models to OpenRouter's `google-vertex` provider by default.
- * This dodges the AI-Studio "User location is not supported" geo-block.
- * Operators can flip `STT_PIN_VERTEX_AI=false` in `.env` to fall back to
- * OpenRouter's default routing (which may pick `google-ai-studio`).
+ * Pin Google STT models to OpenRouter's `google-vertex` provider to dodge the
+ * AI-Studio "User location is not supported" geo-block. Flip `STT_PIN_VERTEX_AI=false`
+ * to fall back to default routing (which may pick `google-ai-studio`).
  */
 const PIN_VERTEX_FOR_GOOGLE = (process.env.STT_PIN_VERTEX_AI ?? "true").toLowerCase() !== "false";
 
 /**
- * STT failure reported to the user. The `message` is human-friendly Russian text
- * safe to show in Telegram; `raw` carries the upstream body for logs/telemetry.
+ * `message` is human-friendly Russian text safe to show in Telegram; `raw` carries
+ * the upstream body for logs/telemetry only.
  */
 export class SttError extends Error {
   readonly model: string;
@@ -42,19 +38,14 @@ export class SttError extends Error {
 }
 
 export interface SttCallOptions {
-  /** Path to the audio file. */
   filePath: string;
-  /** System/user prompt for the transcription. */
   prompt: string;
-  /** Timeout in milliseconds. */
   timeoutMs: number;
-  /** Model override (defaults to TRANSCRIBE_MODEL from constants). */
+  /** Defaults to TRANSCRIBE_MODEL from constants. */
   model?: string;
-  /** Optional progress callback for real-time status updates. */
   onProgress?: OnProgressCallback;
 }
 
-/** Map file extension to MIME type for audio. */
 function audioMimeType(filePath: string): string {
   const ext = filePath.toLowerCase().split(".").pop();
   switch (ext) {
@@ -74,7 +65,6 @@ interface ParsedUpstreamError {
   message: string;
 }
 
-/** Best-effort parse of OpenRouter error body. */
 function parseUpstreamError(body: string): ParsedUpstreamError {
   try {
     const json = JSON.parse(body) as { error?: { code?: number; message?: string } };
@@ -85,13 +75,10 @@ function parseUpstreamError(body: string): ParsedUpstreamError {
 }
 
 /**
- * Detect transient/retryable upstream conditions where another model is worth trying.
- *
- * Includes provider-routing failures from OpenRouter — e.g. `404 "No endpoints found
- * for <model>"` happens when the requested model+provider pair has no active endpoint
- * for this account/region. With `provider.allow_fallbacks=false` (our default for
- * Google models, to dodge AI-Studio geo-blocks), this is the dominant failure mode
- * and must trigger the next model in the chain.
+ * Includes provider-routing failures — e.g. `404 "No endpoints found for <model>"`
+ * when the model+provider pair has no active endpoint for this account/region. With
+ * `provider.allow_fallbacks=false` (our default for Google models to dodge AI-Studio
+ * geo-blocks) this is the dominant failure mode and must trigger the next model.
  */
 export function isRetryableUpstreamError(status: number, message: string): boolean {
   if (status >= 500) return true;
@@ -113,7 +100,6 @@ export function isRetryableUpstreamError(status: number, message: string): boole
   return false;
 }
 
-/** Map an upstream error to a user-friendly Russian message. */
 function userMessageFor(status: number | null, message: string): string {
   if (status === 429) return "Сервис распознавания перегружен. Попробуйте через минуту.";
   if (status != null && status >= 500) return "Сервис распознавания временно недоступен. Попробуйте позже.";
@@ -130,12 +116,6 @@ function userMessageFor(status: number | null, message: string): string {
   return "Не удалось распознать речь. Попробуйте ещё раз.";
 }
 
-/**
- * Call OpenRouter STT API with provider routing (Vertex AI) and automatic
- * fallback through a chain of alternative models on retryable errors.
- *
- * Throws SttError with a user-friendly message; full upstream body is logged.
- */
 export async function callStt(options: SttCallOptions): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -151,9 +131,7 @@ export async function callStt(options: SttCallOptions): Promise<string> {
   const base64Audio = fileBuffer.toString("base64");
   const mimeType = audioMimeType(options.filePath);
 
-  // Build chain: primary first, then fallbacks (de-duplicated, primary excluded).
   // Pin google-vertex only for Google-hosted models — it's a no-op (or worse) for OpenAI/etc.
-  // The pin is gated by STT_PIN_VERTEX_AI env so operators can flip it without a rebuild.
   const shouldPinVertex = (model: string): boolean =>
     PIN_VERTEX_FOR_GOOGLE && model.startsWith("google/");
 
@@ -259,7 +237,6 @@ interface SttRawOptions {
   provider?: { order: string[]; allow_fallbacks: boolean };
 }
 
-/** Low-level single STT call. Throws SttError on HTTP errors. */
 async function callSttRaw(options: SttRawOptions): Promise<string> {
   const { apiKey, model, prompt, base64Audio, mimeType, timeoutMs, filePath, provider } = options;
 

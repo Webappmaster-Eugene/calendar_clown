@@ -1,7 +1,3 @@
-/**
- * Transcribe actions — wrappers over transcribeService (mirrors
- * src/api/routes/transcribe.ts). Individual mode. Audio submission stays UI-only.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

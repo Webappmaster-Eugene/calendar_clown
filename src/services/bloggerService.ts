@@ -1,7 +1,3 @@
-/**
- * Blogger business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   createChannel,
   getChannelsByUser,
@@ -131,7 +127,6 @@ export async function getChannelPosts(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership
   const c = await getChannelById(channelId, dbUser.id);
   if (!c) throw new Error("Канал не найден.");
 
@@ -147,7 +142,6 @@ export async function createNewPost(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership
   const c = await getChannelById(channelId, dbUser.id);
   if (!c) throw new Error("Канал не найден.");
 
@@ -180,7 +174,6 @@ export async function getPostSources(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership via post
   const p = await getPostById(postId, dbUser.id);
   if (!p) throw new Error("Пост не найден.");
 

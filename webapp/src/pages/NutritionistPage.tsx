@@ -77,7 +77,6 @@ function AnalyzeSection({ onGoToCatalog }: { onGoToCatalog: () => void }) {
     queryFn: () => api.get<NutritionDailySummaryDto>("/api/nutritionist/daily"),
   });
 
-  // Lightweight catalog count — one extra request but keeps the hint fresh.
   const { data: catalogCount } = useQuery({
     queryKey: ["nutritionistProductsCount"],
     queryFn: () =>
@@ -126,7 +125,6 @@ function AnalyzeSection({ onGoToCatalog }: { onGoToCatalog: () => void }) {
 
   return (
     <div>
-      {/* Catalog hint */}
       {productsTotal > 0 && (
         <div className="card" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -140,7 +138,6 @@ function AnalyzeSection({ onGoToCatalog }: { onGoToCatalog: () => void }) {
         </div>
       )}
 
-      {/* Photo upload */}
       <div className="card" style={{ marginBottom: 16 }}>
         <input
           ref={fileInputRef}
@@ -181,7 +178,6 @@ function AnalyzeSection({ onGoToCatalog }: { onGoToCatalog: () => void }) {
         )}
       </div>
 
-      {/* Daily summary */}
       {dailySummary && dailySummary.mealsCount > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 500, marginBottom: 8 }}>Сегодня</div>
@@ -210,7 +206,6 @@ function AnalyzeSection({ onGoToCatalog }: { onGoToCatalog: () => void }) {
         </div>
       )}
 
-      {/* Last result */}
       {lastResult && lastResult.status === "completed" && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 500, marginBottom: 8 }}>Результат анализа</div>
@@ -224,7 +219,6 @@ function AnalyzeSection({ onGoToCatalog }: { onGoToCatalog: () => void }) {
         </div>
       )}
 
-      {/* History */}
       {analyses.length === 0 && !isLoading && (
         <div className="empty-state">
           <div className="empty-state-emoji">🥗</div>
@@ -420,12 +414,8 @@ function AnalysisCard({ analysis, compact = false }: { analysis: NutritionAnalys
   );
 }
 
-/**
- * Serialize a nutrition analysis to a copyable plain-text block that mirrors
- * the format used by the Telegram bot (formatAnalysisMessage in
- * src/commands/nutritionistMode.ts), so pasting into Telegram produces the
- * same readable output.
- */
+// Mirrors the bot's formatAnalysisMessage (src/commands/nutritionistMode.ts) so
+// pasting into Telegram produces identical output.
 function serializeAnalysis(a: NutritionAnalysisDto): string {
   const isManual = a.source === "manual";
   const lines: string[] = [];

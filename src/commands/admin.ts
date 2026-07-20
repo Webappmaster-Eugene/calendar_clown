@@ -38,10 +38,8 @@ type AdminPendingAction =
   | { type: "edit_tribe"; tribeId: number; timestamp: number }
   | { type: "edit_user_role"; userId: number; timestamp: number };
 
-/** State for admin pending text input. */
 const adminPendingAction = new Map<number, AdminPendingAction>();
 
-/** Clean expired admin actions (older than 5 minutes). */
 function cleanExpiredAdminActions(): void {
   const now = Date.now();
   const TTL = 5 * 60 * 1000;
@@ -50,7 +48,6 @@ function cleanExpiredAdminActions(): void {
   }
 }
 
-/** /admin — show admin panel (only for admin). */
 export async function handleAdminCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null || !isBootstrapAdmin(telegramId)) {
@@ -85,7 +82,6 @@ export async function handleAdminCommand(ctx: Context): Promise<void> {
   });
 }
 
-/** Handle admin inline button callbacks. */
 export async function handleAdminCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -467,10 +463,7 @@ export async function handleAdminCallback(ctx: Context): Promise<void> {
   await ctx.answerCbQuery();
 }
 
-/**
- * Handle text input when admin is waiting for input (add user or create tribe).
- * Returns true if the message was consumed.
- */
+/** Returns true if the message was consumed. */
 export async function handleAdminTextInput(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
@@ -546,7 +539,6 @@ export async function handleAdminTextInput(ctx: Context): Promise<boolean> {
   return false;
 }
 
-/** Handle onboard_request callback — create pending user and notify admin. */
 export async function handleOnboardRequest(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const telegramId = ctx.from?.id;

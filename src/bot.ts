@@ -215,7 +215,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     handlerTimeout: 300_000, // 5 min — default 90s is too short for slow proxy downloads
   });
 
-  // Global error handler — prevent unhandled errors from crashing the process
+  // A throwing handler would otherwise crash the polling process.
   bot.catch((err, ctx) => {
     const userId = ctx.from?.id ?? "unknown";
     log.error(`Unhandled error for user ${userId}:`, err);
@@ -233,10 +233,8 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     return next();
   });
 
-  // Access control — restrict to allowed users
   bot.use(accessControlMiddleware());
 
-  // Audit: log every incoming update to action_logs
   bot.use(botLoggerMiddleware());
 
   // ─── Commands ───────────────────────────────────────────────────────
@@ -250,7 +248,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.command("week", handleWeek);
   bot.command("list", handleToday);
 
-  // Mode switching commands
   bot.command("expenses", handleExpensesCommand);
   bot.command("calendar", handleCalendarCommand);
   bot.command("transcribe", handleTranscribeCommand);
@@ -276,7 +273,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   // Unified NL entry point — routes free text to any registry action.
   bot.command("do", handleDo);
 
-  // Admin commands
   bot.command("admin", handleAdminCommand);
   bot.command("stats", handleStatsCommand);
 
@@ -288,7 +284,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action("catwiz:skip", handleCategoriesWizardSkip);
   bot.action("catwiz:cancel", handleCategoriesWizardCancel);
   bot.action("catwiz:save", handleCategoriesWizardSave);
-  // Bank push webhook: setup regeneration + per-expense confirmation controls
   bot.action("bhregen", handleBankHookRegenerate);
   bot.action(/^bpcat:/, handleBankPushCategoryMenu);
   bot.action(/^bpset:/, handleBankPushSetCategory);
@@ -319,22 +314,17 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^tr_del:/, handleTranscribeDeleteCallback);
   bot.action(/^tr_del_yes:/, handleTranscribeDeleteCallback);
 
-  // Simplifier callbacks
   bot.action(/^simp_hist:/, handleSimplifierHistoryCallback);
   bot.action(/^simp_full:/, handleSimplifierFullCallback);
   bot.action(/^simp_del:/, handleSimplifierDeleteCallback);
   bot.action(/^simp_del_yes:/, handleSimplifierDeleteCallback);
 
-  // Admin summary callbacks
   bot.action(/^summary:/, handleSummaryCallback);
 
-  // Admin data management callbacks
   bot.action(/^adm_/, handleAdminDataCallback);
 
-  // Bulk selection callbacks
   bot.action(/^bulk:/, handleBulkCallback);
 
-  // Digest rubric inline callbacks
   bot.action("drub_back", handleRubricListCallback);
   bot.action(/^drub_view:/, handleRubricViewCallback);
   bot.action(/^drub_pause:/, handleRubricToggleCallback);
@@ -345,7 +335,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^drub_ch_rm:/, handleChannelRemoveCallback);
   bot.action(/^drub_ch_add:/, handleChannelAddCallback);
 
-  // Digest rubric edit callbacks
   bot.action(/^drub_edit:\d+$/, handleRubricEditCallback);
   bot.action(/^drub_edit_name:\d+$/, handleRubricEditNameCallback);
   bot.action(/^drub_edit_desc:\d+$/, handleRubricEditDescCallback);
@@ -353,11 +342,9 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^drub_import:\d+$/, handleRubricFolderImportCallback);
   bot.action(/^drub_import_folder:\d+:\d+$/, handleRubricFolderImportToCallback);
 
-  // Digest folder import callbacks
   bot.action(/^digest_folder:/, handleDigestFolderCallback);
   bot.action(/^digest_folder_to:/, handleDigestFolderToCallback);
 
-  // Gandalf (База знаний) callbacks
   bot.action("gandalf_new_cat", handleGandalfNewCatCallback);
   bot.action(/^gandalf_view_cat:/, handleGandalfViewCatCallback);
   bot.action(/^gandalf_del_cat:/, handleGandalfDelCatCallback);
@@ -383,7 +370,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^gandalf_clear_menu:/, handleGandalfClearMenuCallback);
   bot.action(/^gandalf_clear:/, handleGandalfClearFieldCallback);
 
-  // Wishlist callbacks
   bot.action(/^wl_my:/, handleWlMyCallback);
   bot.action(/^wl_my_del:/, handleWlMyDelCallback);
   bot.action(/^wl_add:/, handleWlAddCallback);
@@ -396,7 +382,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^wl_unreserve:/, handleWlUnreserveCallback);
   bot.action(/^wl_page:/, handleWlPageCallback);
 
-  // Reminders callbacks
   bot.action(/^rem_view:/, handleReminderViewCallback);
   bot.action(/^rem_pause:/, handleReminderActionCallback);
   bot.action(/^rem_del:/, handleReminderActionCallback);
@@ -417,7 +402,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^rem_edit_sound:/, handleReminderSoundCallback);
   bot.action(/^rem_set_sound:/, handleReminderSoundCallback);
 
-  // Goals callbacks
   bot.action(/^goal_set:/, handleGoalSetCallback);
   bot.action(/^goal_set_del:/, handleGoalSetCallback);
   bot.action(/^goal_set_vis:/, handleGoalSetCallback);
@@ -433,7 +417,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^goal_viewer_done:/, handleGoalViewerCallback);
   bot.action(/^goal_page:/, handleGoalsPageCallback);
 
-  // Tasks callbacks
   bot.action(/^tw_view:/, handleTaskWorkCallback);
   bot.action(/^tw_add:/, handleTaskWorkCallback);
   bot.action(/^tw_del:/, handleTaskWorkCallback);
@@ -448,25 +431,20 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^ti_edl:/, handleTaskItemCallback);
   bot.action(/^t_page:/, handleTasksPageCallback);
 
-  // OSINT callbacks
   bot.action(/^osint_confirm$/, handleOsintConfirmCallback);
   bot.action(/^osint_reenter$/, handleOsintReenterCallback);
   bot.action(/^osint_cancel$/, handleOsintCancelCallback);
   bot.action(/^osint_hist:/, handleHistoryPageCallback);
   bot.action(/^osint_view:/, handleViewSearchCallback);
 
-  // Summarizer callbacks
   bot.action(/^sum_/, handleSumCallback);
 
-  // Blogger callbacks
   bot.action(/^blog_/, handleBlogCallback);
 
-  // Neuro dialog callbacks
   bot.action(/^neuro_dlg:\d+$/, handleNeuroDialogSwitch);
   bot.action(/^neuro_dlg_del:\d+$/, handleNeuroDialogDelete);
   bot.action("neuro_dlg_del_mode", handleNeuroDialogDeleteMode);
 
-  // Mode switch inline callbacks
   bot.action("mode:calendar", async (ctx) => {
     await ctx.answerCbQuery("📅 Календарь");
     await handleCalendarCommand(ctx);
@@ -640,12 +618,11 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
 
   // ─── Text messages (mode-specific buttons) ─────────────────────────
 
-  // Expense mode buttons — only work in expense mode
   const expenseOnlyHandler = (handler: (ctx: Context) => Promise<void>) => {
     return async (ctx: Context) => {
       const tid = ctx.from?.id;
       if (tid != null && !await isExpenseMode(tid)) {
-        return; // silently ignore outside expense mode
+        return;
       }
       await handler(ctx);
     };
@@ -657,14 +634,12 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("👥 Статистика", expenseOnlyHandler(handleStatsButton));
   bot.hears("🕐 Последние", expenseOnlyHandler(handleRecentButton));
 
-  // Digest mode buttons
   bot.hears("📋 Мои рубрики", handleRubricsButton);
   bot.hears("▶️ Запустить сейчас", handleDigestNowButton);
   bot.hears("➕ Создать рубрику", handleCreateRubricButton);
   bot.hears("📂 Импорт из папки", handleFolderImportButton);
   bot.hears("🔑 Привязать Telegram", handleMtprotoAuthButton);
 
-  // Simplifier mode buttons
   bot.hears("🧹 Упростить", async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isSimplifierMode(tid)) {
@@ -678,7 +653,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
   });
 
-  // Nutritionist sub-mode tabs
   bot.hears("📷 Анализ", async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isNutritionistMode(tid)) {
@@ -698,7 +672,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
   });
 
-  // Nutritionist mode buttons
   bot.hears("📊 За сегодня", async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isNutritionistMode(tid)) {
@@ -712,7 +685,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
   });
 
-  // Nutritionist calculator buttons
   bot.hears("➕ Добавить вручную", async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isNutritionistMode(tid)) {
@@ -738,7 +710,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
   });
 
-  // Transcribe mode buttons
   bot.hears("📋 История", async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isTranscribeMode(tid)) {
@@ -764,12 +735,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
   });
 
-  // Wishlist mode buttons
   bot.hears("🎁 Мои вишлисты", handleMyWishlistsButton);
   bot.hears("👀 Вишлисты семьи", handleTribeWishlistsButton);
   bot.hears("➕ Новый вишлист", handleNewWishlistButton);
 
-  // Gandalf (База знаний) mode buttons
   bot.hears("📦 Категории", handleGandalfCategoriesButton);
   bot.hears("➕ Новая запись", handleGandalfNewEntryButton);
   bot.hears("📊 Статистика", handleGandalfStatsButton);
@@ -777,35 +746,28 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("⭐ Важное", handleGandalfImportantButton);
   bot.hears("🔥 Срочное", handleGandalfUrgentButton);
 
-  // Goals mode buttons
   bot.hears("📋 Мои наборы целей", handleMyGoalSetsButton);
   bot.hears("➕ Новый набор целей", handleNewGoalSetButton);
   bot.hears("👀 Цели друзей", handleSharedGoalsButton);
 
-  // Tasks mode buttons
   bot.hears("📋 Мои проекты", handleMyProjectsButton);
   bot.hears("➕ Новый проект", handleNewProjectButton);
   bot.hears("📜 История выполнения", handleTasksHistoryButton);
 
-  // Reminders mode buttons
   bot.hears("📋 Мои напоминания", handleMyRemindersButton);
   bot.hears("➕ Новое напоминание", handleNewReminderButton);
   bot.hears("👀 Напоминания семьи", handleTribeRemindersButton);
 
-  // OSINT mode buttons
   bot.hears("🔍 Новый поиск", handleNewSearchButton);
   bot.hears("📋 История поисков", handleHistoryButton);
 
-  // Summarizer mode buttons
   bot.hears("📋 Мои места работы", handleMyWorkplacesButton);
   bot.hears("➕ Новое место", handleNewWorkplaceButton);
 
-  // Blogger mode buttons
   bot.hears("📝 Мои каналы", handleMyChannelsButton);
   bot.hears("➕ Новый канал", handleNewChannelButton);
   bot.hears("📄 Мои посты", handleMyPostsButton);
 
-  // Neuro mode buttons
   bot.hears("💬 Диалоги", async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isNeuroMode(tid)) {
@@ -837,7 +799,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
   });
 
-  // Notable dates mode buttons
   bot.hears("📅 Ближайшие", handleUpcomingDatesButton);
   bot.hears("📅 На неделе", handleWeekDatesButton);
   bot.hears("📅 За месяц", handleMonthDatesButton);
@@ -846,7 +807,6 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.hears("✏️ Изменить", handleEditDateButton);
   bot.hears("🗑 Удалить", handleDeleteDateButton);
 
-  // Photo/document handlers (gandalf file attachments)
   bot.on("photo", async (ctx) => {
     const telegramId = ctx.from?.id;
     if (telegramId == null) return;
@@ -892,7 +852,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     }
   });
 
-  // Text messages catch-all (priority order)
+  // Order matters: earlier mode checks take priority over later ones.
   bot.on("text", async (ctx, next) => {
     const telegramId = ctx.from?.id;
     if (telegramId == null) return next();

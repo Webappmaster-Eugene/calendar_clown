@@ -1,7 +1,3 @@
-/**
- * Repository for nutrition_analyses table.
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
 import { and, asc, count, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/drizzle.js";
 import { nutritionAnalyses } from "../db/schema.js";
@@ -42,7 +38,6 @@ function mapRow(row: typeof nutritionAnalyses.$inferSelect): NutritionAnalysis {
 
 // ─── CRUD ───────────────────────────────────────────────────────
 
-/** Insert a new analysis record (status: pending). */
 export async function createAnalysis(
   userId: number,
   telegramFileId: string | null,
@@ -55,12 +50,10 @@ export async function createAnalysis(
   return mapRow(row);
 }
 
-/** Update analysis status to 'processing'. */
 export async function markAnalysisProcessing(id: number): Promise<void> {
   await db.update(nutritionAnalyses).set({ status: "processing" }).where(eq(nutritionAnalyses.id, id));
 }
 
-/** Mark analysis as completed with results. */
 export async function markAnalysisCompleted(
   id: number,
   nutritionData: Record<string, unknown>,
@@ -79,7 +72,6 @@ export async function markAnalysisCompleted(
     .where(eq(nutritionAnalyses.id, id));
 }
 
-/** Mark analysis as failed with an error message. */
 export async function markAnalysisFailed(
   id: number,
   errorMessage: string,
@@ -90,7 +82,6 @@ export async function markAnalysisFailed(
     .where(eq(nutritionAnalyses.id, id));
 }
 
-/** Insert a completed manual calculation (no AI, no pending phase). */
 export async function createManualAnalysis(
   userId: number,
   nutritionData: Record<string, unknown>,
@@ -112,7 +103,6 @@ export async function createManualAnalysis(
 
 // ─── History Queries ────────────────────────────────────────────
 
-/** Get paginated analyses for a user (newest first). */
 export async function getAnalysesPaginated(
   userId: number,
   limit: number,
@@ -128,7 +118,6 @@ export async function getAnalysesPaginated(
   return rows.map(mapRow);
 }
 
-/** Count all analyses for a user. */
 export async function countAnalyses(userId: number): Promise<number> {
   const [row] = await db
     .select({ value: count() })
@@ -137,8 +126,7 @@ export async function countAnalyses(userId: number): Promise<number> {
   return row.value;
 }
 
-/** Count photo-based analyses for a user created today (MSK timezone).
- *  Manual calculations are excluded — they don't consume the daily AI limit. */
+/** Manual calculations are excluded — they don't consume the daily AI limit. */
 export async function countAnalysesToday(userId: number): Promise<number> {
   const [row] = await db
     .select({ value: count() })
@@ -153,7 +141,6 @@ export async function countAnalysesToday(userId: number): Promise<number> {
   return row.value;
 }
 
-/** Get a single analysis by ID (with ownership check). */
 export async function getAnalysisById(
   id: number,
   userId: number,
@@ -165,7 +152,6 @@ export async function getAnalysisById(
   return row ? mapRow(row) : null;
 }
 
-/** Delete an analysis (with ownership check). Returns true if deleted. */
 export async function deleteAnalysis(
   id: number,
   userId: number,
@@ -188,7 +174,6 @@ export interface DailySummaryAggregation {
   totalWeight: number;
 }
 
-/** Get aggregated nutrition for a specific date (MSK timezone). */
 export async function getDailySummaryAggregation(
   userId: number,
   date: string,
@@ -220,7 +205,6 @@ export async function getDailySummaryAggregation(
   };
 }
 
-/** Get completed analyses for a specific date (MSK timezone), newest first. */
 export async function getAnalysesByDate(
   userId: number,
   date: string,

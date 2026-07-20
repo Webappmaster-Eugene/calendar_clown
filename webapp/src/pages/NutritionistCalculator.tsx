@@ -194,7 +194,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
   // ── Render ──
   return (
     <div>
-      {/* Meal name */}
       <div className="card" style={{ marginBottom: 12 }}>
         <input
           className="input"
@@ -206,7 +205,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
         />
       </div>
 
-      {/* Items list */}
       {items.map((item, idx) => {
         const macros = itemsMacros[idx];
         return (
@@ -254,7 +252,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
               </div>
             </div>
 
-            {/* Per-100g fields (expanded) */}
             {item.expanded && (
               <div style={{ marginTop: 8 }}>
                 <div className="card-hint" style={{ fontSize: 12, marginBottom: 6 }}>
@@ -309,7 +306,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
               </div>
             )}
 
-            {/* Live macros for this item */}
             {macros && macros.weightG > 0 && (
               <div className="card-hint" style={{ marginTop: 6, fontSize: 13 }}>
                 🔥 {macros.calories} ккал | Б {macros.proteinsG}г | Ж {macros.fatsG}г | У {macros.carbsG}г
@@ -332,7 +328,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
         );
       })}
 
-      {/* Add item buttons */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button className="btn" style={{ flex: 1 }} onClick={() => setPickerOpen(true)} type="button">
           📦 Из каталога
@@ -342,7 +337,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
         </button>
       </div>
 
-      {/* Servings */}
       {items.length > 0 && (
         <div className="card" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -363,7 +357,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
         </div>
       )}
 
-      {/* Totals */}
       {items.length > 0 && fullTotal.calories > 0 && (
         <div className="card" style={{ marginBottom: 12 }}>
           {servingsNum > 1 && (
@@ -393,10 +386,8 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
         </div>
       )}
 
-      {/* Error */}
       {error && <div className="error-msg" style={{ marginBottom: 8 }}>{error}</div>}
 
-      {/* Success */}
       {saveSuccess && (
         <div
           style={{
@@ -413,7 +404,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
         </div>
       )}
 
-      {/* Save */}
       {items.length > 0 && (
         <button
           className="btn btn-primary"
@@ -426,7 +416,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
         </button>
       )}
 
-      {/* Empty state */}
       {items.length === 0 && !saveSuccess && (
         <div className="empty-state">
           <div className="empty-state-emoji">🧮</div>
@@ -436,7 +425,6 @@ export function NutritionistCalculator({ onGoToCatalog }: { onGoToCatalog: () =>
         </div>
       )}
 
-      {/* Product picker modal */}
       {pickerOpen && (
         <ProductPickerModal
           onSelect={addFromCatalog}
@@ -510,7 +498,6 @@ function ProductPickerModal({
           Выбрать из каталога
         </h2>
 
-        {/* Search */}
         <form onSubmit={handleSearch} style={{ display: "flex", gap: 6, marginBottom: 12 }}>
           <input
             className="input"

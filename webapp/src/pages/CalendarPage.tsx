@@ -19,7 +19,7 @@ export function CalendarPage() {
   const [tab, setTab] = useState<Tab>("today");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({ title: "", start: "", end: "" });
-  // Voice "покажи расписание": a resolved list_range window overrides the today/week tabs.
+  // A resolved list_range window overrides the today/week tabs.
   const [voiceRange, setVoiceRange] = useState<{ from: string; days: number; label: string } | null>(null);
   const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -304,10 +304,7 @@ function NoCalendarLinked() {
   );
 }
 
-/**
- * Convert an ISO datetime string to the `YYYY-MM-DDTHH:mm` value expected by
- * `<input type="datetime-local">`, expressed in the user's local wall-clock time.
- */
+// `<input type="datetime-local">` expects local wall-clock time, not UTC.
 function toDatetimeLocal(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";

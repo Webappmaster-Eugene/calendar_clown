@@ -1,8 +1,3 @@
-/**
- * CRUD repository for Task Tracker: task works, task items, task reminders.
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
-
 import { and, count, desc, eq, getTableColumns, lte, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
@@ -46,7 +41,6 @@ export interface PendingTaskReminder {
   userId: number;
 }
 
-// Aggregated item counts per work, reused across the work-listing queries.
 const itemCounts = {
   activeCount: sql<number>`count(${taskItems.id}) filter (where not ${taskItems.isCompleted})`.mapWith(Number),
   completedCount: sql<number>`count(${taskItems.id}) filter (where ${taskItems.isCompleted})`.mapWith(Number),
@@ -166,7 +160,6 @@ export async function countTaskWorksByUser(userId: number): Promise<number> {
 
 // ─── Task Items ──────────────────────────────────────────────────────────
 
-/** Create a task item and its reminders atomically. */
 export async function createTaskItemWithReminders(
   workId: number,
   text: string,
@@ -212,7 +205,6 @@ export async function updateTaskItemText(taskItemId: number, text: string): Prom
   return row ? mapTaskItem(row) : null;
 }
 
-/** Replace a task item's deadline and regenerate its reminders atomically. */
 export async function replaceTaskItemDeadline(
   taskItemId: number,
   deadline: Date,
@@ -255,10 +247,6 @@ export async function getCompletedTaskItems(workId: number): Promise<TaskItem[]>
   return rows.map(mapTaskItem);
 }
 
-/**
- * Get the work that owns a given task item, verifying user ownership.
- * Returns null if item doesn't exist or user doesn't own the work.
- */
 export async function getTaskItemWithOwnership(
   taskItemId: number,
   userId: number,

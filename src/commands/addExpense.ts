@@ -10,7 +10,6 @@ import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("expense");
 
-/** Handle text message in expense mode — parse and save expense. */
 export async function handleExpenseText(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -71,7 +70,6 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
     log.error("Error adding expense:", err);
     const msg = err instanceof Error ? err.message : "Ошибка";
     if (msg === "Не удалось разобрать трату.") {
-      // Provide specific hints based on what's missing
       const hasDigit = /\d/.test(text);
       const hasText = /[а-яёa-z]/i.test(text);
       let hint = "";
@@ -94,7 +92,6 @@ export async function handleExpenseText(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle voice-extracted expense (called from voice handler). */
 export async function handleVoiceExpense(
   ctx: Context,
   categoryName: string,

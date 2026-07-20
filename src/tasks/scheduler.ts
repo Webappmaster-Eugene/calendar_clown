@@ -1,8 +1,3 @@
-/**
- * Task Tracker scheduler: checks for pending task reminders every minute
- * and sends notifications via Telegram.
- */
-
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";

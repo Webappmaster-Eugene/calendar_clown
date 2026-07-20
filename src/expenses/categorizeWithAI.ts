@@ -1,9 +1,3 @@
-/**
- * AI-powered expense text categorization using DeepSeek via OpenRouter.
- * Used as a fallback when fuzzy matching in parser.ts produces low-confidence results.
- * Mirrors the voice path (extractExpenseIntent.ts) but adapted for text input.
- */
-
 import { DEEPSEEK_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
@@ -49,10 +43,6 @@ Examples:
 - "подарок жене духи 3000" → {"category":"Подарки","subcategory":"Духи жене","amount":3000}`;
 }
 
-/**
- * Categorize expense text using DeepSeek AI.
- * Returns ParsedExpense with resolved categoryId, or null if AI fails.
- */
 export async function categorizeExpenseText(
   text: string,
   categories: Category[]
@@ -90,7 +80,6 @@ export async function categorizeExpenseText(
     return null;
   }
 
-  // Resolve category name to ID (exact match → alias match → "Другое")
   const normalizedName = categoryName.toLowerCase();
   let cat = categories.find((c) => c.name.toLowerCase() === normalizedName);
   if (!cat) {

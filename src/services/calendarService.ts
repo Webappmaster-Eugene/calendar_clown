@@ -1,7 +1,3 @@
-/**
- * Calendar business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import { parseEventText } from "../calendar/parse.js";
 import {
   createEvent,
@@ -96,12 +92,6 @@ async function saveEventToDb(
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Create event from natural language text.
- * @param userId - Google Calendar userId (telegram_id as string)
- * @param telegramId - Numeric telegram ID for DB operations
- * @param text - Natural language text like "Встреча завтра в 15:00"
- */
 export async function createEventFromText(
   userId: string,
   telegramId: number,
@@ -126,10 +116,7 @@ export async function createEventFromText(
   return { event: toDto(event), savedToDb };
 }
 
-/**
- * Create events from pre-extracted LLM intent data (voice input).
- * Bypasses chrono-node parsing — dates come directly from the LLM as ISO strings with +03:00 offset.
- */
+// Bypasses chrono-node — dates come from the LLM as ISO strings with +03:00 offset.
 export async function createEventFromIntent(
   userId: string,
   telegramId: number,
@@ -161,7 +148,7 @@ export async function createEventFromIntent(
       results.push({ event: toDto(event), savedToDb });
     } catch (err) {
       log.error("Failed to create event from intent \"%s\":", ev.title, err);
-      // Re-throw PastDateError and NoCalendarLinkedError for the route to handle
+      // Re-throw for the route to handle.
       if (err instanceof PastDateError || err instanceof NoCalendarLinkedError) throw err;
     }
   }
@@ -169,12 +156,7 @@ export async function createEventFromIntent(
   return results;
 }
 
-/**
- * Update an existing single event's title and time range.
- * Recurring series are out of scope — this edits the addressed event/instance only.
- * @param userId - Google Calendar userId (telegram_id as string)
- * @param telegramId - Numeric telegram ID for DB operations
- */
+// Recurring series are out of scope — edits the addressed event/instance only.
 export async function updateEventById(
   userId: string,
   telegramId: number,
@@ -234,12 +216,8 @@ export async function getEventsWeek(userId: string): Promise<CalendarEventDto[]>
   return events.map(toDto);
 }
 
-/**
- * Events for an arbitrary [from, from + days) window. Powers the Mini App voice
- * "покажи расписание" flow: `from` is the start-of-day instant already resolved by
- * the LLM intent (list_range), so it is used as-is rather than re-snapped to a
- * server-local midnight (which would be the wrong timezone).
- */
+// `from` is the start-of-day instant already resolved by the LLM intent, so it is
+// used as-is rather than re-snapped to server-local midnight (wrong timezone).
 export async function getEventsInRange(userId: string, from: Date, days: number): Promise<CalendarEventDto[]> {
   const start = new Date(from);
   const end = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
@@ -257,11 +235,6 @@ export interface EventRangeView {
 
 const HH_MM: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", timeZone: TIMEZONE_MSK };
 
-/**
- * Fetch and render calendar events for an arbitrary [from, from + days) range as a
- * ready-to-send message. Single-day ranges render a flat list; multi-day ranges group
- * by day. Shared by the text and voice calendar handlers.
- */
 export async function formatEventRange(
   userId: string,
   from: Date,
@@ -328,10 +301,6 @@ export async function cancelRecurringEvent(
   log.info(`All recurring instances deleted: recurringId=${recurringEventId}, by user ${userId}`);
 }
 
-/**
- * Search and cancel events by query text.
- * Returns cancel result with found events info.
- */
 export async function searchAndCancelEvent(
   userId: string,
   telegramId: number,

@@ -1,8 +1,3 @@
-/**
- * CRUD repository for Wishlist mode: wishlists, items, files.
- * All queries are tribe-scoped.
- */
-
 import { and, asc, count, countDistinct, desc, eq, getTableColumns, gt, inArray, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
@@ -298,7 +293,6 @@ export async function getLatestItemByOwner(userId: number): Promise<WishlistItem
   return mapItem(row);
 }
 
-/** Get tribe members with their wishlist counts (for "family wishlists" view). */
 export async function getTribeMembersWithWishlists(tribeId: number): Promise<Array<{
   userId: number;
   firstName: string;
@@ -332,7 +326,6 @@ export async function getTribeMembersWithWishlists(tribeId: number): Promise<Arr
 
 // ─── Admin functions ────────────────────────────────────────────────────
 
-/** Admin: get all wishlists paginated (all users, with user info and item counts). */
 export async function getAllWishlistsPaginated(
   limit: number,
   offset: number
@@ -353,13 +346,11 @@ export async function getAllWishlistsPaginated(
   }));
 }
 
-/** Admin: count all wishlists. */
 export async function countAllWishlists(): Promise<number> {
   const [row] = await db.select({ value: count() }).from(wishlists);
   return row.value;
 }
 
-/** Admin: bulk delete wishlists by IDs. */
 export async function bulkDeleteWishlists(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db
@@ -369,7 +360,6 @@ export async function bulkDeleteWishlists(ids: number[]): Promise<number> {
   return rows.length;
 }
 
-/** Admin: delete ALL wishlists. */
 export async function deleteAllWishlists(): Promise<number> {
   const rows = await db.delete(wishlists).returning({ id: wishlists.id });
   return rows.length;

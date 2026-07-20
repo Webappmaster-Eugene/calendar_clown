@@ -1,11 +1,4 @@
-/**
- * NL router for `/do`. Two-stage, JSON-in-prompt (openRouterClient has no native
- * tool-calling), mirroring the existing extract*Intent pattern:
- *   A) pick an action from the accessible catalog;
- *   B) fill its arguments against the action's JSON Schema, validated by the
- *      same Zod schema (single source of truth) with one self-repair retry.
- * The LLM call is injectable so the routing logic is unit-testable without network.
- */
+// JSON-in-prompt (two-stage) because openRouterClient has no native tool-calling.
 import type { Action } from "./types.js";
 import type { UserMenuContext } from "../shared/auth.js";
 import { getActions, getAction } from "./registry.js";
@@ -14,7 +7,6 @@ import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { DEEPSEEK_MODEL } from "../constants.js";
 
-/** Injectable LLM completion: (systemPrompt, userText) → raw model text. */
 export type LlmComplete = (system: string, user: string) => Promise<string | null>;
 
 const DO_ROUTER_MODEL = process.env.DO_ROUTER_MODEL || DEEPSEEK_MODEL;
@@ -34,7 +26,6 @@ export type RouteOutcome =
   | { kind: "no_action"; reason: string }
   | { kind: "invalid_args"; action: Action; reason: string };
 
-/** Short MSK date context so the model can resolve relative deadlines/times. */
 function dateContext(now: Date): string {
   const msk = new Date(now.getTime() + 3 * 3600_000);
   const today = msk.toISOString().slice(0, 10);
@@ -42,7 +33,6 @@ function dateContext(now: Date): string {
   return `Сегодня ${today}, таймзона Europe/Moscow (UTC+3). Завтра ${tomorrow}. Даты/времена — со смещением +03:00.`;
 }
 
-/** Stage A: choose an accessible action name for the user's text. */
 export async function selectAction(
   text: string,
   menu: UserMenuContext,
@@ -61,12 +51,10 @@ export async function selectAction(
   const name = parsed?.action;
   if (typeof name !== "string") return null;
   const action = getAction(name);
-  // Must be a real, accessible action.
   if (!action || !accessible.some((a) => a.name === action.name)) return null;
   return action;
 }
 
-/** Stage B: fill + validate arguments for the chosen action (one self-repair). */
 export async function fillArgs(
   text: string,
   action: Action,
@@ -99,7 +87,6 @@ export async function fillArgs(
   return { ok: false, error: second.issues ?? "не удалось разобрать аргументы" };
 }
 
-/** Full NL route: text → chosen action + validated args (or a reason it failed). */
 export async function routeDo(
   text: string,
   menu: UserMenuContext,

@@ -1,7 +1,3 @@
-/**
- * Digest business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   getRubricsByUser,
   getRubricByIdAndUser,
@@ -132,10 +128,6 @@ export async function removeRubric(telegramId: number, rubricId: number): Promis
   return deleteRubric(rubricId, dbUser.id);
 }
 
-/**
- * Toggle rubric active/inactive (inverts current state).
- * Returns updated rubric DTO or null if not found.
- */
 export async function toggleRubricActive(
   telegramId: number,
   rubricId: number

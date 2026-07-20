@@ -13,10 +13,7 @@ const log = createLogger("expense-recent");
 
 const RECENT_PAGE_SIZE = 10;
 
-/**
- * Build the recent expenses message text + inline keyboard for a given page.
- * Returns null if user not found / no tribe.
- */
+/** Returns null if user not found / no tribe. */
 async function buildRecentMessage(telegramId: number, page: number = 1): Promise<{
   text: string;
   keyboard: ReturnType<typeof Markup.inlineKeyboard>;
@@ -58,8 +55,7 @@ async function buildRecentMessage(telegramId: number, page: number = 1): Promise
 
   const text = `🕐 *Последние записи* (${page}/${totalPages}, всего: ${total})\n\n${lines.join("\n\n")}`;
 
-  // Action rows — only for expenses owned by current user. Each owned record gets
-  // its own row with a "move to another category" and a delete button.
+  // Action buttons only for expenses owned by the current user
   const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = expenses
     .map((e, idx) => ({ e, num: startIdx + idx + 1 }))
     .filter(({ e }) => e.isOwn)
@@ -81,11 +77,6 @@ async function buildRecentMessage(telegramId: number, page: number = 1): Promise
   return { text, keyboard: Markup.inlineKeyboard(rows) };
 }
 
-/**
- * Build the category-picker inline keyboard shown after tapping "🔀 move" on a
- * recent expense. Each category becomes a button that moves the expense; the last
- * row cancels back to the recent list at the same page.
- */
 async function buildMovePickerKeyboard(
   expenseId: number,
   page: number
@@ -104,9 +95,6 @@ async function buildMovePickerKeyboard(
   return Markup.inlineKeyboard(rows);
 }
 
-/**
- * Handle "🕐 Последние" keyboard button — show recent expenses (page 1).
- */
 export async function handleRecentButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;

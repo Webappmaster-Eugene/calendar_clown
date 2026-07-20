@@ -1,15 +1,9 @@
-/**
- * Throttled progress reporter that updates a Telegram status message in real-time.
- * Prefixes each step with elapsed time [M:SS] and throttles edits to max 1/sec.
- */
-
 import type { Telegraf } from "telegraf";
 import type { OnProgressCallback } from "./types.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("progress-reporter");
 
-/** Minimum interval between Telegram message edits (ms). */
 const THROTTLE_INTERVAL_MS = 1_000;
 
 export interface ProgressReporter {
@@ -17,7 +11,6 @@ export interface ProgressReporter {
   flush: () => Promise<void>;
 }
 
-/** Format elapsed milliseconds as [M:SS]. */
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const min = Math.floor(totalSec / 60);
@@ -25,11 +18,6 @@ function formatElapsed(ms: number): string {
   return `[${min}:${sec.toString().padStart(2, "0")}]`;
 }
 
-/**
- * Create a progress reporter bound to a Telegram status message.
- * Each call to `onProgress` queues a message edit with elapsed time prefix.
- * At most one `editMessageText` fires per second — only the latest step matters.
- */
 export function createProgressReporter(
   bot: Telegraf,
   chatId: number,

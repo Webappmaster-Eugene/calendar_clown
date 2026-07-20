@@ -73,7 +73,6 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // report:<year>:<month> — detailed monthly report (every operation visible).
   const reportMatch = data.match(/^report:(\d+):(\d+)$/);
   if (reportMatch) {
     const year = parseInt(reportMatch[1], 10);
@@ -89,7 +88,6 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     const grandTotal = totals.reduce((s, t) => s + t.total, 0);
     const limit = await getEffectiveMonthLimit(dbUser.tribeId!, year, month, getMonthLimit());
 
-    // Group operations by category for the formatter (one ordered list per category).
     const expensesByCategory = new Map<number, DetailedReportCategory["expenses"]>();
     for (const e of allExpenses) {
       const list = expensesByCategory.get(e.categoryId);
@@ -118,7 +116,6 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
       tribeName
     );
 
-    // Navigation buttons (period nav + Excel + comparison) attach only to the last segment.
     const prevMonth = month === 1 ? 12 : month - 1;
     const prevYear = month === 1 ? year - 1 : year;
     const nextMonth = month === 12 ? 1 : month + 1;
@@ -135,9 +132,7 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
       ],
     ]);
 
-    // First segment replaces the originating menu message; further segments are
-    // sent as new replies. Buttons live on the LAST segment so they remain
-    // visible after Telegram scrolls past intermediate messages.
+    // Buttons live on the LAST segment so they stay visible after Telegram scrolls past intermediate messages.
     for (let i = 0; i < segments.length; i++) {
       const isFirst = i === 0;
       const isLast = i === segments.length - 1;
@@ -155,7 +150,6 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // report_year:<year>
   const yearMatch = data.match(/^report_year:(\d+)$/);
   if (yearMatch) {
     const year = parseInt(yearMatch[1], 10);
@@ -183,7 +177,6 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // compare:<year>:<month> — current month vs previous
   const compareMatch = data.match(/^compare:(\d+):(\d+)$/);
   if (compareMatch) {
     const year2 = parseInt(compareMatch[1], 10);
@@ -208,7 +201,6 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // stats:<year>:<month>
   const statsMatch = data.match(/^stats:(\d+):(\d+)$/);
   if (statsMatch) {
     const year = parseInt(statsMatch[1], 10);
@@ -232,7 +224,6 @@ export async function handleReportCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // noop
   if (data === "noop") {
     await ctx.answerCbQuery();
     return;

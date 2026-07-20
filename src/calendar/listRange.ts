@@ -1,10 +1,5 @@
-/**
- * Normalize an LLM-produced "list events" range into a concrete {from, days, label}.
- *
- * The model is trusted to resolve natural language ("завтра", "на 2 дня", "это
- * воскресенье") into a first day + day count, but its output is untyped JSON — this
- * clamps and back-fills it so the handlers always get a sane, bounded range.
- */
+// The model's natural-language range comes back as untyped JSON — clamp and
+// back-fill it so handlers always get a sane, bounded range.
 
 const MAX_RANGE_DAYS = 31;
 const MAX_LABEL_LEN = 40;

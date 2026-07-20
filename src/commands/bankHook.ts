@@ -1,9 +1,3 @@
-/**
- * /bankhook — show the user's personal bank push-notification webhook URL and the
- * phone-side setup instructions, with a button to regenerate (revoke) the secret.
- *
- * See the Mini App BankHook page for the same information with a QR code.
- */
 import { Markup, type Context } from "telegraf";
 import { isDatabaseAvailable } from "../db/connection.js";
 import {
@@ -15,7 +9,6 @@ import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("bankhook");
 
-/** Build the public webhook URL for a secret from the configured origin. */
 export function buildWebhookUrl(secret: string): string {
   const redirect = process.env.OAUTH_REDIRECT_URI?.trim();
   const origin = redirect ? new URL(redirect).origin : "";
@@ -75,7 +68,6 @@ export async function handleBankHookCommand(ctx: Context): Promise<void> {
   }
 }
 
-/** Callback "bhregen" — rotate the secret and refresh the message. */
 export async function handleBankHookRegenerate(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) {

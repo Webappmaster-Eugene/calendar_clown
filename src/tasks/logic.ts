@@ -1,19 +1,10 @@
-/**
- * Pure business logic for Task Tracker: reminder calculation, formatting.
- * No DB access — only pure functions.
- */
-
 import { TIMEZONE_MSK } from "../shared/constants.js";
 
 export type TaskReminderType = "day_before" | "4h_before" | "1h_before";
 
 /**
- * Calculate reminder times for a given task deadline.
  * Skips reminders whose remind_at is already in the past.
- *
- * - day_before: deadline date minus 1 day, at 09:00 MSK
- * - 4h_before: deadline minus 4 hours
- * - 1h_before: deadline minus 1 hour
+ * day_before: deadline date minus 1 day, at 09:00 MSK; 4h_before / 1h_before: deadline minus 4h / 1h.
  */
 export function calculateTaskReminders(
   deadline: Date,
@@ -41,12 +32,10 @@ export function calculateTaskReminders(
 }
 
 /**
- * Get a Date representing 09:00 MSK on (deadline_date - 1 day).
- * Uses Intl.DateTimeFormat to determine the correct MSK date
- * regardless of server timezone.
+ * 09:00 MSK on (deadline_date - 1 day). Uses Intl.DateTimeFormat so the MSK
+ * date is correct regardless of server timezone.
  */
 function getDayBeforeAt0900Msk(deadline: Date): Date {
-  // Format deadline in MSK to get the date components
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: TIMEZONE_MSK,
     year: "numeric",
@@ -58,13 +47,11 @@ function getDayBeforeAt0900Msk(deadline: Date): Date {
   const month = parseInt(parts.find((p) => p.type === "month")!.value, 10);
   const day = parseInt(parts.find((p) => p.type === "day")!.value, 10);
 
-  // Create a date for the previous day at 09:00 MSK
   // MSK = UTC+3, so 09:00 MSK = 06:00 UTC
   const utcDate = new Date(Date.UTC(year, month - 1, day - 1, 6, 0, 0, 0));
   return utcDate;
 }
 
-/** Format a deadline including weekday for more verbose display. */
 export function formatTaskDeadlineFull(deadline: Date): string {
   const fmt = new Intl.DateTimeFormat("ru-RU", {
     timeZone: TIMEZONE_MSK,
@@ -77,7 +64,6 @@ export function formatTaskDeadlineFull(deadline: Date): string {
   return fmt.format(deadline);
 }
 
-/** Format reminder type to Russian text. */
 export function formatReminderType(type: TaskReminderType): string {
   switch (type) {
     case "day_before": return "за 1 день";
@@ -86,7 +72,6 @@ export function formatReminderType(type: TaskReminderType): string {
   }
 }
 
-/** Check if a deadline is overdue relative to now. */
 export function isOverdue(deadline: Date, now: Date = new Date()): boolean {
   return deadline.getTime() < now.getTime();
 }

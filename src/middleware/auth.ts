@@ -6,22 +6,17 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/drizzle.js";
 import { tribes } from "../db/schema.js";
 
-// Import from shared for internal use + re-export for backward compatibility.
 import type { UserMenuContext } from "../shared/auth.js";
 export { canAccessMode } from "../shared/auth.js";
 export type { UserMenuContext } from "../shared/auth.js";
 
-/**
- * Check if a telegram user is the bootstrap admin (from env).
- * This is the ONLY env-based check — used to seed the first admin.
- */
+// The ONLY env-based admin check — used to seed the first admin.
 export function isBootstrapAdmin(telegramId: number): boolean {
   const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
   if (!adminId) return false;
   return parseInt(adminId, 10) === telegramId;
 }
 
-/** Get bootstrap admin's Telegram ID. */
 export function getAdminTelegramId(): number | null {
   const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
   if (!adminId) return null;
@@ -56,12 +51,6 @@ const ONBOARD_WELCOME = `👋 *Добро пожаловать в Sovetnik Bot!*
 
 Для получения доступа подайте заявку администратору.`;
 
-/**
- * Middleware: restrict bot access to users registered in the DB.
- * The bootstrap admin (ADMIN_TELEGRAM_ID env) is always allowed and auto-registered.
- * New users see an onboarding flow with an application button.
- * Pending users can only use /start and /help.
- */
 export function accessControlMiddleware(): MiddlewareFn<Context> {
   return async (ctx, next) => {
     const telegramId = ctx.from?.id;
@@ -69,10 +58,10 @@ export function accessControlMiddleware(): MiddlewareFn<Context> {
 
     if (isBootstrapAdmin(telegramId)) return next();
 
-    // If DB is unavailable, allow all users (calendar is protected by OAuth tokens)
+    // DB down: allow all — calendar is still protected by per-user OAuth tokens.
     if (!isDatabaseAvailable()) return next();
 
-    // Allow onboard_request callback through for users not yet in DB
+    // Let the onboard_request callback through for users not yet in DB.
     if (ctx.callbackQuery && "data" in ctx.callbackQuery && ctx.callbackQuery.data === "onboard_request") {
       return next();
     }
@@ -93,7 +82,6 @@ export function accessControlMiddleware(): MiddlewareFn<Context> {
 
     const status = await getUserStatus(telegramId);
     if (status === "pending") {
-      // Allow /start and /help for pending users
       const isCommand = ctx.message && "text" in ctx.message && typeof ctx.message.text === "string";
       if (isCommand) {
         const text = (ctx.message as { text: string }).text;
@@ -105,12 +93,10 @@ export function accessControlMiddleware(): MiddlewareFn<Context> {
       return;
     }
 
-    // status === 'approved' or legacy null
     return next();
   };
 }
 
-/** Get user menu context for role-based UI. Returns null if user not found. */
 export async function getUserMenuContext(telegramId: number): Promise<UserMenuContext | null> {
   if (!isDatabaseAvailable()) return null;
 

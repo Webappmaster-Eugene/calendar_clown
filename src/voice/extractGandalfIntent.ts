@@ -1,8 +1,3 @@
-/**
- * Extract gandalf entry data from voice transcript using OpenRouter (DeepSeek).
- * Used when bot is in gandalf mode.
- */
-
 import { DEEPSEEK_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";

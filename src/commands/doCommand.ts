@@ -1,8 +1,3 @@
-/**
- * `/do <natural language>` — unified NL entry point. Routes free text to a
- * registry action (any mode, no inline buttons), confirms writes, executes via
- * the shared guard, and renders the result (human Markdown or `--json`).
- */
 import type { Context } from "telegraf";
 import { getUserMenuContext } from "../middleware/auth.js";
 import { routeDo } from "../actions/router.js";
@@ -31,7 +26,6 @@ const UI_HINTS: Record<string, string> = {
   stream: "Ответ приходит потоково — используйте режим чата в боте или Mini App.",
 };
 
-/** Send text in Telegram-sized chunks; try Markdown, fall back to plain on entity errors. */
 async function safeReply(ctx: Context, text: string): Promise<void> {
   for (const chunk of splitMessage(text)) {
     try {
@@ -72,7 +66,6 @@ export async function handleDo(ctx: Context): Promise<void> {
   }
   const actx: ActionCtx = { telegramId, menu };
 
-  // Confirmation of a pending write.
   if (/^(yes|да|ок|ок\.|подтверждаю)$/i.test(text)) {
     const p = pending.get(telegramId);
     if (!p || Date.now() - p.at > PENDING_TTL_MS) {

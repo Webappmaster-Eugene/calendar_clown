@@ -1,9 +1,3 @@
-/**
- * Voice message handler for the transcribe mode.
- * Downloads the OGG file, saves metadata to DB, and enqueues a BullMQ job
- * for high-quality transcription.
- */
-
 import type { Context } from "telegraf";
 import type { Voice } from "telegraf/types";
 import { mkdir, writeFile, unlink } from "fs/promises";
@@ -19,14 +13,12 @@ import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("transcribe");
 
-/** Format duration in seconds to "M:SS" string. */
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-/** Extract forwarded-from name from message context (if forwarded). */
 function getForwardedFromName(ctx: Context): string | null {
   if (!ctx.message) return null;
   const msg = ctx.message as unknown as Record<string, unknown>;
@@ -58,7 +50,6 @@ function getForwardedFromName(ctx: Context): string | null {
   return null;
 }
 
-/** Extract forwarded date from message context (if forwarded). */
 function getForwardedDate(ctx: Context): Date | null {
   if (!ctx.message) return null;
   const msg = ctx.message as unknown as Record<string, unknown>;
@@ -77,10 +68,6 @@ function getForwardedDate(ctx: Context): Date | null {
   return null;
 }
 
-/**
- * Handle a voice message in transcribe mode.
- * Downloads the file, creates a DB record, and enqueues the transcription job.
- */
 export async function handleVoiceInTranscribeMode(
   ctx: Context,
   voice: Voice,
@@ -112,7 +99,6 @@ export async function handleVoiceInTranscribeMode(
     return;
   }
 
-  // Deduplication check — show existing transcript or allow re-queue for failed/stuck
   const existing = await getTranscriptionByFileUniqueId(voice.file_unique_id);
   if (existing) {
     if (existing.status === "completed" && existing.transcript) {
@@ -134,7 +120,7 @@ export async function handleVoiceInTranscribeMode(
       );
       return;
     }
-    // Failed or completed without transcript — delete old record and re-queue
+    // Failed / transcript-less record: drop it so the re-queue below can recreate it
     await deleteTranscription(existing.id);
   }
 
@@ -167,7 +153,7 @@ export async function handleVoiceInTranscribeMode(
   const forwardedFromName = getForwardedFromName(ctx);
   const forwardedDate = getForwardedDate(ctx);
 
-  // Get next sequence number for ordered delivery
+  // message_id as sequence number for ordered delivery
   const sequenceNumber = ctx.message!.message_id;
 
   log.info(`Transcribe: saving to DB for file ${voice.file_unique_id}`);

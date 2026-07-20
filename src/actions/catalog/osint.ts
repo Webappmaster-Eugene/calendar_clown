@@ -1,7 +1,3 @@
-/**
- * OSINT actions — wrappers over osintService (mirrors src/api/routes/osint.ts).
- * Tribe mode. Search is LLM/web-heavy and runs a background pipeline.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

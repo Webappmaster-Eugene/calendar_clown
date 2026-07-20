@@ -1,8 +1,4 @@
-/**
- * Broadcast actions — wrapper over broadcastService (mirrors src/api/routes/broadcast.ts).
- * ADMIN mode: guard restricts to role admin; the service additionally enforces
- * isBootstrapAdmin. Sending fans out to the whole tribe → heavy.
- */
+// Beyond the admin-role guard, the service additionally enforces isBootstrapAdmin.
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import { sendBroadcast } from "../../services/broadcastService.js";

@@ -38,12 +38,6 @@ function formatMskDateTime(date: Date): string {
   });
 }
 
-/**
- * Build the hierarchical "Детализация" sheet: each category is a header row
- * with its subtotal, followed by the individual line items, then a separator.
- * Categories with no rows in `detailedRows` are skipped.
- * Used for both monthly and yearly Excel.
- */
 function addDetailedBreakdownSheet(
   workbook: ExcelJS.Workbook,
   sheetName: string,
@@ -67,7 +61,6 @@ function addDetailedBreakdownSheet(
     cell.border = { bottom: { style: "thin" } };
   });
 
-  // Group operations by category for fast lookup.
   const byCategory = new Map<number, ExcelExpenseRow[]>();
   for (const row of detailedRows) {
     const list = byCategory.get(row.categoryId);
@@ -80,7 +73,6 @@ function addDetailedBreakdownSheet(
     const ops = byCategory.get(ct.categoryId);
     if (!ops || ops.length === 0) continue;
 
-    // Category header row: emoji+name merged across A:B, subtotal in C.
     sheet.mergeCells(`A${rowIdx}:B${rowIdx}`);
     const titleCell = sheet.getCell(`A${rowIdx}`);
     titleCell.value = `${ct.categoryEmoji} ${ct.categoryName}`;
@@ -108,7 +100,7 @@ function addDetailedBreakdownSheet(
       rowIdx++;
     }
 
-    rowIdx++; // blank separator
+    rowIdx++;
   }
 
   const totalRow = sheet.getRow(rowIdx);
@@ -207,7 +199,6 @@ export async function generateMonthlyExcel(
       excelRow.getCell(4).numFmt = MONEY_FMT;
     }
 
-    // Detail total
     const detailTotalRow = detailSheet.addRow(["", "", "ИТОГО", grandTotal, ""]);
     detailTotalRow.font = { bold: true };
     detailTotalRow.getCell(4).numFmt = MONEY_FMT;
@@ -232,13 +223,6 @@ export interface YearlyPivotCell {
   total: number;
 }
 
-/**
- * Build the yearly Excel report:
- *   • Sheet «Сводка года» — pivot months × categories with row/column totals
- *     + ИТОГО row, plus year limit and remainder below.
- *   • Sheet «Детализация года» — same hierarchical view as monthly «Детализация»,
- *     spanning the full year (dates include day+month so the user can locate ops).
- */
 export async function generateYearlyExcel(
   categoryTotals: CategoryTotal[],
   pivotCells: YearlyPivotCell[],
@@ -252,7 +236,6 @@ export async function generateYearlyExcel(
   // ─── Sheet 1: Yearly pivot ───
   const pivot = workbook.addWorksheet("Сводка года");
 
-  // Columns: A = "" (emoji slot), B = category name, C..N = months, O = total
   const totalCols = 1 + 1 + 12 + 1;
   pivot.getColumn(1).width = 5;
   pivot.getColumn(2).width = 35;
@@ -277,14 +260,13 @@ export async function generateYearlyExcel(
     cell.alignment = { horizontal: "center" };
   });
 
-  // Lookup: (categoryId, month) → total
   const lookup = new Map<string, number>();
   for (const cell of pivotCells) {
     lookup.set(`${cell.categoryId}:${cell.month}`, cell.total);
   }
 
   let rowIdx = 4;
-  const monthTotals = new Array(13).fill(0); // index 1..12
+  const monthTotals = new Array(13).fill(0);
   let grandTotal = 0;
 
   for (const ct of categoryTotals) {
@@ -300,7 +282,6 @@ export async function generateYearlyExcel(
     values.push(rowTotal);
     row.values = values;
 
-    // Money formatting for month columns and total column
     for (let c = 3; c <= totalCols; c++) row.getCell(c).numFmt = MONEY_FMT;
     row.getCell(totalCols).font = { bold: true };
 
@@ -308,7 +289,6 @@ export async function generateYearlyExcel(
     rowIdx++;
   }
 
-  // ИТОГО row
   const totalRow = pivot.getRow(rowIdx);
   const totalValues: (string | number)[] = ["", "ИТОГО"];
   for (let m = 1; m <= 12; m++) totalValues.push(monthTotals[m]);
@@ -321,7 +301,6 @@ export async function generateYearlyExcel(
   });
   rowIdx++;
 
-  // Limit + remainder
   if (yearLimit > 0) {
     rowIdx++;
     const limitRow = pivot.getRow(rowIdx);

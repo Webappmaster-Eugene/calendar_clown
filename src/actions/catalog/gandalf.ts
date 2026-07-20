@@ -1,7 +1,3 @@
-/**
- * Gandalf (knowledge base) actions — wrappers over gandalfService
- * (mirrors src/api/routes/gandalf.ts). Individual mode.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

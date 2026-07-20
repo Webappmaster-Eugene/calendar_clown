@@ -1,7 +1,3 @@
-/**
- * AI-powered post summarization using DeepSeek via OpenRouter.
- */
-
 import { OPENROUTER_URL, OPENROUTER_REFERER, DEEPSEEK_MODEL } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
 import { openRouterRequest } from "../utils/proxyAgent.js";
@@ -25,10 +21,6 @@ const SUMMARIZE_PROMPT = `Ты — помощник для создания да
 - Если текст слишком короткий или бессмысленный — верни пустую строку
 - Выводи ТОЛЬКО текст summary, без кавычек и пояснений`;
 
-/**
- * Summarize a single post text using DeepSeek.
- * Returns the summary string, or null on failure.
- */
 export async function summarizePost(text: string): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -36,7 +28,6 @@ export async function summarizePost(text: string): Promise<string | null> {
     return null;
   }
 
-  // Truncate very long posts for the AI
   const truncated = text.length > 2000 ? text.slice(0, 2000) + "..." : text;
 
   try {
@@ -75,16 +66,11 @@ export async function summarizePost(text: string): Promise<string | null> {
   }
 }
 
-/**
- * Summarize multiple posts with rate limiting.
- * Returns an array of summaries in the same order as input texts.
- */
 export async function summarizePosts(texts: string[]): Promise<Array<string | null>> {
   const results: Array<string | null> = [];
   for (let i = 0; i < texts.length; i++) {
     const summary = await summarizePost(texts[i]);
     results.push(summary);
-    // Small delay between API calls
     if (i < texts.length - 1) {
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -92,10 +78,6 @@ export async function summarizePosts(texts: string[]): Promise<Array<string | nu
   return results;
 }
 
-/**
- * Use AI to generate an emoji and keywords for a rubric based on its name and description.
- * Returns { emoji, keywords }.
- */
 export async function generateRubricMeta(
   name: string,
   description: string

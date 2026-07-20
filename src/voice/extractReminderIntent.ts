@@ -1,8 +1,3 @@
-/**
- * DeepSeek extraction for reminder intents from voice transcripts.
- * Returns structured JSON: create_reminder, delete_reminder, list_reminders, or unknown.
- */
-
 import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";

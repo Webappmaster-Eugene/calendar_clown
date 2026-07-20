@@ -49,7 +49,6 @@ export async function handleTranscribeCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  // Ensure user exists in DB before switching mode
   await ensureUser(
     telegramId,
     ctx.from?.username ?? null,
@@ -75,14 +74,12 @@ export async function handleTranscribeCommand(ctx: Context): Promise<void> {
 
 const log = createLogger("transcribe-mode");
 
-/** Format duration in seconds to "M:SS" string. */
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-/** Handle "🗑 Очистить очередь" keyboard button. */
 export async function handleClearQueueButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -114,11 +111,10 @@ export async function handleClearQueueButton(ctx: Context): Promise<void> {
         `Удалено из очереди: ${queueCleared}\n` +
         `Отменено в БД: ${dbCleared}`
       );
-      // Trigger ordered delivery for any remaining completed results
       try {
         deliverCompletedInOrder(getDeliveryBot(), dbUser.id);
       } catch {
-        // Bot ref not set — ignore
+        /* bot ref not set */
       }
     }
   } catch (err) {
@@ -127,7 +123,6 @@ export async function handleClearQueueButton(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle "📋 История" keyboard button — show paginated transcription history. */
 export async function handleTranscribeHistoryButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -147,7 +142,6 @@ export async function handleTranscribeHistoryButton(ctx: Context): Promise<void>
   await sendHistoryPage(ctx, dbUser.id, 0);
 }
 
-/** Handle pagination callback for transcription history. */
 export async function handleTranscribeHistoryCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -180,7 +174,6 @@ export async function handleTranscribeHistoryCallback(ctx: Context): Promise<voi
   }
 }
 
-/** Send a page of transcription history. */
 async function sendHistoryPage(
   ctx: Context,
   userId: number,
@@ -265,7 +258,6 @@ async function sendHistoryPage(
   }
 }
 
-/** Handle "📖 Полностью" callback — show full transcription text. */
 export async function handleTranscribeFullCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -308,7 +300,6 @@ export async function handleTranscribeFullCallback(ctx: Context): Promise<void> 
   }
 }
 
-/** Handle "📊 Очередь" keyboard button — show current queue status. */
 export async function handleQueueStatusButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -384,7 +375,6 @@ export async function handleQueueStatusButton(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle "🗑" delete callbacks for transcription history items. */
 export async function handleTranscribeDeleteCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -400,7 +390,6 @@ export async function handleTranscribeDeleteCallback(ctx: Context): Promise<void
     return;
   }
 
-  // tr_del:<id> — show confirmation
   const delMatch = data.match(/^tr_del:(\d+)$/);
   if (delMatch) {
     const id = parseInt(delMatch[1], 10);
@@ -417,7 +406,6 @@ export async function handleTranscribeDeleteCallback(ctx: Context): Promise<void
     return;
   }
 
-  // tr_del_yes:<id> — confirm delete
   const delYesMatch = data.match(/^tr_del_yes:(\d+)$/);
   if (delYesMatch) {
     const id = parseInt(delYesMatch[1], 10);

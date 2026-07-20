@@ -1,8 +1,3 @@
-/**
- * CRUD repository for Blogger mode: channels, posts, sources.
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
-
 import { and, count, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
@@ -355,7 +350,6 @@ export async function countSourcesByPost(postId: number): Promise<number> {
 
 // ─── Admin functions ────────────────────────────────────────────────────
 
-/** Admin: get all channels paginated (all users, with user info and post counts). */
 export async function getAllChannelsPaginated(
   limit: number,
   offset: number
@@ -380,13 +374,11 @@ export async function getAllChannelsPaginated(
   }));
 }
 
-/** Admin: count all channels. */
 export async function countAllChannels(): Promise<number> {
   const [row] = await db.select({ value: count() }).from(bloggerChannels);
   return row.value;
 }
 
-/** Admin: bulk delete channels by IDs. */
 export async function bulkDeleteChannels(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db
@@ -396,7 +388,6 @@ export async function bulkDeleteChannels(ids: number[]): Promise<number> {
   return rows.length;
 }
 
-/** Admin: delete ALL channels. */
 export async function deleteAllChannels(): Promise<number> {
   const rows = await db.delete(bloggerChannels).returning({ id: bloggerChannels.id });
   return rows.length;

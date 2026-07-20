@@ -1,8 +1,3 @@
-/**
- * Per-user MTProto session manager.
- * Manages multiple GramJS clients for different users.
- */
-
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { and, eq, sql } from "drizzle-orm";
@@ -89,10 +84,6 @@ function resetIdleTimer(userId: number): void {
   }, IDLE_TIMEOUT_MS);
 }
 
-/**
- * Get a GramJS client for a specific user. Connects lazily.
- * Throws if no active session found or credentials missing.
- */
 export async function getClientForUser(userId: number): Promise<TelegramClient> {
   const existing = userClients.get(userId);
   if (existing?.client.connected) {
@@ -122,7 +113,7 @@ export async function getClientForUser(userId: number): Promise<TelegramClient> 
 
   userClients.set(userId, { client, idleTimer });
 
-  // Update session if keys rotated
+  // Telegram may rotate keys on connect; persist the refreshed session.
   const newSessionStr = client.session.save() as unknown as string;
   if (newSessionStr && newSessionStr !== session.sessionString) {
     await saveUserSession(userId, newSessionStr, session.phoneHint);
@@ -132,7 +123,7 @@ export async function getClientForUser(userId: number): Promise<TelegramClient> 
   return client;
 }
 
-/** Disconnect a specific user's client. Uses destroy() to stop the internal update loop. */
+/** Uses destroy() rather than disconnect() to stop GramJS's internal update loop. */
 export function disconnectUser(userId: number): void {
   const entry = userClients.get(userId);
   if (entry) {
@@ -145,7 +136,7 @@ export function disconnectUser(userId: number): void {
   }
 }
 
-/** Disconnect all user clients. Called on graceful shutdown. Uses destroy() to stop update loops. */
+/** Uses destroy() rather than disconnect() to stop GramJS's internal update loops. */
 export function disconnectAll(): void {
   for (const [userId, entry] of userClients) {
     clearTimeout(entry.idleTimer);

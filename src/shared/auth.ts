@@ -1,7 +1,3 @@
-/**
- * Shared auth utilities used by both bot middleware and API middleware.
- * This is the single source of truth for mode access control.
- */
 import {
   TRIBE_MODES as TRIBE_MODES_ARR,
   ADMIN_MODES as ADMIN_MODES_ARR,
@@ -15,11 +11,9 @@ export interface UserMenuContext {
   tribeName: string | null;
 }
 
-/** Set-versions of mode arrays for O(1) lookups in canAccessMode. */
 const TRIBE_MODES = new Set<string>(TRIBE_MODES_ARR);
 const ADMIN_MODES = new Set<string>(ADMIN_MODES_ARR);
 
-/** Check if a user can access a given mode based on their context. */
 export function canAccessMode(mode: string, context: UserMenuContext): boolean {
   if (ADMIN_MODES.has(mode)) return context.role === "admin";
   if (TRIBE_MODES.has(mode)) return context.hasTribe;

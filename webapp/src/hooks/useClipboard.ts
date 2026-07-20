@@ -1,11 +1,5 @@
-/**
- * Copy-to-clipboard hook with SDK-aware fallback chain and haptic feedback.
- *
- * Order of attempts (first to succeed wins):
- *   1. navigator.clipboard.writeText — standard web API, supported by
- *      Telegram WebViews on iOS ≥ 13.1 and recent Android builds.
- *   2. Legacy hidden-textarea + document.execCommand("copy") — old WebViews.
- */
+// Falls back to a hidden-textarea + document.execCommand("copy") when
+// navigator.clipboard is unavailable (old Telegram WebViews below iOS 13.1).
 import { useCallback, useRef, useState } from "react";
 import { useHaptic } from "./useHaptic";
 import { useToast } from "../components/ui/ToastProvider";

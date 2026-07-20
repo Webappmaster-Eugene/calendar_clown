@@ -52,7 +52,6 @@ async function main(): Promise<void> {
 
       const [subject, startDate, , , , description] = parts;
 
-      // Extract name from "🎂 День рождения: Name" or anniversary/other events
       const birthdayMatch = subject.match(/День рождения:\s*(.+)/);
       const anniversaryMatch = !birthdayMatch ? subject.match(/Годовщина\s+(.+)/i) : null;
 
@@ -65,11 +64,10 @@ async function main(): Promise<void> {
         eventType = "birthday";
         emoji = "🎂";
       } else if (anniversaryMatch) {
-        name = subject.replace(/^[^\p{L}]*/u, "").trim(); // Remove leading emoji
+        name = subject.replace(/^[^\p{L}]*/u, "").trim();
         eventType = "anniversary";
         emoji = "💍";
       } else {
-        // Import any other event as-is
         name = subject.replace(/^[^\p{L}]*/u, "").trim();
         if (!name) {
           log.info(`Skipping empty subject: ${subject}`);
@@ -80,7 +78,6 @@ async function main(): Promise<void> {
         emoji = "📌";
       }
 
-      // Parse date MM/DD/YYYY
       const dateMatch = startDate.match(/^(\d{1,2})\/(\d{1,2})\/\d{4}$/);
       if (!dateMatch) {
         log.info(`Skipping invalid date: ${startDate}`);
@@ -113,7 +110,6 @@ async function main(): Promise<void> {
   await closePool();
 }
 
-/** Simple CSV line parser that handles quoted fields. */
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = "";

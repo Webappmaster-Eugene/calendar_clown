@@ -17,8 +17,6 @@ import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schemas (json bodies + :id params). Schemas mirror what handlers
-//    accept; cross-field "at least one" checks stay in the handlers.
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const createWorkplaceBody = z.object({
   title: z.string().min(1),
@@ -36,7 +34,6 @@ const updateAchievementBody = z.object({
   text: z.string().min(1),
 });
 
-/** GET /api/summarizer/workplaces — list workplaces */
 app.get("/workplaces", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -50,7 +47,6 @@ app.get("/workplaces", async (c) => {
   }
 });
 
-/** POST /api/summarizer/workplaces — create workplace */
 app.post("/workplaces", zValidator("json", createWorkplaceBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -69,7 +65,6 @@ app.post("/workplaces", zValidator("json", createWorkplaceBody), async (c) => {
   }
 });
 
-/** PUT /api/summarizer/workplaces/:id — update workplace */
 app.put("/workplaces/:id", zValidator("param", idParam), zValidator("json", updateWorkplaceBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -101,7 +96,6 @@ app.put("/workplaces/:id", zValidator("param", idParam), zValidator("json", upda
   }
 });
 
-/** GET /api/summarizer/workplaces/:id/achievements — list achievements */
 app.get("/workplaces/:id/achievements", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -120,7 +114,6 @@ app.get("/workplaces/:id/achievements", zValidator("param", idParam), async (c) 
   }
 });
 
-/** POST /api/summarizer/achievements — add achievement */
 app.post("/achievements", zValidator("json", addAchievementBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -140,7 +133,6 @@ app.post("/achievements", zValidator("json", addAchievementBody), async (c) => {
   }
 });
 
-/** PUT /api/summarizer/achievements/:id — update achievement */
 app.put("/achievements/:id", zValidator("param", idParam), zValidator("json", updateAchievementBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -168,7 +160,6 @@ app.put("/achievements/:id", zValidator("param", idParam), zValidator("json", up
   }
 });
 
-/** POST /api/summarizer/workplaces/:id/summary — generate summary */
 app.post("/workplaces/:id/summary", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -188,7 +179,6 @@ app.post("/workplaces/:id/summary", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** DELETE /api/summarizer/workplaces/:id — delete workplace */
 app.delete("/workplaces/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -208,7 +198,6 @@ app.delete("/workplaces/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** DELETE /api/summarizer/achievements/:id — delete achievement */
 app.delete("/achievements/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

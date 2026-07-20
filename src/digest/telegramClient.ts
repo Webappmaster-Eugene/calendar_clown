@@ -1,9 +1,3 @@
-/**
- * GramJS wrapper for reading public Telegram channel messages.
- * Uses MTProto protocol via a user account (not a bot).
- * Session is persisted as a StringSession in data/telegram-session.txt.
- */
-
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { Api } from "telegram/tl/index.js";
@@ -24,17 +18,15 @@ const MAX_DELAY_MS = 5_000;
 
 let gramClient: TelegramClient | null = null;
 
-/** Random delay between min and max ms. */
 function randomDelay(): number {
   return MIN_DELAY_MS + Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS));
 }
 
-/** Sleep for given ms. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Load saved session string. Checks TELEGRAM_SESSION env first, then file. */
+/** Checks TELEGRAM_SESSION env first, then the session file. */
 async function loadSession(): Promise<string> {
   const envSession = process.env.TELEGRAM_SESSION?.trim();
   if (envSession) return envSession;
@@ -46,13 +38,11 @@ async function loadSession(): Promise<string> {
   }
 }
 
-/** Save session string to file. */
 async function saveSession(session: string): Promise<void> {
   await mkdir(SESSION_DIR, { recursive: true });
   await writeFile(SESSION_FILE, session, "utf-8");
 }
 
-/** Get MTProto credentials from env. Returns null if not configured. */
 function getCredentials(): { apiId: number; apiHash: string } | null {
   const apiId = parseInt(process.env.TELEGRAM_PARSER_API_ID ?? "", 10);
   const apiHash = process.env.TELEGRAM_PARSER_API_HASH?.trim();
@@ -60,14 +50,12 @@ function getCredentials(): { apiId: number; apiHash: string } | null {
   return { apiId, apiHash };
 }
 
-/** Check if digest (MTProto) is configured. */
 export function isDigestConfigured(): boolean {
   return getCredentials() !== null;
 }
 
 let sessionChecked: boolean | null = null;
 
-/** Check if session file exists (cached after first call). */
 async function hasSession(): Promise<boolean> {
   if (sessionChecked !== null) return sessionChecked;
   const s = await loadSession();
@@ -75,16 +63,14 @@ async function hasSession(): Promise<boolean> {
   return sessionChecked;
 }
 
-/** Credentials AND session file exist. Cached after first call. */
 export async function isDigestReady(): Promise<boolean> {
   if (!isDigestConfigured()) return false;
   return hasSession();
 }
 
-/** Connect to Telegram via MTProto. Uses saved session. */
 export async function connectGramClient(): Promise<TelegramClient> {
   if (gramClient?.connected) return gramClient;
-  // Clean up stale reference (e.g. after destroy)
+  // A destroyed client reports connected===false but must not be reused.
   gramClient = null;
 
   const creds = getCredentials();
@@ -106,7 +92,7 @@ export async function connectGramClient(): Promise<TelegramClient> {
   sessionChecked = true;
   log.info("GramJS connected to Telegram.");
 
-  // Update saved session (in case Telegram rotated keys)
+  // Telegram may rotate keys on connect; persist the refreshed session.
   const newSession = gramClient.session.save() as unknown as string;
   if (newSession && newSession !== sessionStr) {
     await saveSession(newSession);
@@ -116,7 +102,7 @@ export async function connectGramClient(): Promise<TelegramClient> {
   return gramClient;
 }
 
-/** Disconnect GramJS client gracefully. Uses destroy() to stop the internal update loop. */
+/** Uses destroy() rather than disconnect() to stop GramJS's internal update loop. */
 export async function disconnectGramClient(): Promise<void> {
   if (gramClient) {
     await gramClient.destroy();
@@ -125,10 +111,6 @@ export async function disconnectGramClient(): Promise<void> {
   }
 }
 
-/**
- * Read recent messages from a public channel.
- * Returns posts from the last `hoursBack` hours, up to `limit` messages.
- */
 export async function readChannelMessages(
   channelUsername: string,
   hoursBack: number = 24,
@@ -143,7 +125,6 @@ export async function readChannelMessages(
 
   const messages = await client.getMessages(channelUsername, {
     limit,
-    // offsetDate ensures we get messages before "now"
     offsetDate: Math.floor(Date.now() / 1000),
   });
 
@@ -151,11 +132,9 @@ export async function readChannelMessages(
   let channelTitle: string | null = null;
 
   for (const msg of messages) {
-    // Skip non-text messages and old messages
     if (!msg.message || msg.message.length < 50) continue;
     if (msg.date < cutoffTimestamp) continue;
 
-    // Extract channel title from peer
     if (!channelTitle && msg.chat && "title" in msg.chat) {
       channelTitle = (msg.chat as { title?: string }).title ?? null;
     }
@@ -176,7 +155,7 @@ export async function readChannelMessages(
       channelUsername,
       channelTitle,
       messageId: msg.id,
-      text: msg.message.slice(0, 4096), // limit stored text
+      text: msg.message.slice(0, 4096),
       date: new Date(msg.date * 1000),
       views: msg.views ?? 0,
       forwards: msg.forwards ?? 0,
@@ -189,10 +168,6 @@ export async function readChannelMessages(
   return posts;
 }
 
-/**
- * Read messages from multiple channels with rate-limiting pauses.
- * Returns a flat array of all posts. Skips channels that error (circuit breaker after 3 consecutive).
- */
 export async function readMultipleChannels(
   channels: Array<{ username: string }>,
   hoursBack: number = 24
@@ -204,7 +179,6 @@ export async function readMultipleChannels(
 
   for (let i = 0; i < channels.length; i++) {
     const ch = channels[i];
-    // Circuit breaker: stop after 3 consecutive errors
     if (consecutiveErrors >= 3) {
       log.warn(`Circuit breaker: stopping after 3 consecutive errors`);
       break;
@@ -221,18 +195,17 @@ export async function readMultipleChannels(
       const msg = err instanceof Error ? err.message : String(err);
       log.error(`Error reading @${ch.username}: ${msg}`);
 
-      // Handle FloodWait specifically
       if (msg.includes("FLOOD_WAIT") || msg.includes("FloodWaitError")) {
         const waitMatch = msg.match(/(\d+)/);
         const waitSec = waitMatch ? parseInt(waitMatch[1], 10) : 60;
-        const waitMs = (waitSec + Math.ceil(waitSec * 0.1)) * 1000; // +10% buffer
+        const waitMs = (waitSec + Math.ceil(waitSec * 0.1)) * 1000; // +10% buffer over Telegram's stated wait
         log.warn(`FloodWait: sleeping ${waitSec}s + 10% buffer`);
         await sleep(waitMs);
-        consecutiveErrors = 0; // Reset after waiting
+        // Honoring the wait is not a real failure, so don't trip the circuit breaker.
+        consecutiveErrors = 0;
       }
     }
 
-    // Random pause between channels
     if (i < channels.length - 1) {
       await sleep(randomDelay());
     }
@@ -241,10 +214,6 @@ export async function readMultipleChannels(
   return { posts: allPosts, channelsParsed, errors };
 }
 
-/**
- * Get user's dialog folders (Telegram folders).
- * Returns list of folder names with their IDs.
- */
 export async function getUserDialogFolders(
   client?: TelegramClient
 ): Promise<Array<{ id: number; title: string }>> {
@@ -275,10 +244,6 @@ export async function getUserDialogFolders(
   }
 }
 
-/**
- * Get channels from a specific Telegram folder.
- * Returns list of channel usernames.
- */
 export async function getChannelsFromFolder(
   folderId: number,
   client?: TelegramClient
@@ -337,10 +302,6 @@ export async function getChannelsFromFolder(
   }
 }
 
-/**
- * Get basic info about a channel (title, subscriber count).
- * Used to cache metadata when adding a channel.
- */
 export async function getChannelInfo(
   channelUsername: string
 ): Promise<{ title: string; subscriberCount: number } | null> {
@@ -360,7 +321,7 @@ export async function getChannelInfo(
     }
     return null;
   } catch (err: unknown) {
-    // Known "not found" RPC errors — expected for non-existent or non-channel usernames
+    // These RPC errors are expected for non-existent or non-channel usernames; log softly.
     const rpcMessage = err != null && typeof err === "object" && "errorMessage" in err
       ? (err as { errorMessage: string }).errorMessage
       : null;

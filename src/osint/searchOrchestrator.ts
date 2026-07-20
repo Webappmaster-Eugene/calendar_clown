@@ -23,13 +23,11 @@ import type { OsintParsedSubject, OsintSearch, TavilyResult, TavilyImage, Interm
 
 const log = createLogger("osint-orchestrator");
 
-/** Callback for reporting pipeline progress (optional). */
 export type ProgressCallback = (text: string) => Promise<void>;
 
 export interface OrchestratorOptions {
   /** If set, skip DB record creation and rate-limit check (record already exists). */
   existingSearchId?: number;
-  /** Optional callback for progress updates (e.g. editing a Telegram message). */
   onProgress?: ProgressCallback;
 }
 
@@ -40,14 +38,6 @@ export interface OrchestratorResult {
   extractedCount?: number;
 }
 
-/**
- * Run the full two-phase OSINT search pipeline with progress updates.
- * Phase 1: Broad discovery (30-35 queries, raw content)
- * Phase 2: Deep extraction (follow-up queries + profile extraction)
- *
- * When `options.existingSearchId` is provided, uses the existing DB record
- * instead of creating a new one (used by API/Mini App flow).
- */
 export async function runOsintSearch(
   userId: number,
   queryText: string,
@@ -58,7 +48,6 @@ export async function runOsintSearch(
   let search: OsintSearch;
 
   if (options?.existingSearchId) {
-    // API flow: record already created by initiateSearch(), verify it's still pending
     const existing = await getSearchById(options.existingSearchId, userId);
     if (!existing) {
       return { success: false, error: "Поиск не найден." };
@@ -68,7 +57,6 @@ export async function runOsintSearch(
     }
     search = existing;
   } else {
-    // Bot flow: check rate limit and create record
     const todayCount = await countTodaySearches(userId);
     if (todayCount >= OSINT_DAILY_LIMIT) {
       return {
@@ -80,7 +68,6 @@ export async function runOsintSearch(
   }
 
   try {
-    // 3. Parse subject
     await onProgress?.("🔍 Анализирую запрос...");
     const parseResult = await parseSearchSubject(queryText);
 
@@ -99,7 +86,6 @@ export async function runOsintSearch(
       parsedSubject: parseResult.subject,
     });
 
-    // 4. Generate search queries
     await onProgress?.("🔍 Формирую поисковые запросы...");
     const queries = await generateSearchQueries(parseResult.subject);
 
@@ -107,7 +93,6 @@ export async function runOsintSearch(
       searchQueries: queries,
     });
 
-    // 5. Phase 1: Broad discovery
     await onProgress?.(`🔍 Фаза 1: поиск по ${queries.length} запросам...`);
 
     if (!process.env.TAVILY_API_KEY) {
@@ -125,7 +110,6 @@ export async function runOsintSearch(
     const allImages = phase1Result.images;
 
     if (allResults.length === 0) {
-      // Try with simpler queries
       const simpleQuery = parseResult.subject.name || queryText;
       const fallbackResult = await tavilySearchMulti([simpleQuery], 10, true);
       if (fallbackResult.results.length === 0) {
@@ -145,7 +129,6 @@ export async function runOsintSearch(
 
     await onProgress?.(`🔍 Фаза 1: найдено ${allResults.length} источников, углубляю поиск...`);
 
-    // 6. Phase 1 intermediate analysis
     let phase1Findings: string | undefined;
     let extractedCount = 0;
     const intermediate = await analyzePhase1(parseResult.subject, allResults.slice(0, OSINT_PHASE1_ANALYSIS_LIMIT));
@@ -153,7 +136,6 @@ export async function runOsintSearch(
     if (intermediate) {
       phase1Findings = intermediate.keyFindings;
 
-      // 7. Phase 2: Deep extraction
       const followUpCount = intermediate.followUpQueries.length;
       const extractCount = Math.min(intermediate.profileUrls.length, OSINT_EXTRACT_URLS_LIMIT);
 
@@ -162,7 +144,6 @@ export async function runOsintSearch(
           `🔍 Фаза 2: ${followUpCount} доп. запросов + извлечение ${extractCount} профилей...`
         );
 
-        // Phase 2 searches and extract in parallel
         const [phase2Result, extractedProfiles] = await Promise.all([
           followUpCount > 0
             ? tavilySearchMulti(intermediate.followUpQueries, OSINT_RESULTS_PER_QUERY, true)
@@ -172,13 +153,11 @@ export async function runOsintSearch(
             : Promise.resolve([]),
         ]);
 
-        // Merge Phase 2 search results
         if (phase2Result.results.length > 0) {
           allResults = mergeAndDedup(allResults, phase2Result.results);
           allImages.push(...phase2Result.images);
         }
 
-        // Merge extracted profiles as high-score results
         for (const profile of extractedProfiles) {
           const existing = allResults.find((r) => r.url === profile.url);
           if (existing) {
@@ -202,11 +181,9 @@ export async function runOsintSearch(
       sourcesCount: allResults.length,
     });
 
-    // 8. Final analysis
     await onProgress?.(`🧠 Анализирую ${allResults.length} источников...`);
     const report = await analyzeResults(parseResult.subject, allResults, allImages, queryText, phase1Findings);
 
-    // 9. Save completed
     const sourcesCount = allResults.length;
     await updateSearchStatus(search.id, "completed", {
       report,
@@ -233,7 +210,6 @@ export async function runOsintSearch(
   }
 }
 
-/** Send report to user, splitting if needed. */
 export async function sendReport(
   ctx: Context,
   chatId: number,
@@ -245,13 +221,11 @@ export async function sendReport(
   const formatted = formatReport(report);
   const chunks = splitMessage(formatted);
 
-  // Edit the status message with the first chunk
   try {
     await ctx.telegram.editMessageText(chatId, statusMsgId, undefined, chunks[0], {
       parse_mode: "Markdown",
     });
   } catch {
-    // Fallback: plain text
     await ctx.telegram.editMessageText(
       chatId,
       statusMsgId,
@@ -260,7 +234,6 @@ export async function sendReport(
     );
   }
 
-  // Send remaining chunks as new messages
   for (let i = 1; i < chunks.length; i++) {
     try {
       await ctx.telegram.sendMessage(chatId, chunks[i], { parse_mode: "Markdown" });
@@ -479,7 +452,6 @@ async function analyzeResults(
 ): Promise<string> {
   const topResults = results.slice(0, OSINT_TOP_SOURCES);
 
-  // Three-tier content: Tier 1 (full), Tier 2 (medium), Tier 3 (snippet only)
   const RAW_CONTENT_FULL = 5000;
   const RAW_CONTENT_MEDIUM = 1500;
 
@@ -524,7 +496,6 @@ ${sourcesText}${imagesText}`;
   return report || "Не удалось сформировать отчёт.";
 }
 
-/** Merge two result arrays, deduplicating by URL (keeping higher score). */
 function mergeAndDedup(existing: TavilyResult[], incoming: TavilyResult[]): TavilyResult[] {
   const seen = new Map<string, TavilyResult>();
 

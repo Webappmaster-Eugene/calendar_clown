@@ -1,9 +1,3 @@
-/**
- * Admin Summary Analytics service.
- * Collects per-module usage data for a given period and optionally generates AI summary.
- * Extracted from commands/adminSummary.ts for reuse in both Telegram bot and REST API.
- */
-
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "../db/drizzle.js";
 import {
@@ -178,7 +172,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
     goalStats,
     notableCount,
   ] = await Promise.all([
-    // 1. expenses: count, sum, text/voice split
     safeQuery<{ count: string; total: string; text_count: string; voice_count: string }>(
       sql`SELECT
          COUNT(*)::text AS count,
@@ -189,7 +182,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        WHERE ${expenses.createdAt} >= ${from} AND ${expenses.createdAt} < ${to}`,
       "expenses",
     ),
-    // 2. expenses + categories: top-10
     safeQuery<{ name: string; emoji: string; cnt: string; amt: string }>(
       sql`SELECT ${categories.name} AS name, ${categories.emoji} AS emoji, COUNT(*)::text AS cnt, SUM(${expenses.amount})::text AS amt
        FROM ${expenses}
@@ -200,7 +192,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        LIMIT 10`,
       "expense_categories",
     ),
-    // 3. expenses + users: per-user breakdown
     safeQuery<{ first_name: string; cnt: string; amt: string }>(
       sql`SELECT ${users.firstName} AS first_name, COUNT(*)::text AS cnt, SUM(${expenses.amount})::text AS amt
        FROM ${expenses}
@@ -210,7 +201,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        ORDER BY SUM(${expenses.amount}) DESC`,
       "expense_users",
     ),
-    // 4. calendar_events: created/deleted, text/voice
     safeQuery<{ created: string; deleted: string; text_count: string; voice_count: string }>(
       sql`SELECT
          COUNT(*) FILTER (WHERE ${calendarEvents.status} = 'created')::text AS created,
@@ -221,7 +211,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        WHERE ${calendarEvents.createdAt} >= ${from} AND ${calendarEvents.createdAt} < ${to}`,
       "calendar_events",
     ),
-    // 5. calendar_events + users: per-user
     safeQuery<{ first_name: string; created: string; deleted: string }>(
       sql`SELECT ${users.firstName} AS first_name,
          COUNT(*) FILTER (WHERE ${calendarEvents.status} = 'created')::text AS created,
@@ -233,7 +222,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        ORDER BY COUNT(*) DESC`,
       "calendar_users",
     ),
-    // 6. voice_transcriptions: total, errors
     safeQuery<{ total: string; errors: string }>(
       sql`SELECT
          COUNT(*)::text AS total,
@@ -242,7 +230,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        WHERE ${voiceTranscriptions.createdAt} >= ${from} AND ${voiceTranscriptions.createdAt} < ${to}`,
       "transcriptions",
     ),
-    // 7. voice_transcriptions + users: per-user
     safeQuery<{ first_name: string; cnt: string }>(
       sql`SELECT ${users.firstName} AS first_name, COUNT(*)::text AS cnt
        FROM ${voiceTranscriptions}
@@ -252,7 +239,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        ORDER BY COUNT(*) DESC`,
       "transcription_users",
     ),
-    // 8. action_logs: action types + counts (top 20)
     safeQuery<{ action: string; cnt: string }>(
       sql`SELECT ${actionLogs.action} AS action, COUNT(*)::text AS cnt
        FROM ${actionLogs}
@@ -262,7 +248,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        LIMIT 20`,
       "action_logs",
     ),
-    // 9. gandalf_entries + categories: entries per category
     safeQuery<{ name: string; cnt: string }>(
       sql`SELECT ${gandalfCategories.name} AS name, COUNT(*)::text AS cnt
        FROM ${gandalfEntries}
@@ -272,14 +257,12 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        ORDER BY COUNT(*) DESC`,
       "gandalf",
     ),
-    // 10. chat_messages: count
     safeQuery<{ count: string }>(
       sql`SELECT COUNT(*)::text AS count
        FROM ${chatMessages}
        WHERE ${chatMessages.createdAt} >= ${from} AND ${chatMessages.createdAt} < ${to}`,
       "chat_count",
     ),
-    // 11. chat_messages + users: per-user
     safeQuery<{ first_name: string; cnt: string }>(
       sql`SELECT ${users.firstName} AS first_name, COUNT(*)::text AS cnt
        FROM ${chatMessages}
@@ -289,21 +272,18 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        ORDER BY COUNT(*) DESC`,
       "chat_users",
     ),
-    // 12. digest_runs: count, posts_found
     safeQuery<{ count: string; posts_found: string }>(
       sql`SELECT COUNT(*)::text AS count, COALESCE(SUM(${digestRuns.postsFound}), 0)::text AS posts_found
        FROM ${digestRuns}
        WHERE ${digestRuns.createdAt} >= ${from} AND ${digestRuns.createdAt} < ${to}`,
       "digest_runs",
     ),
-    // 13. wishlist_items: count
     safeQuery<{ count: string }>(
       sql`SELECT COUNT(*)::text AS count
        FROM ${wishlistItems}
        WHERE ${wishlistItems.createdAt} >= ${from} AND ${wishlistItems.createdAt} < ${to}`,
       "wishlist",
     ),
-    // 14. goals: created + completed
     safeQuery<{ created: string; completed: string }>(
       sql`SELECT
          COUNT(*)::text AS created,
@@ -312,7 +292,6 @@ export async function collectSummaryData(range: PeriodRange): Promise<UsageSumma
        WHERE ${goals.createdAt} >= ${from} AND ${goals.createdAt} < ${to}`,
       "goals",
     ),
-    // 15. notable_dates: count
     safeQuery<{ count: string }>(
       sql`SELECT COUNT(*)::text AS count
        FROM ${notableDates}

@@ -328,7 +328,6 @@ export function NotableDatesPage() {
         </div>
       )}
 
-      {/* CSV import */}
       <input
         ref={fileInputRef}
         type="file"

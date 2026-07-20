@@ -1,20 +1,13 @@
-/**
- * Global reminder audio provider.
- * Polls for recently fired reminders with sound enabled and plays audio
- * via Web Audio API when the Mini App is open.
- *
- * This solves the "selected devices" problem: audio plays only
- * on the device where the Mini App is running.
- */
+// Plays reminder audio only on the device where the Mini App is open, which
+// solves the "selected devices" problem.
 
 import { createContext, useContext, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { FiredReminderDto } from "@shared/types";
 
-const POLL_INTERVAL_MS = 30_000; // 30 seconds
+const POLL_INTERVAL_MS = 30_000;
 
 interface ReminderAudioContextValue {
-  /** Whether AudioContext is unlocked and ready to play. */
   isReady: boolean;
 }
 
@@ -33,7 +26,6 @@ export function ReminderAudioProvider({ children }: { children: ReactNode }) {
   const playQueueRef = useRef<FiredReminderDto[]>([]);
   const isPlayingRef = useRef(false);
 
-  // Initialize AudioContext (suspended until user gesture)
   const getAudioContext = useCallback((): AudioContext | null => {
     if (!audioCtxRef.current) {
       try {
@@ -45,7 +37,7 @@ export function ReminderAudioProvider({ children }: { children: ReactNode }) {
     return audioCtxRef.current;
   }, []);
 
-  // Unlock AudioContext on first user gesture
+  // AudioContext starts suspended and can only resume from a user gesture.
   useEffect(() => {
     const unlock = async () => {
       const ctx = getAudioContext();
@@ -70,7 +62,6 @@ export function ReminderAudioProvider({ children }: { children: ReactNode }) {
     };
   }, [getAudioContext]);
 
-  // Fetch and decode audio buffer (with cache)
   const getAudioBuffer = useCallback(async (filename: string): Promise<AudioBuffer | null> => {
     const cached = audioBufferCacheRef.current.get(filename);
     if (cached) return cached;
@@ -90,7 +81,6 @@ export function ReminderAudioProvider({ children }: { children: ReactNode }) {
     }
   }, [getAudioContext]);
 
-  // Play a single audio buffer
   const playBuffer = useCallback(async (buffer: AudioBuffer): Promise<void> => {
     const ctx = getAudioContext();
     if (!ctx || ctx.state !== "running") return;
@@ -104,7 +94,7 @@ export function ReminderAudioProvider({ children }: { children: ReactNode }) {
     });
   }, [getAudioContext]);
 
-  // Process play queue sequentially
+  // Play sounds one at a time so overlapping fired reminders don't cacophony.
   const processQueue = useCallback(async () => {
     if (isPlayingRef.current) return;
     isPlayingRef.current = true;
@@ -122,7 +112,6 @@ export function ReminderAudioProvider({ children }: { children: ReactNode }) {
     isPlayingRef.current = false;
   }, [getAudioBuffer, playBuffer]);
 
-  // Poll for fired reminders
   useEffect(() => {
     const poll = async () => {
       const since = lastCheckRef.current;
@@ -146,7 +135,6 @@ export function ReminderAudioProvider({ children }: { children: ReactNode }) {
         // Network error — skip, retry on next interval
       }
 
-      // Cleanup old played IDs (keep last 100)
       if (playedIdsRef.current.size > 100) {
         const arr = Array.from(playedIdsRef.current);
         playedIdsRef.current = new Set(arr.slice(-50));
@@ -155,7 +143,7 @@ export function ReminderAudioProvider({ children }: { children: ReactNode }) {
 
     const intervalId = setInterval(poll, POLL_INTERVAL_MS);
 
-    // Initial poll after short delay (let AudioContext initialize)
+    // Delay the first poll so the AudioContext has time to initialize.
     const timeoutId = setTimeout(poll, 3_000);
 
     return () => {
@@ -164,7 +152,6 @@ export function ReminderAudioProvider({ children }: { children: ReactNode }) {
     };
   }, [processQueue]);
 
-  // Cleanup AudioContext on unmount
   useEffect(() => {
     return () => {
       if (audioCtxRef.current) {

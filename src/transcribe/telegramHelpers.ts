@@ -1,8 +1,3 @@
-/**
- * Shared Telegram helper functions for transcription delivery.
- * Extracted from worker.ts / queue.ts to avoid duplication.
- */
-
 import type { Telegraf } from "telegraf";
 import { splitMessage, TELEGRAM_MAX_MESSAGE_LENGTH } from "../utils/telegram.js";
 import { createLogger } from "../utils/logger.js";
@@ -25,7 +20,6 @@ export async function sendTranscriptSafe(
   }
 }
 
-/** Edit the status message, swallowing errors if the message was already deleted. */
 export async function editStatusSafe(
   bot: Telegraf,
   chatId: number,
@@ -39,7 +33,6 @@ export async function editStatusSafe(
   }
 }
 
-/** Delete a message, swallowing errors. */
 export async function deleteMessageSafe(
   bot: Telegraf,
   chatId: number,

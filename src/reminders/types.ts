@@ -1,7 +1,3 @@
-/**
- * Types for the Reminders (Напоминатор) feature.
- */
-
 /** Schedule definition stored as JSONB in PostgreSQL. */
 export interface ReminderSchedule {
   /** Times to fire in HH:MM format (Moscow time). */
@@ -12,7 +8,6 @@ export interface ReminderSchedule {
   endDate: string | null;
 }
 
-/** Reminder row from the database (camelCase). */
 export interface Reminder {
   id: number;
   userId: number;
@@ -28,13 +23,11 @@ export interface Reminder {
   updatedAt: Date;
 }
 
-/** Reminder with owner info, used by scheduler. */
 export interface ActiveReminderWithUser extends Reminder {
   telegramId: number;
   soundFilename: string | null;
 }
 
-/** Subscriber row from the database. */
 export interface ReminderSubscriber {
   id: number;
   reminderId: number;
@@ -44,7 +37,6 @@ export interface ReminderSubscriber {
   subscriberName?: string;
 }
 
-/** Predefined reminder sound from the database. */
 export interface ReminderSound {
   id: number;
   name: string;
@@ -56,7 +48,6 @@ export interface ReminderSound {
   createdAt: Date;
 }
 
-/** Pending wizard state for creating a reminder via text. */
 export interface PendingReminderState {
   step: "awaiting_text" | "awaiting_schedule" | "awaiting_sound" | "confirming";
   text?: string;

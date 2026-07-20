@@ -13,7 +13,6 @@ const app = new Hono<ApiEnv>();
 //    concrete value and the handler surfaces its error as 400.
 const switchModeBody = z.object({ mode: z.string() });
 
-/** GET /api/user/me — current user profile + available modes */
 app.get("/me", async (c) => {
   const initData = c.get("initData");
   const profile = await getUserProfile(
@@ -30,7 +29,6 @@ app.get("/me", async (c) => {
   return c.json({ ok: true, data: { ...profile, availableModes } });
 });
 
-/** PUT /api/user/mode — switch current mode */
 app.put("/mode", zValidator("json", switchModeBody), async (c) => {
   const initData = c.get("initData");
   const body = await c.req.json<{ mode: string }>();
@@ -49,7 +47,6 @@ app.put("/mode", zValidator("json", switchModeBody), async (c) => {
   }
 });
 
-/** GET /api/auth/google/url — get Google OAuth URL */
 app.get("/auth/google/url", async (c) => {
   const initData = c.get("initData");
   try {
@@ -61,7 +58,6 @@ app.get("/auth/google/url", async (c) => {
   }
 });
 
-/** GET /api/auth/google/status — check if calendar is linked */
 app.get("/auth/google/status", async (c) => {
   const initData = c.get("initData");
   const linked = await hasToken(String(initData.user.id));

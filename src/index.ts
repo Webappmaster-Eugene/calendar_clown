@@ -44,7 +44,6 @@ if (!token) {
 }
 
 async function main(): Promise<void> {
-  // Initialize database if DATABASE_URL is set
   if (process.env.DATABASE_URL) {
     // A connection failure is tolerated — the calendar keeps working without the
     // DB. A *migration* failure is not: it means the schema is inconsistent, so we
@@ -79,7 +78,6 @@ async function main(): Promise<void> {
 
       setDatabaseAvailable(true);
 
-      // Auto-register bootstrap admin (best-effort; the DB is already healthy).
       const adminId = process.env.ADMIN_TELEGRAM_ID?.trim();
       if (adminId) {
         const numericId = parseInt(adminId, 10);
@@ -102,13 +100,11 @@ async function main(): Promise<void> {
   const bot = createBot(token!, telegramAgent);
   setBotInstance(bot);
 
-  // Register bot's sendMessage for API broadcast route
   setBotSendMessage((chatId, text) => bot.telegram.sendMessage(chatId, text));
   setBotSendDocument((chatId, doc, extra) =>
     bot.telegram.sendDocument(chatId, { source: doc.source, filename: doc.filename }, extra ?? {})
   );
 
-  // Initialize Redis + BullMQ for voice transcription queue
   const redisUrl = process.env.REDIS_URL?.trim();
   if (redisUrl) {
     try {
@@ -119,7 +115,6 @@ async function main(): Promise<void> {
       startStaleJobCleaner(bot);
       startWorkerHealthMonitor(redisUrl, transcribeProcessor, bot);
 
-      // Recovery: deliver any undelivered results from before restart
       try {
         const usersToDeliver = await getDistinctUsersWithUndelivered();
         for (const userId of usersToDeliver) {
@@ -141,10 +136,8 @@ async function main(): Promise<void> {
     log.info("REDIS_URL not set — transcribe mode disabled.");
   }
 
-  // Set bot reference for simplifier ordered delivery
   setSimplifierDeliveryBotRef(bot);
 
-  // Simplifier recovery: deliver any undelivered results from before restart
   if (isDatabaseAvailable()) {
     try {
       const staleCount = await markStaleSimplificationsAsFailed(30);
@@ -164,14 +157,11 @@ async function main(): Promise<void> {
     }
   }
 
-  // Set bot reference for MTProto web auth notifications
   setAuthBotRef(bot);
   startWebTokenCleanup();
 
-  // Set bot reference for bank push-notification webhook confirmations
   setBankPushBotRef(bot);
 
-  // Initialize digest scheduler (GramJS + cron)
   if (await isDigestReady()) {
     setDigestBotRef(bot);
     startDigestScheduler(bot);
@@ -182,7 +172,6 @@ async function main(): Promise<void> {
     log.info("TELEGRAM_PARSER_API_ID not set — digest mode disabled.");
   }
 
-  // Initialize DB-dependent schedulers only if connection actually succeeded
   if (isDatabaseAvailable()) {
     startNotableDatesScheduler(bot);
     log.info("Notable dates scheduler enabled.");

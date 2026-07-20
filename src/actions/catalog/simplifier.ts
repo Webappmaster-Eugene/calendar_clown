@@ -1,7 +1,3 @@
-/**
- * Simplifier actions — wrappers over simplifierService
- * (mirrors src/api/routes/simplifier.ts). Individual mode. Voice input stays UI-only.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

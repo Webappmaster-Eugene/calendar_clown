@@ -1,11 +1,5 @@
-/**
- * Voice processing business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- *
- * Note: The full voice pipeline (download OGG from Telegram, transcribe, extract intent,
- * create calendar event) requires Telegram file access. This service handles the parts
- * that can work with already-downloaded audio or pre-transcribed text.
- */
+// Handles only the pipeline parts that work with already-downloaded audio or pre-transcribed text;
+// the full flow (download OGG from Telegram → transcribe → extract intent → create event) needs Telegram file access.
 import { transcribeVoice } from "../voice/transcribe.js";
 import type { TranscribeContext } from "../voice/transcribe.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
@@ -76,11 +70,7 @@ export function intentToResult(intent: VoiceIntent): VoiceIntentResult {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Transcribe a local audio file to text.
- * @param filePath - path to OGG/audio file on disk
- * @param context - transcription context: "calendar" for calendar/expense modes, "general" for everything else
- */
+// context: "calendar" for calendar/expense modes, "general" for everything else.
 export async function transcribeAudio(filePath: string, context: TranscribeContext = "calendar"): Promise<TranscribeResult> {
   const transcript = await transcribeVoice(filePath, context);
   if (!transcript || transcript.trim().length === 0) {

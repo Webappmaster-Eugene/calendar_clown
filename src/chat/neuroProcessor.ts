@@ -17,27 +17,24 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("neuro-processor");
 
-/** Max total context from search + links to avoid exceeding model limits. */
+// Max total context from search + links to avoid exceeding model limits.
 const MAX_AUGMENTED_CONTEXT_LENGTH = 15_000;
 
-/** Process a flushed batch: links, search, AI, reply. */
 export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
   const { combinedText, ctx, dialogId, dbUserId, model: batchModel, systemPromptOverride: batchSystemPrompt } = batch;
 
   try {
-    // 1. Send status message
     const statusMsg = await ctx.reply("⏳ Обрабатываю запрос...");
     const statusMsgId = statusMsg.message_id;
     const chatId = ctx.chat!.id;
 
-    // 2. Get dialog & history — use the dialogId captured when the user sent the message,
-    //    not the current active dialog (which may have changed since batching)
+    // Use the dialogId captured when the user sent the message, not the current
+    // active dialog (which may have changed since batching).
     const dialog = (dialogId ? await getDialogById(dialogId, dbUserId) : null)
       ?? await getOrCreateActiveDialog(dbUserId);
     const history = await getRecentMessages(dialog.id, 20);
     const historyMessages = history.map((m) => ({ role: m.role, content: m.content }));
 
-    // 3. Parallel: extract URLs + classify search need
     const urls = extractUrls(combinedText);
 
     const [linksResult, searchClassification] = await Promise.all([
@@ -45,7 +42,6 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
       classifySearchNeed(combinedText, historyMessages),
     ]);
 
-    // 4. If search is needed, execute it
     let searchResults: Awaited<ReturnType<typeof executeWebSearch>> | null = null;
     if (searchClassification.needsSearch && searchClassification.queries.length > 0) {
       try {
@@ -59,13 +55,11 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
       searchResults = await executeWebSearch(searchClassification.queries);
     }
 
-    // 5. Build augmented message
     let linksContext = formatLinksForContext(linksResult);
     let searchContext = searchResults
       ? formatSearchResultsForContext(searchResults.results)
       : "";
 
-    // Truncate if total context is too large
     const totalContextLen = linksContext.length + searchContext.length;
     if (totalContextLen > MAX_AUGMENTED_CONTEXT_LENGTH) {
       const halfLimit = Math.floor(MAX_AUGMENTED_CONTEXT_LENGTH / 2);
@@ -82,7 +76,6 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
     if (searchContext) augmentedParts.push(searchContext);
     const augmentedMessage = augmentedParts.join("\n\n");
 
-    // 5.5. Resolve model and system prompt: from batch or from user's chat provider
     let model = batchModel;
     let systemPromptOverride = batchSystemPrompt;
     if (!model) {
@@ -97,7 +90,6 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
       }
     }
 
-    // 6. Call AI
     const messages = [
       ...historyMessages,
       { role: "user", content: augmentedMessage },
@@ -105,11 +97,10 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
 
     const result = await chatCompletion(messages, model, systemPromptOverride);
 
-    // 7. Save original text to DB (without search/links context)
+    // Save original text without search/links context.
     await saveMessage(dbUserId, dialog.id, "user", combinedText);
     await saveMessage(dbUserId, dialog.id, "assistant", result.content, model, result.tokensUsed ?? undefined);
 
-    // 8. Auto-name dialog (fire-and-forget)
     if (dialog.title === "Новый диалог") {
       generateDialogTitle(combinedText, model)
         .then((title) => {
@@ -120,7 +111,6 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
         .catch((err) => log.error("Failed to auto-name dialog:", err));
     }
 
-    // 9. Reply — edit status message with first chunk, send rest as new messages
     const chunks = splitMessage(result.content);
 
     try {

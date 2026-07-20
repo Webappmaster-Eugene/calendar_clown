@@ -1,9 +1,3 @@
-/**
- * BullMQ queue for voice transcription jobs.
- * Provides reliable processing of voice messages with concurrency control,
- * retry logic, and rate limiting to avoid OpenRouter API limits.
- */
-
 import { Queue, Worker } from "bullmq";
 import type { Job, ConnectionOptions } from "bullmq";
 import type { Telegraf } from "telegraf";
@@ -17,7 +11,6 @@ const log = createLogger("queue");
 let transcribeQueue: Queue<TranscribeJobData> | null = null;
 let transcribeWorker: Worker<TranscribeJobData> | null = null;
 
-/** Parse Redis URL into BullMQ connection options. */
 function parseRedisUrl(redisUrl: string): ConnectionOptions {
   const url = new URL(redisUrl);
   const db = url.pathname?.replace("/", "");
@@ -35,7 +28,6 @@ function parseRedisUrl(redisUrl: string): ConnectionOptions {
   };
 }
 
-/** Initialize the transcription queue. Call once at startup. */
 export function initTranscribeQueue(redisUrl: string): Queue<TranscribeJobData> {
   if (transcribeQueue) return transcribeQueue;
 
@@ -59,16 +51,10 @@ export function initTranscribeQueue(redisUrl: string): Queue<TranscribeJobData> 
   return transcribeQueue;
 }
 
-/** Get the transcription queue instance. Returns null if not initialized. */
 export function getTranscribeQueue(): Queue<TranscribeJobData> | null {
   return transcribeQueue;
 }
 
-/**
- * Start the transcription worker.
- * @param redisUrl Redis connection URL
- * @param processor Function that processes each transcription job
- */
 export function startTranscribeWorker(
   redisUrl: string,
   processor: (job: Job<TranscribeJobData>) => Promise<void>,
@@ -83,8 +69,8 @@ export function startTranscribeWorker(
       connection,
       concurrency: 2,
       lockDuration: 3_600_000,   // 60 min — long audio (30-60 min) needs extended lock
-      stalledInterval: 600_000,  // Check for stalled jobs every 10 min
-      maxStalledCount: 3,        // Allow 3 stall events before failing
+      stalledInterval: 600_000,
+      maxStalledCount: 3,
       limiter: {
         max: 10,
         duration: 60_000,
@@ -117,7 +103,6 @@ export function startTranscribeWorker(
   return transcribeWorker;
 }
 
-/** Add a transcription job to the queue. */
 export async function addTranscribeJob(
   data: TranscribeJobData
 ): Promise<string | undefined> {
@@ -129,7 +114,6 @@ export async function addTranscribeJob(
   return job.id;
 }
 
-/** Check if the transcribe queue is initialized and available. */
 export function isTranscribeAvailable(): boolean {
   return transcribeQueue !== null;
 }
@@ -142,7 +126,6 @@ export interface QueueStatus {
   failed: number;
 }
 
-/** Get BullMQ queue counts and worker health status. */
 export async function getQueueStatus(): Promise<QueueStatus | null> {
   if (!transcribeQueue) return null;
   const [waiting, active, delayed, failed] = await Promise.all([
@@ -167,7 +150,6 @@ export async function getQueueStatus(): Promise<QueueStatus | null> {
   return { workerRunning, waiting, active, delayed, failed };
 }
 
-/** Remove stale jobs older than maxAgeMs from the queue. */
 export async function cleanStaleJobs(maxAgeMs: number = 120 * 60 * 1000): Promise<number> {
   const queue = getTranscribeQueue();
   if (!queue) return 0;
@@ -207,7 +189,6 @@ export async function cleanStaleJobs(maxAgeMs: number = 120 * 60 * 1000): Promis
   return cleaned;
 }
 
-/** Remove all waiting/delayed jobs for a specific chat. */
 export async function clearUserJobs(chatId: number): Promise<number> {
   const queue = getTranscribeQueue();
   if (!queue) return 0;
@@ -238,7 +219,6 @@ export async function clearUserJobs(chatId: number): Promise<number> {
 
 let staleJobInterval: ReturnType<typeof setInterval> | null = null;
 
-/** Start periodic stale job cleaner (every 5 minutes). */
 export function startStaleJobCleaner(bot: Telegraf): void {
   if (staleJobInterval) return;
   staleJobInterval = setInterval(async () => {
@@ -248,7 +228,6 @@ export function startStaleJobCleaner(bot: Telegraf): void {
     await markStaleAsFailed(120).catch((err) => {
       log.error("Mark stale DB records as failed error:", err);
     });
-    // Trigger delivery for any users with undelivered results after stale cleanup
     try {
       const usersToDeliver = await getDistinctUsersWithUndelivered();
       for (const userId of usersToDeliver) {
@@ -261,7 +240,6 @@ export function startStaleJobCleaner(bot: Telegraf): void {
   log.info("Stale job cleaner started (every 5 min)");
 }
 
-/** Stop periodic stale job cleaner. */
 export function stopStaleJobCleaner(): void {
   if (staleJobInterval) {
     clearInterval(staleJobInterval);
@@ -271,12 +249,11 @@ export function stopStaleJobCleaner(): void {
 
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 let stuckSince: number | null = null;
-const STUCK_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+const STUCK_THRESHOLD_MS = 2 * 60 * 1000;
 
 /**
- * Start periodic health monitor for the transcription worker.
- * If waiting > 0 && active === 0 for longer than STUCK_THRESHOLD_MS,
- * clears rate limit key and restarts the worker.
+ * If waiting > 0 && active === 0 for longer than STUCK_THRESHOLD_MS, clears the rate limit key
+ * and restarts the worker.
  */
 export function startWorkerHealthMonitor(
   redisUrl: string,
@@ -302,16 +279,14 @@ export function startWorkerHealthMonitor(
         log.error(`Health: worker stuck for ${Math.round((Date.now() - stuckSince) / 1000)}s — restarting`);
         stuckSince = null;
 
-        // 1. Clear potentially corrupted rate limit key
+        // Clear potentially corrupted rate limit key
         await transcribeQueue?.removeRateLimitKey().catch(() => {});
 
-        // 2. Close zombie worker
         if (transcribeWorker) {
           await transcribeWorker.close().catch(() => {});
           transcribeWorker = null;
         }
 
-        // 3. Restart worker
         startTranscribeWorker(redisUrl, processor, bot);
         log.info("Health: worker restarted successfully");
       } else {
@@ -325,7 +300,6 @@ export function startWorkerHealthMonitor(
   log.info("Worker health monitor started (every 30s)");
 }
 
-/** Stop the worker health monitor. */
 export function stopWorkerHealthMonitor(): void {
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
@@ -334,7 +308,6 @@ export function stopWorkerHealthMonitor(): void {
   stuckSince = null;
 }
 
-/** Gracefully close the queue and worker. */
 export async function closeTranscribeQueue(): Promise<void> {
   if (transcribeWorker) {
     await transcribeWorker.close();

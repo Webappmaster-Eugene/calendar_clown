@@ -10,10 +10,6 @@ export interface BroadcastResult {
   total: number;
 }
 
-/**
- * Send a message to all tribe members (excluding the admin).
- * `sendMessage` is injected as a callback for testability.
- */
 export async function broadcastToTribe(
   sendMessage: (recipientId: string, text: string) => Promise<void>,
   adminTelegramId: number,
@@ -48,7 +44,6 @@ export async function broadcastToTribe(
   return { sent, failed, total: recipients.length };
 }
 
-/** Format broadcast result into a user-friendly string. */
 export function formatBroadcastResult(result: BroadcastResult): string {
   if (result.total === 0) {
     return "Нет пользователей для рассылки.";

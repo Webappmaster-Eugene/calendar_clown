@@ -9,13 +9,9 @@ interface MainButtonOptions {
   isLoaderVisible?: boolean;
 }
 
-/**
- * Drives the native Telegram MainButton for a screen's primary action.
- * Every SDK call is guarded by its own `isAvailable()`, so on unsupported
- * environments the hook is a no-op and returns `false` — callers should then
- * keep their in-content submit button. The click listener is registered once
- * and reads the latest handler through a ref to avoid re-binding on each render.
- */
+// Returns `false` on unsupported environments (every SDK call is guarded), so
+// callers keep their in-content submit button. The click listener reads the
+// latest handler through a ref so it can be registered once without re-binding.
 export function useMainButton({
   text,
   onClick,

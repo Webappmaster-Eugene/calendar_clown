@@ -1,8 +1,3 @@
-/**
- * Extract expense data from voice transcript using OpenRouter (DeepSeek).
- * Used when bot is in expense mode.
- */
-
 import { DEEPSEEK_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";

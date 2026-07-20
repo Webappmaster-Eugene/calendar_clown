@@ -114,9 +114,7 @@ async function getGlobalStats(): Promise<GlobalStats> {
 }
 
 async function getPerUserStats(): Promise<UserStats[]> {
-  // Multi-subquery per-user dashboard: three correlated grouped-count LEFT JOINs.
-  // Kept as a single statement via the db.execute escape hatch; column-object
-  // interpolation keeps table/column renames compile-checked.
+  // db.execute escape hatch keeps this multi-subquery as one statement; column-object interpolation keeps renames compile-checked.
   const { rows } = await db.execute<{
     telegram_id: string;
     first_name: string;

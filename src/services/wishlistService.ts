@@ -1,7 +1,3 @@
-/**
- * Wishlist business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   createWishlist,
   getWishlistsByUser,
@@ -129,10 +125,7 @@ export async function removeWishlist(telegramId: number, wishlistId: number): Pr
   return deleteWishlist(wishlistId, dbUser.id);
 }
 
-/**
- * Update a wishlist's name/emoji. Ownership is enforced in the repository
- * (userId + isActive filter), so a non-owner or missing list yields null.
- */
+// Ownership is enforced in the repository (userId + isActive filter): a non-owner or missing list yields null.
 export async function updateWishlistDetails(
   telegramId: number,
   wishlistId: number,
@@ -205,10 +198,6 @@ export async function addWishlistItem(
   return itemToDto(item, dbUser.id);
 }
 
-/**
- * Edit an existing wishlist item.
- * Verifies the item exists and belongs to a wishlist owned by the user.
- */
 export async function editWishlistItem(
   telegramId: number,
   itemId: number,

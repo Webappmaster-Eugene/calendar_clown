@@ -6,11 +6,8 @@ export { NoCalendarLinkedError } from "./auth.js";
 const CALENDAR_ID = "primary";
 
 /**
- * Format Date as Moscow-local ISO 8601 string with explicit +03:00 offset.
- * Example: "2026-03-31T15:00:00+03:00"
- *
- * This avoids ambiguity when Google Calendar API receives both a UTC "Z" dateTime
- * and a timeZone field — with explicit offset the time is always unambiguous.
+ * Explicit +03:00 offset (not a UTC "Z") avoids ambiguity: Google Calendar
+ * receives both a dateTime and a timeZone field, so the offset must be unambiguous.
  */
 function formatDateTimeMsk(date: Date): string {
   return date.toLocaleString("sv-SE", {
@@ -34,7 +31,6 @@ export interface CalendarEvent {
   recurringEventId?: string;
 }
 
-/** Thrown when event start is in the past. */
 export class PastDateError extends Error {
   constructor() {
     super("Нельзя создать встречу в прошлом. Укажите дату и время в будущем.");
@@ -51,7 +47,7 @@ export async function createEvent(
   recurrence?: string[]
 ): Promise<CalendarEvent> {
   const now = new Date();
-  const bufferMs = 60 * 1000; // 1 minute
+  const bufferMs = 60 * 1000;
   if (start.getTime() < now.getTime() - bufferMs) {
     throw new PastDateError();
   }
@@ -165,7 +161,6 @@ export async function searchEvents(
     }));
 }
 
-/** Delete all instances of a recurring event (by its series ID). */
 export async function deleteRecurringEvent(
   recurringEventId: string,
   userId: string

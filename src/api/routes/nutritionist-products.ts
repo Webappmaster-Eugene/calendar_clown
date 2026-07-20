@@ -1,10 +1,3 @@
-/**
- * Nutritionist product catalog API routes (Mini App).
- *
- * Mounted as a sub-app under /api/nutritionist/products by the parent
- * nutritionist router. All routes are guarded by the outer authMiddleware
- * (Telegram InitData).
- */
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "../validate.js";
@@ -72,7 +65,6 @@ async function parseImageField(
 
 // ─── Routes ─────────────────────────────────────────────────────
 
-/** GET /api/nutritionist/products — paginated list with optional search. */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -90,7 +82,6 @@ app.get("/", async (c) => {
   }
 });
 
-/** POST /api/nutritionist/products — create a product (multipart). */
 app.post("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -156,7 +147,6 @@ app.post("/", async (c) => {
   }
 });
 
-/** GET /api/nutritionist/products/:id — single product. */
 app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -178,7 +168,6 @@ app.get("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PATCH /api/nutritionist/products/:id — update product (multipart). */
 app.patch("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -252,7 +241,6 @@ app.patch("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** DELETE /api/nutritionist/products/:id */
 app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -274,7 +262,6 @@ app.delete("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** GET /api/nutritionist/products/:id/photo — stream package photo. */
 app.get("/:id/photo", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

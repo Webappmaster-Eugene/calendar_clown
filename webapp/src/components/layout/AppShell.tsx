@@ -10,13 +10,11 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-/** Route → mode key. Extends the shared map with subroutes that still belong to a mode. */
 const ROUTE_TO_MODE: Record<string, string> = {
   ...BASE_ROUTE_TO_MODE,
   "/calendar/new": "calendar",
 };
 
-/** Top-level mode routes (direct children of root) */
 const TOP_LEVEL_ROUTES = new Set(
   Object.entries(ROUTE_TO_MODE)
     .filter(([path]) => path.split("/").filter(Boolean).length === 1)

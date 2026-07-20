@@ -8,10 +8,8 @@ import { AppShell } from "./components/layout/AppShell";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/ui/ToastProvider";
 
-// Eager-load the mode selector (first screen, always needed)
 import { ModeSelectorPage } from "./pages/ModeSelectorPage";
 
-// Lazy-load all mode pages for code splitting
 const CalendarPage = lazy(() => import("./pages/CalendarPage").then((m) => ({ default: m.CalendarPage })));
 const CreateEventPage = lazy(() => import("./pages/CreateEventPage").then((m) => ({ default: m.CreateEventPage })));
 const ExpensesPage = lazy(() => import("./pages/ExpensesPage").then((m) => ({ default: m.ExpensesPage })));
@@ -33,7 +31,6 @@ const TasksPage = lazy(() => import("./pages/TasksPage").then((m) => ({ default:
 const NutritionistPage = lazy(() => import("./pages/NutritionistPage").then((m) => ({ default: m.NutritionistPage })));
 const BankHookPage = lazy(() => import("./pages/BankHookPage").then((m) => ({ default: m.BankHookPage })));
 
-/** Fire a Telegram notification haptic; no-op outside a Telegram client. */
 function notifyHaptic(type: "success" | "error"): void {
   if (hapticFeedback.notificationOccurred.isAvailable()) {
     hapticFeedback.notificationOccurred(type);
@@ -41,9 +38,7 @@ function notifyHaptic(type: "success" | "error"): void {
 }
 
 const queryClient = new QueryClient({
-  // Global success/error haptics for every mutation (form submits, edits,
-  // deletes) — the single place that "finishes" haptic feedback across all
-  // forms. Toggles opt out of the success buzz via `meta.skipHapticSuccess`
+  // Toggles opt out of the success buzz via `meta.skipHapticSuccess`
   // because they already fire a lighter selection() tick on tap.
   mutationCache: new MutationCache({
     onSuccess: (_data, _vars, _ctx, mutation) => {

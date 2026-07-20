@@ -21,9 +21,6 @@ import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schemas (json bodies + numeric :id params). Handlers keep their own
-//    downstream checks (existence/access). Numeric IDs live under different
-//    param keys (:id, :goalId, :userId), so we have one schema per key name.
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const goalIdParam = z.object({ goalId: z.coerce.number().int().positive() });
 const viewerParam = z.object({
@@ -50,7 +47,6 @@ const goalTextBody = z.object({
   text: z.string(),
 });
 
-/** GET /api/goals — list goal sets */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -64,7 +60,6 @@ app.get("/", async (c) => {
   }
 });
 
-/** GET /api/goals/shared — friends' public goal sets */
 app.get("/shared", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -78,7 +73,6 @@ app.get("/shared", async (c) => {
   }
 });
 
-/** POST /api/goals — create goal set */
 app.post("/", zValidator("json", createGoalSetBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -103,7 +97,6 @@ app.post("/", zValidator("json", createGoalSetBody), async (c) => {
   }
 });
 
-/** GET /api/goals/:id — get goal set with goals */
 app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -125,7 +118,6 @@ app.get("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PUT /api/goals/:id — update goal set (name, emoji, visibility) */
 app.put("/:id", zValidator("param", idParam), zValidator("json", updateGoalSetBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -150,7 +142,6 @@ app.put("/:id", zValidator("param", idParam), zValidator("json", updateGoalSetBo
   }
 });
 
-/** GET /api/goals/:id/viewers — list viewers */
 app.get("/:id/viewers", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -169,7 +160,6 @@ app.get("/:id/viewers", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** POST /api/goals/:id/viewers — add viewer */
 app.post("/:id/viewers", zValidator("param", idParam), zValidator("json", addViewerBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -190,7 +180,6 @@ app.post("/:id/viewers", zValidator("param", idParam), zValidator("json", addVie
   }
 });
 
-/** DELETE /api/goals/:id/viewers/:userId — remove viewer */
 app.delete("/:id/viewers/:userId", zValidator("param", viewerParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -211,7 +200,6 @@ app.delete("/:id/viewers/:userId", zValidator("param", viewerParam), async (c) =
   }
 });
 
-/** POST /api/goals/:id/goals — add goal to set */
 app.post("/:id/goals", zValidator("param", idParam), zValidator("json", addGoalBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -235,7 +223,6 @@ app.post("/:id/goals", zValidator("param", idParam), zValidator("json", addGoalB
   }
 });
 
-/** PUT /api/goals/goals/:goalId — update goal text */
 app.put("/goals/:goalId", zValidator("param", goalIdParam), zValidator("json", goalTextBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -262,7 +249,6 @@ app.put("/goals/:goalId", zValidator("param", goalIdParam), zValidator("json", g
   }
 });
 
-/** PUT /api/goals/goals/:goalId/toggle — toggle goal completion */
 app.put("/goals/:goalId/toggle", zValidator("param", goalIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -285,7 +271,6 @@ app.put("/goals/:goalId/toggle", zValidator("param", goalIdParam), async (c) => 
   }
 });
 
-/** DELETE /api/goals/goals/:goalId — delete individual goal */
 app.delete("/goals/:goalId", zValidator("param", goalIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -305,7 +290,6 @@ app.delete("/goals/:goalId", zValidator("param", goalIdParam), async (c) => {
   }
 });
 
-/** DELETE /api/goals/:id — delete goal set */
 app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

@@ -1,6 +1,3 @@
-/**
- * Simplifier API routes for Mini App.
- */
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "../validate.js";
@@ -23,14 +20,13 @@ const log = createLogger("simplifier-route");
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schemas (json bodies + :id params). Free-text `text` is validated
-//    only as a string; the handler owns trim/empty/length enforcement.
+// Free-text `text` is validated only as a string; the handler owns
+// trim/empty/length enforcement.
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const simplifyBody = z.object({
   text: z.string().optional(),
 });
 
-/** GET /api/simplifier — simplification history */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -46,7 +42,6 @@ app.get("/", async (c) => {
   }
 });
 
-/** GET /api/simplifier/:id — single simplification */
 app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -68,7 +63,6 @@ app.get("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** POST /api/simplifier — simplify text */
 app.post("/", zValidator("json", simplifyBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -103,7 +97,6 @@ app.post("/", zValidator("json", simplifyBody), async (c) => {
   }
 });
 
-/** POST /api/simplifier/voice — transcribe audio then simplify */
 app.post("/voice", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -125,7 +118,7 @@ app.post("/voice", async (c) => {
     const arrayBuffer = await audioFile.arrayBuffer();
     await writeFile(tempPath, Buffer.from(arrayBuffer));
 
-    // Transcribe with general-purpose prompt (not calendar-biased)
+    // General-purpose prompt, not calendar-biased.
     const transcribeResult = await transcribeAudio(tempPath, "general");
     const transcript = transcribeResult.transcript;
 
@@ -150,7 +143,6 @@ app.post("/voice", async (c) => {
   }
 });
 
-/** DELETE /api/simplifier/:id — delete simplification */
 app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

@@ -32,7 +32,6 @@ interface AddNotableDateParams {
   isPriority?: boolean;
 }
 
-/** Get notable dates for a specific day. */
 export async function getDatesByMonthDay(
   tribeId: number,
   month: number,
@@ -53,7 +52,6 @@ export async function getDatesByMonthDay(
   return rows.map(mapRow);
 }
 
-/** Add a notable date. */
 export async function addNotableDate(params: AddNotableDateParams): Promise<NotableDate> {
   const [row] = await db
     .insert(notableDates)
@@ -73,7 +71,6 @@ export async function addNotableDate(params: AddNotableDateParams): Promise<Nota
   return mapRow(row);
 }
 
-/** Toggle is_priority flag on a notable date. */
 export async function toggleNotableDatePriority(id: number, tribeId: number): Promise<boolean> {
   const rows = await db
     .update(notableDates)
@@ -83,7 +80,6 @@ export async function toggleNotableDatePriority(id: number, tribeId: number): Pr
   return rows.length > 0;
 }
 
-/** Get a notable date by id. */
 export async function getNotableDateById(id: number, tribeId: number): Promise<NotableDate | null> {
   const [row] = await db
     .select()
@@ -93,7 +89,6 @@ export async function getNotableDateById(id: number, tribeId: number): Promise<N
   return mapRow(row);
 }
 
-/** Update specific fields of a notable date. */
 export async function updateNotableDate(
   id: number,
   tribeId: number,
@@ -120,7 +115,6 @@ export async function updateNotableDate(
   return mapRow(row);
 }
 
-/** Remove a notable date. */
 export async function removeNotableDate(id: number, tribeId: number): Promise<boolean> {
   const rows = await db
     .delete(notableDates)
@@ -129,7 +123,6 @@ export async function removeNotableDate(id: number, tribeId: number): Promise<bo
   return rows.length > 0;
 }
 
-/** List notable dates for a tribe (optionally filtered by month). */
 export async function listNotableDates(
   tribeId: number,
   month?: number
@@ -150,7 +143,6 @@ export async function listNotableDates(
   return rows.map(mapRow);
 }
 
-/** Count notable dates for a tribe (optionally filtered by month, excluding holidays). */
 export async function countNotableDates(
   tribeId: number,
   excludeHolidays: boolean = false
@@ -162,7 +154,6 @@ export async function countNotableDates(
   return row.value;
 }
 
-/** List notable dates with pagination (flat list, ordered by date). */
 export async function listNotableDatesPaginated(
   tribeId: number,
   limit: number,
@@ -187,12 +178,10 @@ export async function listNotableDatesPaginated(
   return rows.map(mapRow);
 }
 
-/** Get upcoming notable dates (next N days from today). */
 export async function getUpcomingDates(
   tribeId: number,
   days: number = 14
 ): Promise<NotableDate[]> {
-  // Build list of (month, day) pairs for the next N days
   const pairs: Array<{ month: number; day: number }> = [];
   const today = new Date();
   for (let i = 0; i < days; i++) {
@@ -221,7 +210,6 @@ export async function getUpcomingDates(
 
 // ─── Admin functions ────────────────────────────────────────────────────
 
-/** Admin: bulk delete notable dates by ID array. */
 export async function bulkDeleteDates(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db
@@ -231,7 +219,6 @@ export async function bulkDeleteDates(ids: number[]): Promise<number> {
   return rows.length;
 }
 
-/** Admin: delete all notable dates for a tribe. */
 export async function deleteAllDates(tribeId: number): Promise<number> {
   const rows = await db
     .delete(notableDates)
@@ -240,7 +227,6 @@ export async function deleteAllDates(tribeId: number): Promise<number> {
   return rows.length;
 }
 
-/** Admin: get all notable dates paginated (all tribes). */
 export async function getAllDatesPaginated(
   limit: number,
   offset: number
@@ -254,7 +240,6 @@ export async function getAllDatesPaginated(
   return rows.map(mapRow);
 }
 
-/** Admin: count all notable dates for a tribe. */
 export async function countAllDates(tribeId: number): Promise<number> {
   const [row] = await db
     .select({ value: count() })

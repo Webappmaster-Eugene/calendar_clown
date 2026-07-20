@@ -1,7 +1,3 @@
-/**
- * Core AI simplification function.
- * Calls OpenRouter (DeepSeek) to clean up messy text.
- */
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { SIMPLIFIER_MODEL } from "../constants.js";
 
@@ -20,10 +16,6 @@ const SYSTEM_PROMPT = `Ты — редактор расшифрованной р
 
 Выведи ТОЛЬКО очищенный текст, без пояснений.`;
 
-/**
- * Simplify the given text via AI.
- * @returns The simplified text and model name used.
- */
 export async function simplifyText(
   text: string,
 ): Promise<{ result: string; model: string }> {

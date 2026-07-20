@@ -1,6 +1,4 @@
 /**
- * Telegram Mini Apps SDK v3 initialization.
- *
  * Must be called BEFORE React's createRoot() so that SDK components
  * (closingBehavior, backButton, viewport, swipeBehavior) are mounted
  * and ready when the first React component renders.
@@ -16,15 +14,12 @@ import {
 } from "@telegram-apps/sdk-react";
 import { setInitData } from "./api/client";
 
-/** Whether the SDK initialized successfully (false in dev mode / outside Telegram). */
 let sdkReady = false;
 
 export function initTelegramSdk(): boolean {
   try {
-    // Base SDK init — sets up bridge communication.
     init();
 
-    // Mount stateful components so their signals are available.
     if (closingBehavior.mount.isAvailable()) {
       closingBehavior.mount();
     }
@@ -48,24 +43,21 @@ export function initTelegramSdk(): boolean {
       }
     }
 
-    // Signal that the Mini App is ready to be displayed.
     if (miniApp.ready.isAvailable()) {
       miniApp.ready();
     }
 
-    // Set header color to match secondary background.
     if (miniApp.setHeaderColor.isAvailable()) {
       miniApp.setHeaderColor("secondary_bg_color");
     }
 
-    // Initialize API client with auth data (initDataRaw for Authorization header).
     try {
       const raw = retrieveRawInitData();
       if (raw) {
         setInitData(raw);
       }
     } catch {
-      // retrieveRawInitData may throw if not in Telegram context — handled below.
+      // retrieveRawInitData may throw if not in Telegram context.
     }
 
     sdkReady = true;

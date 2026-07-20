@@ -1,7 +1,3 @@
-/**
- * Share-text icon button — delegates to useShareText, which prefers
- * Telegram's native share sheet and falls back to clipboard copy.
- */
 import type { CSSProperties } from "react";
 import { useShareText } from "../../hooks/useShareText";
 

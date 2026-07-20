@@ -15,13 +15,12 @@ export type ModeName =
 /** Operations that cannot be fully driven by plain text (need a UI/binary channel). */
 export type RequiresUI = "photo" | "file" | "auth" | "stream";
 
-/** Acting principal + resolved access context. Every surface fills this. */
 export interface ActionCtx {
   telegramId: number;
   menu: UserMenuContext;
 }
 
-/** Result of an action. `data` is the raw DTO (with ids) for machine/JSON output. */
+/** `data` is the raw DTO (with ids) for machine/JSON output. */
 export interface ActionResult {
   data: unknown;
   /** Optional human rendering; surfaces fall back to a generic renderer. */

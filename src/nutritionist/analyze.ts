@@ -1,7 +1,3 @@
-/**
- * Core AI food analysis function.
- * Calls OpenRouter (Gemini vision model) to analyze food photos.
- */
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { NUTRITIONIST_VISION_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
@@ -17,13 +13,6 @@ export interface FoodItem {
   fats_g: number;
   carbs_g: number;
   cooking_method: string;
-  /**
-   * Set by the AI (or by the server-side fuzzy fallback) when the item on
-   * the plate was matched to a product in the user's catalog. Downstream
-   * callers use this to display a "from catalog" badge and to trust the
-   * macros (which should already be derived from the catalog entry by the
-   * time the item reaches the service layer).
-   */
   matched_product_id?: number;
 }
 
@@ -41,11 +30,6 @@ export interface NutritionResult {
   confidence: "high" | "medium" | "low";
 }
 
-/**
- * Compact product representation injected into the system prompt so the
- * vision model can match plate items to user-specific products and use
- * their pre-calculated macros (scaled to the estimated portion weight).
- */
 export interface CatalogProductForPrompt {
   id: number;
   name: string;
@@ -58,9 +42,7 @@ export interface CatalogProductForPrompt {
 }
 
 export interface AnalyzeFoodOptions {
-  /** Product catalog entries, ordered newest first, already capped by caller. */
   products: CatalogProductForPrompt[];
-  /** Total catalog size — used to display truncation hint in the prompt. */
   total: number;
 }
 
@@ -141,14 +123,6 @@ const SYSTEM_PROMPT = `Ты — профессиональный нутрици�
 
 // ─── Analysis Function ─────────────────────────────────────────
 
-/**
- * Analyze a food photo via Gemini vision model.
- * @param imageBase64 - Base64-encoded image data
- * @param mimeType - Image MIME type (e.g., "image/jpeg", "image/heic")
- * @param caption - Optional user caption for context
- * @param catalog - Optional user product catalog for macro matching
- * @returns Structured nutrition result and model name
- */
 export async function analyzeFood(
   imageBase64: string,
   mimeType: string,
@@ -197,12 +171,8 @@ export async function analyzeFood(
 
 // ─── Catalog Prompt Block ──────────────────────────────────────
 
-/**
- * Build the multi-line Russian block that tells the AI about the user's
- * product catalog. Placed at the END of the system prompt (after the JSON
- * example) — "last instruction wins" is the most reliable position for
- * this kind of override in practice.
- */
+// Placed at the END of the system prompt (after the JSON example): "last
+// instruction wins" is the most reliable position for this override.
 export function buildCatalogBlock(catalog: AnalyzeFoodOptions): string {
   const lines: string[] = [];
   lines.push("ПОЛЬЗОВАТЕЛЬСКИЙ КАТАЛОГ ПРОДУКТОВ (значения на 100 г или 100 мл):");
@@ -211,7 +181,6 @@ export function buildCatalogBlock(catalog: AnalyzeFoodOptions): string {
     const rawDesc = (p.description ?? "").trim().replace(/\s+/g, " ");
     const desc = rawDesc.length > 80 ? `${rawDesc.slice(0, 80)}…` : rawDesc;
     const descSuffix = desc ? ` — ${desc}` : "";
-    // Numbers with up to 1 decimal place to keep the prompt compact.
     const cals = formatNumber(p.caloriesPer100G);
     const prot = formatNumber(p.proteinsPer100G);
     const fats = formatNumber(p.fatsPer100G);
@@ -244,19 +213,15 @@ function formatNumber(value: number): string {
 
 // ─── JSON Extraction ────────────────────────────────────────────
 
-/** Extract JSON from AI response, handling various markdown wrapping styles. */
 function extractJson(raw: string): Record<string, unknown> | null {
-  // 1. Try tryParseJson first (handles ```json ... ``` wrapper)
   const direct = tryParseJson(raw);
   if (direct) return direct;
 
-  // 2. Try stripping plain ``` wrapper (without "json" label)
   const plainFence = raw.replace(/^```\s*/m, "").replace(/\s*```\s*$/m, "").trim();
   try {
     return JSON.parse(plainFence) as Record<string, unknown>;
   } catch { /* continue */ }
 
-  // 3. Try extracting first JSON object from the text
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {

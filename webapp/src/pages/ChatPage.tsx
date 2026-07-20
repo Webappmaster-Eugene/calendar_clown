@@ -257,8 +257,7 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
       api.get<ChatMessageDto[]>(`/api/chat/dialogs/${dialogId}/messages`),
   });
 
-  // The dialog's own settings live in the shared dialogs list (same query key →
-  // deduped). Re-read after a settings PUT invalidates it.
+  // Reuse the shared dialogs list query key so React Query dedups the fetch.
   const { data: dialogs } = useQuery({
     queryKey: ["chat", "dialogs"],
     queryFn: () => api.get<ChatDialogDto[]>("/api/chat/dialogs"),
@@ -266,8 +265,6 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
   const dialog = dialogs?.find((d) => d.id === dialogId) ?? null;
   const [showSettings, setShowSettings] = useState(false);
 
-  // Effective message limit (env-overridable on the backend); fall back to the
-  // shared default until the config query resolves.
   const { data: chatConfig } = useQuery({
     queryKey: ["chat", "config"],
     queryFn: () => api.get<ChatConfigDto>("/api/chat/config"),
@@ -275,8 +272,6 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
   });
   const limit = chatConfig?.messageLimit ?? CHAT_DIALOG_MESSAGE_LIMIT;
 
-  // Per-dialog message cap: once reached, writing is blocked (start a new chat).
-  // dialog.messageCount is the authoritative total; messages.length is a fallback.
   const msgCount = dialog?.messageCount ?? messages?.length ?? 0;
   const atLimit = msgCount >= limit;
 
@@ -316,8 +311,7 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
         }
       );
 
-      // Wait for messages to be refetched before clearing optimistic state
-      // This prevents a visual flash where messages disappear briefly
+      // Await the refetch before clearing optimistic state, else messages flash empty.
       await queryClient.invalidateQueries({ queryKey: ["chat", "messages", dialogId] });
       queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
       setStreamingContent("");
@@ -325,7 +319,6 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка отправки");
       setPendingUserMessage(null);
-      // Refresh dialog list and messages on error too
       queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
       queryClient.invalidateQueries({ queryKey: ["chat", "messages", dialogId] });
     } finally {
@@ -333,7 +326,6 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
     }
   }, [input, isSending, atLimit, dialogId, queryClient]);
 
-  // Combine server messages with the current user input + streaming response
   const displayMessages = messages ?? [];
 
   return (
@@ -345,7 +337,6 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
         </button>
       </div>
 
-      {/* Applied model / settings summary */}
       {dialog && (
         <div className="card-hint" style={{ marginBottom: 8, fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
           <span>🤖 {dialog.model ?? "по умолчанию"}</span>

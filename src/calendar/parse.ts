@@ -3,7 +3,7 @@ import { parseRussianDuration } from "./duration.js";
 
 const ru = (chrono as unknown as { ru: typeof chrono }).ru ?? chrono;
 
-/** Reference for parsing: "10:00" means 10:00 MSK. */
+/** Parse reference: bare times like "10:00" are interpreted as MSK. */
 function mskRef() {
   return { instant: new Date(), timezone: "MSK" as const };
 }
@@ -14,10 +14,7 @@ export interface ParsedEvent {
   end: Date;
 }
 
-/**
- * Parse natural language like "Встреча завтра в 15:00" or "Созвон в понедельник 10:00".
- * Uses chrono-node (Russian locale). Times are interpreted in Europe/Moscow (MSK).
- */
+/** Times are interpreted in Europe/Moscow (MSK). */
 export function parseEventText(text: string): ParsedEvent | null {
   const trimmed = text.trim();
   if (!trimmed) return null;

@@ -1,9 +1,3 @@
-/**
- * MCP server built from the Action Registry. Each accessible action becomes one
- * tool; tool calls run through the same guard/dispatch as `/do` and REST. The
- * server is bound to a resolved principal (ActionCtx) — one per authenticated
- * connection.
- */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { ListToolsRequestSchema, CallToolRequestSchema, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ActionCtx } from "../actions/types.js";

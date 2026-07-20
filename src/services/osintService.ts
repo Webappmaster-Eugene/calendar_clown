@@ -1,7 +1,3 @@
-/**
- * OSINT business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   getSearchById,
   getFilteredSearchHistory,
@@ -33,9 +29,6 @@ async function requireDbUser(telegramId: number) {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Get search history for a user with pagination and optional filters.
- */
 export async function getSearchHistory(
   telegramId: number,
   limit: number = 10,
@@ -85,11 +78,6 @@ export async function getSearch(
   };
 }
 
-/**
- * Initiate an OSINT search (creates the DB record).
- * The actual search pipeline is orchestrated separately (requires Telegraf context for progress updates).
- * For API use, returns the search ID for polling.
- */
 export async function initiateSearch(
   telegramId: number,
   queryText: string,
@@ -105,8 +93,7 @@ export async function initiateSearch(
 
   const search = await createSearch(dbUser.id, queryText, inputMethod);
 
-  // Fire-and-forget: run the search pipeline in the background.
-  // The Mini App polls GET /api/osint/:id to track progress.
+  // Fire-and-forget: pipeline runs in the background; the Mini App polls GET /api/osint/:id for progress.
   runOsintSearch(dbUser.id, queryText, inputMethod, {
     existingSearchId: search.id,
   }).catch((err) => log.error("Background OSINT search failed:", err));

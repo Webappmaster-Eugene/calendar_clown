@@ -1,7 +1,3 @@
-/**
- * Reminders actions — thin wrappers over remindersService (mirrors
- * src/api/routes/reminders.ts). Individual mode (no tribe required for own CRUD).
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

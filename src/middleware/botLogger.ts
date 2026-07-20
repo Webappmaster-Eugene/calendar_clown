@@ -1,7 +1,3 @@
-/**
- * Telegraf middleware: logs every incoming bot update to action_logs.
- * Provides a blanket audit trail for all Telegram interactions.
- */
 import type { Context, MiddlewareFn } from "telegraf";
 import { logAction } from "../logging/actionLogger.js";
 

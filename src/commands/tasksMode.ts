@@ -1,8 +1,3 @@
-/**
- * Tasks mode command handler.
- * Task tracker with projects, deadlines, and automatic reminders.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
@@ -47,11 +42,9 @@ interface TaskCreationState {
   text?: string;
 }
 
-/** In-memory creation wizard states (telegramId → state). */
 const workCreationStates = new Map<number, WorkCreationState>();
 const taskCreationStates = new Map<number, TaskCreationState>();
 
-/** Voice task creation: waiting for work selection (telegramId → { text, deadline }). */
 const voiceWorkSelection = new Map<number, { text: string; deadline: Date | null }>();
 
 interface TaskEditState {
@@ -60,7 +53,6 @@ interface TaskEditState {
   workId: number;
 }
 
-/** In-memory edit wizard states (telegramId → state). */
 const taskEditStates = new Map<number, TaskEditState>();
 
 // ─── Keyboard ───────────────────────────────────────────────────────────
@@ -207,7 +199,6 @@ export async function handleTaskWorkCallback(ctx: Context): Promise<void> {
 
   await ctx.answerCbQuery();
 
-  // tw_view:<workId> — show work with tasks
   if (data.startsWith("tw_view:")) {
     const workId = parseInt(data.split(":")[1], 10);
     if (isNaN(workId)) return;
@@ -215,7 +206,6 @@ export async function handleTaskWorkCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // tw_add:<workId> — start adding task
   if (data.startsWith("tw_add:")) {
     const workId = parseInt(data.split(":")[1], 10);
     if (isNaN(workId)) return;
@@ -223,7 +213,6 @@ export async function handleTaskWorkCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // tw_del:<workId> — delete work confirmation
   if (data.startsWith("tw_del:")) {
     const workId = parseInt(data.split(":")[1], 10);
     if (isNaN(workId)) return;
@@ -237,7 +226,6 @@ export async function handleTaskWorkCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // tw_del_yes:<workId> — confirm deletion
   if (data.startsWith("tw_del_yes:")) {
     const workId = parseInt(data.split(":")[1], 10);
     if (isNaN(workId)) return;
@@ -250,7 +238,6 @@ export async function handleTaskWorkCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // tw_archive:<workId> — archive work
   if (data.startsWith("tw_archive:")) {
     const workId = parseInt(data.split(":")[1], 10);
     if (isNaN(workId)) return;
@@ -264,7 +251,6 @@ export async function handleTaskWorkCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // tw_hist:<workId> — show completed history
   if (data.startsWith("tw_hist:")) {
     const workId = parseInt(data.split(":")[1], 10);
     if (isNaN(workId)) return;
@@ -272,7 +258,6 @@ export async function handleTaskWorkCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // tw_voice_work:<workId> — pick work for voice task
   if (data.startsWith("tw_voice_work:")) {
     const workId = parseInt(data.split(":")[1], 10);
     if (isNaN(workId)) return;
@@ -291,7 +276,6 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
 
   await ctx.answerCbQuery();
 
-  // ti_done:<itemId>:<workId> — toggle completion
   if (data.startsWith("ti_done:")) {
     const parts = data.split(":");
     const itemId = parseInt(parts[1], 10);
@@ -313,7 +297,6 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // ti_del:<itemId>:<workId> — delete task
   if (data.startsWith("ti_del:")) {
     const parts = data.split(":");
     const itemId = parseInt(parts[1], 10);
@@ -330,7 +313,6 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // ti_edit:<itemId>:<workId> — show edit options
   if (data.startsWith("ti_edit:")) {
     const parts = data.split(":");
     const itemId = parseInt(parts[1], 10);
@@ -347,7 +329,6 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // ti_edt:<itemId>:<workId> — start editing text
   if (data.startsWith("ti_edt:")) {
     const parts = data.split(":");
     const itemId = parseInt(parts[1], 10);
@@ -359,7 +340,6 @@ export async function handleTaskItemCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // ti_edl:<itemId>:<workId> — start editing deadline
   if (data.startsWith("ti_edl:")) {
     const parts = data.split(":");
     const itemId = parseInt(parts[1], 10);
@@ -385,7 +365,6 @@ export async function handleTasksPageCallback(ctx: Context): Promise<void> {
 
   await ctx.answerCbQuery();
 
-  // t_page:<workId>:<offset> — paginate tasks
   if (data.startsWith("t_page:")) {
     const parts = data.split(":");
     const workId = parseInt(parts[1], 10);
@@ -403,13 +382,12 @@ export async function handleTasksText(ctx: Context): Promise<boolean> {
   const text = ctx.message.text.trim();
   if (!text) return false;
 
-  // Edit state handler (must come before creation wizards)
+  // Must run before the creation wizards below.
   const editState = taskEditStates.get(telegramId);
   if (editState) {
     return await handleEditInput(ctx, telegramId, editState, text);
   }
 
-  // Work creation wizard
   const workState = workCreationStates.get(telegramId);
   if (workState?.step === "name") {
     workCreationStates.delete(telegramId);
@@ -436,7 +414,6 @@ export async function handleTasksText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Task creation wizard
   const taskState = taskCreationStates.get(telegramId);
   if (taskState) {
     if (taskState.step === "text") {
@@ -522,17 +499,15 @@ export async function handleTasksVoice(
 
     const { work, text, deadline } = result;
 
-    // Resolve deadline once (used by both the pick-work and matched-work paths).
-    // Only when the AI DID detect a deadline but returned an unparseable value do
-    // we fall back to chrono on the transcript — never invent one from a null,
-    // else numbers in the task text ("задача 9483") could become a false deadline.
+    // Fall back to chrono only when the AI detected a deadline but returned an
+    // unparseable value — never invent one from a null, else numbers in the task
+    // text ("задача 9483") could become a false deadline.
     let deadlineDate: Date | null = null;
     if (deadline) {
       const parsed = new Date(deadline);
       deadlineDate = isNaN(parsed.getTime()) ? parseDeadline(transcript) : parsed;
     }
 
-    // If no works at all, ask to create one first
     if (works.length === 0) {
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
@@ -544,7 +519,6 @@ export async function handleTasksVoice(
       return;
     }
 
-    // If work is not determined, ask user to pick
     if (!work) {
       voiceWorkSelection.set(telegramId, { text, deadline: deadlineDate });
 
@@ -562,7 +536,6 @@ export async function handleTasksVoice(
       return;
     }
 
-    // Find the matched work
     const matchedWork = works.find((w) => w.name.toLowerCase() === work.toLowerCase());
     if (!matchedWork) {
       await ctx.telegram.editMessageText(
@@ -600,7 +573,6 @@ export async function handleTasksVoice(
       return;
     }
 
-    // No deadline anywhere — ask the user to specify it.
     taskCreationStates.set(telegramId, {
       step: "deadline",
       workId: matchedWork.id,
@@ -624,7 +596,7 @@ export async function handleTasksVoice(
         "Ошибка при обработке голосового сообщения.",
       );
     } catch {
-      // edit failed
+      /* ignore */
     }
   }
 }
@@ -660,7 +632,6 @@ async function showWorkDetail(
       msg += `⬜ ${escapeMarkdown(task.text)}\n  ⏰ ${dl}${overdue}\n\n`;
     }
 
-    // Show recent completed (up to 3)
     if (completedTasks.length > 0) {
       msg += `_Выполнено (последние):_\n`;
       for (const task of completedTasks.slice(0, 3)) {
@@ -780,7 +751,6 @@ async function handleVoiceWorkPick(
     return;
   }
 
-  // Need deadline — ask via text
   const data = await getWorkWithTasks(telegramId, workId);
   if (!data) {
     await ctx.reply("Проект был удалён. Создайте новый.");
@@ -799,27 +769,20 @@ async function handleVoiceWorkPick(
   );
 }
 
-/**
- * Parse a deadline string using chrono-node (Russian locale).
- * Returns a Date or null if parsing fails.
- */
 function parseDeadline(text: string): Date | null {
-  // Try chrono-node first (handles Russian dates like "завтра 18:00")
-  // Use MSK reference so "11:00" means 11:00 Moscow time, not server-local
+  // MSK reference so "11:00" means 11:00 Moscow time, not server-local.
   const results = chrono.ru.parse(text, { instant: new Date(), timezone: "MSK" as const }, { forwardDate: true });
   if (results.length > 0) {
     return results[0].start.date();
   }
 
-  // Try parsing ISO or common formats as fallback
-  // If no timezone info present, interpret as MSK (UTC+3)
+  // If no timezone info present, interpret as MSK (UTC+3).
   const hasTimezone = /[Zz]$/.test(text) || /[+-]\d{2}(:\d{2})?$/.test(text);
   const date = new Date(hasTimezone ? text : text + "+03:00");
   if (!isNaN(date.getTime()) && date.getTime() > Date.now()) {
     return date;
   }
 
-  // Try DD.MM format (common Russian format)
   const ddmmMatch = text.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\s+(\d{1,2}):(\d{2})$/);
   if (ddmmMatch) {
     const day = parseInt(ddmmMatch[1], 10);
@@ -837,9 +800,6 @@ function parseDeadline(text: string): Date | null {
   return null;
 }
 
-/**
- * Handle text input for task edit wizards (text or deadline).
- */
 async function handleEditInput(
   ctx: Context,
   telegramId: number,

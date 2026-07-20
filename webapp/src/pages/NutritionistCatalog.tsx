@@ -1,11 +1,4 @@
-/**
- * Catalog section of the Nutritionist page.
- *
- * Renders the user's product catalog (list + search + pagination),
- * create/edit form with optional package photo, and delete with
- * confirmation. Photos load via authed blob fetch so the InitData
- * Authorization header can be attached.
- */
+// Photos load via authed blob fetch so the InitData Authorization header can be attached.
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
@@ -147,7 +140,6 @@ export function NutritionistCatalog() {
 
   return (
     <div>
-      {/* Top bar: search + count + add */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div className="card-hint">
@@ -571,5 +563,4 @@ function buildFormData(form: FormState): FormData {
   return fd;
 }
 
-// Re-export ApiError type indirectly so consumers can narrow if needed.
 export type NutritionistCatalogError = ApiError;

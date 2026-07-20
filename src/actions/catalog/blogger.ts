@@ -1,7 +1,3 @@
-/**
- * Blogger actions — wrappers over bloggerService (mirrors src/api/routes/blogger.ts).
- * Tribe mode. Post generation goes through Claude → heavy.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

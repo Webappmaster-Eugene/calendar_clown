@@ -1,8 +1,3 @@
-/**
- * Fire-and-forget action logging for audit trail.
- * Logs user actions to action_logs table.
- */
-
 import { and, count, desc, eq, gte, ilike, lt, sql } from "drizzle-orm";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { db } from "../db/drizzle.js";
@@ -11,7 +6,6 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("action-log");
 
-/** Max details string length to prevent oversized payloads. */
 const MAX_DETAILS_LENGTH = 10_000;
 
 // ─── Types ───────────────────────────────────────────────────
@@ -71,7 +65,6 @@ export function logAction(
     });
 }
 
-/** Convenience: log action from API context where only telegramId is known. */
 export function logApiAction(
   telegramId: number,
   action: string,
@@ -82,7 +75,6 @@ export function logApiAction(
 
 // ─── Read ────────────────────────────────────────────────────
 
-/** Get paginated action logs with user info, supporting filters. */
 export async function getActionLogs(filters: ActionLogFilter): Promise<ActionLogsResult> {
   const conditions = [];
   if (filters.userId != null) conditions.push(eq(actionLogs.userId, filters.userId));
@@ -98,7 +90,7 @@ export async function getActionLogs(filters: ActionLogFilter): Promise<ActionLog
 
   const [countResult, items] = await Promise.all([
     db.select({ total: count() }).from(actionLogs).where(where),
-    // Preserve the original ::text casts so timestamp/bigint formatting is byte-identical.
+    // ::text casts keep timestamp/bigint formatting byte-identical.
     db
       .select({
         id: actionLogs.id,
@@ -121,7 +113,6 @@ export async function getActionLogs(filters: ActionLogFilter): Promise<ActionLog
   return { items, total: countResult[0].total };
 }
 
-/** Get all distinct action names (for filter dropdown). */
 export async function getDistinctActions(): Promise<string[]> {
   const rows = await db.selectDistinct({ action: actionLogs.action }).from(actionLogs).orderBy(actionLogs.action);
   return rows.map((r) => r.action);

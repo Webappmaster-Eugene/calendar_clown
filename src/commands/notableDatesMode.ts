@@ -40,7 +40,6 @@ function getNotableDatesKeyboard(isAdmin: boolean) {
   ]).resize();
 }
 
-/** Handle /dates command — enter notable dates mode. */
 export async function handleNotableDatesCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -66,7 +65,6 @@ export async function handleNotableDatesCommand(ctx: Context): Promise<void> {
   await setUserMode(telegramId, "notable_dates");
   await setModeMenuCommands(ctx, "notable_dates");
 
-  // Answer callback query if triggered from inline button
   if (ctx.callbackQuery) {
     await ctx.answerCbQuery("🎉 Даты");
   }
@@ -81,7 +79,6 @@ export async function handleNotableDatesCommand(ctx: Context): Promise<void> {
   );
 }
 
-/** Handle "Ближайшие" button — show upcoming dates. */
 export async function handleUpcomingDatesButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -119,7 +116,6 @@ export async function handleUpcomingDatesButton(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle "На неделе" button — show dates for this week (7 days). */
 export async function handleWeekDatesButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -157,7 +153,6 @@ export async function handleWeekDatesButton(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle "За месяц" button — show dates for the current month. */
 export async function handleMonthDatesButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -197,7 +192,6 @@ export async function handleMonthDatesButton(ctx: Context): Promise<void> {
   }
 }
 
-/** Format a flat list of notable dates for display. */
 function formatNotableDatesList(dates: NotableDate[]): string {
   return dates.map((d) => {
     const desc = d.description ? ` — ${d.description}` : "";
@@ -205,7 +199,6 @@ function formatNotableDatesList(dates: NotableDate[]): string {
   }).join("\n");
 }
 
-/** Build inline keyboard buttons for a paginated notable dates list. */
 function buildNotableDatesNavButtons(
   type: "all" | "delete" | "edit",
   offset: number,
@@ -221,7 +214,6 @@ function buildNotableDatesNavButtons(
   return navButtons;
 }
 
-/** Handle "Все даты" button — show all dates with pagination. */
 export async function handleAllDatesButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -266,10 +258,8 @@ type PendingAction =
   | { action: "add"; timestamp: number }
   | { action: "edit"; dateId: number; field: "name" | "date" | "desc"; timestamp: number };
 
-/** State for users currently adding/editing dates. Auto-expires after 5 minutes. */
 const pendingAction = new Map<number, PendingAction>();
 
-/** Clean expired pending actions (older than 5 minutes). */
 function cleanExpiredActions(): void {
   const now = Date.now();
   const TTL = 5 * 60 * 1000;
@@ -278,7 +268,6 @@ function cleanExpiredActions(): void {
   }
 }
 
-/** Handle "Добавить" button. */
 export async function handleAddDateButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -291,7 +280,6 @@ export async function handleAddDateButton(ctx: Context): Promise<void> {
   );
 }
 
-/** Handle "Удалить" button. */
 export async function handleDeleteDateButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -330,7 +318,6 @@ export async function handleDeleteDateButton(ctx: Context): Promise<void> {
   });
 }
 
-/** Handle delete callback. */
 export async function handleNotableDateDeleteCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -361,7 +348,6 @@ export async function handleNotableDateDeleteCallback(ctx: Context): Promise<voi
   }
 }
 
-/** Handle priority toggle callback. */
 export async function handleNotableDatePriorityCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -403,7 +389,6 @@ export async function handleNotableDatePriorityCallback(ctx: Context): Promise<v
   }
 }
 
-/** Handle text input in notable_dates mode. */
 export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
@@ -474,7 +459,6 @@ export async function handleNotableDatesText(ctx: Context): Promise<boolean> {
   return true;
 }
 
-/** Handle text input for editing a notable date field. */
 async function handleEditTextInput(
   ctx: Context,
   telegramId: number,
@@ -528,7 +512,6 @@ async function handleEditTextInput(
   return true;
 }
 
-/** Handle "✏️ Изменить" button — show list of dates to edit. */
 export async function handleEditDateButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -567,7 +550,6 @@ export async function handleEditDateButton(ctx: Context): Promise<void> {
   });
 }
 
-/** Handle callback when a date is selected for editing — show field buttons. */
 export async function handleNotableDateEditCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -611,7 +593,6 @@ export async function handleNotableDateEditCallback(ctx: Context): Promise<void>
   }
 }
 
-/** Handle notable dates pagination callback. */
 export async function handleNotableDatesPageCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const telegramId = ctx.from?.id;
@@ -672,7 +653,6 @@ export async function handleNotableDatesPageCallback(ctx: Context): Promise<void
   }
 }
 
-/** Handle callback when a field is selected for editing — prompt for new value. */
 export async function handleNotableDateEditFieldCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -704,7 +684,6 @@ export async function handleNotableDateEditFieldCallback(ctx: Context): Promise<
 
 // ─── CSV Import via Document Upload ─────────────────────────────────────
 
-/** Simple CSV line parser that handles quoted fields. */
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = "";
@@ -726,7 +705,6 @@ function parseCSVLine(line: string): string[] {
 }
 
 /**
- * Handle document upload in notable dates mode — import CSV file.
  * CSV format: Subject,Start Date,Start Time,End Date,End Time,Description
  * Subject: "🎂 День рождения: Имя Фамилия"
  * Start Date: MM/DD/YYYY

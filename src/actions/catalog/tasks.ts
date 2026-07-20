@@ -1,8 +1,3 @@
-/**
- * Tasks actions — thin wrappers over tasksService (mirrors src/api/routes/tasks.ts).
- * Tribe mode. Deadlines: naive datetimes are interpreted as MSK (UTC+3), same as
- * the REST route's parseMskDeadline.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {
@@ -19,7 +14,7 @@ import {
   getCompletedHistory,
 } from "../../services/tasksService.js";
 
-/** Interpret a naive datetime string as MSK; pass through explicit offsets. */
+// Naive datetime strings are interpreted as MSK (UTC+3); explicit offsets pass through.
 function parseMskDeadline(deadline: string): Date {
   if (/[Zz]$/.test(deadline) || /[+-]\d{2}(:\d{2})?$/.test(deadline)) {
     return new Date(deadline);

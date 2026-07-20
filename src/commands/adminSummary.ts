@@ -84,7 +84,6 @@ export async function handleSummaryCallback(ctx: Context): Promise<void> {
       parse_mode: "Markdown",
     });
   } catch {
-    // message might not be editable, send new one
     await ctx.reply(`⏳ Собираю данные за *${range.label}*...`, { parse_mode: "Markdown" });
   }
 
@@ -115,7 +114,6 @@ export async function handleSummaryCallback(ctx: Context): Promise<void> {
         ]),
       });
     } catch {
-      // Markdown parse error — retry without parse_mode
       try {
         await ctx.editMessageText(resultText.replace(/[*_`\[\]\\]/g, ""), {
           ...Markup.inlineKeyboard([

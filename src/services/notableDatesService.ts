@@ -1,7 +1,3 @@
-/**
- * Notable Dates business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   addNotableDate,
   removeNotableDate,
@@ -148,7 +144,6 @@ export async function togglePriority(telegramId: number, dateId: number): Promis
   return toggleNotableDatePriority(dateId, dbUser.tribeId!);
 }
 
-/** Simple CSV line parser that handles quoted fields. */
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = "";
@@ -168,10 +163,7 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-/**
- * Import notable dates from Google Calendar CSV export.
- * CSV format: Subject,Start Date,Start Time,End Date,End Time,Description
- */
+// CSV format (Google Calendar export): Subject,Start Date,Start Time,End Date,End Time,Description
 export async function importDatesFromCsv(
   telegramId: number,
   csvContent: string

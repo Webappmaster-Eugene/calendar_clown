@@ -1,8 +1,3 @@
-/**
- * Lightweight logger with module tags and configurable log level.
- * Format: ISO_TIMESTAMP [LEVEL] [tag] message
- */
-
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 const LEVELS: Record<LogLevel, number> = {

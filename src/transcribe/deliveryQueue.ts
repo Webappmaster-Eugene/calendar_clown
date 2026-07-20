@@ -1,7 +1,6 @@
 /**
- * Ordered delivery of transcription results.
- * Ensures results are sent to users in the order voice messages were received,
- * even though processing may complete out of order (concurrency=2).
+ * Ordered delivery of transcription results: results are sent to users in the order
+ * voice messages were received, even though processing may complete out of order (concurrency=2).
  */
 
 import type { Telegraf } from "telegraf";
@@ -11,32 +10,24 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("delivery");
 
-/** Stored bot reference for use by external callers that don't have bot in scope. */
 let botRef: Telegraf | null = null;
 
-/** Set the bot reference for the delivery module. Call once at startup. */
 export function setDeliveryBotRef(bot: Telegraf): void {
   botRef = bot;
 }
 
-/** Get stored bot reference. Throws if not set. */
 export function getDeliveryBot(): Telegraf {
   if (!botRef) throw new Error("Delivery bot reference not set. Call setDeliveryBotRef first.");
   return botRef;
 }
 
-/**
- * Per-user promise chain to prevent concurrent deliveries for the same user.
- * Each user gets a serialized chain of delivery attempts.
- */
+/** Per-user promise chain serializing delivery attempts to prevent concurrent deliveries for the same user. */
 const deliveryLocks = new Map<number, Promise<void>>();
 
 /**
- * Deliver all consecutive completed/failed transcriptions for a user,
- * starting from the first undelivered one.
- *
- * If a pending/processing job is encountered, delivery stops and waits
- * for that job to complete (it will call this function again when done).
+ * Deliver all consecutive completed/failed transcriptions for a user, starting from the first
+ * undelivered one. On a pending/processing job, delivery stops and waits for that job to complete
+ * (it will call this function again when done).
  */
 export function deliverCompletedInOrder(bot: Telegraf, userId: number): void {
   const prev = deliveryLocks.get(userId) ?? Promise.resolve();
@@ -46,7 +37,6 @@ export function deliverCompletedInOrder(bot: Telegraf, userId: number): void {
       log.error(`Delivery error for user ${userId}: ${err instanceof Error ? err.message : String(err)}`);
     })
     .finally(() => {
-      // Clean up lock entry if this is still the latest promise in the chain
       if (deliveryLocks.get(userId) === next) {
         deliveryLocks.delete(userId);
       }
@@ -78,7 +68,6 @@ async function doDeliver(bot: Telegraf, userId: number): Promise<void> {
       await markDelivered(item.id);
       log.info(`Delivered transcription ${item.id} (seq=${item.sequenceNumber}) to user ${userId}`);
     } else if (item.status === "completed" && !item.transcript) {
-      // Completed but no transcript — notify about error
       await editStatusSafe(
         bot,
         chatId,
@@ -87,7 +76,6 @@ async function doDeliver(bot: Telegraf, userId: number): Promise<void> {
       );
       await markDelivered(item.id);
     } else if (item.status === "failed") {
-      // Failed — send error message, don't block subsequent deliveries
       const errorText = item.errorMessage === "Очищено пользователем"
         ? "Транскрипция отменена."
         : "Не удалось расшифровать голосовое сообщение. Попробуйте ещё раз.";

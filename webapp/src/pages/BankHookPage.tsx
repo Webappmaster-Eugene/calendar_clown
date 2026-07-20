@@ -10,11 +10,6 @@ interface BankHookData {
 const PACKAGE_NAME = "com.idamob.tinkoff.android";
 const PUSH_BODY = '{"title":"[notification_title]","text":"[notification_text]"}';
 
-/**
- * Bank push-notification webhook setup page.
- * Shows the user's personal webhook URL and the phone-side (MacroDroid/Tasker) steps
- * for auto-importing T-Bank card spends. Mirrors the /bankhook bot command.
- */
 export function BankHookPage() {
   useClosingConfirmation();
   const queryClient = useQueryClient();

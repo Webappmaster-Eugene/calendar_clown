@@ -1,8 +1,3 @@
-/**
- * Nutritionist actions — wrappers over nutritionistService
- * (mirrors src/api/routes/nutritionist.ts + nutritionist-products.ts).
- * Individual mode. Photo analysis stays UI-only (binary channel).
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

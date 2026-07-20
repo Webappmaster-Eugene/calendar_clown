@@ -1,8 +1,3 @@
-/**
- * Cron scheduler for goal reminders.
- * Checks pending reminders every hour and sends progress messages.
- */
-
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
@@ -14,7 +9,6 @@ const log = createLogger("goals-scheduler");
 
 let goalsCron: Cron | null = null;
 
-/** Start the goals reminder scheduler. */
 export function startGoalsScheduler(bot: Telegraf): void {
   const expr = process.env.GOALS_CRON ?? "0 */1 * * *";
 
@@ -26,7 +20,6 @@ export function startGoalsScheduler(bot: Telegraf): void {
   log.info(`Goals scheduler started: "${expr}" (Europe/Moscow)`);
 }
 
-/** Stop the scheduler. */
 export function stopGoalsScheduler(): void {
   if (goalsCron) {
     goalsCron.stop();
@@ -35,7 +28,6 @@ export function stopGoalsScheduler(): void {
   }
 }
 
-/** Check pending reminders and send progress messages. */
 async function sendGoalReminders(bot: Telegraf): Promise<void> {
   const now = new Date();
   const pending = await getPendingReminders(now);

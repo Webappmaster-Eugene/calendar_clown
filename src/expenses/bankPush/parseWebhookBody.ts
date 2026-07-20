@@ -1,11 +1,8 @@
 /**
- * Parse a bank-push webhook body into {title, text}.
- *
- * The forwarder (MacroDroid) sends the JSON template {"title":"…","text":"…"}, but does
- * NOT JSON-escape the notification values — and Android notification text routinely
- * contains raw newlines and quotes, which make the body invalid JSON. So after a strict
- * parse we fall back to a template-anchored extraction (tolerant of newlines/quotes
- * inside the values) and, last, to plain text (first line = title, rest = text).
+ * The forwarder (MacroDroid) fills the JSON template {"title":"…","text":"…"} but does
+ * NOT JSON-escape the values, and Android notification text routinely contains raw
+ * newlines/quotes — so the body is often invalid JSON. Hence the fallback chain: strict
+ * parse → template-anchored extraction → plain text (first line = title, rest = text).
  */
 export function parseBankWebhookBody(body: string): { title: string; text: string } {
   const trimmed = body.trim();

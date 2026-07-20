@@ -1,8 +1,3 @@
-/**
- * Cron scheduler for reminders.
- * Runs every minute, checks all active reminders, sends matching ones.
- */
-
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
@@ -14,7 +9,6 @@ const log = createLogger("reminders-scheduler");
 
 let remindersCron: Cron | null = null;
 
-/** Start the reminders scheduler (every minute). */
 export function startRemindersScheduler(bot: Telegraf): void {
   const expr = process.env.REMINDERS_CRON ?? "* * * * *";
 
@@ -25,7 +19,6 @@ export function startRemindersScheduler(bot: Telegraf): void {
   log.info(`Reminders scheduler started: "${expr}" (Europe/Moscow)`);
 }
 
-/** Stop the scheduler. */
 export function stopRemindersScheduler(): void {
   if (remindersCron) {
     remindersCron.stop();
@@ -34,7 +27,6 @@ export function stopRemindersScheduler(): void {
   }
 }
 
-/** Check all active reminders and send matching ones. */
 async function processReminders(bot: Telegraf): Promise<void> {
   let reminders;
   try {

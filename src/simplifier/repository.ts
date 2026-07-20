@@ -1,7 +1,3 @@
-/**
- * Repository for thought_simplifications table.
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
 import { and, count, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { db } from "../db/drizzle.js";
 import { thoughtSimplifications } from "../db/schema.js";
@@ -46,7 +42,6 @@ function mapRow(row: typeof thoughtSimplifications.$inferSelect): Simplification
 
 // ─── CRUD ───────────────────────────────────────────────────────
 
-/** Insert a new simplification record (status: pending). */
 export async function createSimplification(
   userId: number,
   inputMethod: string,
@@ -70,7 +65,6 @@ export async function createSimplification(
   return mapRow(row);
 }
 
-/** Update simplification status to 'processing'. */
 export async function markSimplificationProcessing(id: number): Promise<void> {
   await db
     .update(thoughtSimplifications)
@@ -78,7 +72,6 @@ export async function markSimplificationProcessing(id: number): Promise<void> {
     .where(eq(thoughtSimplifications.id, id));
 }
 
-/** Mark simplification as completed with the result text. */
 export async function markSimplificationCompleted(
   id: number,
   simplifiedText: string,
@@ -90,7 +83,6 @@ export async function markSimplificationCompleted(
     .where(eq(thoughtSimplifications.id, id));
 }
 
-/** Mark simplification as failed with an error message. */
 export async function markSimplificationFailed(
   id: number,
   errorMessage: string,
@@ -101,7 +93,6 @@ export async function markSimplificationFailed(
     .where(eq(thoughtSimplifications.id, id));
 }
 
-/** Mark simplification as delivered to the user. */
 export async function markSimplificationDelivered(id: number): Promise<void> {
   await db
     .update(thoughtSimplifications)
@@ -111,7 +102,6 @@ export async function markSimplificationDelivered(id: number): Promise<void> {
 
 // ─── Delivery Queries ───────────────────────────────────────────
 
-/** Get undelivered simplifications for a user, ordered by sequence_number ASC. */
 export async function getUndeliveredSimplificationsForUser(
   userId: number,
 ): Promise<Simplification[]> {
@@ -123,7 +113,6 @@ export async function getUndeliveredSimplificationsForUser(
   return rows.map(mapRow);
 }
 
-/** Get distinct user IDs with undelivered completed/failed simplifications (for recovery). */
 export async function getDistinctUsersWithUndeliveredSimplifications(): Promise<number[]> {
   const rows = await db
     .selectDistinct({ userId: thoughtSimplifications.userId })
@@ -137,7 +126,6 @@ export async function getDistinctUsersWithUndeliveredSimplifications(): Promise<
   return rows.map((r) => r.userId);
 }
 
-/** Mark stale pending/processing simplifications as failed (timeout cleanup). */
 export async function markStaleSimplificationsAsFailed(
   maxAgeMinutes: number = 30,
 ): Promise<number> {
@@ -156,7 +144,6 @@ export async function markStaleSimplificationsAsFailed(
 
 // ─── History Queries ────────────────────────────────────────────
 
-/** Get paginated simplifications for a user (newest first). */
 export async function getSimplificationsPaginated(
   userId: number,
   limit: number,
@@ -172,7 +159,6 @@ export async function getSimplificationsPaginated(
   return rows.map(mapRow);
 }
 
-/** Count all simplifications for a user. */
 export async function countSimplifications(userId: number): Promise<number> {
   const [row] = await db
     .select({ value: count() })
@@ -181,7 +167,6 @@ export async function countSimplifications(userId: number): Promise<number> {
   return row.value;
 }
 
-/** Get a single simplification by ID (with ownership check). */
 export async function getSimplificationById(
   id: number,
   userId: number,
@@ -193,7 +178,6 @@ export async function getSimplificationById(
   return row ? mapRow(row) : null;
 }
 
-/** Delete a simplification (with ownership check). Returns true if deleted. */
 export async function deleteSimplification(
   id: number,
   userId: number,

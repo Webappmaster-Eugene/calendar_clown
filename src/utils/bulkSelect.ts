@@ -1,8 +1,3 @@
-/**
- * Reusable bulk selection UI for Telegram inline keyboards.
- * Used across admin data management for bulk delete operations.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { createLogger } from "./logger.js";
@@ -27,7 +22,7 @@ export interface BulkSelectState {
 
 const bulkStates = new Map<number, BulkSelectState>();
 
-const BULK_TTL = 10 * 60 * 1000; // 10 minutes
+const BULK_TTL = 10 * 60 * 1000;
 
 function cleanExpired(): void {
   const now = Date.now();
@@ -36,7 +31,6 @@ function cleanExpired(): void {
   }
 }
 
-/** Initialize a bulk select session and send the first page. */
 export async function initBulkSelect(
   ctx: Context,
   telegramId: number,
@@ -65,7 +59,6 @@ export async function initBulkSelect(
   await sendBulkPage(ctx, state, true);
 }
 
-/** Build and send the bulk selection keyboard. */
 async function sendBulkPage(
   ctx: Context,
   state: BulkSelectState,
@@ -120,7 +113,6 @@ async function sendBulkPage(
   }
 }
 
-/** Handle all `bulk:*` callbacks. */
 export async function handleBulkCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;

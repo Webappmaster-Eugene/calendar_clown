@@ -6,7 +6,7 @@ import type { OpenRouterModelDto } from "../shared/types.js";
 const log = createLogger("chat-models");
 
 const MODELS_URL = OPENROUTER_URL.replace(/\/chat\/completions$/, "/models");
-const CACHE_TTL_MS = 60 * 60 * 1000; // models change rarely; refresh hourly
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 interface RawModel {
   id: string;
@@ -23,7 +23,6 @@ function toNum(v: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-// Exported for unit testing.
 export function mapModel(m: RawModel): OpenRouterModelDto {
   const promptPrice = toNum(m.pricing?.prompt);
   const completionPrice = toNum(m.pricing?.completion);
@@ -77,8 +76,7 @@ export interface ModelSearchOpts {
 }
 
 /** Pure filter + rank over an already-loaded catalog. Filters (free/vendor/query)
- *  apply BEFORE the cap so nothing is hidden by it; prefix matches rank first.
- *  Exported for unit testing. */
+ *  apply BEFORE the cap so nothing is hidden by it; prefix matches rank first. */
 export function filterAndRankModels(
   all: OpenRouterModelDto[],
   query: string,
@@ -104,17 +102,14 @@ export function filterAndRankModels(
   return matched.slice(0, limit);
 }
 
-/** Distinct vendors (sorted), for the picker's vendor filter. Exported for tests. */
 export function vendorsOf(models: OpenRouterModelDto[]): string[] {
   return Array.from(new Set(models.map((m) => m.vendor))).sort((a, b) => a.localeCompare(b));
 }
 
-/** Search the catalog by id/name substring with optional free-only / vendor filters. */
 export async function searchModels(query: string, opts: ModelSearchOpts = {}): Promise<OpenRouterModelDto[]> {
   return filterAndRankModels(await listOpenRouterModels(), query, opts);
 }
 
-/** Distinct vendors in the catalog (sorted), for the picker's vendor filter. */
 export async function listModelVendors(): Promise<string[]> {
   return vendorsOf(await listOpenRouterModels());
 }

@@ -12,12 +12,10 @@ import { logAction } from "../logging/actionLogger.js";
 
 export { DB_UNAVAILABLE_MSG };
 
-/** Single bottom row to return to main menu — used in all mode keyboards. */
 export function getModeButtons(_isAdmin: boolean): string[][] {
   return [["🏠 Главное меню"]];
 }
 
-/** Per-mode commands for the Telegram hamburger menu. */
 const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: string }>> = {
   calendar: [
     { command: "new", description: "Создать встречу из фразы" },
@@ -117,7 +115,6 @@ const MODE_COMMANDS: Record<UserMode, Array<{ command: string; description: stri
   ],
 };
 
-/** Update the Telegram hamburger menu commands for the user's current mode. */
 export async function setModeMenuCommands(ctx: Context, mode: UserMode): Promise<void> {
   const chatId = ctx.chat?.id;
   if (chatId == null) return;
@@ -127,7 +124,7 @@ export async function setModeMenuCommands(ctx: Context, mode: UserMode): Promise
       scope: { type: "chat", chat_id: chatId },
     });
   } catch {
-    // Non-critical — silently ignore
+    /* non-critical */
   }
 }
 
@@ -158,7 +155,6 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
         ["🥗 Нутрициолог", "✅ Задачи"],
       ]).resize();
     }
-    // User without tribe — limited modes
     return Markup.keyboard([
       ["📅 Календарь", "🎙️ Транскрибация"],
       ["🧹 Упрощатель", "🧙 База знаний"],
@@ -167,7 +163,6 @@ export function getModeKeyboard(isAdmin: boolean, context?: UserMenuContext | nu
     ]).resize();
   }
 
-  // Fallback: simple admin check
   const rows = [
     ["📅 Календарь", "💰 Расходы"],
     ["🎙️ Транскрибация", "🧹 Упрощатель"],
@@ -202,7 +197,6 @@ export async function handleExpensesCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  // Ensure user exists in DB before switching mode
   const dbUser = await ensureUser(
     telegramId,
     ctx.from?.username ?? null,
@@ -325,7 +319,7 @@ export async function handleModeCommand(ctx: Context): Promise<void> {
   const isAdmin = telegramId != null && isBootstrapAdmin(telegramId);
   logAction(null, telegramId ?? 0, "mode_switch", { mode: "menu" });
 
-  // If triggered from the "🏠 Главное меню" keyboard button, show keyboard-based mode selector
+  // Keyboard button press → reply-keyboard selector; inline command → inline selector
   const isFromKeyboard = ctx.message && "text" in ctx.message && ctx.message.text === "🏠 Главное меню";
   if (isFromKeyboard) {
     const menuCtx = telegramId ? await getUserMenuContext(telegramId) : null;

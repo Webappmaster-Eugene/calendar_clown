@@ -1,8 +1,5 @@
-/**
- * Digest actions — wrappers over digestService (mirrors src/api/routes/digest.ts).
- * Tribe mode. MTProto auth and the digest run itself need channels/binary/bot
- * context that a plain text surface cannot provide, so they stay guarded.
- */
+// MTProto auth and the digest run need binary/bot context a plain text surface
+// can't provide, so those actions stay guarded.
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

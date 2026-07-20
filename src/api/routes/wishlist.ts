@@ -19,8 +19,6 @@ import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schemas (json bodies + :id/:itemId params). Query params keep the
-//    handlers' own defensive parsing. Schemas mirror what handlers accept.
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const itemIdParam = z.object({ itemId: z.coerce.number().int().positive() });
 const createWishlistBody = z.object({
@@ -44,11 +42,10 @@ const editItemBody = z.object({
   priority: z.number().optional(),
 });
 
-/** GET /api/wishlist — list wishlists (own + tribe) */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
-  const scope = c.req.query("scope") ?? "all"; // "own" | "tribe" | "all"
+  const scope = c.req.query("scope") ?? "all";
 
   try {
     if (scope === "own") {
@@ -59,7 +56,6 @@ app.get("/", async (c) => {
       const tribe = await getTribeWishlists(telegramId);
       return c.json({ ok: true, data: { own: [], tribe } });
     }
-    // scope === "all"
     const [own, tribe] = await Promise.all([
       getUserWishlists(telegramId),
       getTribeWishlists(telegramId),
@@ -71,7 +67,6 @@ app.get("/", async (c) => {
   }
 });
 
-/** DELETE /api/wishlist/:id — delete wishlist */
 app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -91,7 +86,6 @@ app.delete("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PUT /api/wishlist/:id — update wishlist (name, emoji) */
 app.put("/:id", zValidator("param", idParam), zValidator("json", updateWishlistBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -122,7 +116,6 @@ app.put("/:id", zValidator("param", idParam), zValidator("json", updateWishlistB
   }
 });
 
-/** POST /api/wishlist — create wishlist */
 app.post("/", zValidator("json", createWishlistBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -142,7 +135,6 @@ app.post("/", zValidator("json", createWishlistBody), async (c) => {
   }
 });
 
-/** GET /api/wishlist/:id/items — list items */
 app.get("/:id/items", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -161,7 +153,6 @@ app.get("/:id/items", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** POST /api/wishlist/:id/items — add item */
 app.post("/:id/items", zValidator("param", idParam), zValidator("json", addItemBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -195,7 +186,6 @@ app.post("/:id/items", zValidator("param", idParam), zValidator("json", addItemB
   }
 });
 
-/** PUT /api/wishlist/items/:itemId — edit item */
 app.put("/items/:itemId", zValidator("param", itemIdParam), zValidator("json", editItemBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -233,7 +223,6 @@ app.put("/items/:itemId", zValidator("param", itemIdParam), zValidator("json", e
   }
 });
 
-/** PUT /api/wishlist/items/:itemId/reserve — toggle reserve */
 app.put("/items/:itemId/reserve", zValidator("param", itemIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -244,7 +233,6 @@ app.put("/items/:itemId/reserve", zValidator("param", itemIdParam), async (c) =>
   }
 
   try {
-    // Try to reserve; if already reserved by this user, unreserve
     const reserved = await reserveWishlistItem(telegramId, itemId);
     if (!reserved) {
       const unreserved = await unreserveWishlistItem(telegramId, itemId);
@@ -259,7 +247,6 @@ app.put("/items/:itemId/reserve", zValidator("param", itemIdParam), async (c) =>
   }
 });
 
-/** DELETE /api/wishlist/items/:itemId — delete item */
 app.delete("/items/:itemId", zValidator("param", itemIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

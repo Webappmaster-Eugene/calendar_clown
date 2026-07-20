@@ -1,5 +1,3 @@
-/** Single source of truth for mode → route mapping (shared by the mode selector,
- *  the app shell mode indicator and the bottom quick-switch bar). */
 export const MODE_ROUTES: Record<string, string> = {
   calendar: "/calendar",
   expenses: "/expenses",
@@ -21,7 +19,7 @@ export const MODE_ROUTES: Record<string, string> = {
   admin: "/admin",
 };
 
-/** Inverse of MODE_ROUTES. Subroutes (e.g. "/calendar/new") are handled by callers. */
+// Subroutes (e.g. "/calendar/new") are handled by callers.
 export const ROUTE_TO_MODE: Record<string, string> = Object.fromEntries(
   Object.entries(MODE_ROUTES).map(([mode, route]) => [route, mode]),
 );

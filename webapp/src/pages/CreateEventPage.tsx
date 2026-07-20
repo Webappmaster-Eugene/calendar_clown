@@ -12,9 +12,7 @@ export function CreateEventPage() {
   const [text, setText] = useState("");
   const navigate = useNavigate();
 
-  // Stores LLM-extracted intent from voice input (cleared when user edits text)
   const [extractedEvents, setExtractedEvents] = useState<CalendarIntentEvent[] | null>(null);
-  // Tracks the transcript that corresponds to the current extractedEvents
   const voiceTranscriptRef = useRef<string>("");
 
   const mutation = useMutation({
@@ -30,7 +28,6 @@ export function CreateEventPage() {
 
   const handleTextChange = (newText: string) => {
     setText(newText);
-    // If user manually edits the transcript, invalidate the extracted intent
     if (extractedEvents && newText !== voiceTranscriptRef.current) {
       setExtractedEvents(null);
     }
@@ -54,7 +51,6 @@ export function CreateEventPage() {
     const trimmed = text.trim();
     if (!trimmed || mutation.isPending) return;
 
-    // If we have pre-extracted intent from voice (and user didn't edit), use it directly
     if (extractedEvents) {
       mutation.mutate({ intent: { events: extractedEvents } });
     } else {

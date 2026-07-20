@@ -1,8 +1,3 @@
-/**
- * Digest worker: orchestrates the full digest pipeline for a single rubric.
- * Parse channels → rank posts → summarize → save to DB → send to user.
- */
-
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
 import { logAction } from "../logging/actionLogger.js";
@@ -28,10 +23,6 @@ const log = createLogger("digest");
 /** Telegram message max length. */
 const TG_MAX_LENGTH = 4096;
 
-/**
- * Run digest for a single user (all their active rubrics).
- * Returns number of rubrics processed.
- */
 export async function runDigestForUser(
   telegramId: number,
   bot: Telegraf
@@ -57,7 +48,7 @@ export async function runDigestForUser(
       log.error(`Digest failed for rubric "${rubrics[i].name}":`, err);
     }
 
-    // Pause between rubrics
+    // Pause between rubrics to avoid MTProto rate limits.
     if (i < rubrics.length - 1) {
       await new Promise((r) => setTimeout(r, 10_000));
     }
@@ -72,9 +63,6 @@ export async function runDigestForUser(
   return processed;
 }
 
-/**
- * Run digest for a single rubric: parse → rank → summarize → save → send.
- */
 async function runDigestForRubric(
   rubric: DigestRubric,
   dbUserId: number,
@@ -91,7 +79,6 @@ async function runDigestForRubric(
   log.info(`Digest run #${run.id} started: rubric="${rubric.name}", channels=${channels.length}`);
 
   try {
-    // 1. Parse channels
     const { posts, channelsParsed, errors } = await readMultipleChannels(
       channels.map((c) => ({ username: c.channelUsername })),
       24
@@ -107,13 +94,10 @@ async function runDigestForRubric(
       return;
     }
 
-    // 2. Rank and select top posts
     const topPosts = selectTopPosts(posts, DEFAULT_DIGEST_SIZE);
 
-    // 3. Summarize posts
     const summaries = await summarizePosts(topPosts.map((p) => p.text));
 
-    // 4. Save to DB
     const dbPosts: CreateDigestPostParams[] = topPosts.map((post, i) => ({
       runId: run.id,
       rubricId: rubric.id,
@@ -136,7 +120,6 @@ async function runDigestForRubric(
     await insertDigestPosts(dbPosts);
     await completeRun(run.id, channelsParsed, posts.length, topPosts.length);
 
-    // 5. Format and send digest (may be split into multiple messages)
     const messages = formatDigestMessage(rubric, topPosts, summaries);
     for (let mi = 0; mi < messages.length; mi++) {
       await sendMessage(bot, telegramId, messages[mi]);
@@ -145,7 +128,6 @@ async function runDigestForRubric(
       }
     }
 
-    // 6. Discovery: suggest new validated channels
     const trackedSet = new Set(channels.map((c) => c.channelUsername));
     const discovered = discoverChannels(posts, trackedSet);
     if (discovered.length > 0) {
@@ -175,7 +157,6 @@ async function runDigestForRubric(
   }
 }
 
-/** Format the digest message for Telegram, split into chunks ≤ 4096 chars. */
 function formatDigestMessage(
   rubric: DigestRubric,
   posts: Array<RawChannelPost & { engagementScore: number }>,
@@ -216,7 +197,6 @@ function formatDigestMessage(
     );
   }
 
-  // Split items into messages that fit within TG_MAX_LENGTH
   const messages: string[] = [];
   let current = header;
 
@@ -237,23 +217,20 @@ function formatDigestMessage(
   return messages;
 }
 
-/** Format large numbers: 12500 → "12.5K". */
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
 }
 
-/** Send a message to a user, handling Markdown errors gracefully. */
 async function sendMessage(bot: Telegraf, chatId: number, text: string): Promise<void> {
   try {
     await bot.telegram.sendMessage(chatId, text, {
       parse_mode: "Markdown",
-      // Disable link previews for cleaner digest
       link_preview_options: { is_disabled: true },
     } as never);
   } catch {
-    // Fallback: send without markdown
+    // Retry without Markdown: a malformed entity from an unescaped post breaks parse_mode.
     try {
       await bot.telegram.sendMessage(
         chatId,

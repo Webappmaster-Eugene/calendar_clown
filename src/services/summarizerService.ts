@@ -1,7 +1,3 @@
-/**
- * Summarizer business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   createWorkplace,
   getWorkplacesByUser,

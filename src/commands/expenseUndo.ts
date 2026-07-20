@@ -6,9 +6,6 @@ import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("undo");
 
-/**
- * Handle undo confirmation/cancellation callbacks.
- */
 export async function handleUndoCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;

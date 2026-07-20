@@ -1,8 +1,3 @@
-/**
- * Extract task data from voice transcript using OpenRouter (DeepSeek).
- * Used when bot is in tasks mode.
- */
-
 import { DEEPSEEK_MODEL } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
@@ -48,7 +43,6 @@ function normalizeWork(s: string): string {
 }
 
 /**
- * Resolve a spoken project name to one of the user's exact work names.
  * Conservative: exact (normalized) match, else a UNIQUE containment match
  * (guards against short fragments matching everything). Returns null when
  * ambiguous or unmatched, so the caller falls back to asking the user to pick.

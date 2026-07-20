@@ -12,7 +12,7 @@ import type { SupportReportDto, CreateSupportReportRequest } from "../../shared/
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schemas (json bodies + :id params). Emptiness checks stay in handlers.
+// Emptiness checks stay in handlers.
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const createReportBody = z.object({
   diagnostics: z.string(),
@@ -25,7 +25,6 @@ const respondBody = z.object({ response: z.string() });
 
 // ─── User: submit report ─────────────────────────────────────
 
-/** POST /api/support-reports — user submits a report */
 app.post("/", zValidator("json", createReportBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -64,7 +63,6 @@ app.post("/", zValidator("json", createReportBody), async (c) => {
       category: body.category ?? "home_screen",
     });
 
-    // Notify admin via bot.
     const sendMessage = getBotSendMessage();
     if (sendMessage) {
       const adminId = Number(process.env.ADMIN_TELEGRAM_ID);
@@ -82,7 +80,7 @@ app.post("/", zValidator("json", createReportBody), async (c) => {
         try {
           await sendMessage(adminId, lines.join("\n"));
         } catch {
-          // Non-critical — admin notification failed.
+          // Non-critical — admin notification failure must not fail the report.
         }
       }
     }
@@ -96,7 +94,6 @@ app.post("/", zValidator("json", createReportBody), async (c) => {
 
 // ─── Admin: list reports ─────────────────────────────────────
 
-/** GET /api/support-reports/admin — admin lists reports */
 app.get("/admin", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -157,7 +154,6 @@ app.get("/admin", async (c) => {
 
 // ─── Admin: respond to report ────────────────────────────────
 
-/** PUT /api/support-reports/admin/:id/respond — admin sends response */
 app.put("/admin/:id/respond", zValidator("param", idParam), zValidator("json", respondBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -198,7 +194,6 @@ app.put("/admin/:id/respond", zValidator("param", idParam), zValidator("json", r
 
     logApiAction(telegramId, "support_report_respond", { reportId, response: response.trim() });
 
-    // Send response to user via bot.
     const sendMessage = getBotSendMessage();
     if (sendMessage) {
       try {
@@ -207,7 +202,7 @@ app.put("/admin/:id/respond", zValidator("param", idParam), zValidator("json", r
           `💬 Ответ от поддержки:\n\n${response.trim()}`,
         );
       } catch {
-        // Non-critical.
+        // Non-critical — delivery failure must not fail the response.
       }
     }
 
@@ -220,7 +215,6 @@ app.put("/admin/:id/respond", zValidator("param", idParam), zValidator("json", r
 
 // ─── Admin: resolve without response ─────────────────────────
 
-/** PUT /api/support-reports/admin/:id/resolve — mark as resolved */
 app.put("/admin/:id/resolve", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

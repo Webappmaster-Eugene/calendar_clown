@@ -1,7 +1,3 @@
-/**
- * Simplifier business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   createSimplification,
   markSimplificationProcessing,
@@ -102,7 +98,6 @@ export async function removeSimplification(
   return deleteSimplification(simplificationId, dbUser.id);
 }
 
-/** Simplify text from API (create record, call AI, update record). */
 export async function simplifyFromApi(
   telegramId: number,
   text: string,
@@ -111,7 +106,6 @@ export async function simplifyFromApi(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // API records: no chatId/statusMessageId, use Date.now() as sequence number
   const sequenceNumber = Date.now();
   const record = await createSimplification(
     dbUser.id, inputMethod, text,
@@ -123,7 +117,7 @@ export async function simplifyFromApi(
   try {
     const { result, model } = await simplifyText(text);
     await markSimplificationCompleted(record.id, result, model);
-    // Mark as delivered immediately — API returns result directly to the caller
+    // API returns the result directly, so mark delivered immediately (skip ordered delivery).
     await markSimplificationDelivered(record.id);
 
     return toDto({
@@ -136,7 +130,7 @@ export async function simplifyFromApi(
     const errorMsg = err instanceof Error ? err.message : "Неизвестная ошибка";
     log.error("Error simplifying text from API:", err);
     await markSimplificationFailed(record.id, errorMsg);
-    // Mark as delivered immediately — API returns error directly to the caller
+    // API returns the error directly, so mark delivered immediately (skip ordered delivery).
     await markSimplificationDelivered(record.id);
 
     return toDto({

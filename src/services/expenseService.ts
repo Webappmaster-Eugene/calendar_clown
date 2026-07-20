@@ -1,7 +1,3 @@
-/**
- * Expense business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import { parseExpenseText, parseMultipleExpenses, getCategoriesListWithAliases } from "../expenses/parser.js";
 import {
   addExpense,
@@ -102,10 +98,7 @@ async function requireDbUser(telegramId: number) {
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Add a single expense from text input.
- * Optional `createdAt` allows backdating the expense (used by Mini App for past months).
- */
+// Optional `createdAt` allows backdating the expense (used by Mini App for past months).
 export async function addExpenseFromText(
   telegramId: number,
   username: string | null,
@@ -184,11 +177,7 @@ export async function addExpenseFromText(
   };
 }
 
-/**
- * Add expense from structured input (categoryId + amount).
- * Used by Mini App form when user selects category from dropdown.
- * Optional `createdAt` allows backdating to any past month.
- */
+// Optional `createdAt` allows backdating to any past month.
 export async function addExpenseStructured(
   telegramId: number,
   username: string | null,
@@ -283,10 +272,6 @@ export async function addMultipleExpenses(
   return { expenses: savedExpenses, monthTotal: total, monthlyLimit: limit, month, totalAmount };
 }
 
-/**
- * Add expense from voice input.
- * Uses direct category lookup instead of re-parsing through text pipeline.
- */
 export async function addExpenseFromVoice(
   telegramId: number,
   username: string | null,
@@ -308,7 +293,6 @@ export async function addExpenseFromVoice(
   const normalizedName = categoryName.toLowerCase().trim();
   let cat = categories.find((c) => c.name.toLowerCase() === normalizedName);
 
-  // If AI returned a name that doesn't exactly match, try alias matching
   if (!cat) {
     cat = categories.find((c) =>
       c.aliases.some((a) => a.toLowerCase() === normalizedName)
@@ -382,15 +366,6 @@ export async function addExpenseFromVoice(
   };
 }
 
-/**
- * Get monthly expense report.
- *
- * @param includeDetails  When true, also fetch every operation grouped by category
- *                        and place them into `byCategoryDetailed`. The bot's /expenses
- *                        report uses this to render the fully detailed view. The API
- *                        used by the Mini App leaves it false (the app pulls per-category
- *                        details on demand via /api/expenses/drilldown).
- */
 export async function getMonthReport(
   telegramId: number,
   year: number,
@@ -519,11 +494,7 @@ export async function generateExcel(
   return { buffer, filename };
 }
 
-/**
- * Generate Excel file for an entire year.
- * Year limit = sum of effective monthly limits across the 12 months,
- * so per-month overrides are respected.
- */
+// Year limit = sum of effective monthly limits across the 12 months, so per-month overrides are respected.
 export async function generateYearExcel(
   telegramId: number,
   year: number
@@ -594,10 +565,6 @@ export async function undoExpense(telegramId: number, expenseId: number): Promis
   return deleted;
 }
 
-/**
- * Edit an existing expense. Verifies ownership via user_id.
- * Returns updated expense as DTO, or null if not found / not owned.
- */
 export async function editExpense(
   telegramId: number,
   expenseId: number,
@@ -606,7 +573,6 @@ export async function editExpense(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership: the expense must belong to this user
   const existing = await getExpenseById(expenseId);
   if (!existing || existing.userId !== dbUser.id) {
     return null;
@@ -642,9 +608,6 @@ export async function editExpense(
   };
 }
 
-/**
- * Get expense category list with aliases for AI prompts.
- */
 export async function getCategoriesListWithAliasesFormatted(): Promise<string> {
   requireDb();
   return getCategoriesListWithAliases();
@@ -670,7 +633,6 @@ function toCategoryDto(c: Category): CategoryDto {
   };
 }
 
-/** Error with an associated HTTP status, thrown by category management. */
 export class CategoryServiceError extends Error {
   constructor(message: string, public readonly status: number) {
     super(message);
@@ -684,7 +646,6 @@ function requireCategoryAdmin(telegramId: number): void {
   }
 }
 
-/** Normalize aliases: trim, drop empties, lowercase, dedupe. */
 function normalizeAliases(aliases?: string[]): string[] {
   if (!aliases) return [];
   const seen = new Set<string>();
@@ -705,7 +666,6 @@ export async function getCategoryDtos(): Promise<CategoryDto[]> {
   return cats.map(toCategoryDto);
 }
 
-/** Create a new expense category (admin only). */
 export async function createCategoryFromRequest(
   telegramId: number,
   input: CreateCategoryRequest
@@ -735,7 +695,7 @@ export async function createCategoryFromRequest(
   }
 }
 
-/** Update an existing category (admin only). Built-in categories can be edited, not deleted. */
+// Built-in categories can be edited, not deleted.
 export async function updateCategoryFromRequest(
   telegramId: number,
   categoryId: number,
@@ -769,7 +729,6 @@ export async function updateCategoryFromRequest(
   }
 }
 
-/** Soft-delete (deactivate) a user-created category (admin only). */
 export async function deactivateCategoryFromRequest(
   telegramId: number,
   categoryId: number
@@ -844,9 +803,6 @@ export async function getCategoryDrilldown(
   };
 }
 
-/**
- * Get comparison drilldown: individual expenses for a category from both current and previous month.
- */
 export async function getComparisonDrilldown(
   telegramId: number,
   categoryId: number,
@@ -905,10 +861,6 @@ export async function getComparisonDrilldown(
   };
 }
 
-/**
- * Get the most recent expenses across the entire tribe (regardless of month/category)
- * with pagination support.
- */
 export async function getRecentExpenses(
   telegramId: number,
   limit: number = 10,
@@ -947,10 +899,6 @@ export async function getRecentExpenses(
 
 // ─── Monthly limit management ─────────────────────────────────────────
 
-/**
- * Get the spending limit details for a specific month, including the resolved value
- * and whether it comes from a per-month override.
- */
 export async function getMonthLimitInfo(
   telegramId: number,
   year: number,
@@ -976,10 +924,7 @@ export async function getMonthLimitInfo(
   };
 }
 
-/**
- * Set the monthly spending limit. When applyToFuture is true, also writes the new value
- * as the tribe-wide default and clears overrides for this month and later.
- */
+// When applyToFuture is true, also writes the new value as the tribe-wide default and clears overrides for this month and later.
 export async function setMonthLimit(
   telegramId: number,
   year: number,

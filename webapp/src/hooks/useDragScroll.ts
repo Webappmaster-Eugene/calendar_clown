@@ -1,10 +1,7 @@
 import { useRef, useEffect, type RefObject } from "react";
 
-/**
- * Enables mouse drag-to-scroll on a horizontally scrollable container.
- * Also converts vertical wheel events to horizontal scroll.
- * Touch devices already handle this natively.
- */
+// Mouse drag-to-scroll + wheel→horizontal for a scrollable container; no touch
+// handling because touch devices already scroll such containers natively.
 export function useDragScroll<T extends HTMLElement>(): RefObject<T | null> {
   const ref = useRef<T | null>(null);
 

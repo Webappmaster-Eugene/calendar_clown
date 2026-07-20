@@ -6,11 +6,7 @@ const log = createLogger("proxy");
 
 let cachedAgent: http.Agent | undefined;
 
-/**
- * Initialize proxy agent from TELEGRAM_PROXY env variable.
- * Supports socks5:// and http(s):// protocols.
- * Must be called once at startup, before creating the bot.
- */
+/** Must be called once at startup, before creating the bot. */
 export async function initProxyAgent(): Promise<http.Agent | undefined> {
   const proxyUrl = process.env.TELEGRAM_PROXY?.trim();
   if (!proxyUrl) {
@@ -38,11 +34,7 @@ export async function initProxyAgent(): Promise<http.Agent | undefined> {
 
 let openRouterAgent: http.Agent | undefined;
 
-/**
- * Proxy agent for OpenRouter / STT traffic. Reads `OPENROUTER_PROXY`, falling back
- * to `TELEGRAM_PROXY`; undefined if neither is set. Needed because openrouter.ai
- * edge-blocks some datacenter IPs. Call once at startup.
- */
+// Needed because openrouter.ai edge-blocks some datacenter IPs. Call once at startup.
 export async function initOpenRouterAgent(): Promise<http.Agent | undefined> {
   const proxyUrl = process.env.OPENROUTER_PROXY?.trim() || process.env.TELEGRAM_PROXY?.trim();
   if (!proxyUrl) {
@@ -67,13 +59,11 @@ export async function initOpenRouterAgent(): Promise<http.Agent | undefined> {
   return openRouterAgent;
 }
 
-/** Minimal fetch-like response for {@link openRouterRequest}. */
 export interface OpenRouterHttpResponse {
   ok: boolean;
   status: number;
   text(): Promise<string>;
   json(): Promise<unknown>;
-  /** Raw response stream, present only when the request passes `stream: true`. */
   stream?: http.IncomingMessage;
 }
 
@@ -83,12 +73,10 @@ async function readAll(res: http.IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf-8");
 }
 
-/**
- * Native node:https request honouring the OpenRouter proxy agent — undici `fetch`
- * can't use a SOCKS `http.Agent`. Rejects with an `AbortError`-named error on
- * timeout (callers special-case it). With `stream: true`, resolves at response
- * headers and exposes the raw `stream`; the timeout then only guards setup.
- */
+// Native node:https request honouring the OpenRouter proxy agent — undici `fetch`
+// can't use a SOCKS `http.Agent`. Rejects with an `AbortError`-named error on
+// timeout (callers special-case it). With `stream: true`, resolves at response
+// headers and exposes the raw `stream`; the timeout then only guards setup.
 export function openRouterRequest(
   targetUrl: string,
   opts: {
@@ -189,10 +177,7 @@ type TelegramFetchResult = {
   text: () => Promise<string>;
 };
 
-/**
- * Single-attempt fetch using the Telegram proxy agent (if configured).
- * Uses native node:https to avoid CJS/ESM bundling issues with node-fetch.
- */
+// Uses native node:https to avoid CJS/ESM bundling issues with node-fetch.
 function telegramFetchOnce(
   url: string,
   timeoutMs: number,
@@ -244,15 +229,6 @@ function telegramFetchOnce(
   });
 }
 
-/**
- * Fetch a URL using the Telegram proxy agent (if configured).
- * Retries once after a 2-second delay on failure.
- *
- * @param url       — URL to fetch
- * @param options   — optional settings
- * @param options.timeoutMs — overall request timeout per attempt in ms (default: 120 000 = 2 min)
- * @param options.retries   — number of retry attempts on failure (default: 1)
- */
 export async function telegramFetch(
   url: string,
   options?: { timeoutMs?: number; retries?: number },

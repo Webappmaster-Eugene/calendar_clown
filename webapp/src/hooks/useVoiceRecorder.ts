@@ -1,10 +1,5 @@
-/**
- * Browser voice recording hook using MediaRecorder API.
- * Records WebM/Opus on Android, MP4/AAC on iOS.
- *
- * Caches the microphone stream to avoid repeated permission prompts.
- * Call releaseStream() on unmount to free the microphone.
- */
+// Caches the microphone stream to avoid repeated permission prompts;
+// call releaseStream() on unmount to free the microphone.
 import { useState, useRef, useCallback } from "react";
 
 interface UseVoiceRecorderResult {
@@ -18,7 +13,6 @@ interface UseVoiceRecorderResult {
 }
 
 function getPreferredMimeType(): string {
-  // Prefer WebM (Chrome/Android), fallback to MP4 (Safari/iOS)
   const types = [
     "audio/webm;codecs=opus",
     "audio/webm",
@@ -31,7 +25,6 @@ function getPreferredMimeType(): string {
   return "";
 }
 
-/** Check if a MediaStream is still active (has at least one live track). */
 function isStreamActive(stream: MediaStream | null): boolean {
   if (!stream) return false;
   return stream.getAudioTracks().some((t) => t.readyState === "live");
@@ -55,7 +48,6 @@ export function useVoiceRecorder(): UseVoiceRecorderResult {
     }
   }, []);
 
-  /** Release the cached microphone stream. Call on component unmount. */
   const releaseStream = useCallback(() => {
     clearTimer();
     if (mediaRecorderRef.current) {
@@ -74,12 +66,11 @@ export function useVoiceRecorder(): UseVoiceRecorderResult {
     setDuration(0);
   }, [clearTimer]);
 
-  /** Get or reuse the microphone stream. */
   const getStream = useCallback(async (): Promise<MediaStream> => {
     if (isStreamActive(streamRef.current)) {
       return streamRef.current!;
     }
-    // Request new stream — this prompts for permission only if not already granted
+    // prompts for permission only if not already granted
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -123,7 +114,7 @@ export function useVoiceRecorder(): UseVoiceRecorderResult {
       setDuration(0);
     };
 
-    recorder.start(250); // Collect data every 250ms
+    recorder.start(250);
     setIsRecording(true);
     setDuration(0);
 

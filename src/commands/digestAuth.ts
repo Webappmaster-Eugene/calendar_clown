@@ -1,10 +1,3 @@
-/**
- * MTProto auth flow for per-user Telegram session.
- * Allows users to link their Telegram account for folder import.
- *
- * Flow: phone → code → (optional 2FA) → session saved.
- */
-
 import crypto from "crypto";
 import type { Context } from "telegraf";
 import type { Telegraf } from "telegraf";
@@ -47,14 +40,13 @@ interface WebAuthToken {
   createdAt: number;
 }
 
-const WEB_TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const WEB_TOKEN_TTL_MS = 10 * 60 * 1000;
 const WEB_TOKEN_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 const webTokens = new Map<string, WebAuthToken>();
 
 let webTokenCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
-/** Start periodic cleanup of expired web auth tokens. Call once at boot. */
 export function startWebTokenCleanup(): void {
   if (webTokenCleanupTimer) return;
   webTokenCleanupTimer = setInterval(() => {
@@ -67,7 +59,6 @@ export function startWebTokenCleanup(): void {
   webTokenCleanupTimer.unref?.();
 }
 
-/** Stop the cleanup timer (graceful shutdown). */
 export function stopWebTokenCleanup(): void {
   if (webTokenCleanupTimer) {
     clearInterval(webTokenCleanupTimer);
@@ -243,12 +234,10 @@ function clearState(telegramId: number): void {
   authStates.delete(telegramId);
 }
 
-/** Get phone hint (last 4 digits). */
 function phoneHint(phone: string): string {
   return `***${phone.slice(-4)}`;
 }
 
-/** Handle "🔑 Привязать Telegram" button press. */
 export async function handleMtprotoAuthButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -285,10 +274,7 @@ export async function handleMtprotoAuthButton(ctx: Context): Promise<void> {
   authStates.set(telegramId, { step: "phone" });
 }
 
-/**
- * Handle text input during MTProto auth flow.
- * Returns true if the message was consumed by the auth flow.
- */
+/** Returns true if the message was consumed by the auth flow. */
 export async function handleDigestAuthText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
@@ -392,7 +378,6 @@ async function handlePhoneStep(
     client,
   });
 
-  // Generate web token and send link instead of asking for code in chat
   const webToken = crypto.randomBytes(32).toString("hex");
   webTokens.set(webToken, {
     token: webToken,

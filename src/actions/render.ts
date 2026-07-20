@@ -1,13 +1,7 @@
-/**
- * Render an ActionResult for a surface: machine JSON (fenced) or human Markdown.
- * The human path always surfaces entity ids so the user/agent can address
- * follow-up edits/deletes.
- */
 import type { Action, ActionResult } from "./types.js";
 
 const MAX_ITEMS = 30;
 
-/** Pick a human-facing label field from a DTO. */
 function label(item: Record<string, unknown>): string {
   for (const key of ["text", "name", "title", "summary", "humanTitle"]) {
     const v = item[key];
@@ -45,7 +39,6 @@ function genericMarkdown(action: Action, data: unknown): string {
   return `✅ ${action.humanTitle}`;
 }
 
-/** Render for the chosen surface. `json` → fenced machine payload with ids. */
 export function renderResult(action: Action, result: ActionResult, opts: { json?: boolean }): string {
   if (opts.json) {
     return "```json\n" + JSON.stringify(result.data, null, 2) + "\n```";

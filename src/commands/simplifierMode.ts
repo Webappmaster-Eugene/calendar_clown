@@ -1,9 +1,3 @@
-/**
- * Simplifier mode command handler.
- * Accumulates text/voice messages, then simplifies via AI on demand.
- * Results are delivered in the order requests were submitted (ordered delivery).
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
@@ -211,7 +205,7 @@ export async function handleSimplifyButton(ctx: Context): Promise<void> {
     return;
   }
 
-  // Use message_id of the "Simplify" button press as sequence number
+  // message_id of the "Simplify" press doubles as the ordered-delivery sequence number
   const sequenceNumber = ctx.message!.message_id;
   const chatId = ctx.chat!.id;
 
@@ -239,14 +233,12 @@ export async function handleSimplifyButton(ctx: Context): Promise<void> {
     textLength: combinedText.length,
   });
 
-  // Clear buffer immediately — text is persisted in DB
+  // Safe to clear now — text is persisted in DB
   clearBuffer(telegramId);
 
-  // Fire-and-forget: process async, trigger ordered delivery when done
   void processSimplificationAsync(dbUser.id, record.id, combinedText);
 }
 
-/** Process simplification asynchronously and trigger ordered delivery. */
 async function processSimplificationAsync(
   userId: number,
   recordId: number,
@@ -265,7 +257,7 @@ async function processSimplificationAsync(
       log.error("Error marking simplification as failed:", dbErr);
     }
   }
-  // Always trigger delivery — whether success or failure
+  // Trigger delivery on both success and failure, else ordered queue stalls
   deliverSimplificationsInOrder(getSimplifierDeliveryBot(), userId);
 }
 

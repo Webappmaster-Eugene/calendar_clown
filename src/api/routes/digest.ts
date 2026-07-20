@@ -36,7 +36,6 @@ const addChannelBody = z.object({
   channelUsername: z.string().min(1),
 });
 
-/** GET /api/digest/rubrics — list rubrics */
 app.get("/rubrics", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -50,7 +49,6 @@ app.get("/rubrics", async (c) => {
   }
 });
 
-/** POST /api/digest/rubrics — create rubric */
 app.post("/rubrics", zValidator("json", createRubricBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -80,7 +78,6 @@ app.post("/rubrics", zValidator("json", createRubricBody), async (c) => {
   }
 });
 
-/** PUT /api/digest/rubrics/:id — edit rubric */
 app.put("/rubrics/:id", zValidator("param", idParam), zValidator("json", editRubricBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -128,7 +125,6 @@ app.put("/rubrics/:id", zValidator("param", idParam), zValidator("json", editRub
   }
 });
 
-/** GET /api/digest/rubrics/:id/channels — list channels */
 app.get("/rubrics/:id/channels", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -147,7 +143,6 @@ app.get("/rubrics/:id/channels", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** POST /api/digest/rubrics/:id/channels — add channel */
 app.post("/rubrics/:id/channels", zValidator("param", idParam), zValidator("json", addChannelBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -171,7 +166,6 @@ app.post("/rubrics/:id/channels", zValidator("param", idParam), zValidator("json
   }
 });
 
-/** DELETE /api/digest/channels/:channelId — remove channel */
 app.delete("/channels/:channelId", zValidator("param", channelIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -181,8 +175,7 @@ app.delete("/channels/:channelId", zValidator("param", channelIdParam), async (c
     return c.json({ ok: false, error: "Invalid channel ID" }, 400);
   }
 
-  // removeChannelFromRubric requires rubricId for ownership verification.
-  // The channelId alone is not enough; we need rubricId from query or body.
+  // rubricId is required for ownership verification; channelId alone isn't enough.
   const rubricId = parseInt(c.req.query("rubricId") ?? "0", 10);
   if (!rubricId) {
     return c.json({ ok: false, error: "rubricId query parameter is required" }, 400);
@@ -198,7 +191,6 @@ app.delete("/channels/:channelId", zValidator("param", channelIdParam), async (c
   }
 });
 
-/** DELETE /api/digest/rubrics/:id — delete rubric */
 app.delete("/rubrics/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -218,7 +210,6 @@ app.delete("/rubrics/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PUT /api/digest/rubrics/:id/toggle — toggle rubric active/inactive */
 app.put("/rubrics/:id/toggle", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

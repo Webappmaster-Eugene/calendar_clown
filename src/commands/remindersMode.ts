@@ -1,8 +1,3 @@
-/**
- * Reminders mode command handler.
- * Flexible recurring reminders with schedule, tribe view, and subscriptions.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
@@ -44,10 +39,8 @@ const log = createLogger("reminders-mode");
 
 // ─── State ──────────────────────────────────────────────────────────────
 
-/** In-memory creation wizard states (telegramId → state). */
 const wizardStates = new Map<number, PendingReminderState>();
 
-/** In-memory edit states (telegramId → { reminderId, field }). */
 const editStates = new Map<number, { reminderId: number; field: "text" | "times" | "weekdays" | "endDate" }>();
 
 // ─── Keyboard ───────────────────────────────────────────────────────────
@@ -297,7 +290,6 @@ export async function handleReminderEditCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // rem_edit_text:<id>, rem_edit_times:<id>, rem_edit_days:<id>, rem_edit_end:<id>
   const editActions: Record<string, "text" | "times" | "weekdays" | "endDate"> = {
     "rem_edit_text:": "text",
     "rem_edit_times:": "times",
@@ -356,7 +348,6 @@ export async function handleReminderTribeCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // rem_tribe_view:<reminderId> — view tribe member's reminder (with subscribe option)
   if (data.startsWith("rem_tribe_view:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     const reminder = await getReminderById(reminderId);
@@ -441,7 +432,6 @@ export async function handleReminderSoundCallback(ctx: Context): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
 
-  // rem_sound_pick:<telegramId> — show sound list during creation wizard
   if (data.startsWith("rem_sound_pick:")) {
     const targetId = parseInt(data.split(":")[1], 10);
     if (targetId !== telegramId) return;
@@ -502,7 +492,6 @@ export async function handleReminderSoundCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // rem_edit_sound:<reminderId> — show sound list for editing existing reminder
   if (data.startsWith("rem_edit_sound:")) {
     const reminderId = parseInt(data.split(":")[1], 10);
     const reminder = await getReminderById(reminderId);
@@ -528,7 +517,6 @@ export async function handleReminderSoundCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // rem_set_sound:<reminderId>:<soundId> — set/remove sound on existing reminder
   if (data.startsWith("rem_set_sound:")) {
     const parts = data.split(":");
     const reminderId = parseInt(parts[1], 10);
@@ -549,7 +537,7 @@ export async function handleReminderSoundCallback(ctx: Context): Promise<void> {
 
 // ─── Text Handler ───────────────────────────────────────────────────────
 
-/** Handle text input in reminders mode. Returns true if consumed. */
+/** Returns true if consumed. */
 export async function handleRemindersText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
@@ -587,7 +575,6 @@ export async function handleRemindersText(ctx: Context): Promise<boolean> {
   }
 
   if (state.step === "awaiting_schedule") {
-    // Use DeepSeek to parse the schedule from NL
     const fullText = `напомни ${state.text}. ${text}`;
     try {
       const intent = await extractReminderIntent(fullText);
@@ -619,7 +606,6 @@ export async function handleRemindersText(ctx: Context): Promise<boolean> {
 
 // ─── Voice Handler ──────────────────────────────────────────────────────
 
-/** Handle voice transcript in reminders mode. */
 export async function handleRemindersVoice(
   ctx: Context,
   transcript: string,
@@ -631,7 +617,6 @@ export async function handleRemindersVoice(
   const safeTranscript = escapeMarkdown(truncateText(transcript, 300));
 
   try {
-    // If in awaiting_schedule step, use transcript as schedule input
     const state = wizardStates.get(telegramId);
     if (state?.step === "awaiting_schedule" && state.text) {
       const fullText = `напомни ${state.text}. ${transcript}`;
@@ -662,7 +647,6 @@ export async function handleRemindersVoice(
       return;
     }
 
-    // Full voice: extract everything in one shot
     const intent = await extractReminderIntent(transcript);
 
     if (intent.type === "list_reminders") {
@@ -742,7 +726,6 @@ export async function handleRemindersVoice(
       return;
     }
 
-    // unknown
     await ctx.telegram.editMessageText(
       ctx.chat!.id, statusMsgId, undefined,
       `🎤 "${safeTranscript}"\n\nНе удалось разобрать. Скажите что-то вроде: «напомни проверить почту каждый день в 10».`

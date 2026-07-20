@@ -1,7 +1,3 @@
-/**
- * Summarizer actions — wrappers over summarizerService (mirrors src/api/routes/summarizer.ts).
- * Tribe mode. Resume generation goes through the LLM → heavy.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

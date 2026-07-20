@@ -17,9 +17,6 @@ import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("expense");
 
-/**
- * Handle "Excel" button in expense mode — generate and send Excel for current month.
- */
 export async function handleExcelButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -40,9 +37,6 @@ export async function handleExcelButton(ctx: Context): Promise<void> {
   await sendExcel(ctx, dbUser.tribeId!, year, month);
 }
 
-/**
- * Handle inline callback for Excel download: excel:<year>:<month>
- */
 export async function handleExcelCallback(ctx: Context): Promise<void> {
   if (!("data" in ctx.callbackQuery!)) return;
   const data = ctx.callbackQuery.data;
@@ -118,9 +112,6 @@ async function sendExcel(
   }
 }
 
-/**
- * Handle inline callback for yearly Excel: excel_year:<year>
- */
 export async function handleYearExcelCallback(ctx: Context): Promise<void> {
   if (!("data" in ctx.callbackQuery!)) return;
   const data = ctx.callbackQuery.data;

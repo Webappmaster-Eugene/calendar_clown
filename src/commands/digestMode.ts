@@ -1,17 +1,3 @@
-/**
- * /digest command handler — manage rubrics and channels for the digest mode.
- *
- * Subcommands:
- *   /digest           — show rubrics list
- *   /digest add <rubric> @channel — add channel to rubric
- *   /digest remove <rubric> @channel — remove channel from rubric
- *   /digest channels <rubric> — list channels in rubric
- *   /digest delete <rubric> — delete a rubric
- *   /digest pause <rubric> — pause rubric
- *   /digest resume <rubric> — resume rubric
- *   /digest now — run digest immediately
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -51,7 +37,6 @@ import type { Telegraf } from "telegraf";
 
 const log = createLogger("digest");
 
-/** State for interactive rubric creation. */
 interface RubricCreationState {
   step: "name" | "description";
   name?: string;
@@ -59,10 +44,8 @@ interface RubricCreationState {
 
 const rubricCreationStates = new Map<number, RubricCreationState>();
 
-/** State for inline channel-add flow (text input after pressing ➕). */
 const channelAddStates = new Map<number, { rubricId: number }>();
 
-/** State for rubric editing (name/description text input). */
 const rubricEditStates = new Map<number, { rubricId: number; field: "name" | "description" }>();
 
 function getDigestKeyboard(isAdmin: boolean) {
@@ -74,17 +57,12 @@ function getDigestKeyboard(isAdmin: boolean) {
   ]).resize();
 }
 
-/** Stored bot reference for /digest now. */
 let botRef: Telegraf | null = null;
 
-/** Set bot reference (called from index.ts). */
 export function setDigestBotRef(bot: Telegraf): void {
   botRef = bot;
 }
 
-/**
- * Main /digest command handler. Routes to subcommands.
- */
 export async function handleDigestCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -128,7 +106,6 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
   }
   const text = typeof ctx.message.text === "string" ? ctx.message.text.trim() : "";
 
-  // If called from keyboard button (not a /digest command), just show rubrics
   if (!text.startsWith("/digest")) {
     await showRubrics(ctx, telegramId);
     return;
@@ -167,13 +144,12 @@ export async function handleDigestCommand(ctx: Context): Promise<void> {
       await handleToggleRubric(ctx, telegramId, parts.slice(1).join(" "), true);
       break;
     default:
-      // Treat as rubric creation: /digest <name> <description>
+      // Unrecognized subcommand is treated as rubric creation: /digest <name> <description>
       await handleCreateRubric(ctx, telegramId, args);
       break;
   }
 }
 
-/** Build inline keyboard for rubrics list. */
 function buildRubricsListKeyboard(rubrics: import("../digest/types.js").DigestRubric[]) {
   const buttons = rubrics.map((r) => {
     const status = r.isActive ? "✅" : "⏸";
@@ -183,7 +159,6 @@ function buildRubricsListKeyboard(rubrics: import("../digest/types.js").DigestRu
   return Markup.inlineKeyboard(buttons);
 }
 
-/** Build rubrics list message text with rubric details. */
 function buildRubricsListText(rubrics: import("../digest/types.js").DigestRubric[]): string {
   const header = `📰 Ваши рубрики (${rubrics.length}/${MAX_RUBRICS_PER_USER}):`;
   const lines = rubrics.map((r, i) => {
@@ -195,7 +170,6 @@ function buildRubricsListText(rubrics: import("../digest/types.js").DigestRubric
   return `${header}\n\n${lines.join("\n")}\n\nНажмите на рубрику для настройки:`;
 }
 
-/** Show user's rubrics. */
 async function showRubrics(ctx: Context, telegramId: number): Promise<void> {
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) {
@@ -229,7 +203,6 @@ async function showRubrics(ctx: Context, telegramId: number): Promise<void> {
   }
 }
 
-/** Create a new rubric. Format: /digest Name — Description */
 async function handleCreateRubric(
   ctx: Context,
   telegramId: number,
@@ -266,7 +239,6 @@ async function handleCreateRubric(
     return;
   }
 
-  // Generate emoji and keywords via AI
   const statusMsg = await ctx.reply("Создаю рубрику...");
   const meta = await generateRubricMeta(name, description);
 
@@ -300,7 +272,6 @@ async function handleCreateRubric(
   }
 }
 
-/** Add a channel to a rubric. */
 async function handleAddChannel(
   ctx: Context,
   telegramId: number,
@@ -309,7 +280,6 @@ async function handleAddChannel(
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return;
 
-  // Parse: rubric_name @channel
   if (parts.length < 2) {
     await ctx.reply("Формат: /digest add <рубрика> @канал");
     return;
@@ -349,7 +319,6 @@ async function handleAddChannel(
   );
 }
 
-/** Remove a channel from a rubric. */
 async function handleRemoveChannel(
   ctx: Context,
   telegramId: number,
@@ -382,7 +351,6 @@ async function handleRemoveChannel(
   }
 }
 
-/** List channels in a rubric. */
 async function handleListChannels(
   ctx: Context,
   telegramId: number,
@@ -430,7 +398,6 @@ async function handleListChannels(
   }
 }
 
-/** Delete a rubric. */
 async function handleDeleteRubric(
   ctx: Context,
   telegramId: number,
@@ -455,7 +422,6 @@ async function handleDeleteRubric(
   await ctx.reply(`✅ Рубрика «${rubric.name}» удалена.`);
 }
 
-/** Pause or resume a rubric. */
 async function handleToggleRubric(
   ctx: Context,
   telegramId: number,
@@ -482,7 +448,6 @@ async function handleToggleRubric(
   await ctx.reply(`${rubric.emoji ?? "📰"} Рубрика «${rubric.name}» ${status}.`);
 }
 
-/** Run digest immediately. */
 async function handleDigestNow(ctx: Context, telegramId: number): Promise<void> {
   if (!botRef) {
     await ctx.reply("Ошибка: бот не инициализирован.");
@@ -508,13 +473,11 @@ async function handleDigestNow(ctx: Context, telegramId: number): Promise<void> 
 
 // ─── Inline callback handlers ────────────────────────────────────────────
 
-/** Helper: extract numeric id from callback data like "drub_view:123". */
 function extractId(data: string): number {
   const idx = data.indexOf(":");
   return idx >= 0 ? parseInt(data.slice(idx + 1), 10) : NaN;
 }
 
-/** Helper: get rubric with ownership check, answering callback on failure. */
 async function getRubricForCallback(
   ctx: Context,
   rubricId: number
@@ -543,14 +506,13 @@ async function getRubricForCallback(
       } else {
         await ctx.editMessageText("У вас пока нет рубрик.");
       }
-    } catch { /* message unchanged */ }
+    } catch { /* ignore */ }
     return null;
   }
 
   return { rubric, dbUser };
 }
 
-/** Build detail view for a rubric. */
 async function buildRubricDetailView(rubric: import("../digest/types.js").DigestRubric) {
   const channelCount = await countChannelsByRubric(rubric.id);
   const status = rubric.isActive ? "✅ Активна" : "⏸ На паузе";
@@ -573,12 +535,10 @@ async function buildRubricDetailView(rubric: import("../digest/types.js").Digest
   return { text, keyboard };
 }
 
-/** drub_view:{id} — show rubric details. */
 export async function handleRubricViewCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
 
-  // Clear any pending channel-add state
   const telegramId = ctx.from?.id;
   if (telegramId != null) channelAddStates.delete(telegramId);
 
@@ -594,7 +554,6 @@ export async function handleRubricViewCallback(ctx: Context): Promise<void> {
   }
 }
 
-/** drub_pause:{id} / drub_resume:{id} — toggle rubric. */
 export async function handleRubricToggleCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -619,7 +578,6 @@ export async function handleRubricToggleCallback(ctx: Context): Promise<void> {
   }
 }
 
-/** drub_del:{id} — ask for delete confirmation. */
 export async function handleRubricDeleteCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
@@ -647,7 +605,6 @@ export async function handleRubricDeleteCallback(ctx: Context): Promise<void> {
   }
 }
 
-/** drub_del_yes:{id} — confirm delete, show updated list. */
 export async function handleRubricDeleteConfirmCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
@@ -672,7 +629,6 @@ export async function handleRubricDeleteConfirmCallback(ctx: Context): Promise<v
   }
 }
 
-/** Build channel list view (text + inline keyboard) for a rubric. */
 async function buildChannelListView(rubric: import("../digest/types.js").DigestRubric) {
   const channels = await getChannelsByRubric(rubric.id);
   const emoji = rubric.emoji ?? "📰";
@@ -719,7 +675,6 @@ async function buildChannelListView(rubric: import("../digest/types.js").DigestR
   };
 }
 
-/** drub_ch:{id} — show channels list with remove buttons. */
 export async function handleRubricChannelsCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
@@ -737,7 +692,6 @@ export async function handleRubricChannelsCallback(ctx: Context): Promise<void> 
   }
 }
 
-/** drub_ch_rm:{channelId} — remove a channel, refresh list. */
 export async function handleChannelRemoveCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const channelId = extractId(ctx.callbackQuery.data);
@@ -749,7 +703,7 @@ export async function handleChannelRemoveCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // Look up channel directly instead of iterating all rubrics (N+1 fix)
+  // Look up channel directly to avoid iterating all rubrics (N+1).
   const channel = await getChannelById(channelId);
   if (!channel) {
     await ctx.answerCbQuery("Канал не найден");
@@ -762,7 +716,6 @@ export async function handleChannelRemoveCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // Verify rubric ownership
   const rubric = await getRubricByIdAndUser(channel.rubricId, dbUser.id);
   if (!rubric) {
     await ctx.answerCbQuery("Канал не найден");
@@ -786,7 +739,6 @@ export async function handleChannelRemoveCallback(ctx: Context): Promise<void> {
   }
 }
 
-/** drub_ch_add:{rubricId} — start text input for adding a channel. */
 export async function handleChannelAddCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
@@ -812,13 +764,11 @@ export async function handleChannelAddCallback(ctx: Context): Promise<void> {
   await ctx.reply(`Отправьте @username канала для рубрики «${result.rubric.name}»:`);
 }
 
-/** drub_back — show rubrics list. */
 export async function handleRubricListCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery) return;
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
 
-  // Clear any pending channel-add state
   channelAddStates.delete(telegramId);
 
   const dbUser = await getUserByTelegramId(telegramId);
@@ -841,21 +791,18 @@ export async function handleRubricListCallback(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle "Мои рубрики" keyboard button. */
 export async function handleRubricsButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
   await showRubrics(ctx, telegramId);
 }
 
-/** Handle "Запустить сейчас" keyboard button. */
 export async function handleDigestNowButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
   await handleDigestNow(ctx, telegramId);
 }
 
-/** Handle "➕ Создать рубрику" keyboard button — start interactive creation. */
 export async function handleCreateRubricButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -864,10 +811,7 @@ export async function handleCreateRubricButton(ctx: Context): Promise<void> {
   await ctx.reply("Введите название рубрики:");
 }
 
-/**
- * Handle text input in digest mode for interactive rubric creation.
- * Returns true if the message was consumed.
- */
+/** Returns true if the message was consumed. */
 export async function handleDigestText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
@@ -875,7 +819,6 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
 
   const text = ctx.message.text.trim();
 
-  // Handle rubric edit text input (name/description)
   const editState = rubricEditStates.get(telegramId);
   if (editState) {
     rubricEditStates.delete(telegramId);
@@ -911,7 +854,6 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Handle channel-add text input (from ➕ inline button)
   const channelState = channelAddStates.get(telegramId);
   if (channelState) {
     channelAddStates.delete(telegramId);
@@ -974,7 +916,6 @@ export async function handleDigestText(ctx: Context): Promise<boolean> {
 
 // ─── Rubric editing callbacks ────────────────────────────────────────────
 
-/** drub_edit:{id} — show edit menu for a rubric. */
 export async function handleRubricEditCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
@@ -1005,7 +946,6 @@ export async function handleRubricEditCallback(ctx: Context): Promise<void> {
   }
 }
 
-/** drub_edit_name:{id} — start editing rubric name. */
 export async function handleRubricEditNameCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
@@ -1019,7 +959,6 @@ export async function handleRubricEditNameCallback(ctx: Context): Promise<void> 
   await ctx.reply(`Введите новое название рубрики (текущее: «${result.rubric.name}»):`);
 }
 
-/** drub_edit_desc:{id} — start editing rubric description. */
 export async function handleRubricEditDescCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
@@ -1033,7 +972,6 @@ export async function handleRubricEditDescCallback(ctx: Context): Promise<void> 
   await ctx.reply(`Введите новое описание рубрики (или «—» чтобы очистить):`);
 }
 
-/** drub_edit_emoji:{id} — regenerate emoji and keywords via AI. */
 export async function handleRubricEditEmojiCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
@@ -1065,7 +1003,6 @@ export async function handleRubricEditEmojiCallback(ctx: Context): Promise<void>
   }
 }
 
-/** drub_import:{rubricId} — show folder list for import into specific rubric. */
 export async function handleRubricFolderImportCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const rubricId = extractId(ctx.callbackQuery.data);
@@ -1111,7 +1048,6 @@ export async function handleRubricFolderImportCallback(ctx: Context): Promise<vo
       return;
     }
 
-    // Store client for subsequent callbacks
     if (userClient) {
       folderImportClients.set(telegramId, dbUser.id);
     } else {
@@ -1141,7 +1077,6 @@ export async function handleRubricFolderImportCallback(ctx: Context): Promise<vo
   }
 }
 
-/** drub_import_folder:{rubricId}:{folderId} — import channels from folder into rubric. */
 export async function handleRubricFolderImportToCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const telegramId = ctx.from?.id;
@@ -1209,7 +1144,6 @@ export async function handleRubricFolderImportToCallback(ctx: Context): Promise<
 /** Maps telegramId → dbUserId when user has own MTProto session for folder import. */
 const folderImportClients = new Map<number, number>();
 
-/** Handle "📂 Импорт из папки" keyboard button. */
 export async function handleFolderImportButton(ctx: Context): Promise<void> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return;
@@ -1225,7 +1159,6 @@ export async function handleFolderImportButton(ctx: Context): Promise<void> {
     return;
   }
 
-  // Determine which client to use: user's own or admin's
   const userHasSession = await hasActiveSession(dbUser.id);
   const adminReady = await isDigestReady();
 
@@ -1258,7 +1191,6 @@ export async function handleFolderImportButton(ctx: Context): Promise<void> {
       return;
     }
 
-    // Store whether we're using user client for subsequent callbacks
     if (userClient) {
       folderImportClients.set(telegramId, dbUser.id);
     } else {
@@ -1283,7 +1215,6 @@ export async function handleFolderImportButton(ctx: Context): Promise<void> {
   }
 }
 
-/** Resolve the user's MTProto client if they have a session, otherwise undefined. */
 async function resolveUserClient(telegramId: number): Promise<import("telegram").TelegramClient | undefined> {
   const dbUserId = folderImportClients.get(telegramId);
   if (!dbUserId) return undefined;
@@ -1295,7 +1226,6 @@ async function resolveUserClient(telegramId: number): Promise<import("telegram")
   }
 }
 
-/** Handle folder selection callback — show channels and ask which rubric. */
 export async function handleDigestFolderCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const telegramId = ctx.from?.id;
@@ -1347,7 +1277,6 @@ export async function handleDigestFolderCallback(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle folder-to-rubric import callback. */
 export async function handleDigestFolderToCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const telegramId = ctx.from?.id;

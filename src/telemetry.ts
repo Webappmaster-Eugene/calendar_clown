@@ -1,11 +1,6 @@
 /**
- * OpenTelemetry initialization — must be imported BEFORE any other module.
- *
- * Instruments HTTP, pg, and ioredis automatically.
- * Exports a tracer for manual spans on key operations.
- *
- * To enable, set OTEL_EXPORTER_OTLP_ENDPOINT in env (e.g. http://localhost:4318).
- * Without the env var, telemetry is a no-op.
+ * Must be imported BEFORE any other module for auto-instrumentation to hook in.
+ * Enabled by setting OTEL_EXPORTER_OTLP_ENDPOINT; without it, telemetry is a no-op.
  */
 
 import { NodeSDK } from "@opentelemetry/sdk-node";
@@ -34,14 +29,12 @@ if (OTEL_ENDPOINT) {
   sdk.start();
 }
 
-/** Gracefully shut down the OTEL SDK (call from shutdown handler). */
 export async function shutdownTelemetry(): Promise<void> {
   if (sdk) {
     await sdk.shutdown();
   }
 }
 
-/** Get a tracer for manual instrumentation of key operations. */
 export function getTracer(name = "sovetnik"): Tracer {
   return trace.getTracer(name);
 }

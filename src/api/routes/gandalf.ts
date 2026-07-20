@@ -18,8 +18,6 @@ import type { ApiEnv } from "../authMiddleware.js";
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schemas (json bodies + :id params). Query params keep the handlers'
-//    own defensive parsing. Schemas mirror what handlers accept.
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const createCategoryBody = z.object({
   name: z.string(),
@@ -50,7 +48,6 @@ const updateEntryBody = z.object({
   categoryId: z.number().optional(),
 });
 
-/** GET /api/gandalf/categories — list categories */
 app.get("/categories", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -64,7 +61,6 @@ app.get("/categories", async (c) => {
   }
 });
 
-/** POST /api/gandalf/categories — create category */
 app.post("/categories", zValidator("json", createCategoryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -84,7 +80,6 @@ app.post("/categories", zValidator("json", createCategoryBody), async (c) => {
   }
 });
 
-/** PUT /api/gandalf/categories/:id — update category */
 app.put("/categories/:id", zValidator("param", idParam), zValidator("json", updateCategoryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -116,7 +111,6 @@ app.put("/categories/:id", zValidator("param", idParam), zValidator("json", upda
   }
 });
 
-/** DELETE /api/gandalf/categories/:id — delete category */
 app.delete("/categories/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -136,7 +130,6 @@ app.delete("/categories/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** GET /api/gandalf/categories/:id/entries — list entries by category (convenience route) */
 app.get("/categories/:id/entries", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -157,7 +150,6 @@ app.get("/categories/:id/entries", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** GET /api/gandalf/entries — list entries */
 app.get("/entries", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -178,7 +170,6 @@ app.get("/entries", async (c) => {
   }
 });
 
-/** POST /api/gandalf/entries — create entry */
 app.post("/entries", zValidator("json", createEntryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -216,7 +207,6 @@ app.post("/entries", zValidator("json", createEntryBody), async (c) => {
   }
 });
 
-/** PUT /api/gandalf/entries/:id — update entry */
 app.put("/entries/:id", zValidator("param", idParam), zValidator("json", updateEntryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -250,7 +240,6 @@ app.put("/entries/:id", zValidator("param", idParam), zValidator("json", updateE
   }
 });
 
-/** DELETE /api/gandalf/entries/:id — delete entry */
 app.delete("/entries/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -270,7 +259,6 @@ app.delete("/entries/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** GET /api/gandalf/stats — statistics */
 app.get("/stats", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

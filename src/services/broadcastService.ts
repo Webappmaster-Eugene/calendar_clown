@@ -1,19 +1,9 @@
-/**
- * Broadcast business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import { broadcastToTribe } from "../broadcast/service.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import type { BroadcastResultDto } from "../shared/types.js";
 
 // ─── Service Functions ────────────────────────────────────────
 
-/**
- * Send a broadcast message to all tribe members.
- * @param sendMessage - callback to send a message to a recipient (injected for testability)
- * @param adminTelegramId - the admin's telegram ID
- * @param message - the message text to broadcast
- */
 export async function sendBroadcast(
   sendMessage: (recipientId: string, text: string) => Promise<void>,
   adminTelegramId: number,

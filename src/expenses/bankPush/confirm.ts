@@ -1,9 +1,6 @@
 /**
- * Telegram confirmation UI for auto-imported bank-push expenses.
- *
  * Because the category is guessed by AI from a short merchant name, every imported
- * expense is confirmed to the user with inline buttons to fix the category or delete
- * the entry. The Telegraf bot reference is injected at startup (mirrors digestAuth).
+ * expense is confirmed to the user with inline buttons to fix the category or delete it.
  */
 import { Markup, type Telegraf, type Context } from "telegraf";
 import { formatMoney } from "../formatter.js";
@@ -16,7 +13,6 @@ const log = createLogger("bank-push-confirm");
 
 let botRef: Telegraf | null = null;
 
-/** Wire the Telegraf instance so the webhook path can message the user. */
 export function setBankPushBotRef(bot: Telegraf): void {
   botRef = bot;
 }
@@ -46,10 +42,7 @@ function confirmationKeyboard(expenseId: number) {
   ]);
 }
 
-/**
- * Send the confirmation message to the user. Never throws — failures are logged so a
- * messaging hiccup can't fail the webhook (the expense is already recorded).
- */
+/** Never throws — failures are logged so a messaging hiccup can't fail the webhook (expense already recorded). */
 export async function sendBankPushConfirmation(info: BankPushConfirmationInfo): Promise<void> {
   if (!botRef) {
     log.warn("Bank-push bot ref not set; skipping confirmation for user %d", info.telegramId);
@@ -67,7 +60,6 @@ export async function sendBankPushConfirmation(info: BankPushConfirmationInfo): 
 
 // ─── Callback handlers (registered in bot.ts) ────────────────────────────────
 
-/** Parse the trailing numeric id from a callback like "bpdel:123". */
 function parseId(data: string, prefix: string): number | null {
   if (!data.startsWith(prefix)) return null;
   const n = parseInt(data.slice(prefix.length), 10);

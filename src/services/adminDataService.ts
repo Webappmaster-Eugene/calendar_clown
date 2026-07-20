@@ -1,9 +1,3 @@
-/**
- * Admin Data Management service.
- * Provides generic paginated list + delete operations for all entity types.
- * Used by the Mini App admin data management API routes.
- */
-
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
@@ -412,7 +406,6 @@ export async function deleteEntity(
     case "dates":
       return removeNotableDate(entityId, tribeId);
     default: {
-      // For entities without individual delete, use bulk with single ID
       const bulkFn = getBulkDeleteFn(entity);
       if (bulkFn) {
         const deleted = await bulkFn([entityId]);
@@ -459,7 +452,7 @@ type BulkDeleteFn = (ids: number[]) => Promise<number>;
 function getBulkDeleteFn(entity: EntityType): BulkDeleteFn | null {
   const map: Partial<Record<EntityType, BulkDeleteFn>> = {
     expenses: bulkDeleteExpenses,
-    gandalf: (ids) => Promise.resolve(ids.length), // fallback — individual deletes needed
+    gandalf: (ids) => Promise.resolve(ids.length),
     digest: bulkDeleteRubrics,
     dates: bulkDeleteDates,
     calendar: bulkDeleteEvents,
@@ -474,7 +467,6 @@ function getBulkDeleteFn(entity: EntityType): BulkDeleteFn | null {
   return map[entity] ?? null;
 }
 
-// Re-import individual bulk deletes needed by getBulkDeleteFn
 import { bulkDeleteDates } from "../notable-dates/repository.js";
 import { bulkDeleteEvents } from "../calendar/repository.js";
 import { bulkDeleteDialogs } from "../chat/repository.js";

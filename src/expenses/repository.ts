@@ -34,7 +34,7 @@ function mapCategory(r: typeof categories.$inferSelect): Category {
   };
 }
 
-/** Fetch all active categories (cached in memory). */
+/** Cached in memory; invalidated by invalidateCategoriesCache. */
 export async function getCategories(): Promise<Category[]> {
   if (categoriesCache) return categoriesCache;
   const rows = await db
@@ -46,7 +46,6 @@ export async function getCategories(): Promise<Category[]> {
   return categoriesCache;
 }
 
-/** Clear the in-memory categories cache (e.g., after admin changes). */
 export function invalidateCategoriesCache(): void {
   categoriesCache = null;
 }
@@ -60,7 +59,6 @@ async function getNextCategorySortOrder(): Promise<number> {
   return row?.next ?? 1;
 }
 
-/** Create a new expense category (admin). */
 export async function createCategory(input: {
   name: string;
   emoji: string;
@@ -84,7 +82,7 @@ export async function createCategory(input: {
   return mapCategory(row);
 }
 
-/** Update an existing category (admin). Only provided fields are changed. */
+/** Only provided fields are changed. */
 export async function updateCategory(
   categoryId: number,
   updates: {
@@ -110,7 +108,7 @@ export async function updateCategory(
   return row ? mapCategory(row) : null;
 }
 
-/** Soft-delete a category (admin). Returns the affected row, or null if not found. */
+/** Soft-delete (isActive=false). Returns the affected row, or null if not found. */
 export async function deactivateCategory(categoryId: number): Promise<Category | null> {
   const [row] = await db
     .update(categories)
@@ -121,7 +119,7 @@ export async function deactivateCategory(categoryId: number): Promise<Category |
   return row ? mapCategory(row) : null;
 }
 
-/** Reassign all expenses from one category to another. Returns rows moved. */
+/** Returns rows moved. */
 export async function reassignExpensesCategory(
   fromCategoryId: number,
   toCategoryId: number
@@ -134,13 +132,12 @@ export async function reassignExpensesCategory(
   return rows.length;
 }
 
-/** Fetch a single category by id, regardless of active state. */
+/** Returns inactive categories too. */
 export async function getCategoryById(categoryId: number): Promise<Category | null> {
   const [row] = await db.select().from(categories).where(eq(categories.id, categoryId));
   return row ? mapCategory(row) : null;
 }
 
-/** Get detailed expense rows for a category in a date range (drilldown). */
 export async function getExpensesByCategory(
   tribeId: number,
   categoryId: number,
@@ -185,8 +182,6 @@ export async function getExpensesByCategory(
   }));
 }
 
-/** Get all expenses for a tribe in a date range, sorted by category (sortOrder) then by createdAt DESC.
- *  Used to render the fully detailed monthly report (every operation visible per category). */
 export async function getAllExpensesForReport(
   tribeId: number,
   dateFrom: Date,
@@ -225,7 +220,6 @@ export async function getAllExpensesForReport(
   }));
 }
 
-/** Count expenses in a category for a date range. */
 export async function countExpensesByCategory(
   tribeId: number,
   categoryId: number,
@@ -260,7 +254,6 @@ function mapDbUser(r: typeof users.$inferSelect): DbUser {
   };
 }
 
-/** Create or update a user in the DB. Updates name fields if the user already exists. */
 export async function ensureUser(
   telegramId: number,
   username: string | null,
@@ -275,7 +268,7 @@ export async function ensureUser(
     const [existing] = await tx.select().from(users).where(eq(users.telegramId, tgId));
 
     if (existing) {
-      // Only upgrade to admin (never downgrade), since other users may have been made admin via /admin
+      // Only upgrade to admin, never downgrade: users may have been made admin via /admin.
       const newRole = isAdmin && existing.role !== "admin" ? "admin" : existing.role;
       const needsUpdate =
         existing.username !== username ||
@@ -312,13 +305,11 @@ export async function ensureUser(
   });
 }
 
-/** Look up a user by Telegram ID. Returns null if not found. */
 export async function getUserByTelegramId(telegramId: number): Promise<DbUser | null> {
   const [row] = await db.select().from(users).where(eq(users.telegramId, BigInt(telegramId)));
   return row ? mapDbUser(row) : null;
 }
 
-/** Check if a telegram user exists in the DB (used for access control). */
 export async function isUserInDb(telegramId: number): Promise<boolean> {
   const [row] = await db
     .select({ value: count() })
@@ -327,7 +318,6 @@ export async function isUserInDb(telegramId: number): Promise<boolean> {
   return row.value > 0;
 }
 
-/** List approved users without a tribe (for tribe assignment). */
 export async function listUsersWithoutTribe(): Promise<DbUser[]> {
   const rows = await db
     .select()
@@ -337,19 +327,17 @@ export async function listUsersWithoutTribe(): Promise<DbUser[]> {
   return rows.map(mapDbUser);
 }
 
-/** List all approved (non-pending) users. */
 export async function listAllApprovedUsers(): Promise<DbUser[]> {
   const rows = await db.select().from(users).where(ne(users.status, "pending")).orderBy(users.id);
   return rows.map(mapDbUser);
 }
 
-/** List all users in a tribe. */
 export async function listTribeUsers(tribeId: number): Promise<DbUser[]> {
   const rows = await db.select().from(users).where(eq(users.tribeId, tribeId)).orderBy(users.id);
   return rows.map(mapDbUser);
 }
 
-/** Add a new user by telegram ID (admin action). Returns the created user or null if already exists. */
+/** Returns null if the user already exists. */
 export async function addUserByTelegramId(
   telegramId: number,
   role: "admin" | "user" = "user"
@@ -368,7 +356,6 @@ export async function addUserByTelegramId(
   return { id: inserted.id, telegramId, username: null, firstName: "", lastName: null, role, tribeId };
 }
 
-/** Remove a user by telegram ID (admin action). Returns true if deleted. */
 export async function removeUserByTelegramId(telegramId: number): Promise<boolean> {
   const rows = await db
     .delete(users)
@@ -377,7 +364,7 @@ export async function removeUserByTelegramId(telegramId: number): Promise<boolea
   return rows.length > 0;
 }
 
-/** Create a pending user (onboarding request). No tribe assigned — admin assigns later. */
+/** No tribe assigned — admin assigns later. */
 export async function createPendingUser(
   telegramId: number,
   username: string | null,
@@ -392,7 +379,6 @@ export async function createPendingUser(
   return { id: inserted.id, telegramId, username, firstName, lastName, role: "user", tribeId: null };
 }
 
-/** Approve a pending user. */
 export async function approveUser(telegramId: number): Promise<boolean> {
   const rows = await db
     .update(users)
@@ -402,7 +388,7 @@ export async function approveUser(telegramId: number): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** Reject a pending user (delete from DB so they can re-apply). */
+/** Deletes the row so the user can re-apply. */
 export async function rejectUser(telegramId: number): Promise<boolean> {
   const rows = await db
     .delete(users)
@@ -411,13 +397,11 @@ export async function rejectUser(telegramId: number): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** List all pending users. */
 export async function listPendingUsers(): Promise<DbUser[]> {
   const rows = await db.select().from(users).where(eq(users.status, "pending")).orderBy(users.id);
   return rows.map(mapDbUser);
 }
 
-/** Get user status by telegram ID. Returns null if user not found. */
 export async function getUserStatus(telegramId: number): Promise<string | null> {
   const [row] = await db
     .select({ status: users.status })
@@ -426,7 +410,6 @@ export async function getUserStatus(telegramId: number): Promise<string | null> 
   return row?.status ?? null;
 }
 
-/** Set user's tribe. */
 export async function setUserTribe(telegramId: number, tribeId: number): Promise<boolean> {
   const rows = await db
     .update(users)
@@ -436,7 +419,6 @@ export async function setUserTribe(telegramId: number, tribeId: number): Promise
   return rows.length > 0;
 }
 
-/** Remove user from tribe (set tribe_id to NULL). */
 export async function removeUserFromTribe(telegramId: number): Promise<boolean> {
   const rows = await db
     .update(users)
@@ -446,23 +428,19 @@ export async function removeUserFromTribe(telegramId: number): Promise<boolean> 
   return rows.length > 0;
 }
 
-/** List all tribes. */
 export async function listTribes(): Promise<Array<{ id: number; name: string }>> {
   return db.select({ id: tribes.id, name: tribes.name }).from(tribes).orderBy(tribes.name);
 }
 
-/** Create a new tribe. */
 export async function createTribe(name: string): Promise<{ id: number; name: string }> {
   const [row] = await db.insert(tribes).values({ name }).returning({ id: tribes.id, name: tribes.name });
   return row;
 }
 
-/** Valid bot modes. */
 type BotMode = "calendar" | "expenses" | "transcribe" | "simplifier" | "digest" | "broadcast" | "notable_dates" | "gandalf" | "neuro" | "wishlist" | "goals" | "reminders" | "osint" | "summarizer" | "blogger" | "nutritionist" | "admin" | "tasks";
 
 const VALID_MODES: ReadonlySet<string> = new Set<BotMode>(["calendar", "expenses", "transcribe", "simplifier", "digest", "broadcast", "notable_dates", "gandalf", "neuro", "wishlist", "goals", "reminders", "osint", "summarizer", "blogger", "nutritionist", "admin", "tasks"]);
 
-/** Get user's current bot mode from DB. */
 export async function getUserMode(telegramId: number): Promise<BotMode> {
   const [row] = await db
     .select({ mode: users.mode })
@@ -472,12 +450,11 @@ export async function getUserMode(telegramId: number): Promise<BotMode> {
   return mode && VALID_MODES.has(mode) ? (mode as BotMode) : "calendar";
 }
 
-/** Set user's bot mode in DB. */
 export async function setUserMode(telegramId: number, mode: BotMode): Promise<void> {
   await db.update(users).set({ mode }).where(eq(users.telegramId, BigInt(telegramId)));
 }
 
-/** Get display name for a tribe. Falls back to 'Семья'. */
+/** Falls back to 'Семья'. */
 export async function getTribeName(tribeId: number): Promise<string> {
   const [row] = await db.select({ name: tribes.name }).from(tribes).where(eq(tribes.id, tribeId));
   return row?.name ?? "Семья";
@@ -485,11 +462,7 @@ export async function getTribeName(tribeId: number): Promise<string> {
 
 // ─── Expenses CRUD ────────────────────────────────────────────────────
 
-/**
- * Insert a new expense. Validates amount range and subcategory length.
- * `createdAt` is optional: when omitted, PostgreSQL `NOW()` is used (current month).
- * When provided, it overrides the timestamp — used by Mini App to backdate expenses.
- */
+/** `createdAt` overrides the timestamp (Mini App backdates expenses); omit for NOW(). */
 export async function addExpense(
   userId: number,
   tribeId: number,
@@ -499,7 +472,6 @@ export async function addExpense(
   inputMethod: "text" | "voice",
   createdAt?: Date | null
 ): Promise<Expense> {
-  // Anti-abuse validation
   if (amount < MIN_EXPENSE_AMOUNT || amount > MAX_EXPENSE_AMOUNT) {
     throw new Error(`Сумма должна быть от ${MIN_EXPENSE_AMOUNT} до ${MAX_EXPENSE_AMOUNT.toLocaleString("ru-RU")} ₽`);
   }
@@ -535,11 +507,9 @@ export async function addExpense(
 }
 
 /**
- * Insert an expense guarded by an idempotency key (dedup_hash). If a row with the
- * same hash already exists (partial unique index idx_expenses_dedup_hash), no new
- * row is created and the existing one is returned with deduped=true — so a retried
- * request (e.g. a voice upload the gateway timed out on) stays idempotent instead
- * of creating a duplicate.
+ * Guarded by an idempotency key: on a hash collision (partial unique index
+ * idx_expenses_dedup_hash) the existing row is returned with deduped=true, so a
+ * retried request (e.g. a voice upload the gateway timed out on) never duplicates.
  */
 export async function addExpenseWithDedup(
   userId: number,
@@ -596,7 +566,6 @@ export async function addExpenseWithDedup(
   };
 }
 
-/** Get a single expense by ID with category info. */
 export async function getExpenseById(expenseId: number): Promise<ExpenseWithCategory | null> {
   const [r] = await db
     .select({
@@ -629,7 +598,7 @@ export async function getExpenseById(expenseId: number): Promise<ExpenseWithCate
   };
 }
 
-/** Delete an expense by ID. Only deletes if owned by the given user. */
+/** Only deletes if owned by the given user. */
 export async function deleteExpense(expenseId: number, userId: number): Promise<boolean> {
   const rows = await db
     .delete(expenses)
@@ -638,7 +607,6 @@ export async function deleteExpense(expenseId: number, userId: number): Promise<
   return rows.length > 0;
 }
 
-/** Get the most recent expense for a user (for undo). */
 export async function getLastExpense(userId: number): Promise<ExpenseWithCategory | null> {
   const [r] = await db
     .select({
@@ -675,7 +643,6 @@ export async function getLastExpense(userId: number): Promise<ExpenseWithCategor
 
 // ─── Aggregation ──────────────────────────────────────────────────────
 
-/** Calculate total expenses for a tribe in a given month. */
 export async function getMonthTotal(tribeId: number, year: number, month: number): Promise<number> {
   const start = new Date(Date.UTC(year, month - 1, 1));
   const end = new Date(Date.UTC(year, month, 1));
@@ -686,7 +653,6 @@ export async function getMonthTotal(tribeId: number, year: number, month: number
   return parseFloat(row.total ?? "0");
 }
 
-/** Get per-category expense totals for a tribe in a date range. */
 export async function getCategoryTotals(
   tribeId: number,
   dateFrom: Date,
@@ -724,7 +690,6 @@ export async function getCategoryTotals(
   }));
 }
 
-/** Get per-user expense totals for a tribe in a date range. */
 export async function getUserTotals(
   tribeId: number,
   dateFrom: Date,
@@ -741,8 +706,7 @@ export async function getUserTotals(
   return rows.map((r) => ({ userId: r.userId, firstName: r.firstName, total: parseFloat(r.total) }));
 }
 
-/** Compare category totals between two months (for trend analysis).
- *  When `day` is provided, both ranges are capped to 1..day (partial-month comparison). */
+/** When `day` is provided, both ranges are capped to 1..day (partial-month comparison). */
 export async function getMonthComparison(
   tribeId: number,
   year1: number,
@@ -792,7 +756,6 @@ export async function getMonthComparison(
 
 // ─── Admin functions ──────────────────────────────────────────────────
 
-/** Admin: get expenses paginated with category/user info. */
 export async function getExpensesPaginated(
   tribeId: number,
   limit: number,
@@ -834,13 +797,12 @@ export async function getExpensesPaginated(
   }));
 }
 
-/** Admin: count all expenses for a tribe. */
 export async function countExpenses(tribeId: number): Promise<number> {
   const [row] = await db.select({ value: count() }).from(expenses).where(eq(expenses.tribeId, tribeId));
   return row.value;
 }
 
-/** Admin: update expense fields (no ownership check). */
+/** No ownership check (admin). */
 export async function updateExpense(
   expenseId: number,
   fields: { amount?: number; categoryId?: number; subcategory?: string | null; createdAt?: Date }
@@ -852,27 +814,23 @@ export async function updateExpense(
   if (fields.createdAt !== undefined) set.createdAt = fields.createdAt;
 
   if (Object.keys(set).length === 0) return false;
-  // updated_at always tracks the moment of edit
   set.updatedAt = sql`now()`;
 
   const rows = await db.update(expenses).set(set).where(eq(expenses.id, expenseId)).returning({ id: expenses.id });
   return rows.length > 0;
 }
 
-/** Admin: bulk delete expenses by ID array. */
 export async function bulkDeleteExpenses(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db.delete(expenses).where(inArray(expenses.id, ids)).returning({ id: expenses.id });
   return rows.length;
 }
 
-/** Admin: delete all expenses for a tribe. */
 export async function deleteAllExpenses(tribeId: number): Promise<number> {
   const rows = await db.delete(expenses).where(eq(expenses.tribeId, tribeId)).returning({ id: expenses.id });
   return rows.length;
 }
 
-/** Admin: update tribe name/monthlyLimit. */
 export async function updateTribe(
   tribeId: number,
   fields: { name?: string; monthlyLimit?: number | null }
@@ -889,7 +847,7 @@ export async function updateTribe(
   return rows.length > 0;
 }
 
-/** Admin: delete a tribe (only if no users assigned). */
+/** Only if no users are assigned. */
 export async function deleteTribe(tribeId: number): Promise<boolean> {
   const [row] = await db.select({ value: count() }).from(users).where(eq(users.tribeId, tribeId));
   if (row.value > 0) return false;
@@ -897,7 +855,6 @@ export async function deleteTribe(tribeId: number): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** Get detailed expense rows for Excel export (includes user and category info). */
 export async function getExpensesForExcel(
   tribeId: number,
   dateFrom: Date,
@@ -941,11 +898,9 @@ export async function getExpensesForExcel(
 }
 
 /**
- * For yearly pivot reports: returns per-(month, category) totals across the year.
- * One SQL roundtrip instead of 12×N. Months returned use 1..12.
- *
- * Month bucketing is done in UTC to stay consistent with `getMonthTotal` and
- * the rest of the reports — those treat a "month" as `[UTC(y, m-1, 1), UTC(y, m, 1))`.
+ * Per-(month, category) totals across the year in one SQL roundtrip; months use 1..12.
+ * Bucketed in UTC to stay consistent with `getMonthTotal` and the rest of the reports,
+ * which treat a "month" as `[UTC(y, m-1, 1), UTC(y, m, 1))`.
  */
 export async function getMonthlyCategoryTotalsForYear(
   tribeId: number,
@@ -1004,7 +959,6 @@ export async function getEffectiveMonthLimit(
   return fallback;
 }
 
-/** Whether a tribe has an explicit override for the given month. */
 export async function isMonthLimitOverridden(
   tribeId: number,
   year: number,
@@ -1056,7 +1010,7 @@ export async function setEffectiveMonthLimit(
   if (applyToFuture) {
     await db.transaction(async (tx) => {
       await tx.update(tribes).set({ monthlyLimit: String(amount) }).where(eq(tribes.id, tribeId));
-      // Remove overrides for this month and any later month so the new default applies cleanly.
+      // Drop overrides for this month and later so the new default applies cleanly.
       await tx.delete(tribeMonthlyLimits).where(
         and(
           eq(tribeMonthlyLimits.tribeId, tribeId),

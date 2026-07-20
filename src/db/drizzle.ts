@@ -6,7 +6,6 @@ export type Database = NodePgDatabase<typeof schema>;
 
 let instance: Database | null = null;
 
-/** Resolve the Drizzle client, binding it to the pg.Pool singleton on first use. */
 function resolve(): Database {
   if (!instance) instance = drizzle(getPool(), { schema });
   return instance;

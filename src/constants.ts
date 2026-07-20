@@ -23,43 +23,30 @@ import { CHAT_DIALOG_MESSAGE_LIMIT, CHAT_MAX_DIALOGS_DEFAULT } from "./shared/co
 
 // ─── Backend-only constants ───────────────────────────────────────
 
-/** Parse a positive integer from an env value, falling back on missing/invalid. Exported for tests. */
 export function resolvePositiveInt(raw: string | undefined, fallback: number): number {
   const parsed = parseInt((raw ?? "").trim(), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/** Neuro chat limits — env-overridable (defaults from shared/constants). */
 export const CHAT_MESSAGE_LIMIT = resolvePositiveInt(process.env.CHAT_MESSAGE_LIMIT, CHAT_DIALOG_MESSAGE_LIMIT);
 export const CHAT_MAX_DIALOGS = resolvePositiveInt(process.env.CHAT_MAX_DIALOGS, CHAT_MAX_DIALOGS_DEFAULT);
 
-/** OpenRouter API base URL. */
 export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-/** DeepSeek model for intent/expense extraction. */
 export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek/deepseek-chat-v3.1";
 
-// Neuro "free" tier model. Was meta-llama/llama-3.3-70b-instruct:free, which the
-// OpenRouter free pool throttles hard (persistent 429). Switched to gemini-2.5-flash:
-// paid but negligible cost and reliable. Env key kept for deploy back-compat.
+// meta-llama/llama-3.3-70b-instruct:free throttled hard by the OpenRouter free pool
+// (persistent 429). Env key kept for deploy back-compat.
 export const DEEPSEEK_FREE_MODEL = process.env.DEEPSEEK_FREE_MODEL || "google/gemini-2.5-flash";
 
-/** Uncensored model for neuro chat (via OpenRouter, no content filters). */
 export const NEURO_UNCENSORED_MODEL = process.env.NEURO_UNCENSORED_MODEL || "cognitivecomputations/dolphin-mistral-24b-venice-edition:free";
 
-/** Gemini model for voice transcription (calendar/expenses modes). */
 export const TRANSCRIBE_MODEL = process.env.STT_MODEL || "google/gemini-2.5-flash";
 
-/** Gemini model for high-quality voice transcription (transcribe mode). */
 export const TRANSCRIBE_MODEL_HQ = process.env.STT_MODEL_HQ || "google/gemini-2.5-flash";
 
-/**
- * Fallback models for STT when primary model fails (tried in order).
- *
- * Reads `STT_MODEL_FALLBACKS` (comma-separated). For back-compat with deploys
- * that still set the legacy singular `STT_MODEL_FALLBACK`, that env is used as
- * a fallback source if the new one is unset — silent regression safety net.
- */
+// Legacy singular STT_MODEL_FALLBACK is read as a source when the plural is unset,
+// for back-compat with deploys that still set it.
 export const TRANSCRIBE_MODEL_FALLBACKS: readonly string[] = (
   process.env.STT_MODEL_FALLBACKS ?? process.env.STT_MODEL_FALLBACK ?? "google/gemini-2.5-flash-lite"
 )
@@ -67,84 +54,60 @@ export const TRANSCRIBE_MODEL_FALLBACKS: readonly string[] = (
   .map((s) => s.trim())
   .filter(Boolean);
 
-/** Rate limit: max expense entries per user per minute. */
 export const RATE_LIMIT_PER_MINUTE = 10;
 
-/** Directory for temporary voice files. */
 export const VOICE_DIR = "./data/voice";
 
-/** HTTP Referer header for OpenRouter requests. */
 export const OPENROUTER_REFERER = "https://github.com/telegram-google-calendar-bot";
 
-/** Message shown when database is unavailable. */
 export const DB_UNAVAILABLE_MSG =
   "⚠️ Учёт расходов временно недоступен (нет подключения к базе данных).\n" +
   "Календарь работает в обычном режиме.";
 
-/** OSINT: AI model for report analysis (via OpenRouter). */
 export const OSINT_ANALYSIS_MODEL = process.env.OSINT_MODEL || "anthropic/claude-sonnet-4";
 
-/** OSINT: Tavily API base URL. */
 export const TAVILY_API_URL = "https://api.tavily.com";
 
-/** OSINT: max search queries for Phase 1. */
 export const OSINT_QUERIES_LIMIT = 55;
 
-/** OSINT: results per query. */
 export const OSINT_RESULTS_PER_QUERY = 10;
 
-/** OSINT: top sources for final analysis. */
 export const OSINT_TOP_SOURCES = 100;
 
-/** OSINT: how many top results get raw_content (Tier 1) in final analysis. */
+/** Top results (Tier 1) that get full raw_content in final analysis. */
 export const OSINT_RAW_CONTENT_TOP = 40;
 
-/** OSINT: Tier 2 boundary — results from RAW_CONTENT_TOP to this index get medium raw_content. */
+/** Tier 2 boundary: results from RAW_CONTENT_TOP to this index get medium raw_content. */
 export const OSINT_RAW_CONTENT_MEDIUM_END = 70;
 
-/** OSINT: max follow-up queries in Phase 2. */
 export const OSINT_PHASE2_QUERIES_LIMIT = 25;
 
-/** OSINT: max URLs for extract API. */
 export const OSINT_EXTRACT_URLS_LIMIT = 30;
 
-/** OSINT: max tokens for final analysis. */
 export const OSINT_ANALYSIS_MAX_TOKENS = 32000;
 
-/** OSINT: max results for Phase 1 intermediate analysis. */
 export const OSINT_PHASE1_ANALYSIS_LIMIT = 60;
 
-/** Summarizer: AI model for summary generation (via OpenRouter). */
 export const SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "anthropic/claude-sonnet-4";
 
-// Blogger post generation. Was anthropic/claude-sonnet-4, which overran the 30s
-// client timeout on longer posts. Switched to gemini-2.5-flash: fast enough to fit
-// the timeout, lower cost. Env key kept for deploy back-compat.
+// anthropic/claude-sonnet-4 overran the 30s client timeout on longer posts.
+// Env key kept for deploy back-compat.
 export const BLOGGER_MODEL = process.env.BLOGGER_MODEL || "google/gemini-2.5-flash";
 
-/** Simplifier: AI model for text simplification (via OpenRouter). */
 export const SIMPLIFIER_MODEL = process.env.SIMPLIFIER_MODEL || "deepseek/deepseek-chat-v3.1";
 
-/** Neuro: vision model for image/document analysis (supports images, PDF, DOCX natively). */
 export const NEURO_VISION_MODEL = process.env.NEURO_VISION_MODEL || "google/gemini-2.5-flash";
 
-/** Nutritionist: vision model for food photo analysis. */
 export const NUTRITIONIST_VISION_MODEL = process.env.NUTRITIONIST_MODEL || "google/gemini-2.5-flash";
 
-/** Nutritionist: max size of a product package photo uploaded by user (webapp or bot). */
 export const NUTRITION_PRODUCT_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 
-/** Nutritionist: directory for storing user product package photos. */
 export const NUTRITION_PRODUCTS_DIR = "./data/nutritionist-products";
 
-/** Neuro: debounce delay after last message before flushing batch. */
 export const NEURO_BATCH_DEBOUNCE_MS = 3_000;
 
-/** Neuro: max wait time from first message in batch. */
 export const NEURO_BATCH_MAX_WAIT_MS = 30_000;
 
-/** Neuro: max URLs to fetch from user message. */
 export const NEURO_MAX_URLS = 5;
 
-/** Neuro: max search results from Tavily. */
 export const NEURO_MAX_SEARCH_RESULTS = 8;

@@ -74,14 +74,9 @@ const updateCategoryBody = z.object({
   description: z.string().nullable().optional(),
 });
 
-/** Build a Content-Disposition value safe for Node's HTTP layer.
- *
- *  Node rejects header values containing bytes outside ISO-8859-1 with
- *  ERR_INVALID_CHAR — so a raw Cyrillic (or any non-latin1) filename throws
- *  500 at the Hono `c.body(...)` step. Per RFC 5987 we ship two filenames:
- *  an ASCII-only `filename=` for legacy clients, and `filename*=UTF-8''…`
- *  with percent-encoded UTF-8 for everyone else (modern browsers, Telegram
- *  WebView, curl, etc.). The output is guaranteed to be ASCII. */
+// Node rejects header bytes outside ISO-8859-1 with ERR_INVALID_CHAR, so a raw
+// Cyrillic filename 500s at `c.body(...)`. RFC 5987: ASCII `filename=` fallback +
+// percent-encoded `filename*=UTF-8''…`; output is guaranteed ASCII.
 export function buildExcelDispositionHeader(
   filename: string,
   year: number,
@@ -95,7 +90,6 @@ export function buildExcelDispositionHeader(
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${utf8Encoded}`;
 }
 
-/** GET /api/expenses — list expenses (monthly report by category) */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -112,7 +106,6 @@ app.get("/", async (c) => {
   }
 });
 
-/** POST /api/expenses — add expense (text or structured); optional `date` for backdated entries */
 app.post("/", zValidator("json", addExpenseBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -139,7 +132,6 @@ app.post("/", zValidator("json", addExpenseBody), async (c) => {
   }
 
   try {
-    // Structured input: categoryId + amount (from Mini App form)
     if (body.categoryId !== undefined && body.amount !== undefined) {
       if (typeof body.categoryId !== "number" || body.categoryId <= 0) {
         return c.json({ ok: false, error: "Invalid categoryId" }, 400);
@@ -166,11 +158,10 @@ app.post("/", zValidator("json", addExpenseBody), async (c) => {
       return c.json({ ok: true, data: result });
     }
 
-    // Text input: natural language (supports multi-line for bulk entry)
     if (body.text?.trim()) {
       const text = body.text.trim();
 
-      // Try multi-line parsing first (same as bot). Multi-line entries always land in current month.
+      // Multi-line entries always land in current month, so skip when backdating.
       if (!backdate) {
         const multiResult = await addMultipleExpenses(
           telegramId,
@@ -186,7 +177,6 @@ app.post("/", zValidator("json", addExpenseBody), async (c) => {
         }
       }
 
-      // Single expense
       const result = await addExpenseFromText(
         telegramId,
         initData.user.username ?? null,
@@ -212,7 +202,6 @@ app.post("/", zValidator("json", addExpenseBody), async (c) => {
 // paths in the same method (e.g. PUT /limit vs PUT /:id) — registration order
 // is what determines the winner here.
 
-/** GET /api/expenses/limit — current effective limit + override flag */
 app.get("/limit", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -236,7 +225,6 @@ app.get("/limit", async (c) => {
   }
 });
 
-/** PUT /api/expenses/limit — set monthly limit (current month only OR this month + future) */
 app.put("/limit", zValidator("json", setLimitBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -267,11 +255,8 @@ app.put("/limit", zValidator("json", setLimitBody), async (c) => {
   }
 });
 
-/**
- * POST /api/expenses/excel/send — generate Excel and deliver it through the bot DM.
- * Used by the Mini App because direct downloads are unreliable inside Telegram WebView
- * (especially on iOS where WKWebView often silently drops `<a download>` clicks).
- */
+// Delivered via bot DM because direct downloads are unreliable inside Telegram
+// WebView (iOS WKWebView often silently drops `<a download>` clicks).
 app.post("/excel/send", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -340,7 +325,6 @@ app.post("/excel/send", async (c) => {
   }
 });
 
-/** DELETE /api/expenses/:id — undo expense */
 app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -360,7 +344,6 @@ app.delete("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PUT /api/expenses/:id — edit expense (amount, category, subcategory, date) */
 app.put("/:id", zValidator("param", idParam), zValidator("json", updateExpenseBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -389,7 +372,6 @@ app.put("/:id", zValidator("param", idParam), zValidator("json", updateExpenseBo
     return c.json({ ok: false, error: "Invalid categoryId" }, 400);
   }
 
-  // Translate the optional ISO `date` field into a Date for the service layer.
   let createdAt: Date | undefined;
   if (body.date !== undefined && body.date !== null && body.date !== "") {
     if (typeof body.date !== "string") {
@@ -420,7 +402,6 @@ app.put("/:id", zValidator("param", idParam), zValidator("json", updateExpenseBo
   }
 });
 
-/** GET /api/expenses/report — monthly report */
 app.get("/report", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -437,7 +418,6 @@ app.get("/report", async (c) => {
   }
 });
 
-/** GET /api/expenses/year — year report (monthly totals) */
 app.get("/year", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -452,7 +432,6 @@ app.get("/year", async (c) => {
   }
 });
 
-/** GET /api/expenses/excel — download Excel file (monthly or yearly via ?period=year) */
 app.get("/excel", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -493,7 +472,6 @@ app.get("/excel", async (c) => {
   }
 });
 
-/** GET /api/expenses/drilldown — individual expenses by category */
 app.get("/drilldown", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -518,7 +496,6 @@ app.get("/drilldown", async (c) => {
   }
 });
 
-/** GET /api/expenses/comparison-drilldown — expenses by category for both months */
 app.get("/comparison-drilldown", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -543,7 +520,6 @@ app.get("/comparison-drilldown", async (c) => {
   }
 });
 
-/** GET /api/expenses/categories — list categories */
 app.get("/categories", async (c) => {
   try {
     const categories = await getCategoryDtos();
@@ -554,7 +530,6 @@ app.get("/categories", async (c) => {
   }
 });
 
-/** Map service errors to HTTP status; unknown errors → 500. */
 function categoryErrorResponse(err: unknown): { msg: string; status: ContentfulStatusCode } {
   if (err instanceof CategoryServiceError) {
     return { msg: err.message, status: err.status as ContentfulStatusCode };
@@ -562,7 +537,6 @@ function categoryErrorResponse(err: unknown): { msg: string; status: ContentfulS
   return { msg: err instanceof Error ? err.message : "Category operation failed", status: 500 };
 }
 
-/** POST /api/expenses/categories — create category (admin) */
 app.post("/categories", zValidator("json", createCategoryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -577,7 +551,6 @@ app.post("/categories", zValidator("json", createCategoryBody), async (c) => {
   }
 });
 
-/** PUT /api/expenses/categories/:id — update category (admin) */
 app.put("/categories/:id", zValidator("param", idParam), zValidator("json", updateCategoryBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -594,7 +567,6 @@ app.put("/categories/:id", zValidator("param", idParam), zValidator("json", upda
   }
 });
 
-/** DELETE /api/expenses/categories/:id — deactivate category (admin) */
 app.delete("/categories/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -610,7 +582,6 @@ app.delete("/categories/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** GET /api/expenses/recent — paginated expenses across tribe */
 app.get("/recent", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

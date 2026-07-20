@@ -1,17 +1,11 @@
-/**
- * Hold-to-record voice button.
- * Records audio via MediaRecorder and sends to backend for transcription.
- */
 import { useState, useEffect, useRef } from "react";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import { api } from "../api/client";
 
-/** Hard upper bound on `isProcessing`. WebView timers can pause when the app is
- *  backgrounded — this watchdog guarantees the UI always recovers, so the
- *  voice button can never get permanently stuck on "Обработка…". */
+// Watchdog: WebView timers can pause when backgrounded, so this hard bound
+// guarantees the voice button can never get stuck on "Обработка…".
 const PROCESSING_WATCHDOG_MS = 45_000;
 
-/** Derive correct file extension from the actual MIME type of the recording. */
 function getExtFromMime(mimeType: string): string {
   if (mimeType.includes("mp4") || mimeType.includes("aac")) return "mp4";
   if (mimeType.includes("ogg")) return "ogg";
@@ -20,22 +14,12 @@ function getExtFromMime(mimeType: string): string {
 }
 
 interface VoiceButtonProps {
-  /** Called with the transcript (and optional intent/extra data) when processing succeeds. */
   onResult: (transcript: string, data?: unknown) => void;
-  /** Error callback. The optional `data` carries the API's error payload — for the
-   *  expense voice endpoint that includes the transcript, useful for autofill UX. */
   onError?: (error: string, data?: unknown) => void;
-  /** Mode hint sent to the backend (e.g. "expenses", "goals"). */
   mode?: string;
-  /**
-   * Override the API endpoint that receives the audio FormData.
-   * Default: "/api/voice/transcribe"
-   * The endpoint must return `{ ok: true, data: { transcript: string, ... } }`.
-   */
+  // Endpoint must return `{ ok: true, data: { transcript: string, ... } }`.
   endpoint?: string;
-  /** When provided, renders a full card row (button + label/hint) with stable layout across states. */
   label?: string;
-  /** Hint text shown below the label in idle state. */
   hint?: string;
 }
 
@@ -52,7 +36,6 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
     }
   };
 
-  // Release microphone stream when component unmounts; abort any in-flight upload.
   useEffect(() => {
     return () => {
       releaseStream();
@@ -93,10 +76,9 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
     abortRef.current = controller;
     let settled = false;
 
-    // Force-reset processing if the upload silently outlives the in-app browser
-    // (WebView timers pause on backgrounding → the inner fetch timeout may not fire).
-    // The `settled` guard prevents the watchdog from clobbering an already-completed
-    // success/error path if the timer somehow fires concurrently with finally.
+    // WebView timers pause on backgrounding → the inner fetch timeout may not
+    // fire, so force-reset. The `settled` guard prevents this watchdog from
+    // clobbering an already-completed path if it fires concurrently with finally.
     watchdogRef.current = setTimeout(() => {
       if (settled) return;
       controller.abort();
@@ -136,10 +118,9 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
     cancelRecording();
   };
 
-  /** Cancel an in-flight upload from the "Обработка…" state. */
   const handleAbortProcessing = () => {
-    // controller.abort() makes the in-flight request reject as ApiError("ABORTED");
-    // handleStop's catch swallows that branch and finally sets isProcessing=false.
+    // abort() makes the in-flight request reject as ApiError("ABORTED"), which
+    // handleStop's catch swallows before finally sets isProcessing=false.
     abortRef.current?.abort();
     clearWatchdog();
     setIsProcessing(false);

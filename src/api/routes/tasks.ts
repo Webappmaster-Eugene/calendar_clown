@@ -1,8 +1,3 @@
-/**
- * REST API routes for Task Tracker.
- * Mounted at /api/tasks in router.ts.
- */
-
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "../validate.js";
@@ -22,11 +17,8 @@ import {
 import { logApiAction } from "../../logging/actionLogger.js";
 import type { ApiEnv } from "../authMiddleware.js";
 
-/**
- * Parse a deadline string from the webapp.
- * If the string has no timezone info (naive datetime from datetime-local input),
- * interpret it as MSK (UTC+3, no DST since 2014).
- */
+// A naive datetime (no tz, from a datetime-local input) is interpreted as MSK
+// (UTC+3, no DST since 2014).
 function parseMskDeadline(deadline: string): Date {
   if (/[Zz]$/.test(deadline) || /[+-]\d{2}(:\d{2})?$/.test(deadline)) {
     return new Date(deadline);
@@ -56,7 +48,6 @@ const itemTextBody = z.object({
   text: z.string(),
 });
 
-/** GET /api/tasks — list user's works */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -70,7 +61,6 @@ app.get("/", async (c) => {
   }
 });
 
-/** POST /api/tasks — create work */
 app.post("/", zValidator("json", createWorkBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -89,7 +79,6 @@ app.post("/", zValidator("json", createWorkBody), async (c) => {
   }
 });
 
-/** GET /api/tasks/:id — work with tasks */
 app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -111,7 +100,6 @@ app.get("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** DELETE /api/tasks/:id — delete work */
 app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -133,7 +121,6 @@ app.delete("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PUT /api/tasks/:id/archive — archive work */
 app.put("/:id/archive", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -155,7 +142,6 @@ app.put("/:id/archive", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** POST /api/tasks/:id/items — add task to work */
 app.post("/:id/items", zValidator("param", idParam), zValidator("json", addItemBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -187,7 +173,6 @@ app.post("/:id/items", zValidator("param", idParam), zValidator("json", addItemB
   }
 });
 
-/** GET /api/tasks/:id/history — completed tasks */
 app.get("/:id/history", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -206,7 +191,6 @@ app.get("/:id/history", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PUT /api/tasks/items/:itemId/toggle — toggle completion */
 app.put("/items/:itemId/toggle", zValidator("param", itemIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -229,7 +213,6 @@ app.put("/items/:itemId/toggle", zValidator("param", itemIdParam), async (c) => 
   }
 });
 
-/** PUT /api/tasks/items/:itemId/deadline — update deadline */
 app.put("/items/:itemId/deadline", zValidator("param", itemIdParam), zValidator("json", deadlineBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -260,7 +243,6 @@ app.put("/items/:itemId/deadline", zValidator("param", itemIdParam), zValidator(
   }
 });
 
-/** PUT /api/tasks/items/:itemId/text — update text */
 app.put("/items/:itemId/text", zValidator("param", itemIdParam), zValidator("json", itemTextBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -287,7 +269,6 @@ app.put("/items/:itemId/text", zValidator("param", itemIdParam), zValidator("jso
   }
 });
 
-/** DELETE /api/tasks/items/:itemId — delete task */
 app.delete("/items/:itemId", zValidator("param", itemIdParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

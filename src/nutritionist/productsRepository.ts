@@ -1,7 +1,3 @@
-/**
- * Repository for the nutrition_products table (user product catalog).
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
 import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
@@ -77,7 +73,6 @@ export interface UpdateNutritionProductInput {
 
 // ─── CRUD ───────────────────────────────────────────────────────
 
-/** Insert a new product row and return the created entity. */
 export async function createProduct(
   input: CreateNutritionProductInput,
 ): Promise<NutritionProduct> {
@@ -100,10 +95,6 @@ export async function createProduct(
   return mapRow(row);
 }
 
-/**
- * Update a product by id with ownership check. Only columns explicitly set
- * in `patch` are updated. Returns the updated row or null if not found.
- */
 export async function updateProduct(
   id: number,
   userId: number,
@@ -125,7 +116,6 @@ export async function updateProduct(
   }
 
   if (Object.keys(set).length === 0) {
-    // Nothing to update — return the current row.
     return getProductById(id, userId);
   }
 
@@ -138,11 +128,7 @@ export async function updateProduct(
   return row ? mapRow(row) : null;
 }
 
-/**
- * Delete a product with ownership check. Returns the deleted row so the
- * caller can remove the associated photo file from disk, or null if the
- * row did not exist or did not belong to the user.
- */
+// Returns the deleted row so the caller can remove its photo file from disk.
 export async function deleteProduct(
   id: number,
   userId: number,
@@ -154,7 +140,6 @@ export async function deleteProduct(
   return row ? mapRow(row) : null;
 }
 
-/** Get a single product by id with ownership check. */
 export async function getProductById(
   id: number,
   userId: number,
@@ -166,10 +151,6 @@ export async function getProductById(
   return row ? mapRow(row) : null;
 }
 
-/**
- * Paginated list of products for a user. Optional case-insensitive substring
- * search by name or description. Newest first.
- */
 export async function listProducts(
   userId: number,
   limit: number,
@@ -203,7 +184,6 @@ export async function listProducts(
   return rows.map(mapRow);
 }
 
-/** Count products for a user (optional search). */
 export async function countProducts(
   userId: number,
   search?: string,
@@ -229,11 +209,7 @@ export async function countProducts(
   return row.value;
 }
 
-/**
- * Fetch up to `maxRows` most recent products for a user — used to build
- * the AI prompt catalog block. Returns newest first so recently added
- * products are prioritized when the catalog exceeds the prompt cap.
- */
+// Newest first so recent products are prioritized when the catalog exceeds the prompt cap.
 export async function listAllProductsForUser(
   userId: number,
   maxRows: number,
@@ -247,11 +223,7 @@ export async function listAllProductsForUser(
   return rows.map(mapRow);
 }
 
-/**
- * Find products whose lowercased/trimmed name matches the given
- * normalized string exactly. Used as a server-side fallback when the
- * AI did not explicitly tag an item with matched_product_id.
- */
+// Server-side fallback when the AI did not tag an item with matched_product_id.
 export async function findProductsByNormalizedName(
   userId: number,
   normalizedName: string,

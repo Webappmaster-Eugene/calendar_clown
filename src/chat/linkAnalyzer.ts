@@ -4,7 +4,6 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("neuro-links");
 
-/** Max content length per fetched link. */
 const MAX_CONTENT_PER_LINK = 5_000;
 
 export interface FetchedLink {
@@ -13,7 +12,6 @@ export interface FetchedLink {
   content: string;
 }
 
-/** Extract URLs from text. */
 export function extractUrls(text: string): string[] {
   const regex = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
   const matches = text.match(regex);
@@ -23,7 +21,6 @@ export function extractUrls(text: string): string[] {
   return unique.slice(0, NEURO_MAX_URLS);
 }
 
-/** Fetch content from multiple URLs in parallel. */
 export async function fetchLinksContent(urls: string[]): Promise<FetchedLink[]> {
   if (urls.length === 0) return [];
 
@@ -54,7 +51,6 @@ export async function fetchLinksContent(urls: string[]): Promise<FetchedLink[]> 
   return links;
 }
 
-/** Format fetched links as context string for AI prompt. */
 export function formatLinksForContext(links: FetchedLink[]): string {
   if (links.length === 0) return "";
 

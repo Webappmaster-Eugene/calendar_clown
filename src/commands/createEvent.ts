@@ -107,10 +107,9 @@ export async function handleNew(ctx: Context): Promise<void> {
 }
 
 /**
- * Handle plain text in calendar mode (without /new prefix).
- * Uses AI extraction (extractVoiceIntent) since free-form text like
- * "8:00, Екатерина, скрининг по собесу" needs structured parsing.
- * Falls back to chrono-node parseEventText for simpler phrases.
+ * Tries chrono-node parseEventText first; falls back to AI extraction
+ * (extractVoiceIntent) for free-form text like "8:00, Екатерина, скрининг
+ * по собесу" that chrono cannot parse.
  */
 export async function handleCalendarText(ctx: Context): Promise<void> {
   const userId = getUserId(ctx);
@@ -122,7 +121,6 @@ export async function handleCalendarText(ctx: Context): Promise<void> {
   const text = typeof ctx.message.text === "string" ? ctx.message.text.trim() : "";
   if (!text) return;
 
-  // First try simple chrono-node parsing (fast, no API call)
   const parsed = parseEventText(text);
   if (parsed) {
     try {
@@ -175,7 +173,6 @@ export async function handleCalendarText(ctx: Context): Promise<void> {
     }
   }
 
-  // Fallback: use AI extraction for complex free-form text
   try {
     const intent = await extractVoiceIntent(text);
 

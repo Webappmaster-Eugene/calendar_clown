@@ -9,7 +9,6 @@ export interface TavilySearchResult {
   images: TavilyImage[];
 }
 
-/** Search via Tavily API. Returns results and images, or empty on failure. */
 export async function tavilySearch(
   searchQuery: string,
   maxResults: number = 5,
@@ -49,7 +48,6 @@ export async function tavilySearch(
   };
 }
 
-/** Extract full content from URLs via Tavily Extract API. */
 export async function tavilyExtract(urls: string[]): Promise<TavilyExtractResult[]> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) {
@@ -91,7 +89,6 @@ export async function tavilyExtract(urls: string[]): Promise<TavilyExtractResult
   }
 }
 
-/** Run multiple searches in parallel. Returns all results and images flattened. */
 export async function tavilySearchMulti(
   queries: string[],
   maxResultsPerQuery: number = 5,
@@ -119,7 +116,6 @@ export async function tavilySearchMulti(
   };
 }
 
-/** Remove duplicate URLs, keeping the highest-scoring version. */
 function deduplicateResults(results: TavilyResult[]): TavilyResult[] {
   const seen = new Map<string, TavilyResult>();
   for (const r of results) {
@@ -131,7 +127,6 @@ function deduplicateResults(results: TavilyResult[]): TavilyResult[] {
   return Array.from(seen.values()).sort((a, b) => b.score - a.score);
 }
 
-/** Remove duplicate images by URL. */
 function deduplicateImages(images: TavilyImage[]): TavilyImage[] {
   const seen = new Set<string>();
   const unique: TavilyImage[] = [];

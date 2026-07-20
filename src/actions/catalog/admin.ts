@@ -1,9 +1,7 @@
 /**
- * Admin actions — wrappers over adminService/adminSummaryService/adminDataService
- * (mirrors src/api/routes/admin.ts). ADMIN mode: guard restricts to role admin;
- * services additionally enforce isBootstrapAdmin on the acting telegramId.
- * The generic data-browser is exposed read-only (list) — the destructive
- * "delete all entities of type" is intentionally not surfaced here.
+ * Guard restricts to role admin; services additionally enforce isBootstrapAdmin
+ * on the acting telegramId. The destructive "delete all entities of type" is
+ * intentionally not surfaced here.
  */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
@@ -138,7 +136,6 @@ export const adminActions: Action[] = [
     argsSchema: z.object({ period: summaryPeriod.default("today"), ai: z.boolean().optional() }),
     mutates: false, heavy: true,
     handler: async (ctx, a) => {
-      // Guard already enforces admin mode; service-level checks live in adminService.
       const range = getPeriodRange(a.period as SummaryPeriod);
       const data = await collectSummaryData(range);
       if (!a.ai) {

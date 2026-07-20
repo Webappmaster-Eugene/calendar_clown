@@ -1,8 +1,3 @@
-/**
- * Transcription worker processor.
- * Handles each job from the BullMQ queue: transcribe audio → update DB → trigger ordered delivery.
- */
-
 import type { Job } from "bullmq";
 import type { Telegraf } from "telegraf";
 import { unlink } from "fs/promises";
@@ -19,10 +14,6 @@ import { deliverCompletedInOrder } from "./deliveryQueue.js";
 
 const log = createLogger("worker");
 
-/**
- * Create a job processor function bound to the bot instance.
- * The bot reference is needed to trigger ordered delivery via Telegram.
- */
 export function createTranscribeProcessor(bot: Telegraf) {
   isFFmpegAvailable().catch(() => {});
 
@@ -37,8 +28,8 @@ export function createTranscribeProcessor(bot: Telegraf) {
     const reporter = createProgressReporter(bot, chatId, statusMessageId);
     reporter.onProgress("Начинаю обработку...");
 
-    // Wrap onProgress to extend BullMQ lock on each progress update.
-    // This keeps the lock alive for multi-chunk transcriptions that exceed lockDuration.
+    // Extend BullMQ lock on each progress update to keep it alive for multi-chunk
+    // transcriptions that exceed lockDuration.
     const onProgressWithLockExtension = (msg: string): void => {
       reporter.onProgress(msg);
       const token = job.token;
@@ -84,8 +75,7 @@ export function createTranscribeProcessor(bot: Telegraf) {
       log.error(`Transcription ${transcriptionId} error: ${errorMsg}`);
       if (errorStack) log.error(`Stack trace: ${errorStack}`);
 
-      // On final attempt — mark as failed and trigger delivery.
-      // On earlier attempts — leave file for retry.
+      // On final attempt — mark failed and trigger delivery. On earlier attempts — leave file for retry.
       const isLastAttempt = (job.attemptsMade + 1) >= (job.opts.attempts ?? 3);
       if (isLastAttempt) {
         await markFailed(transcriptionId, errorMsg);

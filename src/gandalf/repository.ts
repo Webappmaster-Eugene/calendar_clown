@@ -1,9 +1,3 @@
-/**
- * CRUD repository for Gandalf mode (База знаний): categories, entries, files.
- * Supports both tribe-scoped and personal (no tribe) queries.
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
-
 import { and, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
@@ -73,9 +67,6 @@ export interface YearStats {
   totalPrice: number | null;
 }
 
-/**
- * Scope for queries: either tribe-scoped or personal (by userId).
- */
 export interface TribeScope {
   type: "tribe";
   tribeId: number;
@@ -89,8 +80,6 @@ export interface PersonalScope {
 
 export type GandalfScope = TribeScope | PersonalScope;
 
-// Entry row joined with category name/emoji and author first name, reused
-// across the entry-listing queries.
 const entryWithJoins = {
   id: gandalfEntries.id,
   tribeId: gandalfEntries.tribeId,
@@ -245,7 +234,7 @@ export async function createEntry(params: {
   return entry!;
 }
 
-/** Internal: get entry by ID without scope check (used after insert). */
+// No scope check — callers must have already authorized (used after insert).
 async function getEntryByIdInternal(entryId: number): Promise<GandalfEntry | null> {
   const [row] = await db
     .select(entryWithJoins)
@@ -395,10 +384,6 @@ export async function deleteEntry(entryId: number, tribeId: number | null): Prom
   return rows.length > 0;
 }
 
-/**
- * Get entry count and total price for all categories in one query.
- * Handles both tribe and personal (null tribeId) scopes.
- */
 export async function getCategoryEntryCounts(
   tribeId: number | null
 ): Promise<Map<number, { count: number; totalPrice: number | null }>> {
@@ -687,7 +672,6 @@ export async function getLatestEntryByUser(tribeId: number | null, userId: numbe
 
 // ─── Admin functions ────────────────────────────────────────────────────
 
-/** Admin: update entry title/price. */
 export async function updateEntryFields(
   entryId: number,
   fields: { title?: string; price?: number | null }
@@ -696,7 +680,7 @@ export async function updateEntryFields(
   if (fields.title !== undefined) set.title = fields.title;
   if (fields.price !== undefined) set.price = fields.price != null ? String(fields.price) : null;
 
-  if (Object.keys(set).length === 0) return false; // only updated_at
+  if (Object.keys(set).length === 0) return false;
 
   set.updatedAt = sql`now()`;
 
@@ -708,7 +692,6 @@ export async function updateEntryFields(
   return rows.length > 0;
 }
 
-/** Admin: bulk delete entries by ID array. */
 export async function bulkDeleteEntries(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db
@@ -718,7 +701,6 @@ export async function bulkDeleteEntries(ids: number[]): Promise<number> {
   return rows.length;
 }
 
-/** Admin: delete all entries for a tribe. */
 export async function deleteAllEntries(tribeId: number): Promise<number> {
   const rows = await db
     .delete(gandalfEntries)
@@ -727,7 +709,6 @@ export async function deleteAllEntries(tribeId: number): Promise<number> {
   return rows.length;
 }
 
-/** Admin: get all entries paginated (with joins). */
 export async function getAllEntriesPaginated(
   limit: number,
   offset: number
@@ -743,7 +724,6 @@ export async function getAllEntriesPaginated(
   return rows.map(mapEntryWithJoins);
 }
 
-/** Admin: count all entries for a tribe. */
 export async function countAllEntries(tribeId: number): Promise<number> {
   const [row] = await db
     .select({ value: count() })

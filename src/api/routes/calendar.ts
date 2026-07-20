@@ -20,10 +20,8 @@ import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schemas (json bodies only). Event `:id` params are Google Calendar
-//    string IDs (not numeric), so no numeric param validation applies here.
-//    Schemas mirror CreateEventRequest / handler-accepted shapes; both `text`
-//    and `intent` are optional (handler branches on whichever is present).
+// Event `:id` params are Google Calendar string IDs (not numeric), so no numeric
+// param validation applies here.
 const intentEventSchema = z.object({
   title: z.string(),
   startISO: z.string(),
@@ -47,7 +45,6 @@ const searchAndCancelBody = z.object({
   query: z.string(),
 });
 
-/** GET /api/calendar/today */
 app.get("/today", async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
@@ -63,7 +60,6 @@ app.get("/today", async (c) => {
   }
 });
 
-/** GET /api/calendar/week */
 app.get("/week", async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
@@ -79,7 +75,6 @@ app.get("/week", async (c) => {
   }
 });
 
-/** GET /api/calendar/range?from=<ISO>&days=<N> — events for an arbitrary window (voice "покажи расписание") */
 app.get("/range", async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
@@ -104,14 +99,12 @@ app.get("/range", async (c) => {
   }
 });
 
-/** POST /api/calendar/events — create event from text or pre-extracted intent */
 app.post("/events", zValidator("json", createEventBody), async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
   const telegramId = initData.user.id;
   const body = await c.req.json<CreateEventRequest>();
 
-  // Route 1: Pre-extracted intent from LLM (voice input via /api/voice/extract-intent)
   if (body.intent?.events?.length) {
     try {
       const results = await createEventFromIntent(userId, telegramId, body.intent.events);
@@ -133,7 +126,6 @@ app.post("/events", zValidator("json", createEventBody), async (c) => {
     }
   }
 
-  // Route 2: Natural language text (typed input, parsed via chrono-node)
   if (!body.text?.trim()) {
     return c.json({ ok: false, error: "text or intent is required" }, 400);
   }
@@ -154,7 +146,6 @@ app.post("/events", zValidator("json", createEventBody), async (c) => {
   }
 });
 
-/** PUT /api/calendar/events/:id — update single event (title, start, end) */
 app.put("/events/:id", zValidator("json", updateEventBody), async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
@@ -180,7 +171,6 @@ app.put("/events/:id", zValidator("json", updateEventBody), async (c) => {
   }
 });
 
-/** DELETE /api/calendar/events/:id — cancel single event */
 app.delete("/events/:id", async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
@@ -200,7 +190,6 @@ app.delete("/events/:id", async (c) => {
   }
 });
 
-/** DELETE /api/calendar/recurring/:recurringEventId — cancel all recurring */
 app.delete("/recurring/:recurringEventId", async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);
@@ -216,7 +205,6 @@ app.delete("/recurring/:recurringEventId", async (c) => {
   }
 });
 
-/** POST /api/calendar/search-and-cancel — search by query, cancel if single match */
 app.post("/search-and-cancel", zValidator("json", searchAndCancelBody), async (c) => {
   const initData = c.get("initData");
   const userId = String(initData.user.id);

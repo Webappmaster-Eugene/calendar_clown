@@ -1,17 +1,12 @@
-/**
- * Extract one calendar event from transcript using OpenRouter (DeepSeek).
- * Single-task context only: voice → event JSON. No general chat, to keep cost and latency low.
- */
-
 import { DEEPSEEK_MODEL, TIMEZONE_MSK } from "../constants.js";
 import { tryParseJson } from "../utils/parseJson.js";
 import { callOpenRouter } from "../utils/openRouterClient.js";
 import { INSTRUCTION_GUARD, wrapUserContent } from "../voice/promptSafety.js";
 
-/** Build system prompt with current date so the model uses the correct year (no past dates). */
+// Inject current date so the model uses the correct year (no past dates).
 function buildSystemPrompt(): string {
   const now = new Date();
-  const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK }); // YYYY-MM-DD
+  const dateStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
   const weekday = now.toLocaleDateString("en-GB", { weekday: "long", timeZone: TIMEZONE_MSK });
   const year = now.getFullYear();
   return `Task: from the user message extract one or more calendar events.
@@ -34,7 +29,6 @@ export interface ExtractedEvent {
   recurrence?: string[];
 }
 
-/** Extract one or more calendar events from transcript. */
 export async function extractCalendarEvents(
   transcript: string
 ): Promise<ExtractedEvent[]> {

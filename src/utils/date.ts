@@ -1,18 +1,15 @@
 import { TIMEZONE_MSK } from "../constants.js";
 
-/** Get year/month/day for a given Date in Moscow timezone. */
 export function getMskYmd(date: Date): { year: number; month: number; day: number } {
   const mskStr = date.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
   const [year, month, day] = mskStr.split("-").map(Number);
   return { year, month, day };
 }
 
-/** Get current year, month, and day in Moscow timezone. */
 export function getMskNow(): { year: number; month: number; day: number } {
   return getMskYmd(new Date());
 }
 
-/** Get Date range for a given month: [from, to). */
 export function getMonthRange(year: number, month: number): { from: Date; to: Date } {
   return {
     from: new Date(Date.UTC(year, month - 1, 1)),
@@ -20,7 +17,6 @@ export function getMonthRange(year: number, month: number): { from: Date; to: Da
   };
 }
 
-/** Get monthly expense limit from env. */
 export function getMonthLimit(): number {
   const raw = process.env.MONTHLY_EXPENSE_LIMIT?.trim();
   if (!raw) return 350_000;
@@ -28,14 +24,6 @@ export function getMonthLimit(): number {
   return isNaN(parsed) ? 350_000 : parsed;
 }
 
-/**
- * Parse an ISO date string (YYYY-MM-DD) chosen by the user as a moment in Moscow time.
- * Returns a Date object at 12:00 MSK (09:00 UTC) on that day, ensuring UTC and MSK
- * agree on the day-of-month for downstream filtering.
- *
- * Throws on invalid input or out-of-range dates (older than 5 years, or more than
- * 1 day in the future relative to MSK now).
- */
 export function parseMskCalendarDate(dateStr: string): Date {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
   if (!m) {

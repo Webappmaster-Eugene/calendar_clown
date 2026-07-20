@@ -1,7 +1,3 @@
-/**
- * Chat (Neuro) actions — wrappers over chatService (mirrors src/api/routes/chat.ts).
- * Individual mode. Non-streaming send only; photo/document input stays UI-only.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

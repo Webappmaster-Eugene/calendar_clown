@@ -1,10 +1,3 @@
-/**
- * High-quality voice transcription for the transcriber mode.
- * Uses the shared STT client with provider routing and geo-block fallback.
- * Supports long audio files via ffmpeg-based chunking.
- * When ffmpeg is not available, sends the file as-is (up to 20 MB).
- */
-
 import { unlink } from "fs/promises";
 import { join, basename, extname } from "path";
 import { callStt } from "../voice/sttClient.js";
@@ -37,30 +30,17 @@ const TRANSCRIBE_PROMPT = `Расшифруй это аудиосообщени�
 - Если речь содержит английские термины (API, frontend, backend, LMS и т.п.) — записывай их латиницей, не транслитерируй
 - Если часть аудио неразборчива — пропусти, не додумывай`;
 
-/**
- * Calculate timeout based on audio duration.
- * STT processing time correlates with audio duration, not file size.
- * Uses 2x real-time + 60s buffer, clamped to [120s, 1800s].
- */
+// STT processing time correlates with audio duration, not file size.
 function getTimeoutForDuration(durationSec: number): number {
   return Math.max(120_000, Math.min(durationSec * 2_000 + 60_000, 1_800_000));
 }
 
-/** Format duration in seconds as "M:SS". */
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-/**
- * Transcribe an audio file with high-quality Russian prompt.
- * Strategy:
- * 1. Compress non-OGG files to OGG Opus (if ffmpeg available)
- * 2. If file fits within MAX_SINGLE_FILE_BYTES (20 MB) — send as-is
- * 3. If file is too large and ffmpeg available — split into chunks
- * 4. If file is too large and ffmpeg NOT available — send as-is with extended timeout (best effort)
- */
 export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgressCallback, audioDurationHint?: number): Promise<string> {
   const ext = extname(filePath).toLowerCase();
   if (ext !== ".ogg") {
@@ -72,7 +52,6 @@ export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgres
     const duration = await getAudioDuration(effectivePath);
     const fileSizeBytes = await getFileSize(effectivePath);
 
-    // Use detected duration, Telegram hint, or estimate from file size
     const effectiveDuration = duration > 0
       ? duration
       : (audioDurationHint && audioDurationHint > 0)
@@ -98,13 +77,11 @@ export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgres
       return await transcribeWithChunking(effectivePath, effectiveDuration, onProgress);
     }
 
-    // ffmpeg NOT available — try sending the whole file as-is if under payload limit
     if (fileSizeBytes <= MAX_SINGLE_FILE_BYTES) {
       log.info("No ffmpeg, but file fits single-file limit — sending as-is");
       return await transcribeSingleFile(effectivePath, effectiveDuration, onProgress);
     }
 
-    // File is too large and no ffmpeg — best-effort: send as-is with extended timeout
     // Gemini can sometimes handle files slightly over the documented limit.
     log.warn(`No ffmpeg and file is ${sizeMB}MB (over ${MAX_SINGLE_FILE_BYTES / (1024 * 1024)}MB limit). Attempting single-file transcription anyway.`);
     onProgress?.(`ffmpeg недоступен. Попытка обработать ${sizeMB} МБ целиком...`);
@@ -116,7 +93,6 @@ export async function transcribeVoiceHQ(filePath: string, onProgress?: OnProgres
   }
 }
 
-/** Transcribe a single audio file (no chunking). Reports progress as %. */
 async function transcribeSingleFile(filePath: string, durationSec: number, onProgress?: OnProgressCallback): Promise<string> {
   const timeoutMs = getTimeoutForDuration(durationSec);
   const durationStr = formatDuration(durationSec);
@@ -142,7 +118,6 @@ async function transcribeSingleFile(filePath: string, durationSec: number, onPro
   return result;
 }
 
-/** Transcribe a long audio file by splitting into chunks via ffmpeg. */
 async function transcribeWithChunking(filePath: string, duration: number, onProgress?: OnProgressCallback): Promise<string> {
   const base = basename(filePath, extname(filePath));
   const chunkDir = join(VOICE_DIR, `chunks_${base}_${Date.now()}`);
@@ -157,7 +132,6 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
   } catch (err) {
     log.error(`ffmpeg chunking failed: ${err instanceof Error ? err.message : String(err)}`);
     await cleanupChunkDir(chunkDir);
-    // Fallback: try single-file transcription (may fail if file is too large)
     log.info("Chunking failed, falling back to single-file transcription");
     onProgress?.("Нарезка не удалась, пробую обработать целиком...");
     return transcribeSingleFile(filePath, duration, onProgress);
@@ -218,7 +192,7 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
       }
     }
 
-    // If ALL chunks failed, throw so BullMQ can retry the whole job
+    // Throw so BullMQ can retry the whole job.
     if (failedChunks === chunkPaths.length) {
       throw new Error(`All ${chunkPaths.length} chunks failed transcription`);
     }

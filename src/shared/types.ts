@@ -1,9 +1,3 @@
-/**
- * Shared types between backend API and frontend Mini App.
- * Only types needed for API request/response contracts belong here.
- * Internal backend-only types stay in their respective modules.
- */
-
 // ─── Generic API ──────────────────────────────────────────────
 
 export interface ApiResponse<T> {
@@ -207,7 +201,6 @@ export interface MonthComparisonDto {
   diff: number;
 }
 
-/** Single expense row used in detailed report blocks. */
 export interface ExpenseDetailItemDto {
   id: number;
   subcategory: string | null;
@@ -251,7 +244,6 @@ export interface AddExpenseRequest {
   date?: string;
 }
 
-/** API response for adding a single expense. */
 export interface AddExpenseResultDto {
   expense: ExpenseDto;
   monthTotal: number;
@@ -260,7 +252,6 @@ export interface AddExpenseResultDto {
   confirmation: string;
 }
 
-/** API response for adding multiple expenses (multi-line). */
 export interface AddMultipleExpenseResultDto {
   expenses: Array<{ emoji: string; name: string; sub: string | null; amount: number }>;
   monthTotal: number;
@@ -277,7 +268,6 @@ export interface UpdateExpenseRequest {
   date?: string;
 }
 
-/** GET /api/expenses/limit response payload. */
 export interface MonthlyLimitDto {
   year: number;
   month: number;
@@ -289,7 +279,6 @@ export interface MonthlyLimitDto {
   defaultLimit: number;
 }
 
-/** PUT /api/expenses/limit request body. */
 export interface SetMonthlyLimitRequest {
   year: number;
   month: number;
@@ -678,13 +667,11 @@ export interface UpdateDialogRequest {
   theme?: string | null;
 }
 
-/** Effective (env-overridable) neuro-chat limits — GET /api/chat/config. */
 export interface ChatConfigDto {
   messageLimit: number;
   maxDialogs: number;
 }
 
-/** One OpenRouter model, as surfaced by GET /api/chat/models for the picker. */
 export interface OpenRouterModelDto {
   id: string;
   name: string;
@@ -992,19 +979,16 @@ export interface UpdateTaskDeadlineRequest {
 
 // ─── Paginated Response Types ────────────────────────────────
 
-/** Response from GET /api/wishlist — own + tribe wishlists */
 export interface WishlistsListResponse {
   own: WishlistDto[];
   tribe: WishlistDto[];
 }
 
-/** Response from GET /api/osint — paginated search history */
 export interface OsintSearchHistoryResponse {
   searches: OsintSearchDto[];
   total: number;
 }
 
-/** Response from GET /api/transcribe — paginated transcription history */
 export interface TranscribeHistoryResponse {
   transcriptions: TranscriptionDto[];
   total: number;

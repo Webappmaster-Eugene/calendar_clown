@@ -1,7 +1,3 @@
-/**
- * Chat (Neuro) business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   saveMessage,
   getRecentMessages,
@@ -46,12 +42,6 @@ function resolveModelAndPrompt(provider: ChatProvider): { model: string; systemP
   }
 }
 
-/**
- * Effective AI config for a dialog: per-dialog overrides win, otherwise the user's
- * global provider preference. Model → dialog.model or the provider model; system
- * prompt → dialog.systemPrompt or the provider's; temperature/maxTokens → dialog-only.
- */
-// Exported for unit testing (pure resolution of per-dialog overrides vs provider default).
 export function resolveDialogAiConfig(
   dialog: ChatDialog,
   provider: ChatProvider
@@ -127,7 +117,6 @@ export async function removeDialog(telegramId: number, dialogId: number): Promis
   await deleteDialog(dialogId, dbUser.id);
 }
 
-/** Rename a dialog owned by the given user. Throws if the dialog is not found or not owned. */
 export async function renameUserDialog(
   telegramId: number,
   dialogId: number,
@@ -139,7 +128,6 @@ export async function renameUserDialog(
   if (!updated) throw new Error("Диалог не найден.");
 }
 
-/** Update a dialog's title + per-dialog AI settings (model/prompt/temp/max/theme). */
 export async function updateDialogForUser(
   telegramId: number,
   dialogId: number,
@@ -152,7 +140,6 @@ export async function updateDialogForUser(
   return dialogToDto(updated);
 }
 
-/** OpenRouter model catalog for the picker: search query + free-only / vendor filters. */
 export async function getModels(
   search: string,
   opts: { free?: boolean; vendor?: string } = {}
@@ -160,12 +147,10 @@ export async function getModels(
   return searchModels(search, opts);
 }
 
-/** Distinct vendors for the picker's vendor dropdown. */
 export async function getModelVendors(): Promise<string[]> {
   return listModelVendors();
 }
 
-/** Effective (env-overridable) chat limits for the Mini App to respect in the UI. */
 export function getChatConfig(): ChatConfigDto {
   return { messageLimit: CHAT_MESSAGE_LIMIT, maxDialogs: CHAT_MAX_DIALOGS };
 }
@@ -178,7 +163,6 @@ export async function getDialogMessages(
   requireDb();
   const dbUser = await requireDbUser(telegramId);
 
-  // Verify ownership
   const dialog = await getDialogById(dialogId, dbUser.id);
   if (!dialog) throw new Error("Диалог не найден.");
 
@@ -186,15 +170,6 @@ export async function getDialogMessages(
   return messages.map(messageToDto);
 }
 
-/**
- * Send a message and get AI response.
- * This is the core chat function that:
- * 1. Gets or creates the active dialog
- * 2. Saves user message
- * 3. Calls AI
- * 4. Saves AI response
- * 5. Auto-generates dialog title on first message
- */
 export async function sendMessage(
   telegramId: number,
   content: string,
@@ -220,7 +195,7 @@ export async function sendMessage(
     throw new Error(`Диалог достиг лимита в ${CHAT_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
   }
 
-  // Get conversation history BEFORE saving user message (to build context)
+  // Read history BEFORE saving the user message so it isn't duplicated into context.
   const history = await getRecentMessages(dialog.id, CHAT_MESSAGE_LIMIT);
   const messages = [
     ...history.map((m) => ({
@@ -230,10 +205,9 @@ export async function sendMessage(
     { role: "user", content },
   ];
 
-  // Call AI first — if it fails, we don't save orphaned user messages
+  // Call AI first — a failure must not leave an orphaned user message saved.
   const result = await chatCompletion(messages, model, systemPrompt, { temperature, maxTokens });
 
-  // Save both messages only after successful AI call
   const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
   const assistantMsg = await saveMessage(
     dbUser.id,
@@ -244,7 +218,6 @@ export async function sendMessage(
     result.tokensUsed ?? undefined
   );
 
-  // Auto-generate title for new dialogs
   if (history.length === 0) {
     try {
       const title = await generateDialogTitle(content, model);
@@ -263,11 +236,6 @@ export async function sendMessage(
   };
 }
 
-/**
- * Streaming variant of sendMessage.
- * Prepares the dialog and user message, then streams the AI response via onChunk.
- * After streaming completes, saves the full response to DB.
- */
 export async function sendMessageStream(
   telegramId: number,
   content: string,
@@ -294,7 +262,7 @@ export async function sendMessageStream(
     throw new Error(`Диалог достиг лимита в ${CHAT_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
   }
 
-  // Get conversation history BEFORE saving user message (to build context)
+  // Read history BEFORE saving the user message so it isn't duplicated into context.
   const history = await getRecentMessages(dialog.id, CHAT_MESSAGE_LIMIT);
   const messages = [
     ...history.map((m) => ({
@@ -304,10 +272,9 @@ export async function sendMessageStream(
     { role: "user", content },
   ];
 
-  // Stream AI response first — if it fails, we don't save orphaned user messages
+  // Stream AI first — a failure must not leave an orphaned user message saved.
   const result = await chatCompletionStream(messages, onChunk, model, systemPrompt, { temperature, maxTokens });
 
-  // Save both messages only after successful AI call
   const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
   const assistantMsg = await saveMessage(
     dbUser.id,
@@ -318,7 +285,7 @@ export async function sendMessageStream(
     result.tokensUsed ?? undefined
   );
 
-  // Auto-generate title for new dialogs (fire-and-forget to avoid blocking the SSE "done" event)
+  // Fire-and-forget to avoid blocking the SSE "done" event.
   if (history.length === 0) {
     generateDialogTitle(content, model)
       .then((title) => {

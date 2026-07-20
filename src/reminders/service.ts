@@ -1,8 +1,3 @@
-/**
- * Pure business logic for Reminders: schedule evaluation, formatting, validation.
- * No DB or API calls.
- */
-
 import { TIMEZONE_MSK } from "../constants.js";
 import type { ReminderSchedule } from "./types.js";
 
@@ -16,10 +11,7 @@ const WEEKDAY_NAMES_RU: Record<number, string> = {
   7: "Вс",
 };
 
-/**
- * Check if a reminder should fire right now.
- * All comparisons in Europe/Moscow timezone.
- */
+/** All comparisons in Europe/Moscow timezone. */
 export function shouldFireNow(
   schedule: ReminderSchedule,
   now: Date,
@@ -37,7 +29,6 @@ export function shouldFireNow(
     }
   }
 
-  // Check weekday (ISO-8601: 1=Mon..7=Sun)
   const jsDay = mskNow.getDay(); // 0=Sun..6=Sat
   const isoDay = jsDay === 0 ? 7 : jsDay;
   if (!schedule.weekdays.includes(isoDay)) {
@@ -48,7 +39,7 @@ export function shouldFireNow(
     return false;
   }
 
-  // Anti-duplicate: check if already fired in this minute
+  // Anti-duplicate: skip if already fired within this same minute
   if (lastFiredAt) {
     const mskLast = new Date(lastFiredAt.toLocaleString("en-US", { timeZone: TIMEZONE_MSK }));
     if (
@@ -65,18 +56,15 @@ export function shouldFireNow(
   return true;
 }
 
-/** Check if endDate has passed (should deactivate). */
 export function isExpired(schedule: ReminderSchedule, now: Date): boolean {
   if (!schedule.endDate) return false;
   const todayStr = now.toLocaleDateString("en-CA", { timeZone: TIMEZONE_MSK });
   return todayStr > schedule.endDate;
 }
 
-/** Format schedule as human-readable description. */
 export function formatScheduleDescription(schedule: ReminderSchedule): string {
   const parts: string[] = [];
 
-  // Days
   const allWeekdays = [1, 2, 3, 4, 5];
   const sorted = [...schedule.weekdays].sort((a, b) => a - b);
 
@@ -97,14 +85,12 @@ export function formatScheduleDescription(schedule: ReminderSchedule): string {
     parts.push(sorted.map((d) => WEEKDAY_NAMES_RU[d] ?? String(d)).join(", "));
   }
 
-  // Times
   const sortedTimes = [...schedule.times].sort();
   parts.push("в " + sortedTimes.join(", "));
 
   return parts.join(" ");
 }
 
-/** Format end date for display. */
 export function formatEndDate(endDate: string | null): string {
   if (!endDate) return "бессрочно";
   const d = new Date(endDate + "T00:00:00+03:00");
@@ -116,7 +102,6 @@ export function formatEndDate(endDate: string | null): string {
   });
 }
 
-/** Validate a ReminderSchedule. Returns error message or null if valid. */
 export function validateSchedule(schedule: ReminderSchedule): string | null {
   if (!Array.isArray(schedule.times) || schedule.times.length === 0) {
     return "Укажите хотя бы одно время.";

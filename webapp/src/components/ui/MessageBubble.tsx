@@ -1,24 +1,3 @@
-/**
- * Unified renderer for AI / assistant / user / system messages in the Mini App.
- *
- * Design goals:
- *   1. Body text is natively selectable (user-select: text) and does NOT
- *      swallow long-press events — the WebView's native "Copy / Select All"
- *      menu appears on long-press, mirroring how copying works from bot
- *      messages in Telegram.
- *   2. An explicit Copy + Share action row lives at the bottom of assistant
- *      bubbles, visually separated from the body by a divider — mirrors the
- *      bot pattern of sending content and controls as two separate messages.
- *   3. Markdown is rendered via react-markdown + remark-gfm when enabled
- *      (default for assistant). URLs auto-link. Code blocks get mono font.
- *   4. Pending state shows a typing indicator; errored state shows a red
- *      left-border accent.
- *
- * Callers can also pass structured `children` for cases where the response
- * is not plain text (e.g., the Nutritionist AnalysisCard). In that case they
- * must also pass `toText` — a serializer that produces the plain-text
- * version used by Copy/Share actions.
- */
 import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -37,7 +16,6 @@ export interface MessageBubbleProps {
   actions?: ReadonlyArray<MessageAction>;
   onAction?: (action: MessageAction) => void;
   children?: ReactNode;
-  /** Serializer for Copy/Share when `children` replaces `content`. */
   toText?: () => string;
   pending?: boolean;
   errored?: boolean;
@@ -211,7 +189,6 @@ function formatTimestamp(value: string | Date): string {
   }
 }
 
-// Custom markdown components — compact, theme-aware, no heavy external CSS.
 const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   p: ({ children }) => <p style={{ margin: "0.4em 0" }}>{children}</p>,
   a: ({ href, children }) => (

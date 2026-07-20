@@ -1,9 +1,3 @@
-/**
- * Small icon button that copies the given text to the clipboard on click
- * and flips to a green check-mark for ~1.5s on success. Used inside
- * MessageBubble, AnswerCard, and ad-hoc across pages wherever a piece of
- * text needs a fast "copy" affordance (mirrors the bot UX).
- */
 import type { CSSProperties } from "react";
 import { useClipboard } from "../../hooks/useClipboard";
 

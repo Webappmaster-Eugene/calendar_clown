@@ -3,7 +3,6 @@ import { db } from "../db/drizzle.js";
 import { calendarEvents, users } from "../db/schema.js";
 import type { CalendarEventRecord, CreateCalendarEventParams } from "./types.js";
 
-/** Insert a calendar event record into the database. */
 export async function saveCalendarEvent(params: CreateCalendarEventParams): Promise<CalendarEventRecord> {
   const [r] = await db
     .insert(calendarEvents)
@@ -26,7 +25,6 @@ export async function saveCalendarEvent(params: CreateCalendarEventParams): Prom
   return mapRow(r);
 }
 
-/** Mark a calendar event as deleted by its Google Event ID. Returns true if a row was updated. */
 export async function markEventDeleted(googleEventId: string, userId: number): Promise<boolean> {
   const rows = await db
     .update(calendarEvents)
@@ -42,10 +40,6 @@ export async function markEventDeleted(googleEventId: string, userId: number): P
   return rows.length > 0;
 }
 
-/**
- * Update the audit row for a calendar event (summary/times) by its Google Event ID.
- * Returns true if a row was updated.
- */
 export async function markEventUpdated(
   googleEventId: string,
   userId: number,
@@ -72,7 +66,6 @@ export async function markEventUpdated(
 
 // ─── Admin functions ────────────────────────────────────────────────────
 
-/** Admin: get all calendar events paginated (all users). */
 export async function getAllEventsPaginated(
   limit: number,
   offset: number
@@ -87,13 +80,11 @@ export async function getAllEventsPaginated(
   return rows.map((r) => ({ ...mapRow(r.event), firstName: r.firstName }));
 }
 
-/** Admin: count all calendar events. */
 export async function countAllEvents(): Promise<number> {
   const [row] = await db.select({ value: count() }).from(calendarEvents);
   return row.value;
 }
 
-/** Admin: bulk soft-delete calendar events (set status='deleted'). */
 export async function bulkDeleteEvents(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db
@@ -104,7 +95,6 @@ export async function bulkDeleteEvents(ids: number[]): Promise<number> {
   return rows.length;
 }
 
-/** Admin: soft-delete all calendar events. */
 export async function deleteAllEvents(): Promise<number> {
   const rows = await db
     .update(calendarEvents)

@@ -1,8 +1,3 @@
-/**
- * Admin Data Management — central handler for all admin data CRUD operations.
- * Handles callbacks matching `adm_*:*` pattern.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { eq } from "drizzle-orm";
@@ -136,7 +131,6 @@ function cleanExpiredPending(): void {
 
 // ─── Data Management Menu ──────────────────────────────────────────────
 
-/** Show the data management submenu. Called from admin:data callback. */
 export async function showDataManagementMenu(ctx: Context): Promise<void> {
   await ctx.editMessageText("📊 *Управление данными*\n\nВыберите раздел:", {
     parse_mode: "Markdown",
@@ -161,7 +155,6 @@ export async function showDataManagementMenu(ctx: Context): Promise<void> {
 
 // ─── Main callback handler ─────────────────────────────────────────────
 
-/** Handle all admin data management callbacks (adm_*:*). */
 export async function handleAdminDataCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -212,7 +205,6 @@ export async function handleAdminDataCallback(ctx: Context): Promise<void> {
   }
 }
 
-/** Handle admin data text input (edit operations). Returns true if consumed. */
 export async function handleAdminDataTextInput(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null || !isBootstrapAdmin(telegramId)) return false;
@@ -243,7 +235,6 @@ export async function handleAdminDataTextInput(ctx: Context): Promise<boolean> {
         await ctx.reply("❌ Пустой текст.");
         return true;
       }
-      // Parse "title" or "title|price"
       const parts = text.split("|").map((s) => s.trim());
       const fields: { title?: string; price?: number | null } = {};
       if (parts[0]) fields.title = parts[0];
@@ -1151,7 +1142,6 @@ async function handleBlogChannels(ctx: Context, data: string, telegramId: number
 
 // ─── Shared UI helpers ─────────────────────────────────────────────────
 
-/** Show a mode menu with standard options. */
 async function showModeMenu(
   ctx: Context,
   title: string,
@@ -1171,7 +1161,6 @@ async function showModeMenu(
   });
 }
 
-/** Show a paginated list with delete/edit buttons per item. */
 async function showPaginatedList(
   ctx: Context,
   title: string,
@@ -1226,7 +1215,6 @@ async function showPaginatedList(
   });
 }
 
-/** Show single-item delete confirmation. */
 async function showDeleteConfirm(
   ctx: Context,
   entityName: string,
@@ -1244,7 +1232,6 @@ async function showDeleteConfirm(
   );
 }
 
-/** Show delete-all confirmation with count. */
 async function showDeleteAllConfirm(
   ctx: Context,
   entityName: string,

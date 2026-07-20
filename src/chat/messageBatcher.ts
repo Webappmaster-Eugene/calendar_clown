@@ -26,10 +26,8 @@ export interface FlushedBatch {
   systemPromptOverride?: string;
 }
 
-/** In-memory map: dbUserId → PendingBatch. */
 const batches = new Map<number, PendingBatch>();
 
-/** Flush a batch and call the onFlush callback. */
 function flushBatch(dbUserId: number): void {
   const batch = batches.get(dbUserId);
   if (!batch || batch.messages.length === 0) {
@@ -58,7 +56,6 @@ function flushBatch(dbUserId: number): void {
   });
 }
 
-/** Add a message to the batch. Resets debounce timer. */
 export function addMessage(
   dbUserId: number,
   telegramId: number,
@@ -73,15 +70,12 @@ export function addMessage(
   const existing = batches.get(dbUserId);
 
   if (existing) {
-    // If dialog changed mid-batch, flush old batch first and start a new one
     if (existing.dialogId !== dialogId) {
       flushBatch(dbUserId);
-      // Fall through to create a new batch below
     } else {
       clearTimeout(existing.timer);
       existing.messages.push({ text, ctx, timestamp: now });
 
-      // If max wait exceeded, flush immediately
       if (now - existing.firstMessageTime >= NEURO_BATCH_MAX_WAIT_MS) {
         flushBatch(dbUserId);
         ctx.sendChatAction("typing").catch(() => {});
@@ -94,7 +88,6 @@ export function addMessage(
     }
   }
 
-  // Create new batch (either no existing batch, or dialog changed and old was flushed)
   const timer = setTimeout(() => flushBatch(dbUserId), NEURO_BATCH_DEBOUNCE_MS);
   batches.set(dbUserId, {
     messages: [{ text, ctx, timestamp: now }],
@@ -111,7 +104,6 @@ export function addMessage(
   ctx.sendChatAction("typing").catch(() => {});
 }
 
-/** Cancel a pending batch without flushing. */
 export function cancelBatch(dbUserId: number): void {
   const batch = batches.get(dbUserId);
   if (batch) {
@@ -121,12 +113,10 @@ export function cancelBatch(dbUserId: number): void {
   }
 }
 
-/** Check if user has a pending batch. */
 export function hasPendingBatch(dbUserId: number): boolean {
   return batches.has(dbUserId);
 }
 
-/** Flush a batch synchronously and return the combined data (for voice/photo/doc). */
 export function flushBatchSync(dbUserId: number): FlushedBatch | null {
   const batch = batches.get(dbUserId);
   if (!batch || batch.messages.length === 0) {
@@ -151,7 +141,6 @@ export function flushBatchSync(dbUserId: number): FlushedBatch | null {
   };
 }
 
-/** Clear all pending batches (for shutdown). */
 export function clearAllBatches(): void {
   for (const [, batch] of batches) {
     clearTimeout(batch.timer);

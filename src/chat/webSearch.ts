@@ -6,7 +6,6 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("neuro-search");
 
-/** Max content length per search result. */
 const MAX_CONTENT_PER_RESULT = 500;
 
 export interface SearchClassification {
@@ -20,12 +19,10 @@ export interface WebSearchResult {
   queries: string[];
 }
 
-/** Classify whether a user message needs web search. */
 export async function classifySearchNeed(
   userMessage: string,
   recentHistory: Array<{ role: string; content: string }>
 ): Promise<SearchClassification> {
-  // If no Tavily API key, skip classification
   if (!process.env.TAVILY_API_KEY) {
     return { needsSearch: false, queries: [], reason: "no_api_key" };
   }
@@ -58,7 +55,6 @@ ${historyContext}
       return { needsSearch: false, queries: [], reason: "empty_response" };
     }
 
-    // Extract JSON from response (handle potential markdown wrapping)
     const jsonMatch = result.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       log.warn("Search classification: no JSON found in response:", result);
@@ -77,7 +73,6 @@ ${historyContext}
   }
 }
 
-/** Execute web search using Tavily. */
 export async function executeWebSearch(queries: string[]): Promise<WebSearchResult> {
   if (queries.length === 0) {
     return { results: [], queries };
@@ -96,7 +91,6 @@ export async function executeWebSearch(queries: string[]): Promise<WebSearchResu
   }
 }
 
-/** Format search results as context string for AI prompt. */
 export function formatSearchResultsForContext(results: TavilyResult[]): string {
   if (results.length === 0) return "";
 

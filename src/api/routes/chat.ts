@@ -23,8 +23,6 @@ import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schemas (json bodies + :id params). Schemas mirror what handlers
-//    accept; query params keep the handlers' own parsing.
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const sendMessageBody = z.object({
   dialogId: z.number().optional(),
@@ -33,8 +31,7 @@ const sendMessageBody = z.object({
 const setProviderBody = z.object({
   provider: z.string(),
 });
-// Title + per-dialog AI overrides. Every field optional; an explicit null clears an
-// override (falls back to the global provider default).
+// An explicit null clears an override (falls back to the global provider default).
 const dialogUpdateBody = z.object({
   title: z.string().trim().min(1).max(100).optional(),
   model: z.string().trim().max(120).nullable().optional(),
@@ -44,7 +41,6 @@ const dialogUpdateBody = z.object({
   theme: z.string().trim().max(200).nullable().optional(),
 });
 
-/** GET /api/chat/dialogs — list dialogs */
 app.get("/dialogs", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -58,7 +54,6 @@ app.get("/dialogs", async (c) => {
   }
 });
 
-/** POST /api/chat/dialogs — create dialog */
 app.post("/dialogs", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -74,7 +69,6 @@ app.post("/dialogs", async (c) => {
   }
 });
 
-/** GET /api/chat/dialogs/:id/messages — list messages */
 app.get("/dialogs/:id/messages", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -93,7 +87,6 @@ app.get("/dialogs/:id/messages", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** POST /api/chat/messages — send message */
 app.post("/messages", zValidator("json", sendMessageBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -113,7 +106,6 @@ app.post("/messages", zValidator("json", sendMessageBody), async (c) => {
   }
 });
 
-/** POST /api/chat/messages/stream — send message with SSE streaming response */
 app.post("/messages/stream", zValidator("json", sendMessageBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -159,7 +151,6 @@ app.post("/messages/stream", zValidator("json", sendMessageBody), async (c) => {
   });
 });
 
-/** PUT /api/chat/dialogs/:id — update title + per-dialog AI settings */
 app.put(
   "/dialogs/:id",
   zValidator("param", idParam),
@@ -189,7 +180,6 @@ app.put(
   }
 );
 
-/** GET /api/chat/models?search=<q>&free=1&vendor=<v> — OpenRouter catalog for the picker */
 app.get("/models", async (c) => {
   const search = c.req.query("search") ?? "";
   const free = c.req.query("free") === "1" || c.req.query("free") === "true";
@@ -203,12 +193,10 @@ app.get("/models", async (c) => {
   }
 });
 
-/** GET /api/chat/config — effective (env-overridable) chat limits for the UI */
 app.get("/config", (c) => {
   return c.json({ ok: true, data: getChatConfig() });
 });
 
-/** GET /api/chat/models/vendors — distinct vendors for the picker's vendor filter */
 app.get("/models/vendors", async (c) => {
   try {
     const vendors = await getModelVendors();
@@ -219,7 +207,6 @@ app.get("/models/vendors", async (c) => {
   }
 });
 
-/** DELETE /api/chat/dialogs/:id — delete dialog */
 app.delete("/dialogs/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -239,7 +226,6 @@ app.delete("/dialogs/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** GET /api/chat/provider — get current chat provider */
 app.get("/provider", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -256,7 +242,6 @@ app.get("/provider", async (c) => {
   }
 });
 
-/** PUT /api/chat/provider — set chat provider */
 app.put("/provider", zValidator("json", setProviderBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

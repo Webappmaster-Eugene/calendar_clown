@@ -1,8 +1,3 @@
-/**
- * CRUD repository for Digest mode: rubrics, channels, runs, posts.
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
-
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
@@ -19,13 +14,10 @@ import type {
 
 // ─── Limits ──────────────────────────────────────────────────────────────────
 
-/** Max rubrics per user. */
 export const MAX_RUBRICS_PER_USER = 10;
 
-/** Max channels per rubric. */
 export const MAX_CHANNELS_PER_RUBRIC = 20;
 
-/** Max total channels across all users (rate-limit safety). */
 export const MAX_CHANNELS_TOTAL = parseInt(
   process.env.DIGEST_MAX_CHANNELS_TOTAL ?? "100",
   10
@@ -117,7 +109,6 @@ export async function toggleRubric(rubricId: number, userId: number, isActive: b
   return rows.length > 0;
 }
 
-/** Toggle is_active to its opposite value and return the updated rubric. */
 export async function toggleRubricIsActive(rubricId: number, userId: number): Promise<DigestRubric | null> {
   const [row] = await db
     .update(digestRubrics)
@@ -266,7 +257,6 @@ export async function insertDigestPosts(posts: CreateDigestPostParams[]): Promis
   return rows.map(mapPost);
 }
 
-/** Get all users who have at least one active rubric with channels. */
 export async function getUsersWithActiveDigest(): Promise<number[]> {
   const rows = await db
     .selectDistinct({ userId: digestRubrics.userId })
@@ -281,7 +271,6 @@ export async function getUsersWithActiveDigest(): Promise<number[]> {
 
 // ─── Admin functions ─────────────────────────────────────────────────────────
 
-/** Admin: update rubric fields. */
 export async function updateRubric(
   rubricId: number,
   fields: { name?: string; description?: string | null; emoji?: string | null; keywords?: string[] }
@@ -303,7 +292,6 @@ export async function updateRubric(
   return rows.length > 0;
 }
 
-/** Admin: bulk delete rubrics by ID array. */
 export async function bulkDeleteRubrics(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db
@@ -313,7 +301,6 @@ export async function bulkDeleteRubrics(ids: number[]): Promise<number> {
   return rows.length;
 }
 
-/** Admin: delete all rubrics (optionally by user). */
 export async function deleteAllRubrics(userId?: number): Promise<number> {
   if (userId != null) {
     const rows = await db
@@ -326,7 +313,6 @@ export async function deleteAllRubrics(userId?: number): Promise<number> {
   return rows.length;
 }
 
-/** Admin: get all rubrics paginated (all users). */
 export async function getAllRubricsPaginated(
   limit: number,
   offset: number
@@ -341,7 +327,6 @@ export async function getAllRubricsPaginated(
   return rows.map((r) => ({ ...mapRubric(r.rubric), firstName: r.firstName }));
 }
 
-/** Admin: count all rubrics. */
 export async function countAllRubrics(): Promise<number> {
   const [row] = await db.select({ value: count() }).from(digestRubrics);
   return row.value;

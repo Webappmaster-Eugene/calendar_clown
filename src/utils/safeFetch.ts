@@ -63,11 +63,6 @@ function isPrivateIp(ip: string): boolean {
   return true; // unknown — refuse
 }
 
-/**
- * Validates that a URL is safe to fetch user-content from.
- * Throws UnsafeUrlError if the protocol is not http(s) or the host resolves
- * to a private/loopback/link-local IP.
- */
 export async function assertPublicUrl(rawUrl: string): Promise<URL> {
   let url: URL;
   try {

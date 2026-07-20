@@ -1,7 +1,5 @@
 /**
- * Calendar actions — wrappers over calendarService (mirrors src/api/routes/calendar.ts).
- * Individual mode. Uses per-user Google OAuth (userId = String(telegramId)); if the
- * user hasn't linked Google Calendar the service throws, surfaced as an error.
+ * Per-user Google OAuth keys tokens by userId = String(telegramId).
  */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";

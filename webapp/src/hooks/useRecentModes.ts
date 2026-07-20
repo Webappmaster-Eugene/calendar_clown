@@ -14,8 +14,6 @@ function readStored(): string[] {
   }
 }
 
-/** Tracks the modes the user has visited most recently (most-recent-first),
- *  persisted to localStorage. Powers the bottom quick-switch bar. */
 export function useRecentModes() {
   const [recent, setRecent] = useState<string[]>(readStored);
 

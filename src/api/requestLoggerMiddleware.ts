@@ -1,7 +1,4 @@
-/**
- * Hono middleware: logs every API request to action_logs.
- * Must be registered AFTER apiAuthMiddleware so initData is available.
- */
+// Must be registered AFTER apiAuthMiddleware so initData is available.
 import type { Context, Next } from "hono";
 import type { ApiEnv } from "./authMiddleware.js";
 import { logAction } from "../logging/actionLogger.js";

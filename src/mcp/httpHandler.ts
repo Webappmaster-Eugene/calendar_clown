@@ -1,11 +1,5 @@
-/**
- * HTTP transport for the MCP server, mounted at /mcp on the existing server
- * (oauthServer.ts). Stateless Streamable HTTP: one server+transport per request.
- *
- * Auth reuses the Mini App model — `Authorization: tma <initData>` → telegramId.
- * A trusted single-tenant deployment may instead set MCP_ACTOR_TELEGRAM_ID (the
- * agent then acts as that user); it is only used when no initData is presented.
- */
+// Auth reuses the Mini App model (`Authorization: tma <initData>`); the
+// MCP_ACTOR_TELEGRAM_ID env fallback is honored only when no initData is presented.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { validateInitData } from "../api/authMiddleware.js";

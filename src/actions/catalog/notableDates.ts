@@ -1,7 +1,3 @@
-/**
- * Notable-dates actions — wrappers over notableDatesService
- * (mirrors src/api/routes/notable-dates.ts). Tribe mode. CSV import stays UI-only.
- */
 import { z } from "zod";
 import { defineAction, type Action } from "../types.js";
 import {

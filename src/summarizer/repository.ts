@@ -1,8 +1,3 @@
-/**
- * CRUD repository for Summarizer mode: workplaces, work achievements.
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
-
 import { and, asc, count, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
@@ -31,7 +26,6 @@ export interface WorkAchievement {
   updatedAt: Date;
 }
 
-// Aggregated achievement counts per workplace, reused across the listing queries.
 const achievementCounts = {
   achievementCount: sql<number>`count(${workAchievements.id})`.mapWith(Number),
 };
@@ -210,7 +204,6 @@ export async function getAllAchievementsForSummary(
 
 // ─── Admin functions ────────────────────────────────────────────────────
 
-/** Admin: get all workplaces paginated (all users, with user info). */
 export async function getAllWorkplacesPaginated(
   limit: number,
   offset: number
@@ -225,13 +218,11 @@ export async function getAllWorkplacesPaginated(
   return rows.map((r) => ({ ...mapWorkplace(r), firstName: r.firstName }));
 }
 
-/** Admin: count all workplaces. */
 export async function countAllWorkplaces(): Promise<number> {
   const [row] = await db.select({ value: count() }).from(workplaces);
   return row.value;
 }
 
-/** Admin: bulk delete workplaces by IDs. */
 export async function bulkDeleteWorkplaces(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db
@@ -241,7 +232,6 @@ export async function bulkDeleteWorkplaces(ids: number[]): Promise<number> {
   return rows.length;
 }
 
-/** Admin: delete ALL workplaces. */
 export async function deleteAllWorkplaces(): Promise<number> {
   const rows = await db.delete(workplaces).returning({ id: workplaces.id });
   return rows.length;

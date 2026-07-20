@@ -1,7 +1,3 @@
-/**
- * Goals business logic extracted from command handlers.
- * Used by both Telegraf bot handlers and REST API routes.
- */
 import {
   createGoalSet,
   getGoalSetsByUser,
@@ -164,7 +160,7 @@ export async function addGoal(
 
 export async function toggleGoal(telegramId: number, goalId: number): Promise<GoalDto | null> {
   requireDb();
-  // Note: toggleGoalCompleted doesn't do ownership check, but the API layer verifies telegramId
+  // No ownership check here; the API layer verifies telegramId.
   const goal = await toggleGoalCompleted(goalId);
   if (!goal) return null;
   return goalToDto(goal);
@@ -182,9 +178,6 @@ export async function removeGoal(telegramId: number, goalId: number): Promise<bo
   return deleteGoal(goalId);
 }
 
-/**
- * Get public goal sets shared with the user (friends' goals).
- */
 export async function getFriendsGoalSets(
   telegramId: number
 ): Promise<Array<GoalSetDto & { ownerName: string }>> {

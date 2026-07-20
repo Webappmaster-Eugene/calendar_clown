@@ -1,26 +1,16 @@
-/**
- * Post ranking and selection for digest.
- * Scores posts by engagement and selects top N.
- */
-
 import type { RawChannelPost } from "./types.js";
 
-/** Engagement score weights. */
 const WEIGHT_VIEWS = 0.3;
 const WEIGHT_FORWARDS = 2.0;
 const WEIGHT_REACTIONS = 1.5;
 const WEIGHT_COMMENTS = 1.0;
 
-/** Default number of posts in a digest. */
 export const DEFAULT_DIGEST_SIZE = 20;
 
-/** Max posts in a digest. */
 export const MAX_DIGEST_SIZE = 50;
 
-/** Min posts in a digest (if available). */
 export const MIN_DIGEST_SIZE = 1;
 
-/** Calculate engagement score for a post. */
 export function calculateEngagement(post: RawChannelPost): number {
   return (
     post.views * WEIGHT_VIEWS +
@@ -30,10 +20,6 @@ export function calculateEngagement(post: RawChannelPost): number {
   );
 }
 
-/**
- * Deduplicate posts by comparing text similarity.
- * Uses a simple approach: hash first 200 chars of text.
- */
 function deduplicatePosts(posts: RawChannelPost[]): RawChannelPost[] {
   const seen = new Set<string>();
   const result: RawChannelPost[] = [];
@@ -48,10 +34,6 @@ function deduplicatePosts(posts: RawChannelPost[]): RawChannelPost[] {
   return result;
 }
 
-/**
- * Rank and select top posts from raw channel data.
- * Deduplicates, calculates engagement, sorts by score, returns top N.
- */
 export function selectTopPosts(
   posts: RawChannelPost[],
   size: number = DEFAULT_DIGEST_SIZE
@@ -67,7 +49,7 @@ export function selectTopPosts(
 
   scored.sort((a, b) => b.engagementScore - a.engagementScore);
 
-  // Per-channel dedup: max 3 posts per channel (best by score, since sorted)
+  // Cap at 3 posts per channel so one channel can't dominate the digest.
   const selected: typeof scored = [];
   const channelCounts = new Map<string, number>();
 

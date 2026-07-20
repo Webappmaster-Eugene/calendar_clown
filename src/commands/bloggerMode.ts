@@ -1,8 +1,3 @@
-/**
- * Blogger mode command handler.
- * Create AI-powered posts for Telegram channels from collected sources.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
@@ -46,8 +41,8 @@ const PAGE_SIZE = 5;
 // ─── State ──────────────────────────────────────────────────────────────
 
 const channelCreationStates = new Map<number, { step: "title" | "niche"; title?: string }>();
-const topicStates = new Map<number, number>(); // telegramId → channelId (waiting for topic text)
-const collectingStates = new Map<number, number>(); // telegramId → postId
+const topicStates = new Map<number, number>();
+const collectingStates = new Map<number, number>();
 const editStates = new Map<number, { type: "edit_niche"; channelId: number }>();
 
 // ─── Status icons ───────────────────────────────────────────────────────
@@ -439,7 +434,6 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
     if (data.startsWith("blog_src_del:")) {
       const sourceId = parseInt(data.split(":")[1], 10);
       await deleteSource(sourceId, dbUser.id);
-      // Find the postId to refresh sources view
       const postId = collectingStates.get(telegramId);
       if (postId != null) {
         await showSources(ctx, postId, dbUser.id);
@@ -458,14 +452,12 @@ export async function handleBlogCallback(ctx: Context): Promise<void> {
 
 // ─── Text Handler ──────────────────────────────────────────────────────
 
-/** Handle text input in blogger mode. Returns true if consumed. */
 export async function handleBloggerText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
   if (!ctx.message || !("text" in ctx.message)) return false;
   const text = ctx.message.text;
 
-  // Channel creation — title step
   const creationState = channelCreationStates.get(telegramId);
   if (creationState?.step === "title") {
     const title = text.trim();
@@ -485,7 +477,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Channel creation — niche step
   if (creationState?.step === "niche" && creationState.title) {
     const niche = text.trim();
     if (niche.length === 0 || niche.length > 1000) {
@@ -519,7 +510,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Topic input — waiting for post topic
   const channelIdForTopic = topicStates.get(telegramId);
   if (channelIdForTopic != null) {
     const topic = text.trim();
@@ -549,7 +539,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Edit niche
   const edit = editStates.get(telegramId);
   if (edit?.type === "edit_niche") {
     const niche = text.trim();
@@ -579,7 +568,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  // Collecting sources
   const collectingPostId = collectingStates.get(telegramId);
   if (collectingPostId != null) {
     try {
@@ -605,7 +593,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
           const count = await countSourcesByPost(collectingPostId);
           await ctx.reply(`✅ Ссылка добавлена: ${fetched.title}\n📋 Источников: ${count}/${MAX_POST_SOURCES}`);
         } else {
-          // Save URL as text source if fetch failed
           await addSource(collectingPostId, "link", url, url);
           const count = await countSourcesByPost(collectingPostId);
           await ctx.reply(`✅ Ссылка сохранена (не удалось загрузить содержимое).\n📋 Источников: ${count}/${MAX_POST_SOURCES}`);
@@ -641,7 +628,6 @@ export async function handleBloggerText(ctx: Context): Promise<boolean> {
 
 // ─── Voice Handler ─────────────────────────────────────────────────────
 
-/** Handle voice transcript in blogger mode. */
 export async function handleBloggerVoice(
   ctx: Context,
   transcript: string,
@@ -1036,7 +1022,6 @@ async function handleGeneratePost(ctx: Context, postId: number, userId: number):
       await ctx.reply(msgText, { parse_mode: "HTML" });
     }
 
-    // Show post controls after generation
     await ctx.reply("✅ Пост сгенерирован.", {
       ...Markup.inlineKeyboard([
         [Markup.button.callback("🔄 Перегенерировать", `blog_regen:${postId}`)],
@@ -1095,7 +1080,6 @@ async function handlePublishPost(ctx: Context, postId: number, userId: number): 
     return;
   }
 
-  // Determine channel target (must start with @)
   let channelTarget = channel.channelUsername ?? channel.channelTitle;
   if (!channelTarget.startsWith("@")) {
     channelTarget = `@${channelTarget}`;

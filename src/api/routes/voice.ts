@@ -15,12 +15,8 @@ const log = createLogger("voice-route");
 
 const app = new Hono<ApiEnv>();
 
-/**
- * Convert STT failures into a 503 with the user-friendly Russian message that
- * `SttError` already carries. Without this branch the generic 500 path returns
- * `"Failed to ..."` and the Mini App shows "Ошибка транскрибации" — losing the
- * specific reason (timeout / region / model unavailable).
- */
+// 503 with SttError's Russian message preserves the specific reason (timeout /
+// region / model unavailable) that the generic 500 "Failed to ..." path would lose.
 function sttErrorResponse(c: Context<ApiEnv>, err: SttError, telegramId: number) {
   log.error(
     "STT failed for user %d: model=%s status=%s raw=%s",
@@ -35,7 +31,6 @@ function sttErrorResponse(c: Context<ApiEnv>, err: SttError, telegramId: number)
   );
 }
 
-/** Save uploaded audio to a temp file and return its path + cleanup function. */
 async function saveAudioToTemp(
   audioFile: File,
   telegramId: number
@@ -49,14 +44,12 @@ async function saveAudioToTemp(
   return tempPath;
 }
 
-/** Extract audio File from multipart form data, or return error response. */
 function extractAudioFile(formData: FormData): File | null {
   const audioFile = formData.get("audio");
   if (!audioFile || !(audioFile instanceof File)) return null;
   return audioFile;
 }
 
-/** POST /api/voice/transcribe — receive audio file (multipart), transcribe and return result */
 app.post("/transcribe", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -85,11 +78,6 @@ app.post("/transcribe", async (c) => {
   }
 });
 
-/**
- * POST /api/voice/extract-intent — transcribe audio and extract calendar/voice intent via LLM.
- * Returns transcript + structured intent (same LLM pipeline as the Telegram bot).
- * Used by Mini App to get the same accuracy as bot voice handling.
- */
 app.post("/extract-intent", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -104,11 +92,9 @@ app.post("/extract-intent", async (c) => {
       return c.json({ ok: false, error: "audio file is required (multipart field 'audio')" }, 400);
     }
 
-    // Step 1: Transcribe audio to text
     tempPath = await saveAudioToTemp(audioFile, telegramId);
     const { transcript } = await transcribeAudio(tempPath);
 
-    // Step 2: Extract intent via LLM (same as bot's extractVoiceIntent)
     const intent = await extractIntent(transcript);
 
     return c.json({ ok: true, data: { transcript, intent } });
@@ -122,11 +108,6 @@ app.post("/extract-intent", async (c) => {
   }
 });
 
-/**
- * POST /api/voice/expense — transcribe audio and extract expense intent via AI.
- * Returns transcript + parsed expense data (category, subcategory, amount).
- * If intent extraction succeeds, the expense is automatically saved.
- */
 app.post("/expense", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -141,11 +122,9 @@ app.post("/expense", async (c) => {
       return c.json({ ok: false, error: "audio file is required (multipart field 'audio')" }, 400);
     }
 
-    // Step 1: Transcribe audio to text (expense-specific STT prompt for better number recognition)
     tempPath = await saveAudioToTemp(audioFile, telegramId);
     const { transcript } = await transcribeAudio(tempPath, "expense");
 
-    // Step 2: Extract expense intent via DeepSeek AI (same as bot)
     const categoriesList = await getCategoriesListWithAliasesFormatted();
     const intent = await extractExpenseIntent(transcript, categoriesList);
 
@@ -160,7 +139,6 @@ app.post("/expense", async (c) => {
       }, 422);
     }
 
-    // Step 3: Save expense to DB
     const result = await addExpenseFromVoice(
       telegramId,
       initData.user.username ?? null,

@@ -1,10 +1,3 @@
-/**
- * Minimal toast notification system — used by CopyButton, ShareButton,
- * MessageBubble, and any form mutation to surface success/error feedback.
- *
- * Intentionally lightweight: one queue, one portal, CSS transitions.
- * Safe-area-aware so it doesn't overlap fixed chat input rows.
- */
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 

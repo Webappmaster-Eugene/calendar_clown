@@ -1,10 +1,6 @@
-/**
- * Pure business-logic functions for Goals mode.
- */
-
 export type GoalPeriod = "current" | "month" | "year" | "5years";
 
-/** Calculate deadline from period and creation date. Returns null for "current". */
+/** Returns null for "current". */
 export function calculateDeadline(period: GoalPeriod, createdAt: Date): Date | null {
   if (period === "current") return null;
 
@@ -19,11 +15,7 @@ export function calculateDeadline(period: GoalPeriod, createdAt: Date): Date | n
   return deadline;
 }
 
-/**
- * Calculate 3 reminder dates spread evenly between creation and deadline.
- * Points at 1/4, 2/4, 3/4 of the interval.
- * Returns empty array if deadline is null.
- */
+/** Reminder dates at 1/4, 2/4, 3/4 of the creation→deadline interval; empty if no deadline. */
 export function calculateReminderDates(createdAt: Date, deadline: Date | null): Date[] {
   if (!deadline) return [];
 
@@ -40,7 +32,6 @@ export function calculateReminderDates(createdAt: Date, deadline: Date | null): 
   ];
 }
 
-/** Format period to human-readable Russian text. */
 export function formatPeriod(period: GoalPeriod): string {
   switch (period) {
     case "current": return "Текущие";
@@ -62,7 +53,6 @@ export function formatProgress(completed: number, total: number): string {
   return `${completed}/${total} (${pct}%) ${bar}`;
 }
 
-/** Format goal text: strikethrough if completed, bullet if not. */
 export function formatGoalText(text: string, isCompleted: boolean): string {
   return isCompleted ? `~${text}~` : `• ${text}`;
 }

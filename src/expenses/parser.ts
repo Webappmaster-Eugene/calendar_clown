@@ -4,12 +4,6 @@ import type { Category, ParsedExpense } from "./types.js";
 /** Minimum allowed expense amount (aligned with repository validation). */
 const MIN_AMOUNT = 1;
 
-/**
- * Parse expense text in format: "Категория [Описание] Сумма"
- * Amount can be anywhere (end, start, or middle).
- * Category is matched by fuzzy search against known categories and aliases,
- * with AI fallback for low-confidence matches.
- */
 export async function parseExpenseText(text: string): Promise<ParsedExpense | null> {
   const trimmed = text.trim();
   if (!trimmed) return null;
@@ -23,7 +17,6 @@ export async function parseExpenseText(text: string): Promise<ParsedExpense | nu
   const categories = await getCategories();
   const match = findCategory(textWithoutAmount, categories);
 
-  // High-confidence fuzzy match — use directly (fast path)
   if (match && match.score >= 40) {
     const subcategory = extractSubcategory(textWithoutAmount, match.matchedText);
     return {
@@ -35,7 +28,6 @@ export async function parseExpenseText(text: string): Promise<ParsedExpense | nu
     };
   }
 
-  // Low confidence or no match — try AI categorization
   try {
     const { categorizeExpenseText } = await import("./categorizeWithAI.js");
     const aiResult = await categorizeExpenseText(trimmed, categories);
@@ -44,7 +36,6 @@ export async function parseExpenseText(text: string): Promise<ParsedExpense | nu
     // AI failed — fall through to fuzzy fallback
   }
 
-  // Final fallback: use fuzzy match result (low score) or "Другое"
   let finalMatch = match;
   if (!finalMatch) {
     const fallback = categories.find((c) => c.name === "Другое");
@@ -67,43 +58,26 @@ interface AmountExtractionResult {
   textWithoutAmount: string;
 }
 
-/**
- * Pre-process text to normalize amount formats.
- * Expands abbreviations (5к → 5000, 5тыс → 5000) and normalizes comma-separated thousands (5,000 → 5000).
- */
 function normalizeAmountFormats(text: string): string {
   return text
-    // Abbreviations: 5к, 5K, 5тыс, 1.5к, 1,5к
     .replace(/(\d+(?:[.,]\d+)?)\s*(?:к|k|К|K|тыс\.?)\b/g, (_, num: string) => {
       const n = parseFloat(num.replace(",", "."));
       return String(Math.round(n * 1000));
     })
-    // Comma as thousands separator: 5,000 → 5000, 10,000 → 10000
-    // Only when exactly 3 digits follow the comma (not 1-2 digits = decimal)
+    // Comma is a thousands separator only when exactly 3 digits follow (1-2 = decimal).
     .replace(/(\d{1,3}),(\d{3})(?!\d)/g, "$1$2");
 }
 
-/**
- * Extract amount and remove it from text in a single coordinated pass.
- * Handles: "5000", "5 000", "5000.50", "5,000", "5к", "5тыс", "500₽", "500 руб"
- * Returns the amount and remaining text, or null if no valid amount found.
- */
 function extractAndRemoveAmount(text: string): AmountExtractionResult | null {
   const normalized = normalizeAmountFormats(text);
 
-  // Patterns in order of preference: end-of-string first, then start, then anywhere
+  // Order of preference: end-of-string first, then start, then anywhere.
   const patterns: RegExp[] = [
-    // End: multi-digit with spaces, optional currency suffix
     /(\d[\d\s]*[\d](?:[.,]\d{1,2})?)\s*(?:р(?:уб)?\.?|₽)?\s*$/,
-    // End: simple number, optional currency suffix
     /(\d+(?:[.,]\d{1,2})?)\s*(?:р(?:уб)?\.?|₽)?\s*$/,
-    // Start: multi-digit with spaces
     /^(\d[\d\s]*[\d](?:[.,]\d{1,2})?)\s+/,
-    // Start: simple number followed by space
     /^(\d+(?:[.,]\d{1,2})?)\s+/,
-    // Anywhere: multi-digit with spaces (not followed by decimal)
     /(\d[\d\s]*\d)(?![.,]\d)/,
-    // Anywhere: any standalone number
     /(\d+)/,
   ];
 
@@ -132,10 +106,7 @@ export interface CategoryMatch {
   score: number;
 }
 
-/**
- * Find the best matching category using aliases and fuzzy prefix matching.
- * A score >= 40 is considered a confident match (see parseExpenseText / bank-push ingest).
- */
+/** A score >= 40 is treated as a confident match (see parseExpenseText / bank-push ingest). */
 export function findCategory(text: string, categories: Category[]): CategoryMatch | null {
   const normalized = text.toLowerCase().trim();
   let bestMatch: CategoryMatch | null = null;
@@ -144,7 +115,6 @@ export function findCategory(text: string, categories: Category[]): CategoryMatc
     const allNames = [cat.name.toLowerCase(), ...cat.aliases.map((a) => a.toLowerCase())];
 
     for (const alias of allNames) {
-      // Exact match
       if (normalized === alias || normalized.startsWith(alias + " ") || normalized.startsWith(alias)) {
         const score = alias.length * 10 + (normalized === alias ? 100 : 0);
         if (!bestMatch || score > bestMatch.score) {
@@ -152,7 +122,6 @@ export function findCategory(text: string, categories: Category[]): CategoryMatc
         }
       }
 
-      // Check if text starts with the alias (prefix match)
       if (normalized.startsWith(alias)) {
         const score = alias.length * 8;
         if (!bestMatch || score > bestMatch.score) {
@@ -160,7 +129,6 @@ export function findCategory(text: string, categories: Category[]): CategoryMatc
         }
       }
 
-      // Check first word match
       const firstWord = normalized.split(/\s+/)[0];
       if (firstWord === alias || alias.startsWith(firstWord)) {
         const score = firstWord.length * 5;
@@ -169,7 +137,6 @@ export function findCategory(text: string, categories: Category[]): CategoryMatc
         }
       }
 
-      // Levenshtein for typos (only for short aliases)
       if (alias.length <= 15) {
         const firstWords = normalized.split(/\s+/).slice(0, 2).join(" ");
         const dist = levenshtein(firstWords, alias);
@@ -187,9 +154,6 @@ export function findCategory(text: string, categories: Category[]): CategoryMatc
   return bestMatch;
 }
 
-/**
- * Extract subcategory text (everything between category and amount).
- */
 function extractSubcategory(textWithoutAmount: string, matchedCategoryText: string): string {
   const normalized = textWithoutAmount.toLowerCase();
   const idx = normalized.indexOf(matchedCategoryText.toLowerCase());
@@ -198,9 +162,6 @@ function extractSubcategory(textWithoutAmount: string, matchedCategoryText: stri
   return after;
 }
 
-/**
- * Levenshtein distance between two strings.
- */
 function levenshtein(a: string, b: string): number {
   const la = a.length;
   const lb = b.length;
@@ -219,11 +180,6 @@ function levenshtein(a: string, b: string): number {
   return dp[la][lb];
 }
 
-/**
- * Parse multiple expenses from a single message.
- * Splits by newlines, parses each line independently.
- * Returns array of parsed expenses (skips unparseable lines).
- */
 export async function parseMultipleExpenses(text: string): Promise<ParsedExpense[]> {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   if (lines.length <= 1) return [];
@@ -238,9 +194,6 @@ export async function parseMultipleExpenses(text: string): Promise<ParsedExpense
   return results;
 }
 
-/**
- * Get formatted categories list for display.
- */
 export async function getCategoriesList(): Promise<string> {
   const categories = await getCategories();
   return categories
@@ -248,19 +201,11 @@ export async function getCategoriesList(): Promise<string> {
     .join("\n");
 }
 
-/**
- * Get formatted categories list WITH aliases for AI prompts.
- * Format: "- CategoryName (aliases: alias1, alias2)"
- */
 export async function getCategoriesListWithAliases(): Promise<string> {
   const categories = await getCategories();
   return categories.map(formatCategoryForPrompt).join("\n");
 }
 
-/**
- * Format a single category for AI prompts, including its description and aliases.
- * Format: "- Name — description (aliases: a, b)"
- */
 export function formatCategoryForPrompt(c: Category): string {
   const descStr = c.description ? ` — ${c.description}` : "";
   const aliasStr = c.aliases.length > 0 ? ` (aliases: ${c.aliases.join(", ")})` : "";

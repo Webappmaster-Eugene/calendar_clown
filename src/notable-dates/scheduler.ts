@@ -1,9 +1,3 @@
-/**
- * Cron scheduler for notable date reminders.
- * Runs at 10:00 and 17:00 MSK daily.
- * Sends reminders for today's dates AND advance reminders (7, 3, 1 days before).
- */
-
 import { Cron } from "croner";
 import type { Telegraf } from "telegraf";
 import { createLogger } from "../utils/logger.js";
@@ -18,10 +12,8 @@ const log = createLogger("notable-dates");
 
 let notableDatesCron: Cron | null = null;
 
-/** Advance reminder intervals in days. */
 const ADVANCE_DAYS = [7, 3, 1] as const;
 
-/** Start the notable dates reminder scheduler. */
 export function startNotableDatesScheduler(bot: Telegraf): void {
   const expr = process.env.NOTABLE_DATES_CRON ?? "0 10,17 * * *";
 
@@ -33,7 +25,6 @@ export function startNotableDatesScheduler(bot: Telegraf): void {
   log.info(`Notable dates scheduler started: "${expr}" (Europe/Moscow)`);
 }
 
-/** Stop the scheduler. */
 export function stopNotableDatesScheduler(): void {
   if (notableDatesCron) {
     notableDatesCron.stop();
@@ -42,18 +33,15 @@ export function stopNotableDatesScheduler(): void {
   }
 }
 
-/** Get a future date in Moscow timezone using calendar-day arithmetic (DST-safe). */
 function getMskFutureDate(daysAhead: number): { month: number; day: number } {
   const now = new Date();
-  // Convert to MSK calendar date first, then add whole days.
-  // Millisecond addition on UTC time gives the right date only when the server
-  // timezone is UTC; calendar arithmetic is correct regardless of server TZ.
+  // Calendar-day arithmetic on the MSK date; millisecond addition on UTC time
+  // would only give the right date when the server timezone is UTC.
   const mskNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
   const mskFuture = new Date(mskNow.getFullYear(), mskNow.getMonth(), mskNow.getDate() + daysAhead);
   return { month: mskFuture.getMonth() + 1, day: mskFuture.getDate() };
 }
 
-/** Format advance reminder prefix. */
 function formatAdvancePrefix(daysAhead: number): string {
   if (daysAhead === 1) return "Завтра";
   if (daysAhead === 3) return "Через 3 дня";
@@ -61,7 +49,6 @@ function formatAdvancePrefix(daysAhead: number): string {
   return `Через ${daysAhead} дней`;
 }
 
-/** Send reminders for today's notable dates and advance reminders to all tribes. */
 async function sendNotableDateReminders(bot: Telegraf): Promise<void> {
   const now = new Date();
   const mskDate = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
@@ -82,12 +69,11 @@ async function sendNotableDateReminders(bot: Telegraf): Promise<void> {
         if (todayMsg) messages.push(todayMsg);
       }
 
-      // Advance reminders (7, 3, 1 days ahead)
       for (const daysAhead of ADVANCE_DAYS) {
         const future = getMskFutureDate(daysAhead);
         const futureDates = await getDatesByMonthDay(tribe.id, future.month, future.day);
 
-        // Only send advance reminders for priority dates
+        // Advance reminders only fire for priority dates.
         const filteredDates = futureDates.filter((d) => d.isPriority);
 
         if (filteredDates.length > 0) {
@@ -101,7 +87,7 @@ async function sendNotableDateReminders(bot: Telegraf): Promise<void> {
 
       const fullMessage = messages.join("\n\n");
 
-      // Send to all tribe members (exclude seed users with invalid telegram_id)
+      // Exclude seed users whose telegram_id is invalid (<= 0).
       const users = (await listTribeUsers(tribe.id)).filter((u) => u.telegramId > 0);
       let sent = 0;
       for (const user of users) {

@@ -24,7 +24,6 @@ const updateBody = z.object({
   transcript: z.string().trim().min(1, "Текст не может быть пустым").max(MAX_TRANSCRIPT_LENGTH),
 });
 
-/** GET /api/transcribe — transcription history */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -40,7 +39,6 @@ app.get("/", async (c) => {
   }
 });
 
-/** GET /api/transcribe/queue/status — queue status */
 app.get("/queue/status", async (c) => {
   try {
     const status = await getQueueInfo();
@@ -51,7 +49,6 @@ app.get("/queue/status", async (c) => {
   }
 });
 
-/** GET /api/transcribe/pending — user's pending transcriptions */
 app.get("/pending", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -65,7 +62,6 @@ app.get("/pending", async (c) => {
   }
 });
 
-/** DELETE /api/transcribe/queue — clear user's pending queue */
 app.delete("/queue", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -80,7 +76,6 @@ app.delete("/queue", async (c) => {
   }
 });
 
-/** GET /api/transcribe/:id — single transcription */
 app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -102,7 +97,6 @@ app.get("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** PUT /api/transcribe/:id — edit transcription text */
 app.put("/:id", zValidator("param", idParam), zValidator("json", updateBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -126,7 +120,6 @@ app.put("/:id", zValidator("param", idParam), zValidator("json", updateBody), as
   }
 });
 
-/** DELETE /api/transcribe/:id — delete transcription */
 app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

@@ -7,7 +7,6 @@ import type { OAuth2Client } from "google-auth-library";
 const SCOPES = ["https://www.googleapis.com/auth/calendar"];
 const TOKENS_DIR = "./data/tokens";
 
-/** Thrown when the user has not linked a calendar yet. */
 export class NoCalendarLinkedError extends Error {
   constructor() {
     super("Сначала привяжите календарь. Отправьте /auth");
@@ -59,7 +58,6 @@ function signOAuthState(userId: string): string {
   return `${payload}.${sig}`;
 }
 
-/** Returns the trusted Telegram user id encoded in `state`, or null if invalid/expired. */
 export function verifyOAuthState(state: string): string | null {
   const parts = state.split(".");
   if (parts.length !== 3) return null;
@@ -74,10 +72,6 @@ export function verifyOAuthState(state: string): string | null {
   return userId;
 }
 
-/**
- * Returns auth URL for the user to open. The `state` parameter is HMAC-signed
- * with the bot token so callback handlers can recover a verified userId.
- */
 export function getAuthUrl(userId?: string): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -98,9 +92,6 @@ export function getAuthUrl(userId?: string): string {
   return oauth2Client.generateAuthUrl(options);
 }
 
-/**
- * Save OAuth tokens for a user (from redirect callback or manual /auth code).
- */
 export async function saveTokenFromCode(code: string, userId: string): Promise<void> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -123,9 +114,6 @@ export async function saveTokenFromCode(code: string, userId: string): Promise<v
   await writeFile(tokenPath, JSON.stringify(tokens), { encoding: "utf8", mode: 0o600 });
 }
 
-/**
- * Check if the user has a stored token (without throwing).
- */
 export async function hasToken(userId: string): Promise<boolean> {
   const tokenPath = getTokenPath(userId);
   try {
@@ -136,9 +124,6 @@ export async function hasToken(userId: string): Promise<boolean> {
   }
 }
 
-/**
- * Get OAuth2 client for the given user. Throws NoCalendarLinkedError if no token.
- */
 export async function getAuthClient(userId: string): Promise<OAuth2Client> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;

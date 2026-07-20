@@ -1,8 +1,3 @@
-/**
- * Nutritionist mode command handler.
- * User sends a food photo → AI analyzes it → returns nutrition breakdown.
- */
-
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { setUserMode } from "../middleware/userMode.js";
@@ -101,11 +96,8 @@ function hasCalculatorFlowInProgress(telegramId: number): boolean {
 }
 
 // ─── Product Catalog State Machines ─────────────────────────────
-//
-// Bot creation/edit of products is a multi-step text conversation. We
-// keep transient state in per-user in-memory Maps — identical to the
-// pattern used by gandalfMode.ts. A bot restart drops in-progress flows
-// (user simply retypes); nothing is persisted until the final step.
+// Transient per-user state in in-memory Maps: a bot restart drops
+// in-progress flows; nothing is persisted until the final step.
 
 interface ProductCreationState {
   step:
@@ -226,7 +218,6 @@ export async function handleNutritionistSubModeSwitch(
     return;
   }
 
-  // Cancel any active text-input wizards when switching sub-modes
   productCreationStates.delete(telegramId);
   productEditStates.delete(telegramId);
   const calcState = calculatorStates.get(telegramId);
@@ -281,8 +272,6 @@ export async function handleNutritionistPhoto(ctx: Context): Promise<void> {
     return;
   }
 
-  // If the user is in the product-creation photo step, delegate the
-  // incoming photo to the product flow instead of running food analysis.
   const creationState = productCreationStates.get(telegramId);
   if (creationState && creationState.step === "photo_or_done") {
     const consumed = await handleProductFlowPhoto(ctx, telegramId);
@@ -294,7 +283,6 @@ export async function handleNutritionistPhoto(ctx: Context): Promise<void> {
   const photos = ctx.message.photo;
   const photo = photos[photos.length - 1];
 
-  // Check photo file size (Telegram photos can be up to 20MB)
   const fileSize = photo.file_size ?? 0;
   if (fileSize > 15 * 1024 * 1024) {
     await ctx.reply("⚠️ Фото слишком большое (макс. 15 МБ). Отправьте фото меньшего размера.");
@@ -448,17 +436,14 @@ export async function handleNutritionistText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;
 
-  // 1. Product creation/edit state machine takes priority.
   if (hasProductFlowInProgress(telegramId)) {
     return handleProductFlowText(ctx, telegramId);
   }
 
-  // 2. Calculator flow (adding item, catalog weight, meal name, servings)
   if (hasCalculatorFlowInProgress(telegramId)) {
     return handleCalculatorFlowText(ctx, telegramId);
   }
 
-  // 3. Default hint per sub-mode
   const subMode = nutritionistSubModes.get(telegramId) ?? "analysis";
   if (subMode === "calculator") {
     await ctx.reply("🧮 Используйте кнопки клавиатуры для работы с калькулятором.");
@@ -688,7 +673,6 @@ async function sendHistoryPage(
     inlineRows.push(row);
   }
 
-  // Pagination
   const paginationRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (offset > 0) {
     paginationRow.push(Markup.button.callback("⬅️ Назад", `nutri_hist:${offset - HISTORY_PAGE_SIZE}`));
@@ -711,7 +695,6 @@ async function sendHistoryPage(
 
 // ─── Helpers ───────────────────────────────────────────────────
 
-/** Reply with Markdown, falling back to plain text if Markdown parsing fails. */
 async function safeReplyMarkdown(ctx: Context, text: string, extra?: object): Promise<void> {
   try {
     await ctx.reply(text, { parse_mode: "Markdown", ...extra });
@@ -723,7 +706,6 @@ async function safeReplyMarkdown(ctx: Context, text: string, extra?: object): Pr
 
 // ─── Formatting ─────────────────────────────────────────────────
 
-/** Escape Markdown V1 special characters in user-facing text from AI. */
 function escMd(text: string): string {
   return text.replace(/([_*`\[\]\\])/g, "\\$1");
 }
@@ -794,10 +776,6 @@ export async function handleNutritionistProductsButton(ctx: Context): Promise<vo
 
 // ─── Product Catalog: Callbacks ───────────────────────────────
 
-/**
- * Extract handling of nutri_prod_* callbacks from the main callback router.
- * Returns true if the callback was consumed.
- */
 async function handleProductCatalogCallback(ctx: Context, data: string, telegramId: number): Promise<boolean> {
   const listMatch = data.match(/^nutri_prod:(\d+)$/);
   if (listMatch) {
@@ -947,7 +925,6 @@ async function handleProductFlowText(ctx: Context, telegramId: number): Promise<
   const message = ctx.message && "text" in ctx.message ? ctx.message.text?.trim() ?? "" : "";
   if (!message) return false;
 
-  // Universal cancel
   if (message === "❌ Отмена") {
     productCreationStates.delete(telegramId);
     productEditStates.delete(telegramId);
@@ -955,7 +932,6 @@ async function handleProductFlowText(ctx: Context, telegramId: number): Promise<
     return true;
   }
 
-  // Edit flow: one-shot field update
   const editState = productEditStates.get(telegramId);
   if (editState) {
     try {
@@ -973,7 +949,6 @@ async function handleProductFlowText(ctx: Context, telegramId: number): Promise<
     return true;
   }
 
-  // Creation flow
   const state = productCreationStates.get(telegramId);
   if (!state) return false;
 
@@ -1308,7 +1283,6 @@ export async function handleCalcAddManual(ctx: Context): Promise<void> {
   if (!isDatabaseAvailable()) { await ctx.reply(DB_UNAVAILABLE_MSG); return; }
 
   const state = getOrCreateCalculatorState(telegramId);
-  // Cancel any other active input
   state.catalogPickedProduct = null;
   state.pendingInput = null;
   state.addingItem = { step: "name" };
@@ -1326,7 +1300,6 @@ export async function handleCalcAddFromCatalog(ctx: Context): Promise<void> {
   if (!isDatabaseAvailable()) { await ctx.reply(DB_UNAVAILABLE_MSG); return; }
 
   const state = getOrCreateCalculatorState(telegramId);
-  // Cancel any other active input
   state.addingItem = null;
   state.pendingInput = null;
   state.catalogPickedProduct = null;
@@ -1404,7 +1377,6 @@ async function handleCalculatorFlowText(ctx: Context, telegramId: number): Promi
   const state = calculatorStates.get(telegramId);
   if (!state) return false;
 
-  // Universal cancel
   if (message === "❌" || message === "❌ Отмена") {
     state.addingItem = null;
     state.catalogPickedProduct = null;
@@ -1627,7 +1599,6 @@ function formatCalculatorTotals(state: CalculatorState): string {
 function buildCalcTotalsInlineKeyboard(state: CalculatorState) {
   const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
 
-  // Delete buttons for items (up to 4 per row)
   const deleteRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   for (let i = 0; i < state.items.length; i++) {
     deleteRow.push(Markup.button.callback(`🗑 ${i + 1}`, `nutri_calc_remove:${i}`));
@@ -1680,7 +1651,6 @@ async function sendCalcProductPicker(
     inlineRows.push([Markup.button.callback(label.slice(0, 60), `nutri_calc_pick:${p.id}`)]);
   }
 
-  // Pagination
   const paginationRow: Array<ReturnType<typeof Markup.button.callback>> = [];
   if (offset > 0) {
     paginationRow.push(Markup.button.callback("⬅️ Назад", `nutri_calc_page:${offset - CALC_PICKER_PAGE_SIZE}`));

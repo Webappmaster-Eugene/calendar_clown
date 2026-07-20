@@ -119,9 +119,6 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
   }
 
   try {
-    // Determine STT context based on user mode:
-    // Calendar and expense modes benefit from calendar-specific prompt,
-    // all other modes use a general-purpose prompt for better accuracy.
     let sttContext: TranscribeContext = "calendar";
     if (telegramId != null) {
       const currentMode = await getUserMode(telegramId);
@@ -364,7 +361,6 @@ async function handleVoiceInCalendarMode(
     if (events.length === 1) {
       const ev = events[0];
 
-      // If recurring — ask what to delete
       if (ev.recurringEventId) {
         const start = new Date(ev.start);
         const timeStr = start.toLocaleString("ru-RU", {
@@ -482,7 +478,6 @@ async function handleVoiceInCalendarMode(
   );
 }
 
-/** Parse RRULE recurrence array and return a human-readable Russian label. */
 function formatRecurrenceLabel(recurrence: string[]): string {
   const rule = recurrence[0] ?? "";
   if (rule.includes("FREQ=DAILY")) return "ежедневно";
@@ -492,7 +487,6 @@ function formatRecurrenceLabel(recurrence: string[]): string {
   return "еженедельно";
 }
 
-/** Create events in Google Calendar and save to DB. Returns formatted text. */
 async function createAndSaveEvents(
   ctx: Context,
   eventsData: Array<{ title: string; start: Date; end: Date; recurrence?: string[] }>,

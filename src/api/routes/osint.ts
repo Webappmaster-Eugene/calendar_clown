@@ -11,14 +11,11 @@ import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
-// ── Input schemas (json body + :id param). Query params keep the handler's
-//    own defensive parsing. Schema mirrors what the handler accepts.
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const startSearchBody = z.object({
   query: z.string().min(1),
 });
 
-/** GET /api/osint — search history */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -34,7 +31,6 @@ app.get("/", async (c) => {
   }
 });
 
-/** GET /api/osint/:id — search by ID */
 app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -56,7 +52,6 @@ app.get("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** POST /api/osint — start search */
 app.post("/", zValidator("json", startSearchBody), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

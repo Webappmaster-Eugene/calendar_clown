@@ -1,14 +1,3 @@
-/**
- * Hook for "Add to Home Screen" functionality.
- *
- * State machine:
- *   unsupported → feature unavailable
- *   unknown     → initial, checking status
- *   idle        → available, button visible
- *   adding      → prompt shown, waiting for user
- *   added       → success
- *   failed      → timeout / error after attempt
- */
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   addToHomeScreen,
@@ -28,19 +17,12 @@ const FALLBACK_TIMEOUT_MS = 5_000;
 
 interface UseAddToHomeScreenResult {
   status: HomeScreenStatus;
-  /** true when the primary button should render */
   canShow: boolean;
-  /** true while the prompt is active */
   isAdding: boolean;
-  /** true when we have a result to display (success or failure) */
   showResult: boolean;
-  /** Initiate the add-to-home-screen flow */
   trigger: () => void;
-  /** Reset from failed → idle for retry */
   retry: () => void;
-  /** Dismiss the success banner */
   dismiss: () => void;
-  /** Diagnostic log entries */
   diagnostics: string[];
 }
 
@@ -48,7 +30,6 @@ function ts(): string {
   return new Date().toISOString().slice(11, 23);
 }
 
-/** Access vanilla Telegram WebApp safely. */
 function getVanillaWebApp(): {
   platform?: string;
   version?: string;
@@ -101,7 +82,6 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
       return;
     }
 
-    // Check if already added.
     if (checkHomeScreenStatus.isAvailable()) {
       checkHomeScreenStatus()
         .then((result) => {
@@ -163,15 +143,13 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
     setStatus("adding");
     hapticFeedback.impactOccurred.ifAvailable("light");
 
-    // Disable closing confirmation if active.
     let confirmationEnabled = false;
-    try { confirmationEnabled = closingBehavior.isConfirmationEnabled(); } catch { /* */ }
+    try { confirmationEnabled = closingBehavior.isConfirmationEnabled(); } catch { /* ignore */ }
     if (confirmationEnabled) {
       wasConfirmationEnabledRef.current = true;
       closingBehavior.disableConfirmation.ifAvailable();
     }
 
-    // Try vanilla SDK first, then SDK v3.
     let called = false;
     const vanilla = getVanillaWebApp();
     if (typeof vanilla?.addToHomeScreen === "function") {
@@ -202,7 +180,7 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
       return;
     }
 
-    // Timeout → failed (not idle — so we show the failure UI).
+    // failed (not idle) so the failure UI shows when the prompt never responds
     timeoutRef.current = setTimeout(() => {
       log("timeout: no response");
       setStatus("failed");
@@ -215,7 +193,7 @@ export function useAddToHomeScreen(): UseAddToHomeScreenResult {
   }, []);
 
   const dismiss = useCallback(() => {
-    setStatus("unsupported"); // Hide everything after user acknowledges success.
+    setStatus("unsupported"); // reuse "unsupported" to hide all UI after success is acknowledged
   }, []);
 
   return {

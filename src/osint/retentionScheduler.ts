@@ -11,7 +11,6 @@ const log = createLogger("osint-retention");
 
 let retentionCron: Cron | null = null;
 
-/** Start the OSINT retention job (daily; clears raw_results older than N days). */
 export function startOsintRetention(): void {
   const expr = process.env.OSINT_RETENTION_CRON ?? "30 4 * * *";
   const days = Number(process.env.OSINT_RAW_RETENTION_DAYS ?? 30);
@@ -32,7 +31,6 @@ export function startOsintRetention(): void {
   log.info(`OSINT retention started: "${expr}" (Europe/Moscow), keep ${days}d`);
 }
 
-/** Stop the retention job. */
 export function stopOsintRetention(): void {
   if (retentionCron) {
     retentionCron.stop();

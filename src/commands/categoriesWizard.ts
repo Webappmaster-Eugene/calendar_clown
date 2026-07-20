@@ -157,7 +157,6 @@ export async function handleCategoriesWizardSave(ctx: Context): Promise<void> {
   } catch (err) {
     const msg = err instanceof CategoryServiceError ? err.message : "Не удалось создать категорию.";
     await ctx.reply(`❌ ${msg}`);
-    // Конфликт имени — возвращаем на шаг названия, чтобы ввести другое; иначе выходим из мастера.
     if (err instanceof CategoryServiceError && err.status === 409) {
       state.step = "name";
       state.timestamp = Date.now();
@@ -169,7 +168,6 @@ export async function handleCategoriesWizardSave(ctx: Context): Promise<void> {
   }
 }
 
-/** Consume text as wizard input if the user is mid-flow. Returns true if handled. */
 export async function handleCategoriesWizardText(ctx: Context): Promise<boolean> {
   const telegramId = ctx.from?.id;
   if (telegramId == null) return false;

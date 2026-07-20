@@ -7,7 +7,6 @@ import type { TavilyResult } from "../osint/types.js";
 
 const log = createLogger("blogger-gen");
 
-/** Generate a Telegram post from channel info, topic, and sources. */
 export async function generatePost(
   channel: BloggerChannel,
   post: BloggerPost,
@@ -113,7 +112,6 @@ ${sourcesText}${styleSamplesBlock}`;
   return result;
 }
 
-/** Split long text into Telegram-safe message chunks (~4096 chars max). */
 export function splitIntoMessages(text: string): string[] {
   const MAX_MSG_LEN = 4000; // slightly under 4096 for safety
   if (text.length <= MAX_MSG_LEN) return [text];
@@ -127,7 +125,6 @@ export function splitIntoMessages(text: string): string[] {
       break;
     }
 
-    // Find a good split point — prefer double newline, then single newline
     let splitAt = remaining.lastIndexOf("\n\n", MAX_MSG_LEN);
     if (splitAt < MAX_MSG_LEN * 0.5) {
       splitAt = remaining.lastIndexOf("\n", MAX_MSG_LEN);
@@ -143,7 +140,6 @@ export function splitIntoMessages(text: string): string[] {
   return messages;
 }
 
-/** Search the web for a topic using Tavily. Returns results for use as sources. */
 export async function searchForTopic(topic: string): Promise<TavilyResult[]> {
   try {
     const searchResult = await tavilySearch(topic, 5);

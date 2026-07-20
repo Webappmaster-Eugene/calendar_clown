@@ -1,6 +1,3 @@
-/**
- * Nutritionist API routes for Mini App.
- */
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "../validate.js";
@@ -45,7 +42,6 @@ const ManualCalcSchema = z.object({
 // generic /:id analysis routes below.
 app.route("/products", productsRoutes);
 
-/** GET /api/nutritionist — analysis history */
 app.get("/", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -61,7 +57,6 @@ app.get("/", async (c) => {
   }
 });
 
-/** GET /api/nutritionist/daily — daily summary */
 app.get("/daily", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -77,7 +72,6 @@ app.get("/daily", async (c) => {
   }
 });
 
-/** POST /api/nutritionist/manual — save manual KBZHU calculation */
 app.post("/manual", zValidator("json", ManualCalcSchema), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -97,7 +91,6 @@ app.post("/manual", zValidator("json", ManualCalcSchema), async (c) => {
   }
 });
 
-/** GET /api/nutritionist/:id — single analysis */
 app.get("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -119,7 +112,6 @@ app.get("/:id", zValidator("param", idParam), async (c) => {
   }
 });
 
-/** POST /api/nutritionist/analyze — analyze food photo */
 app.post("/analyze", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -162,7 +154,6 @@ app.post("/analyze", async (c) => {
   }
 });
 
-/** DELETE /api/nutritionist/:id — delete analysis */
 app.delete("/:id", zValidator("param", idParam), async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;

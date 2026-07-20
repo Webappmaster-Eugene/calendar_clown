@@ -1,7 +1,3 @@
-/**
- * Repository for reminder_sounds table and fired-reminder queries for Mini App polling.
- */
-
 import { and, asc, desc, eq, gte, isNotNull } from "drizzle-orm";
 import { db } from "../db/drizzle.js";
 import { reminderSounds, reminders, users } from "../db/schema.js";
@@ -24,7 +20,6 @@ function mapSound(r: typeof reminderSounds.$inferSelect): ReminderSound {
 
 // ─── Queries ────────────────────────────────────────────────────────────
 
-/** Get all active sounds ordered by sort_order. */
 export async function getAvailableSounds(): Promise<ReminderSound[]> {
   const rows = await db
     .select()
@@ -34,14 +29,12 @@ export async function getAvailableSounds(): Promise<ReminderSound[]> {
   return rows.map(mapSound);
 }
 
-/** Get a single sound by ID. */
 export async function getSoundById(soundId: number): Promise<ReminderSound | null> {
   const [row] = await db.select().from(reminderSounds).where(eq(reminderSounds.id, soundId));
   if (!row) return null;
   return mapSound(row);
 }
 
-/** Fired reminder result shape. */
 interface FiredReminderResult {
   id: number;
   text: string;
@@ -49,10 +42,6 @@ interface FiredReminderResult {
   soundFile: string;
 }
 
-/**
- * Get recently fired reminders with sound enabled for a given user.
- * Used by Mini App polling to trigger audio playback.
- */
 export async function getFiredRemindersWithSound(
   telegramId: number,
   since: Date

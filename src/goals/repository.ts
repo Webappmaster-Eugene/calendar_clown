@@ -1,8 +1,3 @@
-/**
- * CRUD repository for Goals mode: goal sets, goals, viewers, reminders.
- * Data access via Drizzle query builder; row types inferred from the schema.
- */
-
 import { and, count, desc, eq, getTableColumns, inArray, lte, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
@@ -55,8 +50,7 @@ export interface PendingReminder {
   userId: number;
 }
 
-// Aggregated goal counts, reused across the set-listing queries. Column-object
-// interpolation keeps the SQL rename-safe (breaks the build, not runtime, on rename).
+// Column-object interpolation keeps the SQL rename-safe (breaks the build, not runtime, on rename).
 const goalCounts = {
   totalCount: sql<number>`count(${goals.id})`.mapWith(Number),
   completedCount: sql<number>`count(${goals.id}) filter (where ${goals.isCompleted})`.mapWith(Number),
@@ -271,7 +265,6 @@ export async function markReminderSent(reminderId: number): Promise<void> {
 
 // ─── Admin functions ────────────────────────────────────────────────────
 
-/** Admin: get all goal sets paginated (all users, with user info and progress). */
 export async function getAllGoalSetsPaginated(
   limit: number,
   offset: number
@@ -293,20 +286,17 @@ export async function getAllGoalSetsPaginated(
   }));
 }
 
-/** Admin: count all goal sets. */
 export async function countAllGoalSets(): Promise<number> {
   const [row] = await db.select({ value: count() }).from(goalSets);
   return row.value;
 }
 
-/** Admin: bulk delete goal sets by IDs. */
 export async function bulkDeleteGoalSets(ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   const rows = await db.delete(goalSets).where(inArray(goalSets.id, ids)).returning({ id: goalSets.id });
   return rows.length;
 }
 
-/** Admin: delete ALL goal sets. */
 export async function deleteAllGoalSets(): Promise<number> {
   const rows = await db.delete(goalSets).returning({ id: goalSets.id });
   return rows.length;

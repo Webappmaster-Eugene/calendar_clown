@@ -1,9 +1,5 @@
-/**
- * Telegram Mini App initData validation middleware for Hono.
- *
- * Validates the HMAC signature per Telegram's spec:
- * https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
- */
+// Validates the HMAC signature per Telegram's spec:
+// https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
 import { createHmac } from "crypto";
 import type { Context, Next } from "hono";
 import { createLogger } from "../utils/logger.js";
@@ -14,13 +10,9 @@ import type { UserProfile, UserMode } from "../shared/types.js";
 
 const log = createLogger("api-auth");
 
-/**
- * Max age for initData in seconds. Telegram refreshes initData on every Mini App
- * launch, so a tight window has no UX cost while shrinking the replay window
- * if initData ever leaks (logs, browser extensions, etc.). Telegram's own spec
- * recommends ≤ 5 minutes; we allow 15 to be lenient with clock skew.
- * 0 = no expiry check (not recommended).
- */
+// Tight max age shrinks the replay window if initData leaks; Telegram refreshes
+// it on every launch so there's no UX cost. Spec recommends ≤5min; 15 allows for
+// clock skew. 0 = no expiry check.
 const INIT_DATA_MAX_AGE_SECONDS = 900;
 
 export interface TelegramUser {
@@ -40,24 +32,20 @@ export interface InitDataParsed {
   raw: string;
 }
 
-/**
- * Validate Telegram Mini App initData HMAC signature.
- * Returns parsed data or null if invalid.
- */
 export function validateInitData(initDataRaw: string, botToken: string): InitDataParsed | null {
   try {
     const params = new URLSearchParams(initDataRaw);
     const hash = params.get("hash");
     if (!hash) return null;
 
-    // Build data-check-string: sort all params except hash, join with \n
+    // Data-check-string: all params except hash, sorted, joined with \n.
     params.delete("hash");
     const dataCheckString = Array.from(params.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}=${v}`)
       .join("\n");
 
-    // HMAC-SHA256(secret_key, data_check_string) where secret_key = HMAC-SHA256("WebAppData", bot_token)
+    // secret_key = HMAC-SHA256("WebAppData", bot_token), then HMAC over data-check-string.
     const secretKey = createHmac("sha256", "WebAppData").update(botToken).digest();
     const computedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
@@ -97,7 +85,6 @@ export function validateInitData(initDataRaw: string, botToken: string): InitDat
   }
 }
 
-/** Hono Environment type — use as generic parameter in Hono<ApiEnv> */
 export interface ApiEnv {
   Variables: {
     initData: InitDataParsed;
@@ -105,10 +92,7 @@ export interface ApiEnv {
   };
 }
 
-/**
- * Hono middleware: validate Authorization header and attach user data.
- * Header format: "tma <initDataRaw>"
- */
+// Header format: "tma <initDataRaw>"
 export function apiAuthMiddleware() {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
@@ -133,7 +117,6 @@ export function apiAuthMiddleware() {
 
     c.set("initData", initData);
 
-    // Build user profile from DB
     let userProfile: UserProfile | null = null;
     const telegramId = initData.user.id;
 
@@ -164,7 +147,7 @@ export function apiAuthMiddleware() {
       }
     }
 
-    // Bootstrap admin fallback when DB is unavailable
+    // Bootstrap admin fallback when DB is unavailable.
     if (!userProfile && isBootstrapAdmin(telegramId)) {
       const calendarLinked = await hasToken(String(telegramId));
       userProfile = {
@@ -187,10 +170,7 @@ export function apiAuthMiddleware() {
   };
 }
 
-/**
- * Hono middleware: require approved user status.
- * Must be used after apiAuthMiddleware.
- */
+// Must be used after apiAuthMiddleware.
 export function requireApproved() {
   return async (c: Context<ApiEnv>, next: Next) => {
     const profile = c.get("userProfile");

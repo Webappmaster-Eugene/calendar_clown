@@ -12,9 +12,6 @@ import { logAction } from "../logging/actionLogger.js";
 
 const log = createLogger("calendar");
 
-/**
- * Handle /cancel <query> — search and delete a calendar event by text.
- */
 export async function handleCancel(ctx: Context): Promise<void> {
   const userId = getUserId(ctx);
   if (!userId) {
@@ -52,7 +49,6 @@ export async function handleCancel(ctx: Context): Promise<void> {
     if (events.length === 1) {
       const ev = events[0];
 
-      // If recurring — ask what to delete
       if (ev.recurringEventId) {
         const start = new Date(ev.start);
         const timeStr = start.toLocaleString("ru-RU", {
@@ -124,9 +120,6 @@ export async function handleCancel(ctx: Context): Promise<void> {
   }
 }
 
-/**
- * Handle recurring event cancel callbacks.
- */
 export async function handleCancelRecurringCallback(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
@@ -168,7 +161,7 @@ export async function handleCancelRecurringCallback(ctx: Context): Promise<void>
     try {
       await ctx.editMessageText(`❌ Ошибка: ${msg}`);
     } catch {
-      // already edited
+      /* ignore */
     }
   }
 }

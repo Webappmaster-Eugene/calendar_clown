@@ -22,7 +22,6 @@ let honoFetch: ((req: Request) => Response | Promise<Response>) | null = null;
 type NativeHandler = (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>;
 let telegramWebhook: { path: string; handler: NativeHandler } | null = null;
 
-/** Register the Telegram webhook handler + path (webhook mode). */
 export function setTelegramWebhook(path: string, handler: NativeHandler): void {
   telegramWebhook = { path, handler };
 }
@@ -72,7 +71,6 @@ function serveStaticFile(pathname: string, res: http.ServerResponse): boolean {
     return true;
   }
 
-  // SPA fallback: serve index.html for any non-file path
   const indexPath = path.join(WEBAPP_DIST, "index.html");
   if (fs.existsSync(indexPath)) {
     res.setHeader("Content-Type", "text/html");
@@ -182,10 +180,7 @@ export interface OAuthServerOptions {
   oauthRedirectUri?: string;
 }
 
-/**
- * Start HTTP server for GET OAuth callback.
- * Starts only when oauthRedirectUri is set. Listens on host and port from env.
- */
+/** Starts only when oauthRedirectUri is set. */
 export function startOAuthServer(options: OAuthServerOptions): http.Server | null {
   const oauthRedirectUri = options.oauthRedirectUri?.trim();
   if (!oauthRedirectUri) {
@@ -312,7 +307,6 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
       return;
     }
 
-    // MTProto web auth routes: /auth/mtproto/<64-char hex token>
     const mtprotoMatch = pathname.match(/^\/auth\/mtproto\/([a-f0-9]{64})$/);
     if (mtprotoMatch) {
       const token = mtprotoMatch[1];
@@ -333,7 +327,6 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
       return;
     }
 
-    // Telegram webhook (only in webhook mode): POST <TELEGRAM_WEBHOOK_PATH>
     if (telegramWebhook && pathname === telegramWebhook.path) {
       if (req.method !== "POST") {
         res.writeHead(405);
@@ -344,7 +337,6 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
       return;
     }
 
-    // Bank push webhook: POST /webhook/bank/<64-char hex secret>
     const bankMatch = pathname.match(/^\/webhook\/bank\/([a-f0-9]{64})$/);
     if (bankMatch) {
       if (req.method !== "POST") {
@@ -515,7 +507,6 @@ async function handleMtprotoPost(
       sendHtml(res, 200, mtprotoSuccessHtml(result.phoneHint));
       break;
     case "2fa_required":
-      // Redirect to GET to show password form
       res.writeHead(303, { Location: `/auth/mtproto/${token}` });
       res.end();
       break;
