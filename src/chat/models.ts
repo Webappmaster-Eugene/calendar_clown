@@ -30,7 +30,9 @@ function mapModel(m: RawModel): OpenRouterModelDto {
   return {
     id: m.id,
     name: m.name || m.id,
-    vendor: m.id.includes("/") ? m.id.split("/")[0] : "other",
+    // Strip OpenRouter's "~" prefix on floating "latest" aliases so e.g.
+    // "~anthropic/claude-latest" buckets under the same vendor as "anthropic/...".
+    vendor: m.id.includes("/") ? m.id.split("/")[0].replace(/^~/, "") : "other",
     contextLength: m.context_length ?? null,
     promptPrice,
     completionPrice,
