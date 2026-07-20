@@ -678,6 +678,12 @@ export interface UpdateDialogRequest {
   theme?: string | null;
 }
 
+/** Effective (env-overridable) neuro-chat limits — GET /api/chat/config. */
+export interface ChatConfigDto {
+  messageLimit: number;
+  maxDialogs: number;
+}
+
 /** One OpenRouter model, as surfaced by GET /api/chat/models for the picker. */
 export interface OpenRouterModelDto {
   id: string;

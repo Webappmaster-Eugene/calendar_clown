@@ -2,6 +2,7 @@ import { and, count, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
 import { chatDialogs, chatMessages, users } from "../db/schema.js";
+import { CHAT_MAX_DIALOGS } from "../constants.js";
 import type { ChatProvider } from "../shared/types.js";
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
@@ -31,18 +32,16 @@ export interface ChatMessage {
   createdAt: Date;
 }
 
-const MAX_DIALOGS = 10;
-
 // ─── Dialog functions ───────────────────────────────────────────────────────
 
-/** Create a new dialog. Throws if user already has MAX_DIALOGS active dialogs. */
+/** Create a new dialog. Throws if the user already has CHAT_MAX_DIALOGS active dialogs. */
 export async function createDialog(
   userId: number,
   title: string = "Новый диалог"
 ): Promise<ChatDialog> {
   const count = await countActiveDialogs(userId);
-  if (count >= MAX_DIALOGS) {
-    throw new Error(`Достигнут лимит (${MAX_DIALOGS} диалогов). Удалите ненужные, чтобы создать новый.`);
+  if (count >= CHAT_MAX_DIALOGS) {
+    throw new Error(`Достигнут лимит (${CHAT_MAX_DIALOGS} диалогов). Удалите ненужные, чтобы создать новый.`);
   }
 
   const [row] = await db.insert(chatDialogs).values({ userId, title }).returning();

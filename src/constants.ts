@@ -19,8 +19,19 @@ export {
   NUTRITION_PRODUCT_NAME_MAX_LENGTH,
   NUTRITION_PRODUCT_DESCRIPTION_MAX_LENGTH,
 } from "./shared/constants.js";
+import { CHAT_DIALOG_MESSAGE_LIMIT, CHAT_MAX_DIALOGS_DEFAULT } from "./shared/constants.js";
 
 // ─── Backend-only constants ───────────────────────────────────────
+
+/** Parse a positive integer from an env value, falling back on missing/invalid. Exported for tests. */
+export function resolvePositiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = parseInt((raw ?? "").trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** Neuro chat limits — env-overridable (defaults from shared/constants). */
+export const CHAT_MESSAGE_LIMIT = resolvePositiveInt(process.env.CHAT_MESSAGE_LIMIT, CHAT_DIALOG_MESSAGE_LIMIT);
+export const CHAT_MAX_DIALOGS = resolvePositiveInt(process.env.CHAT_MAX_DIALOGS, CHAT_MAX_DIALOGS_DEFAULT);
 
 /** OpenRouter API base URL. */
 export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";

@@ -11,6 +11,7 @@ import type {
   ChatProvider,
   UpdateDialogRequest,
   OpenRouterModelDto,
+  ChatConfigDto,
 } from "@shared/types";
 import { CHAT_DIALOG_MESSAGE_LIMIT } from "@shared/constants";
 
@@ -265,10 +266,19 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
   const dialog = dialogs?.find((d) => d.id === dialogId) ?? null;
   const [showSettings, setShowSettings] = useState(false);
 
+  // Effective message limit (env-overridable on the backend); fall back to the
+  // shared default until the config query resolves.
+  const { data: chatConfig } = useQuery({
+    queryKey: ["chat", "config"],
+    queryFn: () => api.get<ChatConfigDto>("/api/chat/config"),
+    staleTime: 60 * 60 * 1000,
+  });
+  const limit = chatConfig?.messageLimit ?? CHAT_DIALOG_MESSAGE_LIMIT;
+
   // Per-dialog message cap: once reached, writing is blocked (start a new chat).
   // dialog.messageCount is the authoritative total; messages.length is a fallback.
   const msgCount = dialog?.messageCount ?? messages?.length ?? 0;
-  const atLimit = msgCount >= CHAT_DIALOG_MESSAGE_LIMIT;
+  const atLimit = msgCount >= limit;
 
   const updateSettings = useMutation({
     mutationFn: (patch: UpdateDialogRequest) =>
@@ -391,7 +401,7 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
 
       {atLimit ? (
         <div className="card" style={{ textAlign: "center" }}>
-          <div className="card-title">Достигнут лимит {CHAT_DIALOG_MESSAGE_LIMIT} сообщений</div>
+          <div className="card-title">Достигнут лимит {limit} сообщений</div>
           <div className="card-hint" style={{ marginBottom: 10 }}>
             Чтобы весь диалог помещался в контекст, писать сюда больше нельзя. Создайте новый чат.
           </div>
@@ -419,9 +429,9 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
         </form>
       )}
 
-      {!atLimit && msgCount >= CHAT_DIALOG_MESSAGE_LIMIT - 6 && (
+      {!atLimit && msgCount >= limit - 6 && (
         <div className="card-hint" style={{ textAlign: "center", marginTop: 6, fontSize: 12 }}>
-          Сообщений: {msgCount}/{CHAT_DIALOG_MESSAGE_LIMIT}
+          Сообщений: {msgCount}/{limit}
         </div>
       )}
     </div>

@@ -23,7 +23,8 @@ function toNum(v: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function mapModel(m: RawModel): OpenRouterModelDto {
+// Exported for unit testing.
+export function mapModel(m: RawModel): OpenRouterModelDto {
   const promptPrice = toNum(m.pricing?.prompt);
   const completionPrice = toNum(m.pricing?.completion);
   const isFree = m.id.endsWith(":free") || (promptPrice === 0 && completionPrice === 0);
@@ -75,15 +76,18 @@ export interface ModelSearchOpts {
   limit?: number;
 }
 
-/** Search the catalog by id/name substring (case-insensitive) with optional
- *  free-only / vendor filters. Filters apply BEFORE the cap so nothing is hidden by
- *  it. Ranks id/name prefix matches first. */
-export async function searchModels(query: string, opts: ModelSearchOpts = {}): Promise<OpenRouterModelDto[]> {
+/** Pure filter + rank over an already-loaded catalog. Filters (free/vendor/query)
+ *  apply BEFORE the cap so nothing is hidden by it; prefix matches rank first.
+ *  Exported for unit testing. */
+export function filterAndRankModels(
+  all: OpenRouterModelDto[],
+  query: string,
+  opts: ModelSearchOpts = {}
+): OpenRouterModelDto[] {
   const { free, vendor, limit = 50 } = opts;
-  const all = await listOpenRouterModels();
   const q = query.trim().toLowerCase();
 
-  let matched = all.filter((m) => {
+  const matched = all.filter((m) => {
     if (free && !m.isFree) return false;
     if (vendor && m.vendor !== vendor) return false;
     if (q && !(m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))) return false;
@@ -100,8 +104,17 @@ export async function searchModels(query: string, opts: ModelSearchOpts = {}): P
   return matched.slice(0, limit);
 }
 
+/** Distinct vendors (sorted), for the picker's vendor filter. Exported for tests. */
+export function vendorsOf(models: OpenRouterModelDto[]): string[] {
+  return Array.from(new Set(models.map((m) => m.vendor))).sort((a, b) => a.localeCompare(b));
+}
+
+/** Search the catalog by id/name substring with optional free-only / vendor filters. */
+export async function searchModels(query: string, opts: ModelSearchOpts = {}): Promise<OpenRouterModelDto[]> {
+  return filterAndRankModels(await listOpenRouterModels(), query, opts);
+}
+
 /** Distinct vendors in the catalog (sorted), for the picker's vendor filter. */
 export async function listModelVendors(): Promise<string[]> {
-  const all = await listOpenRouterModels();
-  return Array.from(new Set(all.map((m) => m.vendor))).sort((a, b) => a.localeCompare(b));
+  return vendorsOf(await listOpenRouterModels());
 }

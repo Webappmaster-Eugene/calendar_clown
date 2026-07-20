@@ -12,6 +12,7 @@ import {
   updateDialogForUser,
   getModels,
   getModelVendors,
+  getChatConfig,
 } from "../../services/chatService.js";
 import type { UpdateDialogRequest } from "../../shared/types.js";
 import { getUserByTelegramId } from "../../expenses/repository.js";
@@ -200,6 +201,11 @@ app.get("/models", async (c) => {
     const msg = err instanceof Error ? err.message : "Failed to load models";
     return c.json({ ok: false, error: msg }, 502);
   }
+});
+
+/** GET /api/chat/config — effective (env-overridable) chat limits for the UI */
+app.get("/config", (c) => {
+  return c.json({ ok: true, data: getChatConfig() });
 });
 
 /** GET /api/chat/models/vendors — distinct vendors for the picker's vendor filter */

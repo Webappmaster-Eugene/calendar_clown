@@ -15,10 +15,14 @@ export const MAX_SUBCATEGORY_LENGTH = 200;
 /** Reminders */
 export const MAX_REMINDERS_PER_USER = 10;
 
-/** Neuro chat: max messages a single dialog can hold. Equal to the context window,
- *  so the whole dialog always fits in context (nothing silently forgotten). Once a
- *  dialog reaches this, writing is blocked — the user must start a new chat. */
+/** Neuro chat DEFAULTS (the backend may override via env — CHAT_MESSAGE_LIMIT /
+ *  CHAT_MAX_DIALOGS; the Mini App reads the effective values from GET /api/chat/config
+ *  and falls back to these).
+ *  - message limit: max messages a dialog can hold (= context window, so the whole
+ *    dialog always fits; once reached, writing is blocked — start a new chat).
+ *  - max dialogs: max active dialogs per user. */
 export const CHAT_DIALOG_MESSAGE_LIMIT = 50;
+export const CHAT_MAX_DIALOGS_DEFAULT = 10;
 
 /** OSINT */
 export const OSINT_DAILY_LIMIT = 10;

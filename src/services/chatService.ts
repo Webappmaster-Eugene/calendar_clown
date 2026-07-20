@@ -17,13 +17,12 @@ import {
   countDialogMessages,
   type ChatDialog,
 } from "../chat/repository.js";
-import { CHAT_DIALOG_MESSAGE_LIMIT } from "../shared/constants.js";
 import { chatCompletion, chatCompletionStream, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
 import { getChatProvider } from "../chat/repository.js";
 import { searchModels, listModelVendors } from "../chat/models.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_UNCENSORED_MODEL } from "../constants.js";
+import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_UNCENSORED_MODEL, CHAT_MESSAGE_LIMIT, CHAT_MAX_DIALOGS } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
 import type {
   ChatProvider,
@@ -32,6 +31,7 @@ import type {
   SendChatMessageResponse,
   UpdateDialogRequest,
   OpenRouterModelDto,
+  ChatConfigDto,
 } from "../shared/types.js";
 
 const log = createLogger("chat-service");
@@ -51,7 +51,8 @@ function resolveModelAndPrompt(provider: ChatProvider): { model: string; systemP
  * global provider preference. Model → dialog.model or the provider model; system
  * prompt → dialog.systemPrompt or the provider's; temperature/maxTokens → dialog-only.
  */
-function resolveDialogAiConfig(
+// Exported for unit testing (pure resolution of per-dialog overrides vs provider default).
+export function resolveDialogAiConfig(
   dialog: ChatDialog,
   provider: ChatProvider
 ): { model: string; systemPrompt?: string; temperature?: number; maxTokens?: number } {
@@ -164,10 +165,15 @@ export async function getModelVendors(): Promise<string[]> {
   return listModelVendors();
 }
 
+/** Effective (env-overridable) chat limits for the Mini App to respect in the UI. */
+export function getChatConfig(): ChatConfigDto {
+  return { messageLimit: CHAT_MESSAGE_LIMIT, maxDialogs: CHAT_MAX_DIALOGS };
+}
+
 export async function getDialogMessages(
   telegramId: number,
   dialogId: number,
-  limit: number = CHAT_DIALOG_MESSAGE_LIMIT
+  limit: number = CHAT_MESSAGE_LIMIT
 ): Promise<ChatMessageDto[]> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -210,12 +216,12 @@ export async function sendMessage(
 
   // Reject writes to a dialog that has hit the message cap (= the context window,
   // so nothing is silently forgotten). The user must start a new chat.
-  if ((await countDialogMessages(dialog.id)) >= CHAT_DIALOG_MESSAGE_LIMIT) {
-    throw new Error(`Диалог достиг лимита в ${CHAT_DIALOG_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
+  if ((await countDialogMessages(dialog.id)) >= CHAT_MESSAGE_LIMIT) {
+    throw new Error(`Диалог достиг лимита в ${CHAT_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
   }
 
   // Get conversation history BEFORE saving user message (to build context)
-  const history = await getRecentMessages(dialog.id, CHAT_DIALOG_MESSAGE_LIMIT);
+  const history = await getRecentMessages(dialog.id, CHAT_MESSAGE_LIMIT);
   const messages = [
     ...history.map((m) => ({
       role: m.role,
@@ -284,12 +290,12 @@ export async function sendMessageStream(
 
   // Reject writes to a dialog that has hit the message cap (= the context window,
   // so nothing is silently forgotten). The user must start a new chat.
-  if ((await countDialogMessages(dialog.id)) >= CHAT_DIALOG_MESSAGE_LIMIT) {
-    throw new Error(`Диалог достиг лимита в ${CHAT_DIALOG_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
+  if ((await countDialogMessages(dialog.id)) >= CHAT_MESSAGE_LIMIT) {
+    throw new Error(`Диалог достиг лимита в ${CHAT_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
   }
 
   // Get conversation history BEFORE saving user message (to build context)
-  const history = await getRecentMessages(dialog.id, CHAT_DIALOG_MESSAGE_LIMIT);
+  const history = await getRecentMessages(dialog.id, CHAT_MESSAGE_LIMIT);
   const messages = [
     ...history.map((m) => ({
       role: m.role,
