@@ -6,6 +6,7 @@ import { getAuthStateByToken, submitCodeViaWeb, submit2faViaWeb } from "./comman
 import type { WebAuthResult } from "./commands/digestAuth.js";
 import { createLogger } from "./utils/logger.js";
 import { createApiApp } from "./api/router.js";
+import { handleMcpRequest } from "./mcp/httpHandler.js";
 import { getPollHealth } from "./health/pollWatchdog.js";
 import { findUserByWebhookSecret } from "./expenses/bankPush/repository.js";
 import { ingestBankPush } from "./expenses/bankPush/ingest.js";
@@ -197,6 +198,13 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
 
   const server = http.createServer(async (req, res) => {
     const { pathname, searchParams } = parsePathAndQuery(req.url ?? "/");
+
+    // ── MCP server (/mcp) → Action Registry tools ───────────
+    // Handled before /api so the transport reads the raw request body itself.
+    if (pathname === "/mcp" || pathname.startsWith("/mcp/")) {
+      await handleMcpRequest(req, res);
+      return;
+    }
 
     // ── API routes (/api/*) → Hono ──────────────────────────
     if (pathname.startsWith("/api/")) {

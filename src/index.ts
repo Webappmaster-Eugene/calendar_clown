@@ -7,7 +7,7 @@ dotenv.config({ path: ".env.local", override: true });
 import { shutdownTelemetry } from "./telemetry.js";
 
 import { createBot } from "./bot.js";
-import { setBotSendMessage, setBotSendDocument } from "./botInstance.js";
+import { setBotSendMessage, setBotSendDocument, setBotInstance } from "./botInstance.js";
 import { startOAuthServer, setTelegramWebhook } from "./oauthServer.js";
 import { runDrizzleMigrations } from "./db/migrate.js";
 import { query, closePool, setDatabaseAvailable, isDatabaseAvailable } from "./db/connection.js";
@@ -100,6 +100,7 @@ async function main(): Promise<void> {
   const telegramAgent = await initProxyAgent();
   await initOpenRouterAgent();
   const bot = createBot(token!, telegramAgent);
+  setBotInstance(bot);
 
   // Register bot's sendMessage for API broadcast route
   setBotSendMessage((chatId, text) => bot.telegram.sendMessage(chatId, text));

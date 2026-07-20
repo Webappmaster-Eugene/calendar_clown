@@ -10,6 +10,7 @@ import { handleExpensesCommand, handleCalendarCommand, handleCategoriesButton, h
 import { handleCancel, handleCancelRecurringCallback } from "./commands/cancelEvent.js";
 import { handleExpenseText } from "./commands/addExpense.js";
 import { handleBankHookCommand, handleBankHookRegenerate } from "./commands/bankHook.js";
+import { handleDo } from "./commands/doCommand.js";
 import {
   handleBankPushCategoryMenu,
   handleBankPushSetCategory,
@@ -271,6 +272,9 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.command("tasks", handleTasksCommand);
   bot.command("nutritionist", handleNutritionistCommand);
   bot.command("bankhook", handleBankHookCommand);
+
+  // Unified NL entry point — routes free text to any registry action.
+  bot.command("do", handleDo);
 
   // Admin commands
   bot.command("admin", handleAdminCommand);

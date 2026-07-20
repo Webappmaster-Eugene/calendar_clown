@@ -14,7 +14,7 @@
     "tg-session": "tsx scripts/tg-session.ts",
     "bot-smoke": "tsx scripts/bot-smoke.ts",
     "test": "npm run test:unit && npm run test:smoke",
-    "test:unit": "tsx --test tests/markdown.test.ts tests/splitMessage.test.ts tests/parseJson.test.ts tests/authMiddleware.test.ts tests/calendarParse.test.ts tests/duration.test.ts tests/listRange.test.ts tests/sharedTypes.test.ts tests/formatDetailedMonthReport.test.ts tests/excelDispositionHeader.test.ts tests/parseMskCalendarDate.test.ts tests/sttClientRetry.test.ts tests/matchWorkName.test.ts tests/parseTinkoffPush.test.ts tests/parseWebhookBody.test.ts tests/reminderSchedule.test.ts tests/calculateTaskReminders.test.ts tests/findCategory.test.ts tests/transcribePrompts.test.ts tests/openRouterTimeout.test.ts tests/intentToResult.test.ts",
+    "test:unit": "tsx --test tests/markdown.test.ts tests/splitMessage.test.ts tests/parseJson.test.ts tests/authMiddleware.test.ts tests/calendarParse.test.ts tests/duration.test.ts tests/listRange.test.ts tests/sharedTypes.test.ts tests/formatDetailedMonthReport.test.ts tests/excelDispositionHeader.test.ts tests/parseMskCalendarDate.test.ts tests/sttClientRetry.test.ts tests/matchWorkName.test.ts tests/parseTinkoffPush.test.ts tests/parseWebhookBody.test.ts tests/reminderSchedule.test.ts tests/calculateTaskReminders.test.ts tests/findCategory.test.ts tests/transcribePrompts.test.ts tests/openRouterTimeout.test.ts tests/intentToResult.test.ts tests/actionsRouter.test.ts tests/actionsRegistry.test.ts",
     "test:smoke": "tsx --test tests/smoke-api.test.ts tests/smoke-build.test.ts",
     "test:parser": "tsx --test tests/parser.test.ts",
     "test:repo": "tsx --test tests/repository.test.ts",
@@ -35,6 +35,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.14",
     "@hono/zod-validator": "^0.4.3",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.76.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.218.0",
@@ -55,7 +56,8 @@
     "socks-proxy-agent": "^9.0.0",
     "telegraf": "^4.16.3",
     "telegram": "^2.26.22",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
