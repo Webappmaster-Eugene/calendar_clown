@@ -106,6 +106,15 @@ app.post("/voice", async (c) => {
   let tempPath: string | null = null;
 
   try {
+    // Checked before parsing: formData() buffers the whole body first.
+    const declared = Number(c.req.header("content-length") ?? 0);
+    if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
+      return c.json(
+        { ok: false, error: `Файл слишком большой. Максимум ${MAX_UPLOAD_BYTES / 1024 / 1024} МБ.` },
+        413
+      );
+    }
+
     const formData = await c.req.formData();
     const audioFile = formData.get("audio");
 

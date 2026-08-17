@@ -82,10 +82,16 @@ describe("abuse limits", () => {
     assert.match(limiter, /AUTH_FAILURE_MAX/);
   });
 
-  it("audio uploads are size-capped before being buffered", () => {
+  it("uploads are rejected on content-length, before the body is buffered", () => {
     for (const file of ["src/api/routes/voice.ts", "src/api/routes/simplifier.ts"]) {
-      assert.match(read(file), /MAX_UPLOAD_BYTES/, `${file} must cap upload size`);
+      const src = read(file);
+      assert.match(src, /MAX_UPLOAD_BYTES/, `${file} must cap upload size`);
+      // The check has to precede the parse call, which buffers the whole body.
+      const beforeParse = src.split("await c.req.formData()")[0];
+      assert.match(beforeParse, /content-length/, `${file} must check content-length first`);
     }
+    const csv = read("src/api/routes/notable-dates.ts");
+    assert.match(csv.split("await c.req.parseBody()")[0], /content-length/, "CSV import must check content-length first");
   });
 
   it("initData hashes are compared in constant time", () => {

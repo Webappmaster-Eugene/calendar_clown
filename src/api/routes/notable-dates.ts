@@ -16,6 +16,8 @@ import { logApiAction } from "../../logging/actionLogger.js";
 
 const app = new Hono<ApiEnv>();
 
+const MAX_CSV_BYTES = 2 * 1024 * 1024;
+
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const createDateBody = z.object({
   name: z.string().min(1),
@@ -187,11 +189,26 @@ app.post("/import", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
 
+  const declared = Number(c.req.header("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > MAX_CSV_BYTES) {
+    return c.json(
+      { ok: false, error: `Файл слишком большой. Максимум ${MAX_CSV_BYTES / 1024 / 1024} МБ.` },
+      413
+    );
+  }
+
   const body = await c.req.parseBody();
   const file = body["file"];
 
   if (!file || !(file instanceof File)) {
     return c.json({ ok: false, error: "CSV file is required" }, 400);
+  }
+  // Read fully into memory and then parsed row by row, so the size has to be bounded.
+  if (file.size > MAX_CSV_BYTES) {
+    return c.json(
+      { ok: false, error: `Файл слишком большой. Максимум ${MAX_CSV_BYTES / 1024 / 1024} МБ.` },
+      413
+    );
   }
 
   try {

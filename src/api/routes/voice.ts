@@ -66,6 +66,13 @@ function tooLargeResponse(c: Context<ApiEnv>) {
   );
 }
 
+/** Checked before parsing: by the time formData() resolves the whole body is already
+ *  in memory, so a post-parse size check does not protect against the upload itself. */
+function declaredTooLarge(c: Context<ApiEnv>): boolean {
+  const declared = Number(c.req.header("content-length") ?? 0);
+  return Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES;
+}
+
 app.post("/transcribe", async (c) => {
   const initData = c.get("initData");
   const telegramId = initData.user.id;
@@ -73,6 +80,8 @@ app.post("/transcribe", async (c) => {
   let tempPath: string | null = null;
 
   try {
+    if (declaredTooLarge(c)) return tooLargeResponse(c);
+
     const formData = await c.req.formData();
     const audioFile = extractAudioFile(formData);
 
@@ -107,6 +116,8 @@ app.post("/extract-intent", async (c) => {
   let tempPath: string | null = null;
 
   try {
+    if (declaredTooLarge(c)) return tooLargeResponse(c);
+
     const formData = await c.req.formData();
     const audioFile = extractAudioFile(formData);
 
@@ -138,6 +149,8 @@ app.post("/expense", async (c) => {
   let tempPath: string | null = null;
 
   try {
+    if (declaredTooLarge(c)) return tooLargeResponse(c);
+
     const formData = await c.req.formData();
     const audioFile = extractAudioFile(formData);
 

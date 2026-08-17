@@ -45,6 +45,9 @@ function dateToDto(d: NotableDate): NotableDateDto {
 
 // ─── Service Functions ────────────────────────────────────────
 
+// One row becomes one insert, so a large file is a write amplifier.
+const MAX_CSV_ROWS = 5_000;
+
 export async function getAllDates(
   telegramId: number,
   month?: number
@@ -172,6 +175,9 @@ export async function importDatesFromCsv(
   const dbUser = await requireDbUser(telegramId);
 
   const lines = csvContent.split("\n").filter((l) => l.trim());
+  if (lines.length > MAX_CSV_ROWS) {
+    throw new Error(`Слишком много строк в файле (${lines.length}). Максимум ${MAX_CSV_ROWS}.`);
+  }
   const dataLines = lines.slice(1);
 
   let imported = 0;
