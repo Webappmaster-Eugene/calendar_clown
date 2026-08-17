@@ -114,6 +114,26 @@ function webSearchRequestFields(webSearch: WebSearchStrategy | undefined) {
     : {};
 }
 
+/** A provider can refuse the web plugin (unsupported model, plugin disabled) with a
+ *  4xx. Losing search is acceptable; losing the whole answer is not. */
+function isWebPluginRejected(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  if (!msg.includes("openrouter request failed: 4")) return false;
+  return msg.includes("plugin") || msg.includes("web_search") || msg.includes("web search");
+}
+
+/** Same messages, but the system prompt no longer claims a built-in search. */
+function withoutSearchClaim(
+  messages: Array<{ role: string; content: MessageContent }>,
+  promptOpts: SystemPromptOptions
+): Array<{ role: string; content: MessageContent }> {
+  return [
+    { role: "system", content: composeSystemPrompt({ ...promptOpts, webSearch: "off" }) },
+    ...messages.slice(1),
+  ];
+}
+
 export async function chatCompletion(
   messages: Array<{ role: string; content: MessageContent }>,
   opts: ChatCallOptions = {}
@@ -133,6 +153,13 @@ export async function chatCompletion(
       ...webSearchRequestFields(promptOpts.webSearch),
     });
   } catch (err) {
+    if (promptOpts.webSearch === "native" && isWebPluginRejected(err)) {
+      log.warn(`Model "${requestedModel}" rejected the web plugin, retrying without search`);
+      return callOpenRouterWithUsage({
+        model: requestedModel,
+        messages: withoutSearchClaim(fullMessages, promptOpts),
+      });
+    }
     if (isFreeModel(requestedModel) && isModelNotFoundError(err)) {
       log.warn(`Free model "${requestedModel}" unavailable, falling back to "${DEEPSEEK_MODEL}"`);
       // The fallback model has no provider-side search, so the plugin is dropped.
@@ -165,6 +192,13 @@ export async function chatCompletionStream(
       onChunk
     );
   } catch (err) {
+    if (promptOpts.webSearch === "native" && isWebPluginRejected(err)) {
+      log.warn(`Model "${requestedModel}" rejected the web plugin, retrying without search (stream)`);
+      return callOpenRouterStream(
+        { model: requestedModel, messages: withoutSearchClaim(fullMessages, promptOpts) },
+        onChunk
+      );
+    }
     if (isFreeModel(requestedModel) && isModelNotFoundError(err)) {
       log.warn(`Free model "${requestedModel}" unavailable (stream), falling back to "${DEEPSEEK_MODEL}"`);
       // The fallback model has no provider-side search, so the plugin is dropped.

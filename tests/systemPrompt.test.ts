@@ -63,3 +63,15 @@ describe("composeSystemPrompt", () => {
     assert.match(nativeUncensored, /встроенный веб-поиск/);
   });
 });
+
+describe("web-plugin rejection fallback", () => {
+  it("drops the built-in-search claim when the plugin is refused", () => {
+    const withSearch = composeSystemPrompt({ webSearch: "native", persona: "Ты юрист" });
+    const withoutSearch = composeSystemPrompt({ webSearch: "off", persona: "Ты юрист" });
+
+    assert.match(withSearch, /встроенный веб-поиск/);
+    assert.doesNotMatch(withoutSearch, /встроенный веб-поиск/);
+    // The persona must survive the retry — only the search wording changes.
+    assert.match(withoutSearch, /Ты юрист/);
+  });
+});
