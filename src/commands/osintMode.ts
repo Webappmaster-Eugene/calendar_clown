@@ -7,6 +7,7 @@ import { isBootstrapAdmin, getUserMenuContext, canAccessMode } from "../middlewa
 import { isDatabaseAvailable } from "../db/connection.js";
 import { DB_UNAVAILABLE_MSG, OSINT_DAILY_LIMIT } from "../constants.js";
 import { runOsintSearch, sendReport } from "../osint/searchOrchestrator.js";
+import { checkCostlyRateLimit, COSTLY_LIMIT_MESSAGE } from "../middleware/rateLimit.js";
 import { getSearchById, getFilteredSearchHistory, countTodaySearches } from "../osint/repository.js";
 import { parseSearchSubject } from "../osint/queryParser.js";
 import { escapeMarkdown, escapeMarkdownV2 } from "../utils/markdown.js";
@@ -486,6 +487,13 @@ async function executeOsintSearch(
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) {
     await ctx.reply("Пользователь не найден.");
+    return;
+  }
+
+  // The most expensive action in the bot: dozens of Tavily queries plus a Claude
+  // analysis per search.
+  if (!checkCostlyRateLimit(telegramId)) {
+    await ctx.reply(COSTLY_LIMIT_MESSAGE);
     return;
   }
 

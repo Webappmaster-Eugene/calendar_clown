@@ -1287,6 +1287,12 @@ export async function handleDigestFolderToCallback(ctx: Context): Promise<void> 
 
   const folderId = parseInt(match[1], 10);
   const rubricId = parseInt(match[2], 10);
+
+  // The rubric id comes from callback_data, so it has to be matched against this
+  // user's rubrics before anything is written into it.
+  const owned = await getRubricForCallback(ctx, rubricId);
+  if (!owned) return;
+
   await ctx.answerCbQuery("Импортирую...");
 
   try {

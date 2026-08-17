@@ -298,6 +298,20 @@ async function main(): Promise<void> {
   if (webhookDomain) {
     const webhookPath = process.env.TELEGRAM_WEBHOOK_PATH?.trim() || "/telegram/webhook";
     const secretToken = process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || undefined;
+
+    // Telegraf accepts every POST when no secret is configured ("no need to check if
+    // secret_token was not set"), and the default path is guessable — that lets
+    // anyone forge updates and act as any user, since handlers trust `from.id`.
+    // Refuse to start rather than serve an open update endpoint.
+    if (!secretToken || secretToken.length < 32) {
+      log.error("=".repeat(60));
+      log.error("TELEGRAM_WEBHOOK_DOMAIN is set but TELEGRAM_WEBHOOK_SECRET is missing or shorter than 32 chars.");
+      log.error("Without it the webhook accepts forged updates from anyone who knows the path.");
+      log.error("Generate one: openssl rand -hex 32");
+      log.error("=".repeat(60));
+      process.exit(1);
+    }
+
     setTelegramWebhook(webhookPath, bot.webhookCallback(webhookPath, { secretToken }));
     try {
       await bot.telegram.setWebhook(

@@ -33,6 +33,7 @@ import { escapeMarkdown } from "../utils/markdown.js";
 import { getUserId } from "../utils/telegram.js";
 import { TIMEZONE_MSK, VOICE_DIR } from "../constants.js";
 import type { DbUser } from "../expenses/types.js";
+import { checkCostlyRateLimit, COSTLY_LIMIT_MESSAGE } from "../middleware/rateLimit.js";
 import { createLogger } from "../utils/logger.js";
 import { truncateText } from "../utils/uiKit.js";
 import { logAction } from "../logging/actionLogger.js";
@@ -60,9 +61,16 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
   const voice = "voice" in ctx.message ? ctx.message.voice : null;
   if (!voice?.file_id) return;
 
-  const statusMsg = await ctx.reply("Обрабатываю голосовое…");
-
   const telegramId = ctx.from?.id;
+
+  // Every voice path in every mode funnels through here, and each one pays for an
+  // STT call — so the bill is capped in this single place.
+  if (telegramId != null && !checkCostlyRateLimit(telegramId)) {
+    await ctx.reply(COSTLY_LIMIT_MESSAGE);
+    return;
+  }
+
+  const statusMsg = await ctx.reply("Обрабатываю голосовое…");
   logAction(null, telegramId ?? 0, "voice_message_received", { duration: voice.duration });
   if (telegramId != null && await isWishlistMode(telegramId)) {
     await ctx.telegram.editMessageText(

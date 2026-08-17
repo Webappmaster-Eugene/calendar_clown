@@ -38,6 +38,7 @@ import { createLogger } from "../utils/logger.js";
 import { logAction } from "../logging/actionLogger.js";
 import type { ContentPart, MessageContent } from "../utils/openRouterClient.js";
 import { addMessage, cancelBatch, hasPendingBatch, flushBatchSync } from "../chat/messageBatcher.js";
+import { checkCostlyRateLimit, COSTLY_LIMIT_MESSAGE } from "../middleware/rateLimit.js";
 import { processNeuroRequest } from "../chat/neuroProcessor.js";
 import { handleNeuroSettingsText, cancelNeuroSettings, NEURO_SETTINGS_BUTTON } from "./chatSettings.js";
 
@@ -570,6 +571,12 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
   const photos = ctx.message.photo;
   if (!photos || photos.length === 0) return;
 
+  // A vision call plus a multi-MB download per photo — capped like voice.
+  if (!checkCostlyRateLimit(telegramId)) {
+    await ctx.reply(COSTLY_LIMIT_MESSAGE);
+    return;
+  }
+
   let prependText = "";
   let pendingDialogId: number | undefined;
   if (hasPendingBatch(dbUser.id)) {
@@ -675,6 +682,11 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
 
   const doc = ctx.message.document;
   if (!doc) return;
+
+  if (!checkCostlyRateLimit(telegramId)) {
+    await ctx.reply(COSTLY_LIMIT_MESSAGE);
+    return;
+  }
 
   let prependText = "";
   let pendingDialogId: number | undefined;

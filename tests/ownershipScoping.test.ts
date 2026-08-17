@@ -107,3 +107,37 @@ describe("abuse limits", () => {
     assert.match(loop, /assertPublicUrl\(current\)/);
   });
 });
+
+describe("bot and webhook hardening", () => {
+  it("webhook mode refuses to start without a strong secret", () => {
+    const src = read("src/index.ts");
+    const block = src.split("const webhookDomain =")[1]?.split("const MAX_RETRIES")[0] ?? "";
+    assert.ok(block, "webhook block not found");
+    assert.match(block, /TELEGRAM_WEBHOOK_SECRET/);
+    assert.match(block, /process\.exit\(1\)/, "a missing secret must be fatal, not a warning");
+    // Telegraf accepts every POST when no secret is set, so the length floor matters.
+    assert.match(block, /secretToken\.length < 32/);
+  });
+
+  it("paid actions are rate-limited at every bot entry point", () => {
+    const limiter = read("src/middleware/rateLimit.ts");
+    assert.match(limiter, /checkCostlyRateLimit/);
+
+    // Voice funnels through voiceEvent for every mode; photos, documents and OSINT
+    // each spend money per message.
+    for (const file of [
+      "src/commands/voiceEvent.ts",
+      "src/commands/chatMode.ts",
+      "src/commands/osintMode.ts",
+    ]) {
+      assert.match(read(file), /checkCostlyRateLimit\(telegramId\)/, `${file} must cap costly actions`);
+    }
+  });
+
+  it("digest folder import writes only into the caller's rubric", () => {
+    const src = read("src/commands/digestMode.ts");
+    const handler = src.split("export async function handleDigestFolderToCallback")[1]?.split("\nexport ")[0] ?? "";
+    const beforeWrite = handler.split("addChannel(")[0];
+    assert.match(beforeWrite, /getRubricForCallback\(ctx, rubricId\)/);
+  });
+});

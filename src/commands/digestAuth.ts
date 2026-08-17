@@ -38,7 +38,14 @@ interface WebAuthToken {
   telegramId: number;
   chatId: number;
   createdAt: number;
+  /** Wrong codes/passwords entered so far — see MAX_CODE_ATTEMPTS. */
+  attempts: number;
 }
+
+/** Whoever holds the link could otherwise grind login codes until Telegram issues a
+ *  FLOOD_WAIT, which locks the owner out of their own account for hours. Telegram is
+ *  the real gate; this keeps a leaked link from burning the account. */
+const MAX_CODE_ATTEMPTS = 5;
 
 const WEB_TOKEN_TTL_MS = 10 * 60 * 1000;
 const WEB_TOKEN_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
@@ -105,6 +112,17 @@ export async function submitCodeViaWeb(token: string, code: string): Promise<Web
   const cleanCode = code.replace(/[\s\-]/g, "");
   if (!/^\d{4,8}$/.test(cleanCode)) {
     return { status: "invalid_code", message: "Код должен содержать 4-8 цифр." };
+  }
+
+  const webToken = webTokens.get(token);
+  if (webToken) {
+    webToken.attempts += 1;
+    if (webToken.attempts > MAX_CODE_ATTEMPTS) {
+      clearState(telegramId);
+      webTokens.delete(token);
+      log.warn(`Web auth: too many code attempts for ${telegramId}, token revoked`);
+      return { status: "expired" };
+    }
   }
 
   try {
@@ -384,6 +402,7 @@ async function handlePhoneStep(
     telegramId,
     chatId: ctx.chat!.id,
     createdAt: Date.now(),
+    attempts: 0,
   });
 
   const baseUrl = new URL(process.env.OAUTH_REDIRECT_URI!).origin;
