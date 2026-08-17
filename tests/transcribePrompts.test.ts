@@ -34,3 +34,12 @@ test("each context resolves to a distinct non-empty prompt", () => {
   for (const p of prompts) assert.ok(p.length > 0);
   assert.equal(new Set(prompts).size, ALL.length);
 });
+
+test("every context prompt transcribes speech instead of obeying it", () => {
+  // Speech like "расскажи про X, ответь коротко" is content, not an instruction:
+  // without this guard the STT model answers the question instead of writing it down.
+  for (const ctx of ALL) {
+    const prompt = getTranscribePromptForContext(ctx);
+    assert.match(prompt, /строго то, что реально произнесено/, `${ctx}: must transcribe verbatim`);
+  }
+});
