@@ -56,7 +56,7 @@ describe("goal set lifecycle", () => {
   });
 
   it("toggles a goal and reflects it in the aggregate progress", async () => {
-    const toggled = await repo.toggleGoalCompleted(goalId);
+    const toggled = await repo.toggleGoalCompleted(goalId, userId);
     assert.equal(toggled?.isCompleted, true);
     const progress = await repo.getGoalSetProgress(setId);
     assert.equal(progress.total, 2);
@@ -67,7 +67,7 @@ describe("goal set lifecycle", () => {
   });
 
   it("updates goal text and set fields", async () => {
-    const g = await repo.updateGoalText(goalId, "goal-one-edited");
+    const g = await repo.updateGoalText(goalId, userId, "goal-one-edited");
     assert.equal(g?.text, "goal-one-edited");
     const s = await repo.updateGoalSet(setId, userId, { name: "Q3-edited", visibility: "public" });
     assert.equal(s?.name, "Q3-edited");

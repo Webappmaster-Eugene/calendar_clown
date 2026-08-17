@@ -126,7 +126,7 @@ describe("wishlist lifecycle", () => {
     assert.equal(files[0].id, file.id);
 
     // Hard-deleting the item cascades to its files.
-    assert.equal(await repo.deleteItem(itemId), true);
+    assert.equal(await repo.deleteItem(itemId, userId), true);
     assert.equal(await repo.getItemById(itemId), null);
     assert.equal((await repo.getFilesByItem(itemId)).length, 0);
   });

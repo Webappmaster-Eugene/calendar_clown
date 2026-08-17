@@ -43,36 +43,37 @@ function clientIp(c: Context<ApiEnv>): string {
   return c.req.header("x-real-ip")?.trim() || "unknown";
 }
 
-/** Runs BEFORE authentication, so failed auth attempts are bounded too: the
- *  per-user limiter below can only key on an already-validated initData, which
- *  leaves credential-stuffing and 401 floods unlimited. */
-export function authAttemptLimit(opts: { windowMs: number; max: number }) {
+const AUTH_FAILURE_WINDOW_MS = 60_000;
+const AUTH_FAILURE_MAX = 30;
+
+/** Bounds 401 floods, which the per-user limiters cannot see (they can only key on
+ *  an already-validated initData).
+ *
+ *  Deliberately called only AFTER a signature check has failed, and never consulted
+ *  for a request that validates: mobile carriers put thousands of users behind one
+ *  CGNAT address, so blocking an address outright would let one abuser lock out
+ *  every real user sharing it. Verifying a signature is a single HMAC, so letting
+ *  valid traffic through unthrottled costs nothing.
+ *
+ *  Returns true when this address is over the limit. */
+export function recordAuthFailure(c: Context<ApiEnv>): { limited: boolean; retryAfterSec: number } {
   ensureGc();
-  return async (c: Context<ApiEnv>, next: Next) => {
-    const key = `auth:${clientIp(c)}`;
-    const now = Date.now();
-    const cutoff = now - opts.windowMs;
+  const key = `authfail:${clientIp(c)}`;
+  const now = Date.now();
+  const cutoff = now - AUTH_FAILURE_WINDOW_MS;
 
-    let bucket = buckets.get(key);
-    if (!bucket) {
-      bucket = { hits: [] };
-      buckets.set(key, bucket);
-    }
-    while (bucket.hits.length > 0 && bucket.hits[0] < cutoff) bucket.hits.shift();
+  let bucket = buckets.get(key);
+  if (!bucket) {
+    bucket = { hits: [] };
+    buckets.set(key, bucket);
+  }
+  while (bucket.hits.length > 0 && bucket.hits[0] < cutoff) bucket.hits.shift();
+  bucket.hits.push(now);
 
-    if (bucket.hits.length >= opts.max) {
-      const retryAfterSec = Math.max(1, Math.ceil((bucket.hits[0] + opts.windowMs - now) / 1000));
-      c.header("Retry-After", String(retryAfterSec));
-      return c.json({ ok: false, error: "Too many requests. Try again in a moment.", retryAfterSec }, 429);
-    }
-
-    await next();
-
-    // Only failures count: a legitimate client making many valid calls is bounded
-    // by the per-user buckets, not by this one.
-    if (c.res.status === 401 || c.res.status === 403) {
-      bucket.hits.push(now);
-    }
+  if (bucket.hits.length <= AUTH_FAILURE_MAX) return { limited: false, retryAfterSec: 0 };
+  return {
+    limited: true,
+    retryAfterSec: Math.max(1, Math.ceil((bucket.hits[0] + AUTH_FAILURE_WINDOW_MS - now) / 1000)),
   };
 }
 

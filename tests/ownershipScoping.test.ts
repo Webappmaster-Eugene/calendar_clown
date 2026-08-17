@@ -68,12 +68,18 @@ describe("bot callbacks do not trust callback_data ids", () => {
 });
 
 describe("abuse limits", () => {
-  it("failed auth is rate-limited before authentication runs", () => {
-    const router = read("src/api/router.ts");
-    const authAt = router.indexOf("authAttemptLimit(");
-    const apiAuthAt = router.indexOf("apiAuthMiddleware()");
-    assert.ok(authAt > 0 && apiAuthAt > 0);
-    assert.ok(authAt < apiAuthAt, "the attempt limiter must run before the auth middleware");
+  it("failed auth is counted, and only failures are ever blocked", () => {
+    const auth = read("src/api/authMiddleware.ts");
+    assert.match(auth, /recordAuthFailure\(c\)/, "failures must feed the limiter");
+
+    // Everything after a successful validation must be reachable without consulting
+    // the limiter: thousands of mobile users share one CGNAT address, so blocking an
+    // address outright would lock out real users alongside an abuser.
+    const afterSuccess = auth.split("const initData = validateInitData(")[1] ?? "";
+    assert.doesNotMatch(afterSuccess, /recordAuthFailure|limited/, "valid requests must not be throttled by address");
+
+    const limiter = read("src/api/rateLimitMiddleware.ts");
+    assert.match(limiter, /AUTH_FAILURE_MAX/);
   });
 
   it("audio uploads are size-capped before being buffered", () => {

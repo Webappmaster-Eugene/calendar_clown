@@ -2,6 +2,7 @@
 // https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
 import { createHmac, timingSafeEqual } from "crypto";
 import type { Context, Next } from "hono";
+import { recordAuthFailure } from "./rateLimitMiddleware.js";
 import { createLogger } from "../utils/logger.js";
 import { getUserMenuContext, isBootstrapAdmin } from "../middleware/auth.js";
 import { isDatabaseAvailable } from "../db/connection.js";
@@ -104,19 +105,30 @@ export function apiAuthMiddleware() {
   }
 
   return async (c: Context<ApiEnv>, next: Next) => {
+    // A rejected request costs one HMAC and no DB work; the failure counter below
+    // is what bounds a flood, and it never sees a request that validates.
+    const rejectUnauthenticated = (message: string) => {
+      const { limited, retryAfterSec } = recordAuthFailure(c);
+      if (limited) {
+        c.header("Retry-After", String(retryAfterSec));
+        return c.json({ ok: false, error: "Too many failed attempts. Try again later.", retryAfterSec }, 429);
+      }
+      return c.json({ ok: false, error: message }, 401);
+    };
+
     const authHeader = c.req.header("Authorization");
     if (!authHeader) {
-      return c.json({ ok: false, error: "Missing Authorization header" }, 401);
+      return rejectUnauthenticated("Missing Authorization header");
     }
 
     const match = authHeader.match(/^tma\s+(.+)$/i);
     if (!match) {
-      return c.json({ ok: false, error: "Invalid Authorization format. Expected: tma <initData>" }, 401);
+      return rejectUnauthenticated("Invalid Authorization format. Expected: tma <initData>");
     }
 
     const initData = validateInitData(match[1], botToken);
     if (!initData) {
-      return c.json({ ok: false, error: "Invalid or expired initData" }, 401);
+      return rejectUnauthenticated("Invalid or expired initData");
     }
 
     c.set("initData", initData);
