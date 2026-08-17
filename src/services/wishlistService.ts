@@ -230,7 +230,8 @@ export async function editWishlistItem(
 
 export async function removeWishlistItem(telegramId: number, itemId: number): Promise<boolean> {
   requireDb();
-  return deleteItem(itemId);
+  const dbUser = await requireDbUser(telegramId);
+  return deleteItem(itemId, dbUser.id);
 }
 
 export async function reserveWishlistItem(telegramId: number, itemId: number): Promise<boolean> {

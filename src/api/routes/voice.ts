@@ -38,7 +38,10 @@ async function saveAudioToTemp(
 ): Promise<string> {
   const tempDir = join(process.cwd(), "data", "voice");
   await mkdir(tempDir, { recursive: true });
-  const ext = audioFile.name?.split(".").pop() ?? "ogg";
+  // Client-supplied filename: keep only a plain extension so it can never add path
+  // segments to the temp path.
+  const rawExt = audioFile.name?.split(".").pop() ?? "";
+  const ext = /^[a-z0-9]{1,8}$/i.test(rawExt) ? rawExt.toLowerCase() : "ogg";
   const tempPath = join(tempDir, `api_${telegramId}_${randomUUID()}.${ext}`);
   const arrayBuffer = await audioFile.arrayBuffer();
   await writeFile(tempPath, Buffer.from(arrayBuffer));
@@ -49,6 +52,18 @@ function extractAudioFile(formData: FormData): File | null {
   const audioFile = formData.get("audio");
   if (!audioFile || !(audioFile instanceof File)) return null;
   return audioFile;
+}
+
+// The body is buffered in memory and then written to disk, so an unbounded upload
+// is both a memory and a disk-fill vector. 25 MB covers the longest recording the
+// Mini App can produce (2 min) with a wide margin.
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+function tooLargeResponse(c: Context<ApiEnv>) {
+  return c.json(
+    { ok: false, error: `Файл слишком большой. Максимум ${MAX_UPLOAD_BYTES / 1024 / 1024} МБ.` },
+    413
+  );
 }
 
 app.post("/transcribe", async (c) => {
@@ -64,6 +79,7 @@ app.post("/transcribe", async (c) => {
     if (!audioFile) {
       return c.json({ ok: false, error: "audio file is required (multipart field 'audio')" }, 400);
     }
+    if (audioFile.size > MAX_UPLOAD_BYTES) return tooLargeResponse(c);
 
     // `mode` tells us which STT prompt fits; without it every mode got the
     // calendar prompt, which mangled chat/OSINT dictation.
@@ -97,6 +113,7 @@ app.post("/extract-intent", async (c) => {
     if (!audioFile) {
       return c.json({ ok: false, error: "audio file is required (multipart field 'audio')" }, 400);
     }
+    if (audioFile.size > MAX_UPLOAD_BYTES) return tooLargeResponse(c);
 
     tempPath = await saveAudioToTemp(audioFile, telegramId);
     const { transcript } = await transcribeAudio(tempPath);
@@ -127,6 +144,7 @@ app.post("/expense", async (c) => {
     if (!audioFile) {
       return c.json({ ok: false, error: "audio file is required (multipart field 'audio')" }, 400);
     }
+    if (audioFile.size > MAX_UPLOAD_BYTES) return tooLargeResponse(c);
 
     tempPath = await saveAudioToTemp(audioFile, telegramId);
     const { transcript } = await transcribeAudio(tempPath, "expense");

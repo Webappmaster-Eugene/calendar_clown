@@ -31,6 +31,51 @@ function ensureGc(): void {
   gcTimer.unref?.();
 }
 
+/** Client IP as seen behind Traefik. Only used for rate-limit keying — a spoofed
+ *  header can shift an attacker between buckets but never grants extra quota to a
+ *  real user, and the socket address is the fallback. */
+function clientIp(c: Context<ApiEnv>): string {
+  const forwarded = c.req.header("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return c.req.header("x-real-ip")?.trim() || "unknown";
+}
+
+/** Runs BEFORE authentication, so failed auth attempts are bounded too: the
+ *  per-user limiter below can only key on an already-validated initData, which
+ *  leaves credential-stuffing and 401 floods unlimited. */
+export function authAttemptLimit(opts: { windowMs: number; max: number }) {
+  ensureGc();
+  return async (c: Context<ApiEnv>, next: Next) => {
+    const key = `auth:${clientIp(c)}`;
+    const now = Date.now();
+    const cutoff = now - opts.windowMs;
+
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { hits: [] };
+      buckets.set(key, bucket);
+    }
+    while (bucket.hits.length > 0 && bucket.hits[0] < cutoff) bucket.hits.shift();
+
+    if (bucket.hits.length >= opts.max) {
+      const retryAfterSec = Math.max(1, Math.ceil((bucket.hits[0] + opts.windowMs - now) / 1000));
+      c.header("Retry-After", String(retryAfterSec));
+      return c.json({ ok: false, error: "Too many requests. Try again in a moment.", retryAfterSec }, 429);
+    }
+
+    await next();
+
+    // Only failures count: a legitimate client making many valid calls is bounded
+    // by the per-user buckets, not by this one.
+    if (c.res.status === 401 || c.res.status === 403) {
+      bucket.hits.push(now);
+    }
+  };
+}
+
 export function rateLimit(opts: RateLimitOptions) {
   ensureGc();
   return async (c: Context<ApiEnv>, next: Next) => {

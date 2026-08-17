@@ -204,10 +204,20 @@ export async function updateItem(
   return rows.length > 0;
 }
 
-export async function deleteItem(itemId: number): Promise<boolean> {
+// An item is owned through its wishlist, and callers receive the item id from the
+// client (API path param / callback_data) — so the owner belongs in the WHERE clause.
+export async function deleteItem(itemId: number, ownerUserId: number): Promise<boolean> {
   const rows = await db
     .delete(wishlistItems)
-    .where(eq(wishlistItems.id, itemId))
+    .where(
+      and(
+        eq(wishlistItems.id, itemId),
+        inArray(
+          wishlistItems.wishlistId,
+          db.select({ id: wishlists.id }).from(wishlists).where(eq(wishlists.userId, ownerUserId))
+        )
+      )
+    )
     .returning({ id: wishlistItems.id });
   return rows.length > 0;
 }

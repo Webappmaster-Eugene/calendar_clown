@@ -183,10 +183,20 @@ export async function updateAchievement(
   return mapAchievement(row);
 }
 
-export async function deleteAchievement(achievementId: number): Promise<boolean> {
+// An achievement is owned through its workplace; the id comes from the client, so
+// the owner check lives in the WHERE clause rather than in each caller.
+export async function deleteAchievement(achievementId: number, ownerUserId: number): Promise<boolean> {
   const rows = await db
     .delete(workAchievements)
-    .where(eq(workAchievements.id, achievementId))
+    .where(
+      and(
+        eq(workAchievements.id, achievementId),
+        inArray(
+          workAchievements.workplaceId,
+          db.select({ id: workplaces.id }).from(workplaces).where(eq(workplaces.userId, ownerUserId))
+        )
+      )
+    )
     .returning({ id: workAchievements.id });
   return rows.length > 0;
 }

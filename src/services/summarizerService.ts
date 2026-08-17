@@ -161,7 +161,8 @@ export async function editAchievement(
 
 export async function removeAchievement(telegramId: number, achievementId: number): Promise<boolean> {
   requireDb();
-  return deleteAchievement(achievementId);
+  const dbUser = await requireDbUser(telegramId);
+  return deleteAchievement(achievementId, dbUser.id);
 }
 
 export async function generateSummary(

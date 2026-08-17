@@ -1,6 +1,6 @@
 // Validates the HMAC signature per Telegram's spec:
 // https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import type { Context, Next } from "hono";
 import { createLogger } from "../utils/logger.js";
 import { getUserMenuContext, isBootstrapAdmin } from "../middleware/auth.js";
@@ -49,7 +49,11 @@ export function validateInitData(initDataRaw: string, botToken: string): InitDat
     const secretKey = createHmac("sha256", "WebAppData").update(botToken).digest();
     const computedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
-    if (computedHash !== hash) {
+    // Constant-time: a length-safe compare keeps the verification from leaking
+    // how far a forged hash matched.
+    const expected = Buffer.from(computedHash, "hex");
+    const provided = Buffer.from(hash, "hex");
+    if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
       log.warn("initData HMAC mismatch");
       return null;
     }

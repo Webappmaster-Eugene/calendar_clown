@@ -144,7 +144,17 @@ export async function getGoalsBySet(goalSetId: number): Promise<Goal[]> {
   return rows.map(mapGoal);
 }
 
-export async function toggleGoalCompleted(goalId: number): Promise<Goal | null> {
+// A goal is owned through its set, and both the API and the bot's callback_data
+// carry a client-supplied goal id — so ownership belongs in the WHERE clause,
+// where no caller can forget it.
+function ownedGoal(goalId: number, userId: number) {
+  return and(
+    eq(goals.id, goalId),
+    inArray(goals.goalSetId, db.select({ id: goalSets.id }).from(goalSets).where(eq(goalSets.userId, userId)))
+  );
+}
+
+export async function toggleGoalCompleted(goalId: number, userId: number): Promise<Goal | null> {
   const [row] = await db
     .update(goals)
     .set({
@@ -152,22 +162,22 @@ export async function toggleGoalCompleted(goalId: number): Promise<Goal | null> 
       completedAt: sql`case when not ${goals.isCompleted} then now() else null end`,
       updatedAt: sql`now()`,
     })
-    .where(eq(goals.id, goalId))
+    .where(ownedGoal(goalId, userId))
     .returning();
   return row ? mapGoal(row) : null;
 }
 
-export async function updateGoalText(goalId: number, text: string): Promise<Goal | null> {
+export async function updateGoalText(goalId: number, userId: number, text: string): Promise<Goal | null> {
   const [row] = await db
     .update(goals)
     .set({ text, updatedAt: sql`now()` })
-    .where(eq(goals.id, goalId))
+    .where(ownedGoal(goalId, userId))
     .returning();
   return row ? mapGoal(row) : null;
 }
 
-export async function deleteGoal(goalId: number): Promise<boolean> {
-  const rows = await db.delete(goals).where(eq(goals.id, goalId)).returning({ id: goals.id });
+export async function deleteGoal(goalId: number, userId: number): Promise<boolean> {
+  const rows = await db.delete(goals).where(ownedGoal(goalId, userId)).returning({ id: goals.id });
   return rows.length > 0;
 }
 

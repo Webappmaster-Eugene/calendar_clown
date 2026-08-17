@@ -315,11 +315,14 @@ export async function handleGoalCallback(ctx: Context): Promise<void> {
   // goal_done:<id> — toggle completion
   if (data.startsWith("goal_done:")) {
     const goalId = parseInt(data.split(":")[1], 10);
-    const goal = await toggleGoalCompleted(goalId);
-    if (!goal) return;
 
+    // callback_data is client-supplied, so the goal id is only trusted once the
+    // repository has matched it against this user's sets.
     const dbUser = await getUserByTelegramId(telegramId);
     if (!dbUser) return;
+
+    const goal = await toggleGoalCompleted(goalId, dbUser.id);
+    if (!goal) return;
 
     logAction(dbUser.id, telegramId, "goal_toggle", { goalId, isCompleted: goal.isCompleted });
 
@@ -332,10 +335,11 @@ export async function handleGoalCallback(ctx: Context): Promise<void> {
     const parts = data.split(":");
     const goalId = parseInt(parts[1], 10);
     const setId = parseInt(parts[2], 10);
-    await deleteGoal(goalId);
 
     const dbUser = await getUserByTelegramId(telegramId);
     if (!dbUser) return;
+
+    await deleteGoal(goalId, dbUser.id);
 
     logAction(dbUser.id, telegramId, "goal_delete", { goalId, goalSetId: setId });
 

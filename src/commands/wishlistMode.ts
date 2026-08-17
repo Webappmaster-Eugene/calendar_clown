@@ -293,7 +293,7 @@ export async function handleWlItemDelCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  await deleteItem(itemId);
+  await deleteItem(itemId, dbUser.id);
   logAction(dbUser.id, telegramId, "wishlist_item_delete", { itemId });
   await ctx.answerCbQuery("\u042D\u043B\u0435\u043C\u0435\u043D\u0442 \u0443\u0434\u0430\u043B\u0451\u043D");
   await ctx.editMessageText("\u2705 \u042D\u043B\u0435\u043C\u0435\u043D\u0442 \u0443\u0434\u0430\u043B\u0451\u043D.");

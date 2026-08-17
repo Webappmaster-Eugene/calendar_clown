@@ -124,16 +124,31 @@ function parsePathAndQuery(rawUrl: string): { pathname: string; searchParams: UR
 
 // ── Bank push webhook ────────────────────────────────────────────────────────
 
-/** Simple in-memory sliding-window rate limit per webhook secret (native route, not Hono). */
+/** Simple in-memory sliding-window rate limit for the native (non-Hono) webhook route. */
 const bankWebhookHits = new Map<string, number[]>();
 const BANK_WEBHOOK_WINDOW_MS = 60_000;
 const BANK_WEBHOOK_MAX = 30;
+// Anyone can POST an arbitrary secret, so keys are attacker-chosen: without a cap
+// and a sweep the map is an unbounded allocation for a single client.
+const BANK_WEBHOOK_MAX_KEYS = 10_000;
 
-function bankWebhookRateLimited(secret: string): boolean {
+function sweepBankWebhookHits(now: number): void {
+  for (const [key, hits] of bankWebhookHits) {
+    if (hits.length === 0 || hits[hits.length - 1] < now - BANK_WEBHOOK_WINDOW_MS) {
+      bankWebhookHits.delete(key);
+    }
+  }
+}
+
+function bankWebhookRateLimited(key: string): boolean {
   const now = Date.now();
-  const hits = (bankWebhookHits.get(secret) ?? []).filter((t) => now - t < BANK_WEBHOOK_WINDOW_MS);
+  if (bankWebhookHits.size > BANK_WEBHOOK_MAX_KEYS) sweepBankWebhookHits(now);
+  // Still full of live buckets → treat as an ongoing flood rather than keep growing.
+  if (bankWebhookHits.size > BANK_WEBHOOK_MAX_KEYS && !bankWebhookHits.has(key)) return true;
+
+  const hits = (bankWebhookHits.get(key) ?? []).filter((t) => now - t < BANK_WEBHOOK_WINDOW_MS);
   hits.push(now);
-  bankWebhookHits.set(secret, hits);
+  bankWebhookHits.set(key, hits);
   return hits.length > BANK_WEBHOOK_MAX;
 }
 
@@ -146,7 +161,12 @@ async function handleBankWebhook(
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
-  if (bankWebhookRateLimited(secret)) {
+  // Keyed by source address too: a secret-guessing flood would otherwise open a
+  // fresh bucket per attempt and never hit the limit.
+  const source = String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim()
+    || req.socket.remoteAddress
+    || "unknown";
+  if (bankWebhookRateLimited(`ip:${source}`) || bankWebhookRateLimited(`s:${secret}`)) {
     sendJson(res, 429, { ok: false, error: "Too many requests" });
     return;
   }

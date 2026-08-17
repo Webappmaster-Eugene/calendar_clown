@@ -278,9 +278,9 @@ export async function handleSumCallback(ctx: Context): Promise<void> {
 
     if (data.startsWith("sum_ach_del:")) {
       const achId = parseInt(data.split(":")[1], 10);
-      await deleteAchievement(achId);
+      const deleted = await deleteAchievement(achId, dbUser.id);
 
-      await ctx.editMessageText("🗑 Запись удалена.");
+      await ctx.editMessageText(deleted ? "🗑 Запись удалена." : "Запись не найдена.");
       return;
     }
   } catch (err) {

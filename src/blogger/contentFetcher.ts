@@ -8,22 +8,54 @@ interface FetchedContent {
   content: string;
 }
 
-export async function fetchUrlContent(url: string): Promise<FetchedContent | null> {
-  try {
-    const safeUrl = await assertPublicUrl(url);
+const MAX_REDIRECTS = 5;
+const MAX_HTML_BYTES = 5 * 1024 * 1024;
+
+/** Follows redirects by hand so every hop passes the SSRF guard: with the default
+ *  `redirect: "follow"` a public URL can bounce to loopback or a metadata address
+ *  and only the first URL would ever have been checked. */
+async function fetchFollowingSafeRedirects(url: string): Promise<Response | null> {
+  let current = url;
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const safeUrl = await assertPublicUrl(current);
     const res = await fetch(safeUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; BloggerBot/1.0)",
         "Accept": "text/html,application/xhtml+xml",
       },
+      redirect: "manual",
       signal: AbortSignal.timeout(10_000),
     });
+
+    if (res.status < 300 || res.status >= 400) return res;
+
+    const location = res.headers.get("location");
+    if (!location) return res;
+    current = new URL(location, safeUrl).toString();
+  }
+
+  log.warn(`Too many redirects for ${url}`);
+  return null;
+}
+
+export async function fetchUrlContent(url: string): Promise<FetchedContent | null> {
+  try {
+    const res = await fetchFollowingSafeRedirects(url);
+    if (!res) return null;
     if (!res.ok) {
       log.warn(`Failed to fetch ${url}: ${res.status}`);
       return null;
     }
 
-    const html = await res.text();
+    // A user-supplied URL can serve an endless body; cap what we read into memory.
+    const declared = Number(res.headers.get("content-length") ?? 0);
+    if (declared > MAX_HTML_BYTES) {
+      log.warn(`Refused oversized body from ${url}: ${declared} bytes`);
+      return null;
+    }
+    const raw = await res.text();
+    const html = raw.length > MAX_HTML_BYTES ? raw.slice(0, MAX_HTML_BYTES) : raw;
     const title = extractTitle(html);
     const content = extractReadableContent(html);
 

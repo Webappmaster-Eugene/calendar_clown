@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { apiAuthMiddleware, requireApproved } from "./authMiddleware.js";
 import { requestLoggerMiddleware } from "./requestLoggerMiddleware.js";
-import { rateLimit } from "./rateLimitMiddleware.js";
+import { rateLimit, authAttemptLimit } from "./rateLimitMiddleware.js";
 import type { ApiEnv } from "./authMiddleware.js";
 import { createLogger } from "../utils/logger.js";
 
@@ -49,6 +49,9 @@ export function createApiApp(): Hono<ApiEnv> {
     allowHeaders: ["Authorization", "Content-Type"],
     maxAge: 86400,
   }));
+
+  // Before auth: bounds 401/403 floods, which the per-user limiters cannot see.
+  api.use("*", authAttemptLimit({ windowMs: 60_000, max: 30 }));
 
   api.use("*", apiAuthMiddleware());
 

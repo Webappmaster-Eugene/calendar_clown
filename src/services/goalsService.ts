@@ -160,22 +160,24 @@ export async function addGoal(
 
 export async function toggleGoal(telegramId: number, goalId: number): Promise<GoalDto | null> {
   requireDb();
-  // No ownership check here; the API layer verifies telegramId.
-  const goal = await toggleGoalCompleted(goalId);
+  const dbUser = await requireDbUser(telegramId);
+  const goal = await toggleGoalCompleted(goalId, dbUser.id);
   if (!goal) return null;
   return goalToDto(goal);
 }
 
 export async function editGoalText(telegramId: number, goalId: number, text: string): Promise<GoalDto | null> {
   requireDb();
-  const goal = await updateGoalText(goalId, text);
+  const dbUser = await requireDbUser(telegramId);
+  const goal = await updateGoalText(goalId, dbUser.id, text);
   if (!goal) return null;
   return goalToDto(goal);
 }
 
 export async function removeGoal(telegramId: number, goalId: number): Promise<boolean> {
   requireDb();
-  return deleteGoal(goalId);
+  const dbUser = await requireDbUser(telegramId);
+  return deleteGoal(goalId, dbUser.id);
 }
 
 export async function getFriendsGoalSets(
