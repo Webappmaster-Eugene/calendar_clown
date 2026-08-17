@@ -94,10 +94,17 @@ export interface StreamDoneEvent {
   messageId: number;
 }
 
+export interface StreamOptions {
+  /** Progress labels emitted before generation starts (link reading, web search). */
+  onStatus?: (label: string, kind?: string) => void;
+  signal?: AbortSignal;
+}
+
 async function streamRequest(
   path: string,
   body: unknown,
-  onChunk: (text: string) => void
+  onChunk: (text: string) => void,
+  opts?: StreamOptions
 ): Promise<StreamDoneEvent> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -106,11 +113,20 @@ async function streamRequest(
     headers["Authorization"] = `tma ${initDataRaw}`;
   }
 
-  const res = await fetch(path, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: opts?.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(0, "ABORTED", "Генерация остановлена");
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     let errorMsg = `HTTP ${res.status}`;
@@ -132,7 +148,14 @@ async function streamRequest(
   let doneEvent: StreamDoneEvent | null = null;
 
   for (;;) {
-    const { done, value } = await reader.read();
+    let done: boolean;
+    let value: Uint8Array | undefined;
+    try {
+      ({ done, value } = await reader.read());
+    } catch (err) {
+      if (opts?.signal?.aborted) throw new ApiError(0, "ABORTED", "Генерация остановлена");
+      throw err;
+    }
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
@@ -158,6 +181,8 @@ async function streamRequest(
 
           if (currentEvent === "chunk" && parsed.content != null) {
             onChunk(parsed.content);
+          } else if (currentEvent === "status" && parsed.label != null) {
+            opts?.onStatus?.(parsed.label, parsed.kind);
           } else if (currentEvent === "done" && parsed.dialogId != null) {
             doneEvent = parsed as StreamDoneEvent;
           } else if (currentEvent === "error" && parsed.error != null) {
@@ -211,8 +236,10 @@ export const api = {
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
-  upload: <T>(path: string, formData: FormData, signal?: AbortSignal) =>
-    request<T>("POST", path, formData, 120_000, signal),
+  // 180s: must exceed the backend STT timeout for a max-length recording (<5MB → 180s)
+  // and stay below VoiceButton's watchdog. See MAX_RECORDING_MS in useVoiceRecorder.
+  upload: <T>(path: string, formData: FormData, signal?: AbortSignal, timeoutMs = 180_000) =>
+    request<T>("POST", path, formData, timeoutMs, signal),
   uploadPatch: <T>(path: string, formData: FormData) => request<T>("PATCH", path, formData, 120_000),
   getBlob,
   stream: streamRequest,

@@ -10,18 +10,19 @@ import {
   updateDialogTitle,
   renameDialog,
   updateDialogSettings,
-  countDialogMessages,
   type ChatDialog,
 } from "../chat/repository.js";
-import { chatCompletion, chatCompletionStream, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
-import { getChatProvider } from "../chat/repository.js";
+import { chatCompletion, chatCompletionStream, generateDialogTitle } from "../chat/client.js";
+import { getChatProvider, isDialogAtMessageLimit } from "../chat/repository.js";
+import { resolveDialogAiConfig, CHAT_LIMIT_REACHED_MSG } from "../chat/config.js";
+import { augmentUserMessage, isWebSearchConfigured, type AugmentStatus } from "../chat/augment.js";
+import { resolveWebSearchStrategy, resolveWebSearchMode } from "../chat/webSearchStrategy.js";
 import { searchModels, listModelVendors } from "../chat/models.js";
 import { getUserByTelegramId } from "../expenses/repository.js";
 import { isDatabaseAvailable } from "../db/connection.js";
-import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_UNCENSORED_MODEL, CHAT_MESSAGE_LIMIT, CHAT_MAX_DIALOGS } from "../constants.js";
+import { CHAT_MESSAGE_LIMIT, CHAT_MAX_DIALOGS } from "../constants.js";
 import { createLogger } from "../utils/logger.js";
 import type {
-  ChatProvider,
   ChatDialogDto,
   ChatMessageDto,
   SendChatMessageResponse,
@@ -33,27 +34,6 @@ import type {
 const log = createLogger("chat-service");
 
 // ─── Helpers ──────────────────────────────────────────────────
-
-function resolveModelAndPrompt(provider: ChatProvider): { model: string; systemPrompt?: string } {
-  switch (provider) {
-    case "free": return { model: DEEPSEEK_FREE_MODEL };
-    case "paid": return { model: DEEPSEEK_MODEL };
-    case "uncensored": return { model: NEURO_UNCENSORED_MODEL, systemPrompt: buildUncensoredSystemPrompt() };
-  }
-}
-
-export function resolveDialogAiConfig(
-  dialog: ChatDialog,
-  provider: ChatProvider
-): { model: string; systemPrompt?: string; temperature?: number; maxTokens?: number } {
-  const base = resolveModelAndPrompt(provider);
-  return {
-    model: dialog.model || base.model,
-    systemPrompt: dialog.systemPrompt ?? base.systemPrompt,
-    temperature: dialog.temperature ?? undefined,
-    maxTokens: dialog.maxTokens ?? undefined,
-  };
-}
 
 function requireDb(): void {
   if (!isDatabaseAvailable()) {
@@ -77,9 +57,6 @@ function dialogToDto(d: ChatDialog, messageCount?: number): ChatDialogDto {
     updatedAt: d.updatedAt.toISOString(),
     model: d.model,
     systemPrompt: d.systemPrompt,
-    temperature: d.temperature,
-    maxTokens: d.maxTokens,
-    theme: d.theme,
   };
 }
 
@@ -152,7 +129,14 @@ export async function getModelVendors(): Promise<string[]> {
 }
 
 export function getChatConfig(): ChatConfigDto {
-  return { messageLimit: CHAT_MESSAGE_LIMIT, maxDialogs: CHAT_MAX_DIALOGS };
+  // Native search needs no Tavily key, so the flag can't be a plain key probe.
+  const mode = resolveWebSearchMode();
+  const nativePossible = mode === "auto" || mode === "openrouter";
+  return {
+    messageLimit: CHAT_MESSAGE_LIMIT,
+    maxDialogs: CHAT_MAX_DIALOGS,
+    webSearchAvailable: mode !== "off" && (nativePossible || isWebSearchConfigured()),
+  };
 }
 
 export async function getDialogMessages(
@@ -187,26 +171,27 @@ export async function sendMessage(
   }
 
   const provider = await getChatProvider(dbUser.id);
-  const { model, systemPrompt, temperature, maxTokens } = resolveDialogAiConfig(dialog, provider);
+  const { model, persona, uncensored } = resolveDialogAiConfig(dialog, provider);
 
-  // Reject writes to a dialog that has hit the message cap (= the context window,
-  // so nothing is silently forgotten). The user must start a new chat.
-  if ((await countDialogMessages(dialog.id)) >= CHAT_MESSAGE_LIMIT) {
-    throw new Error(`Диалог достиг лимита в ${CHAT_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
+  if (await isDialogAtMessageLimit(dialog.id)) {
+    throw new Error(CHAT_LIMIT_REACHED_MSG);
   }
 
   // Read history BEFORE saving the user message so it isn't duplicated into context.
   const history = await getRecentMessages(dialog.id, CHAT_MESSAGE_LIMIT);
-  const messages = [
-    ...history.map((m) => ({
-      role: m.role,
-      content: m.content as string,
-    })),
-    { role: "user", content },
-  ];
+  const historyMessages = history.map((m) => ({ role: m.role, content: m.content as string }));
+
+  const searchStrategy = resolveWebSearchStrategy(model, { tavilyConfigured: isWebSearchConfigured() });
+  const augmented = await augmentUserMessage({ text: content, history: historyMessages, searchStrategy });
+  const messages = [...historyMessages, { role: "user", content: augmented.augmentedText }];
 
   // Call AI first — a failure must not leave an orphaned user message saved.
-  const result = await chatCompletion(messages, model, systemPrompt, { temperature, maxTokens });
+  const result = await chatCompletion(messages, {
+    model,
+    persona,
+    uncensored,
+    webSearch: searchStrategy,
+  });
 
   const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
   const assistantMsg = await saveMessage(
@@ -240,7 +225,8 @@ export async function sendMessageStream(
   telegramId: number,
   content: string,
   onChunk: (text: string) => void | Promise<void>,
-  dialogId?: number
+  dialogId?: number,
+  onStatus?: (status: AugmentStatus) => void | Promise<void>
 ): Promise<SendChatMessageResponse> {
   requireDb();
   const dbUser = await requireDbUser(telegramId);
@@ -254,26 +240,27 @@ export async function sendMessageStream(
   }
 
   const provider = await getChatProvider(dbUser.id);
-  const { model, systemPrompt, temperature, maxTokens } = resolveDialogAiConfig(dialog, provider);
+  const { model, persona, uncensored } = resolveDialogAiConfig(dialog, provider);
 
-  // Reject writes to a dialog that has hit the message cap (= the context window,
-  // so nothing is silently forgotten). The user must start a new chat.
-  if ((await countDialogMessages(dialog.id)) >= CHAT_MESSAGE_LIMIT) {
-    throw new Error(`Диалог достиг лимита в ${CHAT_MESSAGE_LIMIT} сообщений. Начните новый чат.`);
+  if (await isDialogAtMessageLimit(dialog.id)) {
+    throw new Error(CHAT_LIMIT_REACHED_MSG);
   }
 
   // Read history BEFORE saving the user message so it isn't duplicated into context.
   const history = await getRecentMessages(dialog.id, CHAT_MESSAGE_LIMIT);
-  const messages = [
-    ...history.map((m) => ({
-      role: m.role,
-      content: m.content as string,
-    })),
-    { role: "user", content },
-  ];
+  const historyMessages = history.map((m) => ({ role: m.role, content: m.content as string }));
+
+  const searchStrategy = resolveWebSearchStrategy(model, { tavilyConfigured: isWebSearchConfigured() });
+  const augmented = await augmentUserMessage({ text: content, history: historyMessages, onStatus, searchStrategy });
+  const messages = [...historyMessages, { role: "user", content: augmented.augmentedText }];
 
   // Stream AI first — a failure must not leave an orphaned user message saved.
-  const result = await chatCompletionStream(messages, onChunk, model, systemPrompt, { temperature, maxTokens });
+  const result = await chatCompletionStream(messages, onChunk, {
+    model,
+    persona,
+    uncensored,
+    webSearch: searchStrategy,
+  });
 
   const userMsg = await saveMessage(dbUser.id, dialog.id, "user", content);
   const assistantMsg = await saveMessage(

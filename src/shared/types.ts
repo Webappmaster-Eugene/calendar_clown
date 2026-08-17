@@ -650,10 +650,8 @@ export interface ChatDialogDto {
   updatedAt: string;
   /** Per-dialog AI overrides. NULL → the user's global provider default is used. */
   model: string | null;
+  /** Role/instructions appended to the base rules (never replaces them). */
   systemPrompt: string | null;
-  temperature: number | null;
-  maxTokens: number | null;
-  theme: string | null;
 }
 
 /** Patch for PUT /api/chat/dialogs/:id. Any field omitted is left unchanged; an
@@ -662,14 +660,25 @@ export interface UpdateDialogRequest {
   title?: string;
   model?: string | null;
   systemPrompt?: string | null;
-  temperature?: number | null;
-  maxTokens?: number | null;
-  theme?: string | null;
 }
 
 export interface ChatConfigDto {
   messageLimit: number;
   maxDialogs: number;
+  /** False when TAVILY_API_KEY is missing — link reading still works. */
+  webSearchAvailable: boolean;
+}
+
+/** Prepared-inline-message share of one assistant answer (Bot API 8.0). */
+export interface PrepareShareRequest {
+  dialogId: number;
+  messageId: number;
+}
+
+export interface PreparedShareDto {
+  preparedMessageId: string;
+  expiresAt: string | null;
+  truncated: boolean;
 }
 
 export interface OpenRouterModelDto {

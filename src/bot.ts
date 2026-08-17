@@ -96,6 +96,12 @@ import {
   handleNeuroDialogDelete,
   handleProviderSelect,
 } from "./commands/chatMode.js";
+import {
+  handleNeuroSettingsButton,
+  handleNeuroSettingsCallback,
+  cancelNeuroSettings,
+  NEURO_SETTINGS_BUTTON,
+} from "./commands/chatSettings.js";
 import { cancelBatch } from "./chat/messageBatcher.js";
 import { getUserByTelegramId as getDbUser } from "./expenses/repository.js";
 import {
@@ -444,6 +450,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^neuro_dlg:\d+$/, handleNeuroDialogSwitch);
   bot.action(/^neuro_dlg_del:\d+$/, handleNeuroDialogDelete);
   bot.action("neuro_dlg_del_mode", handleNeuroDialogDeleteMode);
+  bot.action(/^ncfg:/, handleNeuroSettingsCallback);
 
   bot.action("mode:calendar", async (ctx) => {
     await ctx.answerCbQuery("📅 Календарь");
@@ -773,6 +780,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     if (tid != null && await isNeuroMode(tid)) {
       const dbUser = await getDbUser(tid);
       if (dbUser) cancelBatch(dbUser.id);
+      cancelNeuroSettings(tid);
       await handleNeuroDialogsButton(ctx);
     }
   });
@@ -781,6 +789,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     if (tid != null && await isNeuroMode(tid)) {
       const dbUser = await getDbUser(tid);
       if (dbUser) cancelBatch(dbUser.id);
+      cancelNeuroSettings(tid);
       await handleNeuroNewDialogButton(ctx);
     }
   });
@@ -789,12 +798,22 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     if (tid != null && await isNeuroMode(tid)) {
       const dbUser = await getDbUser(tid);
       if (dbUser) cancelBatch(dbUser.id);
+      cancelNeuroSettings(tid);
       await handleNeuroClearButton(ctx);
     }
   });
+  bot.hears(NEURO_SETTINGS_BUTTON, async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid != null && await isNeuroMode(tid)) {
+      await handleNeuroSettingsButton(ctx);
+    }
+  });
+  // No cancelBatch here: the batch resolves its model/prompt at flush time, so the
+  // switch applies to already-typed messages instead of silently dropping them.
   bot.hears(/^(?:✅|🆓) Free$|^(?:✅|💎) Paid$|^(?:✅|🔥) Без цензуры$/, async (ctx) => {
     const tid = ctx.from?.id;
     if (tid != null && await isNeuroMode(tid)) {
+      cancelNeuroSettings(tid);
       await handleProviderSelect(ctx);
     }
   });

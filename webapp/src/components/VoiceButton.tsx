@@ -1,10 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
+import { useHaptic } from "../hooks/useHaptic";
 import { api } from "../api/client";
 
 // Watchdog: WebView timers can pause when backgrounded, so this hard bound
-// guarantees the voice button can never get stuck on "Обработка…".
-const PROCESSING_WATCHDOG_MS = 45_000;
+// guarantees the voice button can never get stuck on "Обработка…". It must stay
+// ABOVE api.upload's timeout (180s) — otherwise long transcriptions are killed
+// here before the request can ever succeed.
+const PROCESSING_WATCHDOG_MS = 200_000;
+
+const ERROR_AUTO_HIDE_MS = 8_000;
 
 function getExtFromMime(mimeType: string): string {
   if (mimeType.includes("mp4") || mimeType.includes("aac")) return "mp4";
@@ -15,19 +20,30 @@ function getExtFromMime(mimeType: string): string {
 
 interface VoiceButtonProps {
   onResult: (transcript: string, data?: unknown) => void;
+  /** Optional override; without it the button shows errors inline itself. */
   onError?: (error: string, data?: unknown) => void;
   mode?: string;
   // Endpoint must return `{ ok: true, data: { transcript: string, ... } }`.
   endpoint?: string;
   label?: string;
   hint?: string;
+  /** "overlay" keeps the compact mic in place and floats the recording UI above it,
+   *  so an input row (e.g. the chat composer) doesn't reflow while recording. */
+  variant?: "inline" | "overlay";
 }
 
-export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: VoiceButtonProps) {
-  const { isRecording, isSupported, startRecording, stopRecording, cancelRecording, releaseStream, duration } = useVoiceRecorder();
+export function VoiceButton({ onResult, onError, mode, endpoint, label, hint, variant = "inline" }: VoiceButtonProps) {
+  // Set below; the recorder calls it when the duration cap fires, so the clip is
+  // uploaded instead of being dropped.
+  const handleStopRef = useRef<() => void>(() => {});
+  const { isRecording, isSupported, startRecording, stopRecording, cancelRecording, releaseStream, duration } =
+    useVoiceRecorder({ onAutoStop: () => handleStopRef.current() });
+  const { notification } = useHaptic();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearWatchdog = () => {
     if (watchdogRef.current) {
@@ -41,34 +57,69 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
       releaseStream();
       abortRef.current?.abort();
       clearWatchdog();
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
   }, [releaseStream]);
 
-  if (!isSupported) return null;
+  // Failures must stay visible even on pages that pass no onError (denied mic,
+  // STT 503, watchdog) — otherwise the button just resets with no explanation.
+  const report = (msg: string, data?: unknown) => {
+    notification("error");
+    if (onError) {
+      onError(msg, data);
+      return;
+    }
+    setErrorMsg(msg);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setErrorMsg(null), ERROR_AUTO_HIDE_MS);
+  };
+
+  if (!isSupported) {
+    return (
+      <button
+        className="btn voice-btn"
+        disabled
+        title="Голосовой ввод недоступен в этом клиенте Telegram"
+        aria-label="Голосовой ввод недоступен в этом клиенте Telegram"
+      >
+        🎙
+      </button>
+    );
+  }
 
   const handleStart = async () => {
+    setErrorMsg(null);
     try {
       await startRecording();
     } catch (err) {
       if (err instanceof DOMException) {
         if (err.name === "NotAllowedError") {
-          onError?.("Доступ к микрофону запрещён. Разрешите доступ в настройках Telegram.");
+          report("Доступ к микрофону запрещён. Разрешите доступ в настройках Telegram.");
         } else if (err.name === "NotFoundError") {
-          onError?.("Микрофон не найден на устройстве.");
+          report("Микрофон не найден на устройстве.");
         } else {
-          onError?.("Не удалось получить доступ к микрофону.");
+          report("Не удалось получить доступ к микрофону.");
         }
       } else {
-        onError?.("Не удалось получить доступ к микрофону.");
+        report("Не удалось получить доступ к микрофону.");
       }
     }
   };
 
   const handleStop = async () => {
-    const blob = await stopRecording();
-    if (!blob || blob.size < 100) {
-      onError?.("Запись слишком короткая");
+    const { blob, error, autoStopped } = await stopRecording();
+    if (error) {
+      report(error);
       return;
+    }
+    if (!blob || blob.size < 100) {
+      report("Запись слишком короткая");
+      return;
+    }
+    if (autoStopped) {
+      setErrorMsg("Достигнут лимит 2 минуты — запись отправлена");
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = setTimeout(() => setErrorMsg(null), ERROR_AUTO_HIDE_MS);
     }
 
     setIsProcessing(true);
@@ -83,7 +134,7 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
       if (settled) return;
       controller.abort();
       setIsProcessing(false);
-      onError?.("Сервис не ответил вовремя. Попробуйте ещё раз.");
+      report("Сервис не ответил вовремя. Попробуйте ещё раз.");
     }, PROCESSING_WATCHDOG_MS);
 
     try {
@@ -98,6 +149,7 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
         formData,
         controller.signal
       );
+      notification("success");
       onResult(result.transcript, result);
     } catch (err) {
       // Aborted by the user → silent (UI already reset by handleAbortProcessing).
@@ -105,7 +157,7 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
         return;
       }
       const e = err as { message?: string; data?: unknown };
-      onError?.(e.message || "Ошибка транскрибации", e.data);
+      report(e.message || "Ошибка транскрибации", e.data);
     } finally {
       settled = true;
       clearWatchdog();
@@ -113,6 +165,8 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
       setIsProcessing(false);
     }
   };
+
+  handleStopRef.current = () => { void handleStop(); };
 
   const handleCancel = () => {
     cancelRecording();
@@ -131,6 +185,10 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
     const sec = s % 60;
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
+
+  const errorLine = errorMsg && !onError
+    ? <div className="voice-error">{errorMsg}</div>
+    : null;
 
   // ─── Card row mode (with label/hint) — stable layout across states ───
 
@@ -178,7 +236,45 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
         <div className="voice-row-content" onClick={handleStart} style={{ cursor: "pointer" }}>
           <div className="voice-row-label">{label}</div>
           {hint && <div className="voice-row-hint">{hint}</div>}
+          {errorLine}
         </div>
+      </div>
+    );
+  }
+
+  // ─── Overlay mode — the mic keeps its slot; recording UI floats above it ───
+
+  if (variant === "overlay") {
+    const active = isRecording || isProcessing;
+    return (
+      <div className="voice-overlay-wrap">
+        <button
+          className={`btn voice-btn${active ? " voice-btn--active" : ""}`}
+          onClick={active ? undefined : handleStart}
+          disabled={active}
+          title="Голосовой ввод"
+        >
+          🎙
+        </button>
+        {active && (
+          <div className="voice-overlay">
+            {isProcessing ? (
+              <>
+                <span className="voice-spinner" />
+                <span className="voice-row-label">Обработка...</span>
+                <button className="btn voice-btn-cancel" onClick={handleAbortProcessing}>Отмена</button>
+              </>
+            ) : (
+              <>
+                <span className="voice-dot" />
+                <span className="voice-duration">{formatDuration(duration)}</span>
+                <button className="btn voice-btn-stop" onClick={handleStop}>Готово</button>
+                <button className="btn voice-btn-cancel" onClick={handleCancel}>Отмена</button>
+              </>
+            )}
+          </div>
+        )}
+        {errorMsg && !onError && <div className="voice-overlay voice-overlay--error">{errorMsg}</div>}
       </div>
     );
   }
@@ -213,8 +309,11 @@ export function VoiceButton({ onResult, onError, mode, endpoint, label, hint }: 
   }
 
   return (
-    <button className="btn voice-btn" onClick={handleStart} title="Голосовой ввод">
-      🎙
-    </button>
+    <>
+      <button className="btn voice-btn" onClick={handleStart} title="Голосовой ввод">
+        🎙
+      </button>
+      {errorLine}
+    </>
   );
 }

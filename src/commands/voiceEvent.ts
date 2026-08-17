@@ -8,6 +8,7 @@ import { extractCalendarEvents } from "../calendar/extractViaOpenRouter.js";
 import { saveCalendarEvent, markEventDeleted } from "../calendar/repository.js";
 import { transcribeVoice } from "../voice/transcribe.js";
 import type { TranscribeContext } from "../voice/transcribe.js";
+import { resolveTranscribeContext } from "../voice/transcribeContext.js";
 import { SttError } from "../voice/sttClient.js";
 import { extractVoiceIntent } from "../voice/extractVoiceIntent.js";
 import { extractExpenseIntent } from "../voice/extractExpenseIntent.js";
@@ -119,17 +120,9 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
   }
 
   try {
-    let sttContext: TranscribeContext = "calendar";
-    if (telegramId != null) {
-      const currentMode = await getUserMode(telegramId);
-      if (currentMode === "expenses") {
-        sttContext = "expense";
-      } else if (currentMode === "tasks") {
-        sttContext = "tasks";
-      } else if (currentMode !== "calendar") {
-        sttContext = "general";
-      }
-    }
+    const sttContext: TranscribeContext = telegramId != null
+      ? resolveTranscribeContext(await getUserMode(telegramId))
+      : "calendar";
 
     const transcript = await transcribeVoice(filePath, sttContext);
     await unlink(filePath).catch(() => {});

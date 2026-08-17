@@ -85,6 +85,13 @@
       "when": 1784544327037,
       "tag": "0011_chat_dialog_ai_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786958003971,
+      "tag": "0012_drop_chat_dialog_tuning_fields",
+      "breakpoints": true
     }
   ]
 }

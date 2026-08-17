@@ -33,12 +33,41 @@ async function fetchWithTimeout(
   }
 }
 
-export async function callOpenRouter(options: {
+/** OpenRouter's web-search plugin (https://openrouter.ai/docs/features/web-search).
+ *  `engine: "native"` uses the provider's own search; omitting it lets OpenRouter
+ *  fall back to Exa for models without one. */
+export interface WebPlugin {
+  id: "web";
+  engine?: "native" | "exa";
+  max_results?: number;
+}
+
+export interface WebSearchOptions {
+  search_context_size?: "low" | "medium" | "high";
+}
+
+export interface OpenRouterCallOptions {
   model: string;
   messages: Array<{ role: string; content: MessageContent }>;
   temperature?: number;
   max_tokens?: number;
-}): Promise<string | null> {
+  plugins?: WebPlugin[];
+  web_search_options?: WebSearchOptions;
+}
+
+function buildRequestBody(options: OpenRouterCallOptions, extra?: Record<string, unknown>): string {
+  return JSON.stringify({
+    model: options.model,
+    messages: options.messages,
+    ...(options.temperature != null ? { temperature: options.temperature } : {}),
+    ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
+    ...(options.plugins?.length ? { plugins: options.plugins } : {}),
+    ...(options.web_search_options ? { web_search_options: options.web_search_options } : {}),
+    ...extra,
+  });
+}
+
+export async function callOpenRouter(options: OpenRouterCallOptions): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY is not set");
@@ -53,12 +82,7 @@ export async function callOpenRouter(options: {
         "Content-Type": "application/json",
         "HTTP-Referer": OPENROUTER_REFERER,
       },
-      body: JSON.stringify({
-        model: options.model,
-        messages: options.messages,
-        ...(options.temperature != null ? { temperature: options.temperature } : {}),
-        ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
-      }),
+      body: buildRequestBody(options),
     },
     OPENROUTER_TIMEOUT_MS
   );
@@ -76,12 +100,9 @@ export async function callOpenRouter(options: {
   return data?.choices?.[0]?.message?.content?.trim() ?? null;
 }
 
-export async function callOpenRouterWithUsage(options: {
-  model: string;
-  messages: Array<{ role: string; content: MessageContent }>;
-  temperature?: number;
-  max_tokens?: number;
-}): Promise<{ content: string; tokensUsed: number | null }> {
+export async function callOpenRouterWithUsage(
+  options: OpenRouterCallOptions
+): Promise<{ content: string; tokensUsed: number | null }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY is not set");
@@ -96,12 +117,7 @@ export async function callOpenRouterWithUsage(options: {
         "Content-Type": "application/json",
         "HTTP-Referer": OPENROUTER_REFERER,
       },
-      body: JSON.stringify({
-        model: options.model,
-        messages: options.messages,
-        ...(options.temperature != null ? { temperature: options.temperature } : {}),
-        ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
-      }),
+      body: buildRequestBody(options),
     },
     OPENROUTER_TIMEOUT_MS
   );
@@ -132,12 +148,7 @@ export interface StreamResult {
 }
 
 export async function callOpenRouterStream(
-  options: {
-    model: string;
-    messages: Array<{ role: string; content: MessageContent }>;
-    temperature?: number;
-    max_tokens?: number;
-  },
+  options: OpenRouterCallOptions,
   onChunk: (text: string) => void | Promise<void>
 ): Promise<StreamResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -152,13 +163,7 @@ export async function callOpenRouterStream(
       "Content-Type": "application/json",
       "HTTP-Referer": OPENROUTER_REFERER,
     },
-    body: JSON.stringify({
-      model: options.model,
-      messages: options.messages,
-      stream: true,
-      ...(options.temperature != null ? { temperature: options.temperature } : {}),
-      ...(options.max_tokens != null ? { max_tokens: options.max_tokens } : {}),
-    }),
+    body: buildRequestBody(options, { stream: true }),
     timeoutMs: OPENROUTER_TIMEOUT_MS,
     stream: true,
   });

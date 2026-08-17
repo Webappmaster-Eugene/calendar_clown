@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { useShareText } from "../../hooks/useShareText";
 
 export interface ShareButtonProps {
@@ -8,6 +8,8 @@ export interface ShareButtonProps {
   className?: string;
   style?: CSSProperties;
   size?: "sm" | "md";
+  /** Custom share flow (e.g. Telegram prepared message by messageId). */
+  onShare?: () => Promise<unknown>;
 }
 
 export function ShareButton({
@@ -17,8 +19,10 @@ export function ShareButton({
   className,
   style,
   size = "md",
+  onShare,
 }: ShareButtonProps) {
   const { share } = useShareText();
+  const [busy, setBusy] = useState(false);
 
   const baseStyle: CSSProperties = {
     display: "inline-flex",
@@ -41,15 +45,21 @@ export function ShareButton({
     <button
       type="button"
       className={className}
-      style={{ ...baseStyle, ...style }}
+      style={{ ...baseStyle, ...style, opacity: busy ? 0.5 : undefined }}
       title={title}
       aria-label={title}
-      onClick={(e) => {
+      disabled={busy}
+      onClick={async (e) => {
         e.stopPropagation();
-        void share(text);
+        setBusy(true);
+        try {
+          await (onShare ? onShare() : share(text));
+        } finally {
+          setBusy(false);
+        }
       }}
     >
-      <span aria-hidden>↗️</span>
+      <span aria-hidden>{busy ? "…" : "↗️"}</span>
       {label && <span>{label}</span>}
     </button>
   );

@@ -14,12 +14,20 @@ import {
   getModelVendors,
   getChatConfig,
 } from "../../services/chatService.js";
+import {
+  prepareChatMessageShare,
+  ShareNotFoundError,
+  TelegramApiUnavailableError,
+} from "../../services/shareService.js";
 import type { UpdateDialogRequest } from "../../shared/types.js";
 import { getUserByTelegramId } from "../../expenses/repository.js";
 import { getChatProvider, setChatProvider } from "../../chat/repository.js";
 import type { ChatProvider } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
+import { createLogger } from "../../utils/logger.js";
+
+const log = createLogger("chat-route");
 
 const app = new Hono<ApiEnv>();
 
@@ -36,9 +44,10 @@ const dialogUpdateBody = z.object({
   title: z.string().trim().min(1).max(100).optional(),
   model: z.string().trim().max(120).nullable().optional(),
   systemPrompt: z.string().max(8000).nullable().optional(),
-  temperature: z.number().min(0).max(2).nullable().optional(),
-  maxTokens: z.number().int().min(1).max(200_000).nullable().optional(),
-  theme: z.string().trim().max(200).nullable().optional(),
+});
+const shareBody = z.object({
+  dialogId: z.number().int().positive(),
+  messageId: z.number().int().positive(),
 });
 
 app.get("/dialogs", async (c) => {
@@ -117,38 +126,81 @@ app.post("/messages/stream", zValidator("json", sendMessageBody), async (c) => {
 
   return streamSSE(c, async (stream) => {
     let eventId = 0;
+    let aborted = false;
+    let firstChunkSent = false;
+    stream.onAbort(() => { aborted = true; });
+
+    const write = async (event: string, data: unknown): Promise<void> => {
+      if (aborted) return;
+      await stream.writeSSE({ id: String(eventId++), event, data: JSON.stringify(data) });
+    };
+
+    // Link reading + web search can take tens of seconds before the first token;
+    // a periodic ping keeps proxies (Traefik) from dropping the idle stream.
+    const keepalive = setInterval(() => {
+      if (!firstChunkSent) void write("ping", {}).catch(() => {});
+    }, 15_000);
 
     try {
       const result = await sendMessageStream(
         telegramId,
         body.content.trim(),
         async (chunk) => {
-          await stream.writeSSE({
-            id: String(eventId++),
-            event: "chunk",
-            data: JSON.stringify({ content: chunk }),
-          });
+          if (!firstChunkSent) {
+            firstChunkSent = true;
+            clearInterval(keepalive);
+          }
+          await write("chunk", { content: chunk });
         },
-        body.dialogId
+        body.dialogId,
+        async (status) => {
+          await write("status", { kind: status.kind, label: status.label });
+        }
       );
 
-      await stream.writeSSE({
-        id: String(eventId++),
-        event: "done",
-        data: JSON.stringify({
-          dialogId: result.dialogId,
-          messageId: result.assistantMessage.id,
-        }),
+      await write("done", {
+        dialogId: result.dialogId,
+        messageId: result.assistantMessage.id,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to send message";
-      await stream.writeSSE({
-        id: String(eventId++),
-        event: "error",
-        data: JSON.stringify({ error: msg }),
-      });
+      await write("error", { error: msg });
+    } finally {
+      clearInterval(keepalive);
     }
   });
+});
+
+app.post("/share", zValidator("json", shareBody), async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const body = c.req.valid("json");
+
+  try {
+    const data = await prepareChatMessageShare(telegramId, body.dialogId, body.messageId);
+    logApiAction(telegramId, "chat_message_share", {
+      dialogId: body.dialogId,
+      messageId: body.messageId,
+      truncated: data.truncated,
+    });
+    return c.json({ ok: true, data });
+  } catch (err) {
+    if (err instanceof ShareNotFoundError) {
+      return c.json({ ok: false, error: err.message }, 404);
+    }
+    if (err instanceof TelegramApiUnavailableError) {
+      return c.json(
+        { ok: false, error: "Функция «Поделиться» временно недоступна. Попробуйте позже." },
+        503
+      );
+    }
+    const msg = err instanceof Error ? err.message : "Failed to prepare share";
+    log.error("Failed to prepare share for user %d: %s", telegramId, msg);
+    return c.json(
+      { ok: false, error: "Функция «Поделиться» временно недоступна. Попробуйте позже." },
+      503
+    );
+  }
 });
 
 app.put(

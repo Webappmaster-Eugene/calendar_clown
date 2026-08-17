@@ -795,6 +795,45 @@ select.input {
   50% { opacity: 0.3; }
 }
 
+/* ─── Voice overlay (keeps the input row from reflowing) ─── */
+
+.voice-overlay-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.voice-btn--active {
+  opacity: 0.6;
+}
+
+.voice-overlay {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  z-index: 20;
+}
+
+.voice-overlay--error {
+  color: var(--tg-theme-destructive-text-color, #e53935);
+  font-size: 0.8rem;
+  max-width: 70vw;
+  white-space: normal;
+}
+
+.voice-error {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--tg-theme-destructive-text-color, #e53935);
+}
+
 /* ─── Voice row (card-context, stable layout) ────────────── */
 
 .voice-row {

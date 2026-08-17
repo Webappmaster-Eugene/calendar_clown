@@ -2,7 +2,7 @@ import { and, count, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle.js";
 import { chatDialogs, chatMessages, users } from "../db/schema.js";
-import { CHAT_MAX_DIALOGS } from "../constants.js";
+import { CHAT_MAX_DIALOGS, CHAT_MESSAGE_LIMIT } from "../constants.js";
 import type { ChatProvider } from "../shared/types.js";
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
@@ -13,9 +13,6 @@ export interface ChatDialog {
   title: string;
   model: string | null;
   systemPrompt: string | null;
-  temperature: number | null;
-  maxTokens: number | null;
-  theme: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -115,18 +112,12 @@ export async function updateDialogSettings(
     title?: string;
     model?: string | null;
     systemPrompt?: string | null;
-    temperature?: number | null;
-    maxTokens?: number | null;
-    theme?: string | null;
   }
 ): Promise<ChatDialog | null> {
   const set: PgUpdateSetSource<typeof chatDialogs> = { updatedAt: sql`now()` };
   if (patch.title !== undefined) set.title = patch.title;
   if (patch.model !== undefined) set.model = patch.model;
   if (patch.systemPrompt !== undefined) set.systemPrompt = patch.systemPrompt;
-  if (patch.temperature !== undefined) set.temperature = patch.temperature;
-  if (patch.maxTokens !== undefined) set.maxTokens = patch.maxTokens;
-  if (patch.theme !== undefined) set.theme = patch.theme;
 
   const [row] = await db
     .update(chatDialogs)
@@ -176,6 +167,13 @@ export async function countDialogMessages(dialogId: number): Promise<number> {
     .from(chatMessages)
     .where(eq(chatMessages.dialogId, dialogId));
   return row.value;
+}
+
+// The cap equals the context window, so hitting it means nothing can be silently
+// forgotten — the user must start a new dialog. Shared by the bot and the Mini App
+// so a dialog can never become writable from one client and not the other.
+export async function isDialogAtMessageLimit(dialogId: number): Promise<boolean> {
+  return (await countDialogMessages(dialogId)) >= CHAT_MESSAGE_LIMIT;
 }
 
 export async function getActiveDialogId(userId: number): Promise<number | null> {
@@ -253,7 +251,7 @@ export async function saveMessage(
 
 export async function getRecentMessages(
   dialogId: number,
-  limit: number = 20
+  limit: number = CHAT_MESSAGE_LIMIT
 ): Promise<ChatMessage[]> {
   const rows = await db
     .select()
@@ -273,6 +271,36 @@ export async function getRecentMessages(
       createdAt: r.createdAt,
     }))
     .reverse();
+}
+
+// Ownership is part of the WHERE clause, so a caller can never read a message that
+// belongs to another user (used by the share endpoint, which must not accept free text).
+export async function getMessageById(
+  messageId: number,
+  dialogId: number,
+  userId: number
+): Promise<ChatMessage | null> {
+  const [r] = await db
+    .select()
+    .from(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.id, messageId),
+        eq(chatMessages.dialogId, dialogId),
+        eq(chatMessages.userId, userId)
+      )
+    );
+  if (!r) return null;
+  return {
+    id: r.id,
+    userId: r.userId,
+    dialogId: r.dialogId,
+    role: r.role as "user" | "assistant",
+    content: r.content,
+    modelUsed: r.modelUsed,
+    tokensUsed: r.tokensUsed,
+    createdAt: r.createdAt,
+  };
 }
 
 export async function clearDialogHistory(
@@ -344,9 +372,6 @@ function mapDialog(r: typeof chatDialogs.$inferSelect): ChatDialog {
     title: r.title,
     model: r.model,
     systemPrompt: r.systemPrompt,
-    temperature: r.temperature,
-    maxTokens: r.maxTokens,
-    theme: r.theme,
     isActive: r.isActive,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,

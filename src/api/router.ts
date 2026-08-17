@@ -59,6 +59,14 @@ export function createApiApp(): Hono<ApiEnv> {
   // Global per-user soft cap to prevent client loops from hammering the API.
   api.use("*", rateLimit({ bucket: "all", windowMs: 60_000, max: 120 }));
 
+  // Browsing the model picker is cheap (cached catalog) but chatty — keep it out of
+  // the heavy bucket so typing a search can't 429 the next message the user sends.
+  api.use("/chat/models", rateLimit({ bucket: "catalog", windowMs: 60_000, max: 60 }));
+  api.use("/chat/models/*", rateLimit({ bucket: "catalog", windowMs: 60_000, max: 60 }));
+
+  // Prepared share ids are single-use, so each tap costs a Bot API call.
+  api.use("/chat/share", rateLimit({ bucket: "share", windowMs: 60_000, max: 20 }));
+
   // Tighter cap on endpoints that hit paid upstreams (LLM/STT) or do heavy work.
   const heavyLimit = rateLimit({ bucket: "heavy", windowMs: 60_000, max: 20 });
   api.use("/voice/*", heavyLimit);
@@ -66,7 +74,10 @@ export function createApiApp(): Hono<ApiEnv> {
   api.use("/simplifier/*", heavyLimit);
   api.use("/blogger/*", heavyLimit);
   api.use("/osint/*", heavyLimit);
-  api.use("/chat/*", heavyLimit);
+  // Only the LLM-backed chat endpoints: the catalog and share have their own buckets
+  // (all middlewares matching a path run, so "/chat/*" here would re-add them).
+  api.use("/chat/messages", heavyLimit);
+  api.use("/chat/messages/*", heavyLimit);
   api.use("/nutritionist/*", heavyLimit);
   api.use("/broadcast/*", heavyLimit);
 

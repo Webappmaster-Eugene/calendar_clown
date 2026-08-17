@@ -105,10 +105,13 @@ describe("actions: tasks CRUD via dispatch", () => {
   });
 
   it("adds a task item with a deadline", async () => {
+    // Relative to now: addTask rejects deadlines in the past, so a fixed date would
+    // pass only until that day arrives.
+    const deadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data } = await run("tasks.item.add", {
       workId,
       text: "Купить краску",
-      deadline: "2026-08-01T18:00:00+03:00",
+      deadline,
     });
     assert.ok(data.id > 0);
     assert.equal(data.isCompleted, false);

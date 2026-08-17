@@ -18,11 +18,20 @@ import {
   updateDialogTitle,
   getChatProvider,
   setChatProvider,
+  isDialogAtMessageLimit,
 } from "../chat/repository.js";
-import { chatCompletion, generateDialogTitle, buildUncensoredSystemPrompt } from "../chat/client.js";
+import { chatCompletion, generateDialogTitle } from "../chat/client.js";
+import {
+  resolveDialogAiConfig,
+  formatEffectiveConfig,
+  formatProviderDescription,
+  CHAT_LIMIT_REACHED_MSG,
+} from "../chat/config.js";
+import { augmentUserMessage, isWebSearchConfigured } from "../chat/augment.js";
+import { resolveWebSearchStrategy, type WebSearchStrategy } from "../chat/webSearchStrategy.js";
 import { splitMessage } from "../utils/telegram.js";
 import { setModeMenuCommands, getModeButtons } from "./expenseMode.js";
-import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_VISION_MODEL, NEURO_UNCENSORED_MODEL } from "../constants.js";
+import { NEURO_VISION_MODEL, CHAT_MESSAGE_LIMIT, CHAT_MAX_DIALOGS } from "../constants.js";
 import type { ChatProvider } from "../shared/types.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
@@ -30,14 +39,11 @@ import { logAction } from "../logging/actionLogger.js";
 import type { ContentPart, MessageContent } from "../utils/openRouterClient.js";
 import { addMessage, cancelBatch, hasPendingBatch, flushBatchSync } from "../chat/messageBatcher.js";
 import { processNeuroRequest } from "../chat/neuroProcessor.js";
-import { extractUrls, fetchLinksContent, formatLinksForContext } from "../chat/linkAnalyzer.js";
-import { classifySearchNeed, executeWebSearch, formatSearchResultsForContext } from "../chat/webSearch.js";
+import { handleNeuroSettingsText, cancelNeuroSettings, NEURO_SETTINGS_BUTTON } from "./chatSettings.js";
 
 const log = createLogger("neuro");
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
-
-const MAX_AUGMENTED_CONTEXT_LENGTH = 15_000;
 
 const TEXT_MIME_TYPES = new Set([
   "text/plain",
@@ -72,22 +78,10 @@ function getNeuroKeyboard(isAdmin: boolean, provider: ChatProvider = "free") {
   );
   return Markup.keyboard([
     ["💬 Диалоги", "➕ Новый диалог"],
-    ["🗑 Очистить историю"],
+    [NEURO_SETTINGS_BUTTON, "🗑 Очистить историю"],
     providerButtons,
     ...getModeButtons(isAdmin),
   ]).resize();
-}
-
-function resolveModel(provider: ChatProvider): string {
-  switch (provider) {
-    case "free": return DEEPSEEK_FREE_MODEL;
-    case "paid": return DEEPSEEK_MODEL;
-    case "uncensored": return NEURO_UNCENSORED_MODEL;
-  }
-}
-
-function resolveSystemPrompt(provider: ChatProvider): string | undefined {
-  return provider === "uncensored" ? buildUncensoredSystemPrompt() : undefined;
 }
 
 function autoNameDialog(dialogId: number, firstMessage: string, model?: string): void {
@@ -102,52 +96,46 @@ function autoNameDialog(dialogId: number, firstMessage: string, model?: string):
     });
 }
 
-async function augmentWithLinksAndSearch(
+/** Runs the shared link/search augmentation, reporting progress by editing the
+ *  status message when the caller has one (voice); attachments only show "typing". */
+async function augmentForBot(
   text: string,
   historyMessages: Array<{ role: string; content: string }>,
   ctx: Context,
+  searchStrategy: WebSearchStrategy,
   statusMsgId?: number
 ): Promise<string> {
-  const urls = extractUrls(text);
+  const result = await augmentUserMessage({
+    text,
+    history: historyMessages,
+    searchStrategy,
+    onStatus: statusMsgId
+      ? async (status) => {
+          try {
+            await ctx.telegram.editMessageText(ctx.chat!.id, statusMsgId, undefined, status.label);
+          } catch {
+            // Status edit may fail if the message was deleted.
+          }
+        }
+      : undefined,
+  });
+  return result.augmentedText;
+}
 
-  const [linksResult, searchClassification] = await Promise.all([
-    urls.length > 0 ? fetchLinksContent(urls) : Promise.resolve([]),
-    classifySearchNeed(text, historyMessages),
-  ]);
+function botSearchStrategy(model: string): WebSearchStrategy {
+  return resolveWebSearchStrategy(model, { tavilyConfigured: isWebSearchConfigured() });
+}
 
-  let searchResults: Awaited<ReturnType<typeof executeWebSearch>> | null = null;
-  if (searchClassification.needsSearch && searchClassification.queries.length > 0) {
-    if (statusMsgId) {
-      try {
-        await ctx.telegram.editMessageText(
-          ctx.chat!.id, statusMsgId, undefined,
-          "🔍 Ищу информацию..."
-        );
-      } catch { /* ignore */ }
-    }
-    searchResults = await executeWebSearch(searchClassification.queries);
-  }
+/** Vision models are forced for images/PDFs regardless of the dialog's model (we
+ *  can't tell from the catalog which models accept images), so say so explicitly
+ *  instead of silently answering with a different model than the panel shows. */
+function visionModelNote(dialogModel: string | null): string {
+  if (!dialogModel || dialogModel === NEURO_VISION_MODEL) return "";
+  return `\n\n_🖼 Файл обработан vision-моделью ${NEURO_VISION_MODEL} — модель диалога применяется к тексту._`;
+}
 
-  let linksContext = formatLinksForContext(linksResult);
-  let searchContext = searchResults
-    ? formatSearchResultsForContext(searchResults.results)
-    : "";
-
-  const totalContextLen = linksContext.length + searchContext.length;
-  if (totalContextLen > MAX_AUGMENTED_CONTEXT_LENGTH) {
-    const halfLimit = Math.floor(MAX_AUGMENTED_CONTEXT_LENGTH / 2);
-    if (linksContext.length > halfLimit) {
-      linksContext = linksContext.slice(0, halfLimit) + "\n[...содержимое ссылок обрезано]";
-    }
-    if (searchContext.length > halfLimit) {
-      searchContext = searchContext.slice(0, halfLimit) + "\n[...результаты поиска обрезаны]";
-    }
-  }
-
-  const parts = [text];
-  if (linksContext) parts.push(linksContext);
-  if (searchContext) parts.push(searchContext);
-  return parts.join("\n\n");
+async function replyLimitReached(ctx: Context): Promise<void> {
+  await ctx.reply(`⚠️ ${CHAT_LIMIT_REACHED_MSG}`);
 }
 
 export async function handleNeuroCommand(ctx: Context): Promise<void> {
@@ -161,29 +149,45 @@ export async function handleNeuroCommand(ctx: Context): Promise<void> {
 
   await setUserMode(telegramId, "neuro");
   await setModeMenuCommands(ctx, "neuro");
+  cancelNeuroSettings(telegramId);
 
   const isAdmin = isBootstrapAdmin(telegramId);
   const dbUser = await getUserByTelegramId(telegramId);
   const provider = dbUser ? await getChatProvider(dbUser.id) : "free";
-  const providerLabelMap: Record<ChatProvider, string> = {
-    free: "🆓 Free (бесплатно)",
-    paid: "💎 Paid",
-    uncensored: "🔥 Без цензуры",
-  };
-  const providerLabel = providerLabelMap[provider];
+  const dialogId = dbUser ? await getActiveDialogId(dbUser.id) : null;
+  const dialog = dbUser && dialogId ? await getDialogById(dialogId, dbUser.id) : null;
 
-  await ctx.reply(
+  const { model: effectiveModel } = resolveDialogAiConfig(
+    dialog ?? { model: null, systemPrompt: null },
+    provider
+  );
+  const searchLine = {
+    native: "🔍 Модель сама ищет в интернете, когда это нужно (встроенный поиск).\n" +
+      "🔗 Ссылки в сообщениях читаются и анализируются.\n",
+    context: "🔍 Бот автоматически ищет информацию в интернете при необходимости.\n" +
+      "🔗 Ссылки в сообщениях читаются и анализируются.\n",
+    off: "⚠️ Веб-поиск отключён — отвечаю без интернета.\n" +
+      "🔗 Ссылки в сообщениях всё равно читаются и анализируются.\n",
+  }[botSearchStrategy(effectiveModel)];
+
+  const text =
     "🧠 *Режим Нейро активирован*\n\n" +
     "Отправьте текст, голосовое, фото или документ — я отвечу с помощью AI.\n" +
     "Поддерживаемые форматы: изображения, PDF, DOCX, XLSX, текстовые файлы.\n\n" +
-    "💬 Можно вести до 10 параллельных диалогов.\n" +
-    "Контекст — последние 20 сообщений активного диалога.\n\n" +
-    "🔍 Бот автоматически ищет информацию в интернете при необходимости.\n" +
-    "🔗 Ссылки в сообщениях анализируются автоматически.\n" +
+    `💬 Можно вести до ${CHAT_MAX_DIALOGS} параллельных диалогов.\n` +
+    `Контекст — вся история диалога (до ${CHAT_MESSAGE_LIMIT} сообщений, дальше нужен новый).\n\n` +
+    searchLine +
     "📨 Можно отправлять несколько сообщений подряд — они будут обработаны как один запрос.\n\n" +
-    `🤖 Модель: ${providerLabel}`,
-    { parse_mode: "Markdown", ...getNeuroKeyboard(isAdmin, provider) }
-  );
+    formatEffectiveConfig(dialog, provider) + "\n\n" +
+    `⚙️ Модель, промпт и название — кнопка «${NEURO_SETTINGS_BUTTON}».`;
+
+  const keyboard = getNeuroKeyboard(isAdmin, provider);
+  try {
+    await ctx.reply(text, { parse_mode: "Markdown", ...keyboard });
+  } catch {
+    // Model ids contain "_", so Markdown parsing can fail — fall back to plain text.
+    await ctx.reply(text.replace(/[*_`]/g, ""), keyboard);
+  }
 }
 
 export async function handleNeuroText(ctx: Context): Promise<boolean> {
@@ -199,16 +203,22 @@ export async function handleNeuroText(ctx: Context): Promise<boolean> {
     return true;
   }
 
+  // A settings step ("send me the new prompt") must consume the text instead of
+  // letting it become a chat message.
+  if (await handleNeuroSettingsText(ctx)) return true;
+
   const dbUser = await getUserByTelegramId(telegramId);
   if (!dbUser) return false;
 
   try {
     const dialog = await getOrCreateActiveDialog(dbUser.id);
+    if (await isDialogAtMessageLimit(dialog.id)) {
+      await replyLimitReached(ctx);
+      return true;
+    }
     const provider = await getChatProvider(dbUser.id);
-    const model = resolveModel(provider);
-    const systemPrompt = resolveSystemPrompt(provider);
     logAction(dbUser.id, telegramId, "chat_message_send", { dialogId: dialog.id, provider });
-    addMessage(dbUser.id, telegramId, dialog.id, userText, ctx, processNeuroRequest, model, systemPrompt);
+    addMessage(dbUser.id, telegramId, dialog.id, userText, ctx, processNeuroRequest);
   } catch (err) {
     log.error("Neuro text batch error:", err);
     await ctx.reply("❌ Ошибка при обработке запроса. Попробуйте позже.");
@@ -472,22 +482,34 @@ export async function handleNeuroVoice(
 
     const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
       ?? await getOrCreateActiveDialog(dbUser.id);
+
+    if (await isDialogAtMessageLimit(dialog.id)) {
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, statusMsgId, undefined,
+        `⚠️ ${CHAT_LIMIT_REACHED_MSG}`
+      );
+      return;
+    }
+
     const provider = await getChatProvider(dbUser.id);
-    const model = resolveModel(provider);
-    const systemPrompt = resolveSystemPrompt(provider);
-    const history = await getRecentMessages(dialog.id, 20);
+    const { model, persona, uncensored } = resolveDialogAiConfig(dialog, provider);
+    const history = await getRecentMessages(dialog.id);
     const historyMessages = history.map((m) => ({ role: m.role, content: m.content }));
 
-    const augmentedMessage = await augmentWithLinksAndSearch(
-      fullText, historyMessages, ctx, statusMsgId
-    );
+    const searchStrategy = botSearchStrategy(model);
+    const augmentedText = await augmentForBot(fullText, historyMessages, ctx, searchStrategy, statusMsgId);
 
     const messages: Array<{ role: string; content: string }> = [
       ...historyMessages,
-      { role: "user", content: augmentedMessage },
+      { role: "user", content: augmentedText },
     ];
 
-    const result = await chatCompletion(messages, model, systemPrompt);
+    const result = await chatCompletion(messages, {
+      model,
+      persona,
+      uncensored,
+      webSearch: searchStrategy,
+    });
 
     const userEntry = prependText
       ? `${prependText}[Голос] ${transcript}`
@@ -562,6 +584,15 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
   const fullCaption = prependText ? prependText + caption : caption;
 
   try {
+    // Resolve the dialog before downloading: no point pulling megabytes for a
+    // dialog that can no longer be written to.
+    const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
+      ?? await getOrCreateActiveDialog(dbUser.id);
+    if (await isDialogAtMessageLimit(dialog.id)) {
+      await replyLimitReached(ctx);
+      return;
+    }
+
     await ctx.sendChatAction("typing");
 
     const photo = photos[photos.length - 1];
@@ -573,25 +604,22 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
     const base64 = buffer.toString("base64");
     const dataUrl = `data:image/jpeg;base64,${base64}`;
 
-    const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
-      ?? await getOrCreateActiveDialog(dbUser.id);
     const photoProvider = await getChatProvider(dbUser.id);
-    const photoModel = resolveModel(photoProvider);
-    const photoSystemPrompt = resolveSystemPrompt(photoProvider);
-    const history = await getRecentMessages(dialog.id, 20);
+    const { model: photoModel, persona, uncensored } = resolveDialogAiConfig(dialog, photoProvider);
+    const history = await getRecentMessages(dialog.id);
     const historyMessages: Array<{ role: string; content: MessageContent }> = history.map((m) => ({
       role: m.role,
       content: m.content,
     }));
 
     const historyForSearch = history.map((m) => ({ role: m.role, content: m.content }));
-    const augmentedCaption = await augmentWithLinksAndSearch(
-      fullCaption, historyForSearch, ctx
-    );
+    // Vision requests go to NEURO_VISION_MODEL, so the search strategy follows it.
+    const searchStrategy = botSearchStrategy(NEURO_VISION_MODEL);
+    const augmentedText = await augmentForBot(fullCaption, historyForSearch, ctx, searchStrategy);
 
     const userContent: ContentPart[] = [
       { type: "image_url", image_url: { url: dataUrl } },
-      { type: "text", text: augmentedCaption },
+      { type: "text", text: augmentedText },
     ];
 
     const messages: Array<{ role: string; content: MessageContent }> = [
@@ -599,7 +627,12 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
       { role: "user", content: userContent },
     ];
 
-    const result = await chatCompletion(messages, NEURO_VISION_MODEL, photoSystemPrompt);
+    const result = await chatCompletion(messages, {
+      model: NEURO_VISION_MODEL,
+      persona,
+      uncensored,
+      webSearch: searchStrategy,
+    });
 
     const userEntry = prependText
       ? `${prependText}[Фото] ${caption}`
@@ -612,7 +645,7 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
       autoNameDialog(dialog.id, caption, photoModel);
     }
 
-    const chunks = splitMessage(result.content);
+    const chunks = splitMessage(result.content + visionModelNote(dialog.model));
     for (const chunk of chunks) {
       try {
         await ctx.replyWithMarkdown(chunk);
@@ -665,6 +698,15 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
   }
 
   try {
+    // Resolve the dialog before downloading: no point pulling up to 15 MB for a
+    // dialog that can no longer be written to.
+    const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
+      ?? await getOrCreateActiveDialog(dbUser.id);
+    if (await isDialogAtMessageLimit(dialog.id)) {
+      await replyLimitReached(ctx);
+      return;
+    }
+
     await ctx.sendChatAction("typing");
 
     const link = await ctx.telegram.getFileLink(doc.file_id);
@@ -678,21 +720,19 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     const isGeminiDoc = GEMINI_DOC_MIME_TYPES.has(mimeType);
     const isText = TEXT_MIME_TYPES.has(mimeType) || TEXT_EXTENSIONS.has(ext);
 
-    const dialog = (pendingDialogId ? await getDialogById(pendingDialogId, dbUser.id) : null)
-      ?? await getOrCreateActiveDialog(dbUser.id);
     const docProviderPref = await getChatProvider(dbUser.id);
-    const docTitleModel = resolveModel(docProviderPref);
-    const docSystemPrompt = resolveSystemPrompt(docProviderPref);
-    const history = await getRecentMessages(dialog.id, 20);
+    const { model: docTitleModel, persona, uncensored } = resolveDialogAiConfig(dialog, docProviderPref);
+    const history = await getRecentMessages(dialog.id);
     const historyMessages: Array<{ role: string; content: MessageContent }> = history.map((m) => ({
       role: m.role,
       content: m.content,
     }));
 
     const historyForSearch = history.map((m) => ({ role: m.role, content: m.content }));
-    const augmentedCaption = await augmentWithLinksAndSearch(
-      fullCaption, historyForSearch, ctx
-    );
+    // Images and PDFs are answered by NEURO_VISION_MODEL, plain text by the dialog model.
+    const searchStrategy = botSearchStrategy(isImage || isGeminiDoc ? NEURO_VISION_MODEL : docTitleModel);
+    const augmentedText = await augmentForBot(fullCaption, historyForSearch, ctx, searchStrategy);
+    const promptOpts = { persona, uncensored, webSearch: searchStrategy };
 
     let result;
     let modelUsed: string;
@@ -703,7 +743,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
 
       const userContent: ContentPart[] = [
         { type: "image_url", image_url: { url: dataUrl } },
-        { type: "text", text: augmentedCaption },
+        { type: "text", text: augmentedText },
       ];
 
       const messages: Array<{ role: string; content: MessageContent }> = [
@@ -711,7 +751,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
         { role: "user", content: userContent },
       ];
 
-      result = await chatCompletion(messages, NEURO_VISION_MODEL, docSystemPrompt);
+      result = await chatCompletion(messages, { model: NEURO_VISION_MODEL, ...promptOpts });
       modelUsed = NEURO_VISION_MODEL;
     } else if (isGeminiDoc) {
       const base64 = buffer.toString("base64");
@@ -719,7 +759,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
 
       const userContent: ContentPart[] = [
         { type: "image_url", image_url: { url: dataUrl } },
-        { type: "text", text: augmentedCaption },
+        { type: "text", text: augmentedText },
       ];
 
       const messages: Array<{ role: string; content: MessageContent }> = [
@@ -727,7 +767,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
         { role: "user", content: userContent },
       ];
 
-      result = await chatCompletion(messages, NEURO_VISION_MODEL, docSystemPrompt);
+      result = await chatCompletion(messages, { model: NEURO_VISION_MODEL, ...promptOpts });
       modelUsed = NEURO_VISION_MODEL;
     } else if (isText) {
       const textContent = buffer.toString("utf-8");
@@ -735,14 +775,14 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
         ? textContent.slice(0, 50000) + "\n\n[...файл обрезан, показаны первые 50000 символов]"
         : textContent;
 
-      const userMessage = `Файл: ${fileName}\n\n\`\`\`\n${truncated}\n\`\`\`\n\n${augmentedCaption}`;
+      const userMessage = `Файл: ${fileName}\n\n\`\`\`\n${truncated}\n\`\`\`\n\n${augmentedText}`;
 
       const messages: Array<{ role: string; content: MessageContent }> = [
         ...historyMessages,
         { role: "user", content: userMessage },
       ];
 
-      result = await chatCompletion(messages, docTitleModel, docSystemPrompt);
+      result = await chatCompletion(messages, { model: docTitleModel, ...promptOpts });
       modelUsed = docTitleModel;
     } else {
       await ctx.reply(
@@ -763,7 +803,8 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
       autoNameDialog(dialog.id, `${fileName}: ${caption}`, docTitleModel);
     }
 
-    const chunks = splitMessage(result.content);
+    const note = modelUsed === NEURO_VISION_MODEL ? visionModelNote(dialog.model) : "";
+    const chunks = splitMessage(result.content + note);
     for (const chunk of chunks) {
       try {
         await ctx.replyWithMarkdown(chunk);
@@ -814,14 +855,19 @@ export async function handleProviderSelect(ctx: Context): Promise<void> {
   await setChatProvider(dbUser.id, target);
   logAction(dbUser.id, telegramId, "chat_provider_select", { from: current, to: target });
 
-  const labelMap: Record<ChatProvider, string> = {
-    free: "🆓 *Free* — бесплатная модель Llama (rate-limited)",
-    paid: "💎 *Paid* — платная модель DeepSeek (быстрее, без лимитов)",
-    uncensored: "🔥 *Без цензуры* — модель без ограничений контента",
-  };
+  // A dialog with its own model ignores the provider toggle, so say so explicitly.
+  const dialogId = await getActiveDialogId(dbUser.id);
+  const dialog = dialogId ? await getDialogById(dialogId, dbUser.id) : null;
+  const overrideNote = dialog?.model
+    ? `\n\n⚠️ У активного диалога задана своя модель (\`${dialog.model}\`) — переключение провайдера на него не влияет. ` +
+      `Сбросьте её в «${NEURO_SETTINGS_BUTTON}».`
+    : "";
 
-  await ctx.reply(
-    `Модель переключена: ${labelMap[target]}`,
-    { parse_mode: "Markdown", ...getNeuroKeyboard(isAdmin, target) }
-  );
+  const text = `Модель переключена: ${formatProviderDescription(target)}${overrideNote}`;
+  const keyboard = getNeuroKeyboard(isAdmin, target);
+  try {
+    await ctx.reply(text, { parse_mode: "Markdown", ...keyboard });
+  } catch {
+    await ctx.reply(text.replace(/[*_`]/g, ""), keyboard);
+  }
 }

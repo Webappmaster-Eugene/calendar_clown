@@ -5,6 +5,8 @@ import { VoiceButton } from "../components/VoiceButton";
 import { useTelegram } from "../hooks/useTelegram";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import { MessageBubble } from "../components/ui/MessageBubble";
+import { useToast } from "../components/ui/ToastProvider";
+import { useShareMessage } from "../hooks/useShareMessage";
 import type {
   ChatDialogDto,
   ChatMessageDto,
@@ -244,12 +246,17 @@ export function ChatPage() {
 
 function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const { shareChatMessage } = useShareMessage();
   const [input, setInput] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
+  const [statusLabel, setStatusLabel] = useState<string | null>(null);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const { data: messages } = useQuery({
     queryKey: ["chat", "messages", dialogId],
@@ -296,8 +303,12 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
     setInput("");
     setError(null);
     setStreamingContent("");
+    setStatusLabel(null);
     setPendingUserMessage(text);
     setIsSending(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       await api.stream(
@@ -307,7 +318,12 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
           dialogId,
         },
         (chunk) => {
+          setStatusLabel(null);
           setStreamingContent((prev) => prev + chunk);
+        },
+        {
+          onStatus: (label) => setStatusLabel(label),
+          signal: controller.signal,
         }
       );
 
@@ -317,14 +333,28 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
       setStreamingContent("");
       setPendingUserMessage(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка отправки");
+      const code = (err as { code?: string }).code;
+      if (code === "ABORTED") {
+        // Nothing was saved server-side, so give the text back instead of losing it.
+        toast.show({ description: "Генерация остановлена", variant: "info" });
+        setInput(text);
+      } else {
+        setError(err instanceof Error ? err.message : "Ошибка отправки");
+      }
       setPendingUserMessage(null);
+      // A partial answer was never persisted — clear it instead of leaving it on
+      // screen to silently vanish on the next refetch.
+      setStreamingContent("");
       queryClient.invalidateQueries({ queryKey: ["chat", "dialogs"] });
       queryClient.invalidateQueries({ queryKey: ["chat", "messages", dialogId] });
     } finally {
+      setStatusLabel(null);
+      if (abortRef.current === controller) abortRef.current = null;
       setIsSending(false);
     }
-  }, [input, isSending, atLimit, dialogId, queryClient]);
+  }, [input, isSending, atLimit, dialogId, queryClient, toast]);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const displayMessages = messages ?? [];
 
@@ -340,10 +370,13 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
       {dialog && (
         <div className="card-hint" style={{ marginBottom: 8, fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
           <span>🤖 {dialog.model ?? "по умолчанию"}</span>
-          {dialog.temperature != null && <span>🌡 {dialog.temperature}</span>}
-          {dialog.maxTokens != null && <span>✂️ {dialog.maxTokens}т</span>}
-          {dialog.systemPrompt && <span title={dialog.systemPrompt}>📝 промпт</span>}
-          {dialog.theme && <span>🏷 {dialog.theme}</span>}
+          {dialog.systemPrompt && <span title={dialog.systemPrompt}>🎭 роль задана</span>}
+        </div>
+      )}
+
+      {chatConfig && !chatConfig.webSearchAvailable && (
+        <div className="card-hint" style={{ marginBottom: 8, fontSize: 12 }}>
+          🔍 Веб-поиск отключён — отвечаю без интернета; ссылки по URL читаю.
         </div>
       )}
 
@@ -365,20 +398,26 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
             content={msg.content}
             markdown={msg.role !== "user"}
             actions={msg.role !== "user" ? ["copy", "share"] : undefined}
+            shareHandler={
+              msg.role !== "user"
+                ? () => shareChatMessage({ dialogId, messageId: msg.id, fallbackText: msg.content })
+                : undefined
+            }
           />
         ))}
         {pendingUserMessage && (
           <MessageBubble role="user" markdown={false} content={pendingUserMessage} />
         )}
         {isSending && !streamingContent && (
-          <MessageBubble role="assistant" pending content="" />
+          <MessageBubble role="assistant" pending content="" meta={statusLabel ?? undefined} />
         )}
+        {/* No share action while streaming: there is no saved messageId yet. */}
         {streamingContent && (
           <MessageBubble
             role="assistant"
             markdown
             content={streamingContent}
-            actions={["copy", "share"]}
+            actions={["copy"]}
           />
         )}
         <div ref={messagesEndRef} />
@@ -401,6 +440,7 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
       ) : (
         <form className="chat-input-row" onSubmit={handleSend}>
           <input
+            ref={inputRef}
             className="input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -408,15 +448,31 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
           />
           <VoiceButton
             mode="neuro"
-            onResult={(transcript) => setInput((prev) => prev ? `${prev} ${transcript}` : transcript)}
+            variant="overlay"
+            // Transcript goes into the field, not straight out — STT output is worth
+            // proof-reading before it becomes a message.
+            onResult={(transcript) => {
+              setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+              inputRef.current?.focus();
+            }}
           />
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={isSending || !input.trim()}
-          >
-            Отправить
-          </button>
+          {isSending ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => abortRef.current?.abort()}
+            >
+              ⏹ Стоп
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!input.trim()}
+            >
+              Отправить
+            </button>
+          )}
         </form>
       )}
 
@@ -431,6 +487,8 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
 
 // ─── Dialog settings (title + per-dialog AI overrides) ───────────
 
+const SYSTEM_PROMPT_MAX = 8000;
+
 function DialogSettings({
   dialog,
   onSave,
@@ -444,28 +502,37 @@ function DialogSettings({
   error: string | null;
   onClose: () => void;
 }) {
+  const toast = useToast();
   const [title, setTitle] = useState(dialog.title);
-  const [theme, setTheme] = useState(dialog.theme ?? "");
   const [model, setModel] = useState<string | null>(dialog.model);
   const [systemPrompt, setSystemPrompt] = useState(dialog.systemPrompt ?? "");
-  const [temperature, setTemperature] = useState(dialog.temperature != null ? String(dialog.temperature) : "");
-  const [maxTokens, setMaxTokens] = useState(dialog.maxTokens != null ? String(dialog.maxTokens) : "");
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Collapsed by default so the role textarea can't be mistaken for the composer.
+  const [roleOpen, setRoleOpen] = useState(Boolean(dialog.systemPrompt));
+  const [localError, setLocalError] = useState<string | null>(null);
 
   const save = () => {
-    const patch: UpdateDialogRequest = {};
     const t = title.trim();
-    if (t && t !== dialog.title) patch.title = t;
-    const th = theme.trim();
-    if (th !== (dialog.theme ?? "")) patch.theme = th || null;
-    if (model !== dialog.model) patch.model = model;
+    if (!t) {
+      setLocalError("Название не может быть пустым");
+      return;
+    }
     const sp = systemPrompt.trim();
+    if (sp.length > SYSTEM_PROMPT_MAX) {
+      setLocalError(`Роль слишком длинная: ${sp.length} из ${SYSTEM_PROMPT_MAX} символов`);
+      return;
+    }
+    setLocalError(null);
+
+    const patch: UpdateDialogRequest = {};
+    if (t !== dialog.title) patch.title = t;
+    if (model !== dialog.model) patch.model = model;
     if (sp !== (dialog.systemPrompt ?? "")) patch.systemPrompt = sp || null;
-    const temp = temperature.trim() === "" ? null : Number(temperature);
-    if (!(temp != null && Number.isNaN(temp)) && temp !== dialog.temperature) patch.temperature = temp;
-    const mt = maxTokens.trim() === "" ? null : parseInt(maxTokens, 10);
-    if (!(mt != null && Number.isNaN(mt)) && mt !== dialog.maxTokens) patch.maxTokens = mt;
-    if (Object.keys(patch).length === 0) { onClose(); return; }
+    if (Object.keys(patch).length === 0) {
+      toast.show({ description: "Изменений нет", variant: "info" });
+      onClose();
+      return;
+    }
     onSave(patch);
   };
 
@@ -476,30 +543,37 @@ function DialogSettings({
         <input className="input" value={title} maxLength={100} onChange={(e) => setTitle(e.target.value)} />
       </div>
       <div className="form-group" style={{ marginBottom: 0 }}>
-        <label className="form-label">Тема / описание</label>
-        <input className="input" value={theme} maxLength={200} placeholder="напр. Код на Python" onChange={(e) => setTheme(e.target.value)} />
-      </div>
-      <div className="form-group" style={{ marginBottom: 0 }}>
         <label className="form-label">Нейросеть</label>
         <button type="button" className="btn btn-block" style={{ textAlign: "left" }} onClick={() => setPickerOpen(true)}>
           🤖 {model ?? "По умолчанию (провайдер)"}
         </button>
       </div>
-      <div className="form-group" style={{ marginBottom: 0 }}>
-        <label className="form-label">Системный промпт (роль/инструкции)</label>
-        <textarea className="input" rows={3} value={systemPrompt} placeholder="Ты — ... (пусто = по умолчанию)" onChange={(e) => setSystemPrompt(e.target.value)} />
-      </div>
-      <div className="form-row">
-        <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-          <label className="form-label">Температура (0–2)</label>
-          <input className="input" type="number" step="0.1" min="0" max="2" value={temperature} placeholder="авто" onChange={(e) => setTemperature(e.target.value)} />
+      <button
+        type="button"
+        className="btn btn-block"
+        style={{ textAlign: "left" }}
+        onClick={() => setRoleOpen((v) => !v)}
+      >
+        {roleOpen ? "▾" : "▸"} Дополнительно: роль ассистента
+      </button>
+      {roleOpen && (
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">🎭 Роль ассистента (постоянная инструкция)</label>
+          <textarea
+            className="input"
+            rows={3}
+            value={systemPrompt}
+            maxLength={SYSTEM_PROMPT_MAX}
+            placeholder="Например: Ты — юрист по трудовому праву. Отвечай кратко, со ссылками на статьи."
+            onChange={(e) => setSystemPrompt(e.target.value)}
+          />
+          <div className="card-hint" style={{ fontSize: 11, marginTop: 4 }}>
+            Это не ваш вопрос. Вопросы пишите в поле сообщения внизу — эта инструкция
+            применяется ко всем ответам диалога. {systemPrompt.length}/{SYSTEM_PROMPT_MAX}
+          </div>
         </div>
-        <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-          <label className="form-label">Макс. токенов</label>
-          <input className="input" type="number" min="1" value={maxTokens} placeholder="без лимита" onChange={(e) => setMaxTokens(e.target.value)} />
-        </div>
-      </div>
-      {error && <div className="error-msg">{error}</div>}
+      )}
+      {(localError || error) && <div className="error-msg">{localError ?? error}</div>}
       <div className="form-row">
         <button type="button" className="btn" onClick={onClose} disabled={saving}>Отмена</button>
         <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</button>

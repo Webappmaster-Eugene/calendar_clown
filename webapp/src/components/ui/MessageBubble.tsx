@@ -17,6 +17,8 @@ export interface MessageBubbleProps {
   onAction?: (action: MessageAction) => void;
   children?: ReactNode;
   toText?: () => string;
+  /** Overrides the default text-based sharing for this message. */
+  shareHandler?: () => Promise<unknown>;
   pending?: boolean;
   errored?: boolean;
   className?: string;
@@ -33,6 +35,7 @@ export function MessageBubble({
   onAction,
   children,
   toText,
+  shareHandler,
   pending,
   errored,
   className,
@@ -117,7 +120,9 @@ export function MessageBubble({
           }}
         >
           {visibleActions.includes("copy") && <CopyButton text={textForActions} size="sm" />}
-          {visibleActions.includes("share") && <ShareButton text={textForActions} size="sm" />}
+          {visibleActions.includes("share") && (
+            <ShareButton text={textForActions} size="sm" onShare={shareHandler} />
+          )}
           {visibleActions.includes("regenerate") && (
             <ActionButton onClick={() => onAction?.("regenerate")} icon="🔄" title="Повторить" />
           )}

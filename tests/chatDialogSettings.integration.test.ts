@@ -2,10 +2,10 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 
 /**
- * Integration tests for per-dialog AI settings (model/system prompt/temperature/
- * max_tokens/theme) added to chat_dialogs. Covers the service layer that the Mini
- * App uses: updateDialogForUser persists + clears overrides, getUserDialogs surfaces
- * them, and ownership is enforced. Hits a live PostgreSQL.
+ * Integration tests for per-dialog AI settings (model + system prompt) on
+ * chat_dialogs. Covers the service layer shared by the Mini App and the bot's
+ * settings panel: updateDialogForUser persists + clears overrides, getUserDialogs
+ * surfaces them, and ownership is enforced. Hits a live PostgreSQL.
  *
  * Run: DATABASE_URL=postgres://... npx tsx --test tests/chatDialogSettings.integration.test.ts
  */
@@ -42,36 +42,27 @@ describe("per-dialog AI settings", () => {
     assert.ok(d);
     assert.equal(d!.model, null);
     assert.equal(d!.systemPrompt, null);
-    assert.equal(d!.temperature, null);
-    assert.equal(d!.maxTokens, null);
-    assert.equal(d!.theme, null);
   });
 
-  it("updateDialogForUser persists model + prompt + temperature + maxTokens + theme + title", async () => {
+  it("updateDialogForUser persists model + prompt + title", async () => {
     const res = await svc.updateDialogForUser(TG, dialogId, {
       title: "Код на Python",
       model: "anthropic/claude-sonnet-4",
       systemPrompt: "Ты — сеньор Python-разработчик.",
-      temperature: 0.3,
-      maxTokens: 2048,
-      theme: "программирование",
     });
     assert.equal(res.title, "Код на Python");
     assert.equal(res.model, "anthropic/claude-sonnet-4");
     assert.equal(res.systemPrompt, "Ты — сеньор Python-разработчик.");
-    assert.equal(res.temperature, 0.3);
-    assert.equal(res.maxTokens, 2048);
-    assert.equal(res.theme, "программирование");
 
     // Persisted — visible via the list too.
     const d = (await svc.getUserDialogs(TG)).find((x) => x.id === dialogId);
     assert.equal(d!.model, "anthropic/claude-sonnet-4");
-    assert.equal(d!.temperature, 0.3);
+    assert.equal(d!.systemPrompt, "Ты — сеньор Python-разработчик.");
   });
 
   it("a partial patch leaves other fields untouched", async () => {
-    const res = await svc.updateDialogForUser(TG, dialogId, { temperature: 1.1 });
-    assert.equal(res.temperature, 1.1);
+    const res = await svc.updateDialogForUser(TG, dialogId, { systemPrompt: "Отвечай кратко." });
+    assert.equal(res.systemPrompt, "Отвечай кратко.");
     assert.equal(res.model, "anthropic/claude-sonnet-4", "model must be unchanged");
     assert.equal(res.title, "Код на Python", "title must be unchanged");
   });
@@ -80,7 +71,7 @@ describe("per-dialog AI settings", () => {
     const res = await svc.updateDialogForUser(TG, dialogId, { model: null, systemPrompt: null });
     assert.equal(res.model, null);
     assert.equal(res.systemPrompt, null);
-    assert.equal(res.temperature, 1.1, "unrelated override stays");
+    assert.equal(res.title, "Код на Python", "unrelated field stays");
   });
 
   it("refuses to update another user's dialog (ownership)", async () => {

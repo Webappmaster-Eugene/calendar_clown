@@ -111,3 +111,7 @@ export const NEURO_BATCH_MAX_WAIT_MS = 30_000;
 export const NEURO_MAX_URLS = 5;
 
 export const NEURO_MAX_SEARCH_RESULTS = 8;
+
+// Combined budget for the injected search + links blocks, so a long augmentation
+// can't push the dialog history out of the model's context window.
+export const NEURO_MAX_AUGMENTED_CONTEXT = 15_000;

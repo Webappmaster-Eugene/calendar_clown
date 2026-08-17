@@ -32,6 +32,8 @@ import { startOsintRetention, stopOsintRetention } from "./osint/retentionSchedu
 import { initProxyAgent, initOpenRouterAgent } from "./utils/proxyAgent.js";
 import { startPollWatchdog, stopPollWatchdog } from "./health/pollWatchdog.js";
 import { clearAllBatches } from "./chat/messageBatcher.js";
+import { isWebSearchConfigured } from "./chat/augment.js";
+import { resolveWebSearchMode } from "./chat/webSearchStrategy.js";
 import { validateSttModels } from "./voice/healthCheck.js";
 import { createLogger } from "./utils/logger.js";
 
@@ -170,6 +172,18 @@ async function main(): Promise<void> {
     log.warn("Digest credentials set but session file missing. Run `npm run tg-auth`.");
   } else {
     log.info("TELEGRAM_PARSER_API_ID not set — digest mode disabled.");
+  }
+
+  const webSearchMode = resolveWebSearchMode();
+  if (webSearchMode === "off") {
+    log.warn("NEURO_WEB_SEARCH=off — веб-поиск в «Нейро» отключён (чтение ссылок работает).");
+  } else if (!isWebSearchConfigured()) {
+    const nativeOnly = webSearchMode === "auto" || webSearchMode === "openrouter";
+    log.warn(
+      nativeOnly
+        ? `TAVILY_API_KEY not set — /osint отключён; в «Нейро» ищут только модели со встроенным поиском (mode=${webSearchMode}).`
+        : "TAVILY_API_KEY not set — веб-поиск в «Нейро» и /osint отключён (чтение ссылок работает)."
+    );
   }
 
   if (isDatabaseAvailable()) {

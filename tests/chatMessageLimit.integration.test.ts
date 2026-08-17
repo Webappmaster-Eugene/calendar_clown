@@ -45,6 +45,22 @@ describe("per-dialog message cap", () => {
     assert.equal(await repo.countDialogMessages(dialogId), 2);
   });
 
+  it("isDialogAtMessageLimit is false below the cap (shared by bot + Mini App)", async () => {
+    assert.equal(await repo.isDialogAtMessageLimit(dialogId), false);
+  });
+
+  it("getMessageById enforces ownership in SQL (share endpoint)", async () => {
+    const msg = await repo.saveMessage(userId, dialogId, "assistant", "ответ для шаринга");
+
+    const own = await repo.getMessageById(msg.id, dialogId, userId);
+    assert.equal(own?.content, "ответ для шаринга");
+
+    // A different user id must not be able to read it, even with the right ids.
+    assert.equal(await repo.getMessageById(msg.id, dialogId, userId + 100_000), null);
+    // Nor a mismatched dialog.
+    assert.equal(await repo.getMessageById(msg.id, dialogId + 100_000, userId), null);
+  });
+
   it("blocks sendMessage once the dialog reaches the limit (no AI call)", async () => {
     // Fill up to exactly the limit (we already have 2).
     const current = await repo.countDialogMessages(dialogId);

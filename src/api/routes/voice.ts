@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { transcribeAudio, extractIntent } from "../../services/voiceService.js";
+import { resolveTranscribeContext } from "../../voice/transcribeContext.js";
 import { extractExpenseIntent } from "../../voice/extractExpenseIntent.js";
 import { SttError } from "../../voice/sttClient.js";
 import { getCategoriesListWithAliasesFormatted, addExpenseFromVoice } from "../../services/expenseService.js";
@@ -64,9 +65,14 @@ app.post("/transcribe", async (c) => {
       return c.json({ ok: false, error: "audio file is required (multipart field 'audio')" }, 400);
     }
 
+    // `mode` tells us which STT prompt fits; without it every mode got the
+    // calendar prompt, which mangled chat/OSINT dictation.
+    const mode = formData.get("mode");
+    const sttContext = resolveTranscribeContext(typeof mode === "string" ? mode : null);
+
     tempPath = await saveAudioToTemp(audioFile, telegramId);
-    const result = await transcribeAudio(tempPath);
-    logApiAction(telegramId, "voice_transcribe_api", {});
+    const result = await transcribeAudio(tempPath, sttContext);
+    logApiAction(telegramId, "voice_transcribe_api", { mode: sttContext });
     return c.json({ ok: true, data: result });
   } catch (err) {
     if (err instanceof SttError) return sttErrorResponse(c, err, telegramId);

@@ -7,95 +7,71 @@ import {
   saveMessage,
   updateDialogTitle,
   getChatProvider,
+  isDialogAtMessageLimit,
 } from "./repository.js";
-import { extractUrls, fetchLinksContent, formatLinksForContext } from "./linkAnalyzer.js";
-import { classifySearchNeed, executeWebSearch, formatSearchResultsForContext } from "./webSearch.js";
+import { resolveDialogAiConfig, CHAT_LIMIT_REACHED_MSG } from "./config.js";
+import { augmentUserMessage, isWebSearchConfigured } from "./augment.js";
+import { resolveWebSearchStrategy } from "./webSearchStrategy.js";
 import { splitMessage } from "../utils/telegram.js";
-import { DEEPSEEK_MODEL, DEEPSEEK_FREE_MODEL, NEURO_UNCENSORED_MODEL } from "../constants.js";
-import { buildUncensoredSystemPrompt } from "./client.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("neuro-processor");
 
-// Max total context from search + links to avoid exceeding model limits.
-const MAX_AUGMENTED_CONTEXT_LENGTH = 15_000;
-
 export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
-  const { combinedText, ctx, dialogId, dbUserId, model: batchModel, systemPromptOverride: batchSystemPrompt } = batch;
+  const { combinedText, ctx, dialogId, dbUserId } = batch;
 
   try {
     const statusMsg = await ctx.reply("⏳ Обрабатываю запрос...");
     const statusMsgId = statusMsg.message_id;
     const chatId = ctx.chat!.id;
 
+    const editStatus = async (text: string): Promise<void> => {
+      try {
+        await ctx.telegram.editMessageText(chatId, statusMsgId, undefined, text);
+      } catch {
+        // Status edit may fail if the message was deleted.
+      }
+    };
+
     // Use the dialogId captured when the user sent the message, not the current
     // active dialog (which may have changed since batching).
     const dialog = (dialogId ? await getDialogById(dialogId, dbUserId) : null)
       ?? await getOrCreateActiveDialog(dbUserId);
-    const history = await getRecentMessages(dialog.id, 20);
+
+    // Re-check here (not only on send): the Mini App could have filled the dialog
+    // up while the batch was waiting out its debounce.
+    if (await isDialogAtMessageLimit(dialog.id)) {
+      await editStatus(`⚠️ ${CHAT_LIMIT_REACHED_MSG}`);
+      return;
+    }
+
+    const history = await getRecentMessages(dialog.id);
     const historyMessages = history.map((m) => ({ role: m.role, content: m.content }));
 
-    const urls = extractUrls(combinedText);
+    // Resolved at flush time, so switching provider or model while the batch waits
+    // applies to it (instead of using a value captured at the first message).
+    const provider = await getChatProvider(dbUserId);
+    const { model, persona, uncensored } = resolveDialogAiConfig(dialog, provider);
+    const searchStrategy = resolveWebSearchStrategy(model, { tavilyConfigured: isWebSearchConfigured() });
 
-    const [linksResult, searchClassification] = await Promise.all([
-      urls.length > 0 ? fetchLinksContent(urls) : Promise.resolve([]),
-      classifySearchNeed(combinedText, historyMessages),
-    ]);
-
-    let searchResults: Awaited<ReturnType<typeof executeWebSearch>> | null = null;
-    if (searchClassification.needsSearch && searchClassification.queries.length > 0) {
-      try {
-        await ctx.telegram.editMessageText(
-          chatId, statusMsgId, undefined,
-          "🔍 Ищу информацию..."
-        );
-      } catch {
-        // Status edit may fail if message was deleted
-      }
-      searchResults = await executeWebSearch(searchClassification.queries);
-    }
-
-    let linksContext = formatLinksForContext(linksResult);
-    let searchContext = searchResults
-      ? formatSearchResultsForContext(searchResults.results)
-      : "";
-
-    const totalContextLen = linksContext.length + searchContext.length;
-    if (totalContextLen > MAX_AUGMENTED_CONTEXT_LENGTH) {
-      const halfLimit = Math.floor(MAX_AUGMENTED_CONTEXT_LENGTH / 2);
-      if (linksContext.length > halfLimit) {
-        linksContext = linksContext.slice(0, halfLimit) + "\n[...содержимое ссылок обрезано]";
-      }
-      if (searchContext.length > halfLimit) {
-        searchContext = searchContext.slice(0, halfLimit) + "\n[...результаты поиска обрезаны]";
-      }
-    }
-
-    const augmentedParts = [combinedText];
-    if (linksContext) augmentedParts.push(linksContext);
-    if (searchContext) augmentedParts.push(searchContext);
-    const augmentedMessage = augmentedParts.join("\n\n");
-
-    let model = batchModel;
-    let systemPromptOverride = batchSystemPrompt;
-    if (!model) {
-      const provider = await getChatProvider(dbUserId);
-      switch (provider) {
-        case "free": model = DEEPSEEK_FREE_MODEL; break;
-        case "paid": model = DEEPSEEK_MODEL; break;
-        case "uncensored":
-          model = NEURO_UNCENSORED_MODEL;
-          systemPromptOverride = buildUncensoredSystemPrompt();
-          break;
-      }
-    }
+    const augmented = await augmentUserMessage({
+      text: combinedText,
+      history: historyMessages,
+      onStatus: (s) => editStatus(s.label),
+      searchStrategy,
+    });
 
     const messages = [
       ...historyMessages,
-      { role: "user", content: augmentedMessage },
+      { role: "user", content: augmented.augmentedText },
     ];
 
-    const result = await chatCompletion(messages, model, systemPromptOverride);
+    const result = await chatCompletion(messages, {
+      model,
+      persona,
+      uncensored,
+      webSearch: searchStrategy,
+    });
 
     // Save original text without search/links context.
     await saveMessage(dbUserId, dialog.id, "user", combinedText);
