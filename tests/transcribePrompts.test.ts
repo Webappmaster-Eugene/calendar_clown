@@ -43,3 +43,13 @@ test("every context prompt transcribes speech instead of obeying it", () => {
     assert.match(prompt, /строго то, что реально произнесено/, `${ctx}: must transcribe verbatim`);
   }
 });
+
+test("the STT payload restates the transcribe-only rule after the audio", async () => {
+  const { buildSttMessages, STT_TRAILING_REMINDER } = await import("../src/voice/sttClient.js");
+  const parts = buildSttMessages("PROMPT", "audio/ogg", "BASE64")[0].content;
+
+  assert.equal(parts.length, 3, "prompt, audio, reminder");
+  assert.equal(parts[0].text, "PROMPT");
+  assert.equal((parts[1].image_url as { url: string }).url, "data:audio/ogg;base64,BASE64");
+  assert.equal(parts[2].text, STT_TRAILING_REMINDER, "the reminder must come after the audio");
+});
