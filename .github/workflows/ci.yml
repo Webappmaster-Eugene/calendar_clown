@@ -41,8 +41,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Unit tests
-        run: npm run test:unit
+      - name: Unit + smoke tests
+        # The smoke suite asserts build artifacts, so it belongs to the job that builds.
+        run: npm test
 
   # ──────────────────────────────────────────────────────────────────────
   # Backend integration tests — hit a real PostgreSQL instance.
@@ -93,9 +94,9 @@ jobs:
         run: npx tsx scripts/generateBuildInfo.ts
 
       - name: Run integration tests
-        # `npm test` picks up everything matching tests/*.test.ts via the
-        # tsx --test glob, including the new *.integration.test.ts files.
-        run: npm test
+        # Against the PostgreSQL service above. `npm test` was running here instead,
+        # so the integration suite never actually ran in CI.
+        run: npm run test:integration
 
   # ──────────────────────────────────────────────────────────────────────
   # Webapp: typecheck + build.
