@@ -294,15 +294,11 @@ export async function ensureUser(
     }
 
     // Tribe membership is shared data (wishlists, knowledge base, dates, expenses),
-    // so it is an admin decision — a row created here starts outside every tribe and
-    // unapproved. Only the bootstrap admin seeds itself into the default tribe.
-    let tribeId: number | null = null;
-    let status = "pending";
-    if (isAdmin) {
-      const [firstTribe] = await tx.select({ id: tribes.id }).from(tribes).orderBy(tribes.id).limit(1);
-      tribeId = firstTribe?.id ?? null;
-      status = "approved";
-    }
+    // so it is never granted by code: an admin approves the user first, then assigns
+    // the tribe. A row created here — including the bootstrap admin's own — starts
+    // outside every tribe.
+    const tribeId: number | null = null;
+    const status = isAdmin ? "approved" : "pending";
 
     const [inserted] = await tx
       .insert(users)
@@ -353,15 +349,14 @@ export async function addUserByTelegramId(
   const exists = await isUserInDb(telegramId);
   if (exists) return null;
 
-  const [firstTribe] = await db.select({ id: tribes.id }).from(tribes).orderBy(tribes.id).limit(1);
-  const tribeId = firstTribe?.id ?? 1;
-
+  // Adding a user is an explicit admin act, so access is granted — but the tribe is
+  // a second, separate decision: it exposes the family's shared data.
   const [inserted] = await db
     .insert(users)
-    .values({ telegramId: BigInt(telegramId), username: null, firstName: "", role, tribeId })
+    .values({ telegramId: BigInt(telegramId), username: null, firstName: "", role, status: "approved", tribeId: null })
     .returning({ id: users.id });
 
-  return { id: inserted.id, telegramId, username: null, firstName: "", lastName: null, role, tribeId };
+  return { id: inserted.id, telegramId, username: null, firstName: "", lastName: null, role, tribeId: null };
 }
 
 export async function removeUserByTelegramId(telegramId: number): Promise<boolean> {
