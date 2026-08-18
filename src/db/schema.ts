@@ -39,7 +39,9 @@ export const users = pgTable(
     firstName: varchar("first_name", { length: 255 }).notNull().default(""),
     lastName: varchar("last_name", { length: 255 }),
     role: varchar("role", { length: 20 }).notNull().default("user"),
-    status: varchar("status", { length: 20 }).notNull().default("approved"),
+    // Access is granted by an admin, never by the act of appearing in the table:
+    // any future insert that forgets to set this must be inert, not approved.
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
     mode: varchar("mode", { length: 20 }).notNull().default("calendar"),
     tribeId: integer("tribe_id")
       .references(() => tribes.id),

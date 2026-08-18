@@ -27,6 +27,8 @@ before(async () => {
 
   const { ensureUser, setUserTribe } = await import("../src/expenses/repository.js");
   const owner = await ensureUser(OWNER_TG, "owner", "Owner", "User", false);
+  // New rows are pending and tribe-less by design — an admin grants both.
+  await (await import("./helpers/testDb.js")).grantTestUserAccess(OWNER_TG);
   const attacker = await ensureUser(ATTACKER_TG, "attacker", "Attacker", "User", false);
   ownerId = owner.id;
   attackerId = attacker.id;

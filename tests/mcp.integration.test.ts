@@ -24,11 +24,14 @@ before(async () => {
   (await import("dotenv")).config();
   const { setupTestDb, seedFixtures } = await import("./helpers/testDb.js");
   await setupTestDb();
-  await seedFixtures();
+  const fixtures = await seedFixtures();
   const { ensureUser } = await import("../src/expenses/repository.js");
   const user = await ensureUser(TG, "mcptest", "MCP", "Tester", false);
+  // New rows are pending and tribe-less by design — an admin grants both.
+  const { grantTestUserAccess } = await import("./helpers/testDb.js");
+  await grantTestUserAccess(TG, fixtures.tribeId);
   userId = user.id;
-  tribeId = user.tribeId;
+  tribeId = fixtures.tribeId;
 
   ClientCtor = (await import("@modelcontextprotocol/sdk/client/index.js")).Client;
   InMemoryTransport = (await import("@modelcontextprotocol/sdk/inMemory.js")).InMemoryTransport;

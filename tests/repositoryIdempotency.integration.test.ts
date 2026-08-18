@@ -36,8 +36,12 @@ before(async () => {
   schema = await import("../src/db/schema.js");
 
   const user = await repo.ensureUser(TG, "idem", "Idem", "User", false);
+
+  // New rows are pending and tribe-less by design — an admin grants both.
+
+  const grantedTribeId = await (await import("./helpers/testDb.js")).grantTestUserAccess(TG);
   userId = user.id;
-  tribeId = user.tribeId!;
+  tribeId = grantedTribeId!;
   const { eq } = await import("drizzle-orm");
   const [cat] = await db.select().from(schema.categories).where(eq(schema.categories.name, "Другое"));
   categoryId = cat.id;

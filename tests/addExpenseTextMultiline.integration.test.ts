@@ -19,10 +19,13 @@ before(async () => {
   (await import("dotenv")).config();
   const { setupTestDb, seedFixtures } = await import("./helpers/testDb.js");
   await setupTestDb();
-  await seedFixtures(); // seeds Продукты / Такси / Другое (+ aliases) — all fuzzy, no AI needed
+  const fixtures = await seedFixtures(); // seeds Продукты / Такси / Другое (+ aliases) — all fuzzy, no AI needed
   ({ addExpenseFromText } = await import("../src/services/expenseService.js"));
   const { ensureUser } = await import("../src/expenses/repository.js");
   await ensureUser(TG, "mltest", "Multi", "Line", false);
+  // New rows are pending and tribe-less by design — an admin grants both.
+  const { grantTestUserAccess } = await import("./helpers/testDb.js");
+  await grantTestUserAccess(TG, fixtures.tribeId);
 });
 
 after(async () => {

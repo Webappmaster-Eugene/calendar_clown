@@ -63,8 +63,10 @@ before(async () => {
 
   // Seed a user and capture two categories ordered by sortOrder.
   const user = await ensureUser(TEST_TELEGRAM_ID, "detail-test", "Детально", null, false);
+  // New rows are pending and tribe-less by design — an admin grants both.
+  const grantedTribeId = await (await import("./helpers/testDb.js")).grantTestUserAccess(TEST_TELEGRAM_ID);
   userId = user.id;
-  tribeId = user.tribeId!;
+  tribeId = grantedTribeId!;
   // Approve so that getMonthReport's user-status checks (if any in the future) pass.
   await query("UPDATE users SET status = 'approved' WHERE id = $1", [userId]);
 

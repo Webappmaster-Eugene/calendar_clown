@@ -91,6 +91,21 @@ export async function seedFixtures(): Promise<Fixtures> {
   return { tribeId, categoryIds: cats.map((c) => c.id) };
 }
 
+/** New rows are inert by design (pending, no tribe) — an admin grants access. Tests
+ *  that exercise approved-user flows have to do the same thing explicitly. */
+export async function grantTestUserAccess(telegramId: number, tribeId?: number): Promise<number | undefined> {
+  const { approveUser, setUserTribe } = await import("../../src/expenses/repository.js");
+  await approveUser(telegramId);
+
+  let targetTribe = tribeId;
+  if (targetTribe == null) {
+    const [firstTribe] = await db.select({ id: tribes.id }).from(tribes).orderBy(tribes.id).limit(1);
+    targetTribe = firstTribe?.id;
+  }
+  if (targetTribe != null) await setUserTribe(telegramId, targetTribe);
+  return targetTribe;
+}
+
 /** Delete a test user and their expenses (call in `after()` with your test telegram id). */
 export async function cleanupTestUser(telegramId: number): Promise<void> {
   const rows = await db.select({ id: users.id }).from(users).where(eq(users.telegramId, BigInt(telegramId)));

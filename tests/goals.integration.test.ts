@@ -19,6 +19,8 @@ before(async () => {
 
   const { ensureUser } = await import("../src/expenses/repository.js");
   const user = await ensureUser(TG, "goaltest", "Goal", "Tester", false);
+  // New rows are pending and tribe-less by design — an admin grants both.
+  await (await import("./helpers/testDb.js")).grantTestUserAccess(TG);
   userId = user.id;
 
   repo = await import("../src/goals/repository.js");

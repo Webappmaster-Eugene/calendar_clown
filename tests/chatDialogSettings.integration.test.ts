@@ -23,6 +23,8 @@ before(async () => {
   svc = await import("../src/services/chatService.js");
   const { ensureUser } = await import("../src/expenses/repository.js");
   await ensureUser(TG, "chatsettings", "Chat", "Settings", false);
+  // New rows are pending and tribe-less by design — an admin grants both.
+  await (await import("./helpers/testDb.js")).grantTestUserAccess(TG);
   await ensureUser(TG_OTHER, "chatother", "Chat", "Other", false);
   const dialog = await svc.createNewDialog(TG, "Тестовый диалог");
   dialogId = dialog.id;

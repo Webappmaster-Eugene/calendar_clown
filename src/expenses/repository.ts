@@ -293,12 +293,20 @@ export async function ensureUser(
       };
     }
 
-    const [firstTribe] = await tx.select({ id: tribes.id }).from(tribes).orderBy(tribes.id).limit(1);
-    const tribeId = firstTribe?.id ?? 1;
+    // Tribe membership is shared data (wishlists, knowledge base, dates, expenses),
+    // so it is an admin decision — a row created here starts outside every tribe and
+    // unapproved. Only the bootstrap admin seeds itself into the default tribe.
+    let tribeId: number | null = null;
+    let status = "pending";
+    if (isAdmin) {
+      const [firstTribe] = await tx.select({ id: tribes.id }).from(tribes).orderBy(tribes.id).limit(1);
+      tribeId = firstTribe?.id ?? null;
+      status = "approved";
+    }
 
     const [inserted] = await tx
       .insert(users)
-      .values({ telegramId: tgId, username, firstName, lastName, role, tribeId })
+      .values({ telegramId: tgId, username, firstName, lastName, role, tribeId, status })
       .returning({ id: users.id });
 
     return { id: inserted.id, telegramId, username, firstName, lastName, role, tribeId };

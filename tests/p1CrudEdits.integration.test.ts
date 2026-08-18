@@ -25,8 +25,10 @@ before(async () => {
 
   const { ensureUser } = await import("../src/expenses/repository.js");
   const user = await ensureUser(TG, "p1edits", "P1", "Editor", false);
+  // New rows are pending and tribe-less by design — an admin grants both.
+  const grantedTribeId = await (await import("./helpers/testDb.js")).grantTestUserAccess(TG);
   userId = user.id;
-  tribeId = user.tribeId;
+  tribeId = grantedTribeId!;
 });
 
 after(async () => {

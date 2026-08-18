@@ -57,8 +57,12 @@ before(async () => {
   query = (await import("../src/db/connection.js")).query;
 
   const owner = await repo.ensureUser(TG, "editowner", "Edit", "Owner", false);
+
+  // New rows are pending and tribe-less by design — an admin grants both.
+
+  const grantedTribeId = await (await import("./helpers/testDb.js")).grantTestUserAccess(TG);
   userId = owner.id;
-  tribeId = owner.tribeId!;
+  tribeId = grantedTribeId!;
   const other = await repo.ensureUser(TG_OTHER, "editother", "Edit", "Other", false);
   otherUserId = other.id;
   await query("UPDATE users SET status = 'approved' WHERE id IN ($1, $2)", [userId, otherUserId]);

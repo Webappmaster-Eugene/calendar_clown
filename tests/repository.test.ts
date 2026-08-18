@@ -49,13 +49,28 @@ after(async () => {
 });
 
 describe("ensureUser", () => {
-  it("creates a new user", async () => {
+  it("creates a new user with no access until an admin grants it", async () => {
     const user = await ensureUser(TEST_TELEGRAM_ID, "testuser", "Test", "User", false);
     assert.equal(user.telegramId, TEST_TELEGRAM_ID);
     assert.equal(user.firstName, "Test");
     assert.equal(user.role, "user");
     assert.ok(user.id > 0);
-    assert.ok(user.tribeId > 0);
+
+    // Tribe membership means shared wishlists, knowledge base, dates and expenses —
+    // it is an admin decision, never a side effect of appearing in the table.
+    assert.equal(user.tribeId, null, "a fresh user must not land in a tribe");
+
+    const { db } = await import("../src/db/drizzle.js");
+    const { users } = await import("../src/db/schema.js");
+    const { eq } = await import("drizzle-orm");
+    const [row] = await db
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.telegramId, BigInt(TEST_TELEGRAM_ID)));
+    assert.equal(row.status, "pending", "a fresh user must be inert until approved");
+
+    // The rest of this suite exercises an approved tribe member.
+    await (await import("./helpers/testDb.js")).grantTestUserAccess(TEST_TELEGRAM_ID);
   });
 
   it("returns existing user on second call", async () => {

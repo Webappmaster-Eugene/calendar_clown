@@ -29,6 +29,8 @@ before(async () => {
   query = (await import("../src/db/connection.js")).query;
   const { ensureUser } = await import("../src/expenses/repository.js");
   const u = await ensureUser(TG, "vdedup", "Voice", "Dedup", false);
+  // New rows are pending and tribe-less by design — an admin grants both.
+  await (await import("./helpers/testDb.js")).grantTestUserAccess(TG);
   userId = u.id;
 });
 

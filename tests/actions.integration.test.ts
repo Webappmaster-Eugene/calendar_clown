@@ -25,12 +25,15 @@ before(async () => {
   (await import("dotenv")).config();
   const { setupTestDb, seedFixtures } = await import("./helpers/testDb.js");
   await setupTestDb();
-  await seedFixtures();
+  const fixtures = await seedFixtures();
 
   const { ensureUser } = await import("../src/expenses/repository.js");
   const user = await ensureUser(TG, "actiontest", "Action", "Tester", false);
+  // New rows are pending and tribe-less by design — an admin grants both.
+  const { grantTestUserAccess } = await import("./helpers/testDb.js");
+  await grantTestUserAccess(TG, fixtures.tribeId);
   userId = user.id;
-  tribeId = user.tribeId;
+  tribeId = fixtures.tribeId;
 
   guard = await import("../src/actions/guard.js");
   registry = await import("../src/actions/registry.js");
