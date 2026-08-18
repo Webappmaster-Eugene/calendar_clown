@@ -31,6 +31,10 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
 
+      # src/buildInfo.ts is generated (gitignored) and imported by the API routes.
+      - name: Generate build info
+        run: npx tsx scripts/generateBuildInfo.ts
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -83,6 +87,10 @@ jobs:
 
       - name: Install
         run: npm ci --no-audit --no-fund
+
+      # src/buildInfo.ts is generated (gitignored) and imported by the API routes.
+      - name: Generate build info
+        run: npx tsx scripts/generateBuildInfo.ts
 
       - name: Run integration tests
         # `npm test` picks up everything matching tests/*.test.ts via the
