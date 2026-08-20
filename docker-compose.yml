@@ -73,6 +73,9 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sovetnik-bot}
+      # Claude Code bridge — unset leaves /cc/* answering 503 and the bot middleware inert.
+      - CC_GROUP_ID=${CC_GROUP_ID:-}
+      - CC_MACHINE_TOKEN=${CC_MACHINE_TOKEN:-}
     volumes:
       - tokens:/app/data/tokens
       - voice:/app/data/voice
