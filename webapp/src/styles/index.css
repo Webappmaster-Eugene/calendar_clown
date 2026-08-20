@@ -628,6 +628,25 @@ select.input {
   flex: 1;
 }
 
+/* Shown only when the reader has scrolled away from the newest text — the view
+   never follows a streaming answer on its own, so this is the way back down. */
+.chat-scroll-down {
+  position: fixed;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 7px 14px;
+  border: 1px solid var(--tg-theme-secondary-bg-color, #e0e0e0);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--tg-theme-bg-color, #fff);
+  color: var(--tg-theme-link-color, #2481cc);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
 /* ─── Stat Card ───────────────────────────────────────────── */
 
 .stat-row {

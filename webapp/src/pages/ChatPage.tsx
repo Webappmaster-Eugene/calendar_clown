@@ -7,6 +7,7 @@ import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import { MessageBubble } from "../components/ui/MessageBubble";
 import { useToast } from "../components/ui/ToastProvider";
 import { useShareMessage } from "../hooks/useShareMessage";
+import { useStickToBottom } from "../hooks/useStickToBottom";
 import type {
   ChatDialogDto,
   ChatMessageDto,
@@ -254,9 +255,9 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const { containerRef, pinned, scrollToBottom } = useStickToBottom<HTMLDivElement>();
 
   const { data: messages } = useQuery({
     queryKey: ["chat", "messages", dialogId],
@@ -291,10 +292,6 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
     },
   });
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent, isSending]);
-
   const handleSend = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     const text = input.trim();
@@ -306,6 +303,9 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
     setStatusLabel(null);
     setPendingUserMessage(text);
     setIsSending(true);
+    // Sending is an explicit "show me what happens next" — re-attach even if the
+    // reader had scrolled up in the previous answer.
+    scrollToBottom();
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -352,7 +352,7 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
       if (abortRef.current === controller) abortRef.current = null;
       setIsSending(false);
     }
-  }, [input, isSending, atLimit, dialogId, queryClient, toast]);
+  }, [input, isSending, atLimit, dialogId, queryClient, toast, scrollToBottom]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -390,7 +390,11 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
         />
       )}
 
-      <div className="chat-messages" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div
+        ref={containerRef}
+        className="chat-messages"
+        style={{ display: "flex", flexDirection: "column", gap: 8 }}
+      >
         {displayMessages.map((msg) => (
           <MessageBubble
             key={msg.id}
@@ -420,8 +424,20 @@ function ChatDialog({ dialogId, onBack }: { dialogId: number; onBack: () => void
             actions={["copy"]}
           />
         )}
-        <div ref={messagesEndRef} />
       </div>
+
+      {/* Scrolls instantly: a smooth glide fires intermediate scroll events that
+          read as "the reader left again", and it would chase a growing answer. */}
+      {!pinned && (
+        <button
+          type="button"
+          className="chat-scroll-down"
+          onClick={() => scrollToBottom()}
+          aria-label={isSending ? "К новому ответу" : "Вниз"}
+        >
+          {isSending ? "↓ Ответ пишется" : "↓ Вниз"}
+        </button>
+      )}
 
       {error && (
         <div className="error-msg" style={{ margin: "8px 0" }}>
