@@ -5,6 +5,7 @@ import { handleAuth } from "./commands/auth.js";
 import { handleNew, handleCalendarText } from "./commands/createEvent.js";
 import { handleToday, handleWeek } from "./commands/listEvents.js";
 import { handleVoice } from "./commands/voiceEvent.js";
+import { handleTranscribeRedoCallback } from "./commands/voiceTranscribe.js";
 import { handleStatus } from "./commands/status.js";
 import { handleExpensesCommand, handleCalendarCommand, handleCategoriesButton, handleModeCommand } from "./commands/expenseMode.js";
 import { handleCancel, handleCancelRecurringCallback } from "./commands/cancelEvent.js";
@@ -213,6 +214,7 @@ import {
   handleCalcShowTotals,
   handleCalcSave,
 } from "./commands/nutritionistMode.js";
+import { ccBridgeMiddleware } from "./commands/ccMode.js";
 
 export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   const log = createLogger("bot");
@@ -238,6 +240,10 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     markPollActivity();
     return next();
   });
+
+  // Before access control: the bridge supergroup has its own sender gate, and
+  // the normal allowlist assumes a private chat with a registered user.
+  bot.use(ccBridgeMiddleware());
 
   bot.use(accessControlMiddleware());
 
@@ -319,6 +325,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action(/^tr_full:/, handleTranscribeFullCallback);
   bot.action(/^tr_del:/, handleTranscribeDeleteCallback);
   bot.action(/^tr_del_yes:/, handleTranscribeDeleteCallback);
+  bot.action(/^tr_redo:/, handleTranscribeRedoCallback);
 
   bot.action(/^simp_hist:/, handleSimplifierHistoryCallback);
   bot.action(/^simp_full:/, handleSimplifierFullCallback);

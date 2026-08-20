@@ -132,7 +132,7 @@ async function handleVoiceInner(ctx: Context): Promise<void> {
       ? resolveTranscribeContext(await getUserMode(telegramId))
       : "calendar";
 
-    const transcript = await transcribeVoice(filePath, sttContext);
+    const transcript = await transcribeVoice(filePath, sttContext, voice.duration);
     await unlink(filePath).catch(() => {});
     filePath = null;
 

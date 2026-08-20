@@ -44,6 +44,30 @@ export interface SttCallOptions {
   /** Defaults to TRANSCRIBE_MODEL from constants. */
   model?: string;
   onProgress?: OnProgressCallback;
+  /** Enables the plausibility check on the result — omit it and only empty answers are retried. */
+  audioDurationSec?: number;
+}
+
+/**
+ * Normal speech lands at 3+ chars/sec; the threshold sits well below that so a quiet
+ * or sparse recording still passes and only a truncated answer trips it.
+ */
+export const MIN_TRANSCRIPT_CHARS_PER_SEC = 0.5;
+
+/** Below this, a one-word answer is a plausible transcript rather than a truncation. */
+export const MIN_DURATION_FOR_LENGTH_CHECK_SEC = 15;
+
+/**
+ * The model occasionally answers 200 OK with a couple of characters for minutes of
+ * speech (prod: 82s of audio → "Я"). Nothing in the HTTP response marks it as a failure,
+ * so the density of the text against the audio duration is the only available signal.
+ */
+export function isImplausiblyShortTranscript(text: string, durationSec?: number): boolean {
+  if (durationSec == null || !Number.isFinite(durationSec)) return false;
+  if (durationSec < MIN_DURATION_FOR_LENGTH_CHECK_SEC) return false;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  return trimmed.length < durationSec * MIN_TRANSCRIPT_CHARS_PER_SEC;
 }
 
 function audioMimeType(filePath: string): string {
@@ -150,6 +174,9 @@ export async function callStt(options: SttCallOptions): Promise<string> {
   log.info(`STT call: chain=${chainDescription}, file=${options.filePath}, size=${fileBuffer.length}b, timeout=${options.timeoutMs}ms`);
 
   let lastErr: SttError | null = null;
+  // Longest answer seen so far across rejected attempts — returned if every model
+  // in the chain produces an empty or implausibly short result.
+  let bestText = "";
   for (let i = 0; i < chain.length; i++) {
     const { model, pinVertex } = chain[i];
     const isPrimary = i === 0;
@@ -180,15 +207,31 @@ export async function callStt(options: SttCallOptions): Promise<string> {
           : undefined,
       });
 
-      // Empty content = soft failure (HTTP ok, model returned nothing). Try the next
-      // model; on the last one return "" to preserve the caller contract, don't throw.
-      if (text.trim().length === 0 && i < chain.length - 1) {
-        const next = chain[i + 1];
+      // Soft failure (HTTP ok, unusable body): nothing at all, or a truncated answer
+      // that cannot cover the audio. Try the next model; when the chain is exhausted
+      // return the best answer seen — never throw, the caller contract expects a string.
+      const trimmed = text.trim();
+      const isEmpty = trimmed.length === 0;
+      const isTruncated = isImplausiblyShortTranscript(trimmed, options.audioDurationSec);
+      if (isEmpty || isTruncated) {
+        if (trimmed.length > bestText.length) bestText = trimmed;
+        const reason = isEmpty
+          ? "returned empty content"
+          : `returned implausibly short content (${trimmed.length} chars for ` +
+            `${Math.round(options.audioDurationSec ?? 0)}s audio): ${JSON.stringify(trimmed.slice(0, 80))}`;
+        if (i < chain.length - 1) {
+          const next = chain[i + 1];
+          log.warn(
+            `STT model=${model}[${pinVertex ? "google-vertex" : "auto"}] ${reason}, ` +
+              `trying next fallback=${next.model}[${next.pinVertex ? "google-vertex" : "auto"}]`
+          );
+          continue;
+        }
         log.warn(
-          `STT model=${model}[${pinVertex ? "google-vertex" : "auto"}] returned empty content, ` +
-            `trying next fallback=${next.model}[${next.pinVertex ? "google-vertex" : "auto"}]`
+          `STT model=${model}[${pinVertex ? "google-vertex" : "auto"}] ${reason}; ` +
+            `chain exhausted, returning best result (${bestText.length} chars)`
         );
-        continue;
+        return bestText;
       }
       return text;
     } catch (err) {
@@ -305,10 +348,22 @@ async function callSttRaw(options: SttRawOptions): Promise<string> {
     }
 
     const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{
+        message?: { content?: string };
+        finish_reason?: string;
+        native_finish_reason?: string;
+      }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
-    const text = data?.choices?.[0]?.message?.content?.trim() ?? "";
-    log.info(`STT response: model=${model}, status=${res.status}, elapsed=${elapsed}ms, length=${text.length}`);
+    const choice = data?.choices?.[0];
+    const text = choice?.message?.content?.trim() ?? "";
+    // finish_reason/usage separate a genuinely short recording from a truncated or
+    // filtered generation — without them a 1-char answer is indistinguishable from success.
+    log.info(
+      `STT response: model=${model}, status=${res.status}, elapsed=${elapsed}ms, length=${text.length}, ` +
+        `finish=${choice?.finish_reason ?? "?"}/${choice?.native_finish_reason ?? "?"}, ` +
+        `tokens=${data?.usage?.prompt_tokens ?? "?"}→${data?.usage?.completion_tokens ?? "?"}`
+    );
     return text;
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {

@@ -19,3 +19,4 @@ webapp/dist
 .vscode
 .cursor
 drizzle.config.ts
+cc-channel

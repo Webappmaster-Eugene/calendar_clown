@@ -113,6 +113,7 @@ async function transcribeSingleFile(filePath: string, durationSec: number, onPro
     timeoutMs,
     model: TRANSCRIBE_MODEL_HQ,
     onProgress: wrappedProgress,
+    audioDurationSec: durationSec,
   });
   onProgress?.(`Транскрибация завершена — 100% (${result.length} симв.)`);
   return result;
@@ -161,6 +162,10 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
 
       // callStt walks the primary→fallbacks chain itself; we only catch here so
       // a single bad chunk doesn't abort the whole long-audio job.
+      // The tail chunk is shorter than the rest — pass its real length so the
+      // plausibility check does not judge it against a full-size window.
+      const chunkDuration = Math.max(0, Math.min(MAX_CHUNK_DURATION_SEC, duration - i * MAX_CHUNK_DURATION_SEC));
+
       let text = "";
       try {
         text = await callStt({
@@ -171,6 +176,7 @@ async function transcribeWithChunking(filePath: string, duration: number, onProg
           onProgress: onProgress
             ? (step: string) => onProgress(`${chunkLabel} — ${step}`)
             : undefined,
+          audioDurationSec: chunkDuration,
         });
       } catch (chunkErr) {
         log.error(`Chunk ${i + 1} failed across all models: ${chunkErr instanceof Error ? chunkErr.message : String(chunkErr)}`);

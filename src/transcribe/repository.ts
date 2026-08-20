@@ -169,13 +169,23 @@ export async function markStaleAsFailed(maxAgeMinutes: number = 120): Promise<nu
   return rows.length;
 }
 
-export async function getTranscriptionByFileUniqueId(
-  fileUniqueId: string
+/**
+ * Scoped to the owner on purpose: `file_unique_id` is shared across every user of the
+ * same bot, so an unscoped lookup would hand one user another user's transcript.
+ */
+export async function getTranscriptionByFileUniqueIdForUser(
+  fileUniqueId: string,
+  userId: number
 ): Promise<VoiceTranscription | null> {
   const [row] = await db
     .select()
     .from(voiceTranscriptions)
-    .where(eq(voiceTranscriptions.telegramFileUniqueId, fileUniqueId));
+    .where(
+      and(
+        eq(voiceTranscriptions.telegramFileUniqueId, fileUniqueId),
+        eq(voiceTranscriptions.userId, userId)
+      )
+    );
   if (!row) return null;
   return mapRow(row);
 }

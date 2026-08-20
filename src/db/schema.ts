@@ -174,9 +174,10 @@ export const voiceTranscriptions = pgTable(
       .notNull()
       .references(() => users.id),
     telegramFileId: varchar("telegram_file_id", { length: 255 }).notNull(),
-    telegramFileUniqueId: varchar("telegram_file_unique_id", { length: 255 })
-      .notNull()
-      .unique(),
+    // Unique per owner, not globally: Telegram reuses file_unique_id across every user
+    // of the same bot, so a global key would block a second user from transcribing
+    // a voice message someone else already sent.
+    telegramFileUniqueId: varchar("telegram_file_unique_id", { length: 255 }).notNull(),
     durationSeconds: integer("duration_seconds").notNull(),
     fileSizeBytes: integer("file_size_bytes"),
     forwardedFromName: varchar("forwarded_from_name", { length: 255 }),
@@ -198,6 +199,7 @@ export const voiceTranscriptions = pgTable(
     index("idx_voice_transcriptions_status").on(table.status),
     index("idx_voice_transcriptions_created_at").on(table.createdAt.desc()),
     index("idx_vt_delivery").on(table.userId, table.sequenceNumber).where(sql`is_delivered = false`),
+    unique("voice_transcriptions_user_file_unique_key").on(table.userId, table.telegramFileUniqueId),
   ],
 );
 
@@ -1138,5 +1140,28 @@ export const tribeMonthlyLimits = pgTable(
     uniqueIndex("idx_tribe_monthly_limits_unique").on(table.tribeId, table.year, table.month),
     check("tribe_monthly_limits_month_range", sql`${table.month} BETWEEN 1 AND 12`),
     check("tribe_monthly_limits_amount_positive", sql`${table.limitAmount} > 0`),
+  ],
+);
+
+// ─── Claude Code bridge ──────────────────────────────────────────────────────
+
+// One forum topic per (machine, project) rather than per session: sessions are
+// short-lived, and creating a topic for each one floods the supergroup with
+// service messages and loses history. The row survives restarts so the same
+// project always lands back in its own topic.
+export const ccTopics = pgTable(
+  "cc_topics",
+  {
+    id: serial("id").primaryKey(),
+    topicKey: varchar("topic_key", { length: 255 }).notNull(),
+    machine: varchar("machine", { length: 64 }).notNull(),
+    project: varchar("project", { length: 255 }).notNull(),
+    threadId: integer("thread_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_cc_topics_key").on(table.topicKey),
+    uniqueIndex("idx_cc_topics_thread").on(table.threadId),
   ],
 );

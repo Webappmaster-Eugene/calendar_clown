@@ -7,6 +7,7 @@ import type { WebAuthResult } from "./commands/digestAuth.js";
 import { createLogger } from "./utils/logger.js";
 import { createApiApp } from "./api/router.js";
 import { handleMcpRequest } from "./mcp/httpHandler.js";
+import { handleCcRequest } from "./cc/httpHandler.js";
 import { getPollHealth } from "./health/pollWatchdog.js";
 import { findUserByWebhookSecret } from "./expenses/bankPush/repository.js";
 import { ingestBankPush } from "./expenses/bankPush/ingest.js";
@@ -213,6 +214,13 @@ export function startOAuthServer(options: OAuthServerOptions): http.Server | nul
 
   const server = http.createServer(async (req, res) => {
     const { pathname, searchParams } = parsePathAndQuery(req.url ?? "/");
+
+    // ── Claude Code bridge (/cc/*) ──────────────────────────
+    // Native like /mcp: SSE needs the raw response, and machines authenticate
+    // with a bearer token rather than Telegram InitData.
+    if (await handleCcRequest(pathname, searchParams, req, res)) {
+      return;
+    }
 
     // ── MCP server (/mcp) → Action Registry tools ───────────
     // Handled before /api so the transport reads the raw request body itself.

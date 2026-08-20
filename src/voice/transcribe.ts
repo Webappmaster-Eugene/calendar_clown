@@ -97,7 +97,11 @@ function getTimeoutMs(fileSizeBytes: number): number {
   return 600_000;                                        // >15MB: 10min
 }
 
-export async function transcribeVoice(filePath: string, context: TranscribeContext = "calendar"): Promise<string> {
+export async function transcribeVoice(
+  filePath: string,
+  context: TranscribeContext = "calendar",
+  audioDurationSec?: number
+): Promise<string> {
   // No-op for .ogg (bot path); if ffmpeg is unavailable, returns the original unchanged.
   const { path: effectivePath, converted } = await compressToOggIfNeeded(filePath);
 
@@ -114,7 +118,7 @@ export async function transcribeVoice(filePath: string, context: TranscribeConte
     // HQ already uses a general-purpose prompt, so no context override needed.
     if (fileSizeBytes > MAX_SINGLE_FILE_BYTES) {
       const { transcribeVoiceHQ } = await import("../transcribe/transcribeHQ.js");
-      return transcribeVoiceHQ(effectivePath);
+      return transcribeVoiceHQ(effectivePath, undefined, audioDurationSec);
     }
 
     const timeoutMs = getTimeoutMs(fileSizeBytes);
@@ -125,6 +129,7 @@ export async function transcribeVoice(filePath: string, context: TranscribeConte
       prompt,
       timeoutMs,
       model: TRANSCRIBE_MODEL,
+      audioDurationSec,
     });
   } finally {
     if (converted && effectivePath !== filePath) {

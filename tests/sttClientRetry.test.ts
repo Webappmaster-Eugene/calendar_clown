@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isRetryableUpstreamError } from "../src/voice/sttClient.js";
+import { isRetryableUpstreamError, isImplausiblyShortTranscript } from "../src/voice/sttClient.js";
 
 describe("isRetryableUpstreamError", () => {
   it("retries on 5xx server errors", () => {
@@ -61,5 +61,41 @@ describe("isRetryableUpstreamError", () => {
   it("does NOT retry on 400 with unrelated message (preserves precise client errors)", () => {
     assert.equal(isRetryableUpstreamError(400, "Malformed request body"), false);
     assert.equal(isRetryableUpstreamError(422, "Unprocessable entity"), false);
+  });
+});
+
+describe("isImplausiblyShortTranscript", () => {
+  it("flags the prod regression: 82s of audio transcribed as a single character", () => {
+    assert.equal(isImplausiblyShortTranscript("Я", 82), true);
+  });
+
+  it("accepts a normal-density transcript", () => {
+    // 60s → 547 chars in production, ~9 chars/sec
+    assert.equal(isImplausiblyShortTranscript("а".repeat(547), 60), false);
+  });
+
+  it("accepts anything at the threshold or above (0.5 chars/sec)", () => {
+    assert.equal(isImplausiblyShortTranscript("а".repeat(20), 40), false);
+    assert.equal(isImplausiblyShortTranscript("а".repeat(19), 40), true);
+  });
+
+  it("stays silent on short clips where a one-word answer is plausible", () => {
+    assert.equal(isImplausiblyShortTranscript("Да", 5), false);
+    assert.equal(isImplausiblyShortTranscript("Да", 14), false);
+    assert.equal(isImplausiblyShortTranscript("Да", 15), true);
+  });
+
+  it("ignores an empty answer — that path has its own handling", () => {
+    assert.equal(isImplausiblyShortTranscript("", 300), false);
+    assert.equal(isImplausiblyShortTranscript("   ", 300), false);
+  });
+
+  it("stays silent when the duration is unknown or nonsensical", () => {
+    assert.equal(isImplausiblyShortTranscript("Я", undefined), false);
+    assert.equal(isImplausiblyShortTranscript("Я", NaN), false);
+  });
+
+  it("measures the trimmed text, not the padding around it", () => {
+    assert.equal(isImplausiblyShortTranscript(`  ${"а".repeat(19)}  `, 40), true);
   });
 });

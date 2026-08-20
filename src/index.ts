@@ -23,6 +23,7 @@ import { disconnectAll as disconnectAllMtprotoSessions } from "./digest/sessionM
 import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js";
 import { setDigestBotRef } from "./commands/digestMode.js";
 import { setAuthBotRef, startWebTokenCleanup, stopWebTokenCleanup } from "./commands/digestAuth.js";
+import { stopCcKeepAlive } from "./cc/httpHandler.js";
 import { setBankPushBotRef } from "./expenses/bankPush/confirm.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
@@ -281,6 +282,7 @@ async function main(): Promise<void> {
     stopWorkerHealthMonitor();
     stopStaleJobCleaner();
     stopWebTokenCleanup();
+    stopCcKeepAlive();
     await closeTranscribeQueue();
     await closePool();
     await shutdownTelemetry();

@@ -1,0 +1,2 @@
+ALTER TABLE "voice_transcriptions" DROP CONSTRAINT "voice_transcriptions_telegram_file_unique_id_unique";--> statement-breakpoint
+ALTER TABLE "voice_transcriptions" ADD CONSTRAINT "voice_transcriptions_user_file_unique_key" UNIQUE("user_id","telegram_file_unique_id");
