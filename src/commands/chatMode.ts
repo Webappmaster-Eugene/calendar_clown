@@ -20,7 +20,7 @@ import {
   setChatProvider,
   isDialogAtMessageLimit,
 } from "../chat/repository.js";
-import { chatCompletion, generateDialogTitle } from "../chat/client.js";
+import { chatCompletionStream, generateDialogTitle } from "../chat/client.js";
 import {
   resolveDialogAiConfig,
   formatEffectiveConfig,
@@ -29,7 +29,6 @@ import {
 } from "../chat/config.js";
 import { augmentUserMessage, isWebSearchConfigured } from "../chat/augment.js";
 import { resolveWebSearchStrategy, type WebSearchStrategy } from "../chat/webSearchStrategy.js";
-import { splitMessage } from "../utils/telegram.js";
 import { setModeMenuCommands, getModeButtons } from "./expenseMode.js";
 import { NEURO_VISION_MODEL, CHAT_MESSAGE_LIMIT, CHAT_MAX_DIALOGS } from "../constants.js";
 import type { ChatProvider } from "../shared/types.js";
@@ -39,7 +38,8 @@ import { logAction } from "../logging/actionLogger.js";
 import type { ContentPart, MessageContent } from "../utils/openRouterClient.js";
 import { addMessage, cancelBatch, hasPendingBatch, flushBatchSync } from "../chat/messageBatcher.js";
 import { checkCostlyRateLimit, COSTLY_LIMIT_MESSAGE } from "../middleware/rateLimit.js";
-import { processNeuroRequest } from "../chat/neuroProcessor.js";
+import { processNeuroRequest, STREAM_INTERRUPTED_NOTE } from "../chat/neuroProcessor.js";
+import { StreamingReply } from "../chat/streamingReply.js";
 import { handleNeuroSettingsText, cancelNeuroSettings, NEURO_SETTINGS_BUTTON } from "./chatSettings.js";
 
 const log = createLogger("neuro");
@@ -505,45 +505,42 @@ export async function handleNeuroVoice(
       { role: "user", content: augmentedText },
     ];
 
-    const result = await chatCompletion(messages, {
-      model,
-      persona,
-      uncensored,
-      webSearch: searchStrategy,
+    const reply = new StreamingReply({
+      telegram: ctx.telegram,
+      chatId: ctx.chat!.id,
+      messageId: statusMsgId,
+      prefix: { plain: `🎤 ${transcript}\n\n`, markdown: `🎤 _${transcript}_\n\n` },
     });
 
     const userEntry = prependText
       ? `${prependText}[Голос] ${transcript}`
       : `[Голос] ${transcript}`;
+
+    let result;
+    try {
+      result = await chatCompletionStream(messages, (delta) => reply.push(delta), {
+        model,
+        persona,
+        uncensored,
+        webSearch: searchStrategy,
+      });
+    } catch (err) {
+      const partial = reply.text;
+      if (!partial.trim()) throw err;
+      log.error("Neuro voice stream interrupted, keeping the partial answer:", err);
+      await reply.finish(STREAM_INTERRUPTED_NOTE);
+      await saveMessage(dbUser.id, dialog.id, "user", userEntry);
+      await saveMessage(dbUser.id, dialog.id, "assistant", partial, model);
+      return;
+    }
+
+    await reply.finish();
+
     await saveMessage(dbUser.id, dialog.id, "user", userEntry);
     await saveMessage(dbUser.id, dialog.id, "assistant", result.content, model, result.tokensUsed ?? undefined);
 
     if (dialog.title === "Новый диалог") {
       autoNameDialog(dialog.id, transcript, model);
-    }
-
-    const fullReply = `🎤 _${transcript}_\n\n${result.content}`;
-    const chunks = splitMessage(fullReply);
-
-    try {
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id, statusMsgId, undefined,
-        chunks[0],
-        { parse_mode: "Markdown" }
-      );
-    } catch {
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id, statusMsgId, undefined,
-        chunks[0]
-      );
-    }
-
-    for (let i = 1; i < chunks.length; i++) {
-      try {
-        await ctx.replyWithMarkdown(chunks[i]);
-      } catch {
-        await ctx.reply(chunks[i]);
-      }
     }
   } catch (err) {
     log.error("Neuro voice error:", err);
@@ -634,31 +631,38 @@ export async function handleNeuroPhoto(ctx: Context): Promise<void> {
       { role: "user", content: userContent },
     ];
 
-    const result = await chatCompletion(messages, {
-      model: NEURO_VISION_MODEL,
-      persona,
-      uncensored,
-      webSearch: searchStrategy,
-    });
+    const reply = new StreamingReply({ telegram: ctx.telegram, chatId: ctx.chat!.id });
 
     const userEntry = prependText
       ? `${prependText}[Фото] ${caption}`
       : `[Фото] ${caption}`;
+
+    let result;
+    try {
+      result = await chatCompletionStream(messages, (delta) => reply.push(delta), {
+        model: NEURO_VISION_MODEL,
+        persona,
+        uncensored,
+        webSearch: searchStrategy,
+      });
+    } catch (err) {
+      const partial = reply.text;
+      if (!partial.trim()) throw err;
+      log.error("Neuro photo stream interrupted, keeping the partial answer:", err);
+      await reply.finish(STREAM_INTERRUPTED_NOTE);
+      await saveMessage(dbUser.id, dialog.id, "user", userEntry);
+      await saveMessage(dbUser.id, dialog.id, "assistant", partial, NEURO_VISION_MODEL);
+      return;
+    }
+
+    await reply.finish(visionModelNote(dialog.model));
+
     await saveMessage(dbUser.id, dialog.id, "user", userEntry);
     await saveMessage(dbUser.id, dialog.id, "assistant", result.content, NEURO_VISION_MODEL, result.tokensUsed ?? undefined);
 
     // Auto-name uses the user's chat model, not the vision model.
     if (dialog.title === "Новый диалог") {
       autoNameDialog(dialog.id, caption, photoModel);
-    }
-
-    const chunks = splitMessage(result.content + visionModelNote(dialog.model));
-    for (const chunk of chunks) {
-      try {
-        await ctx.replyWithMarkdown(chunk);
-      } catch {
-        await ctx.reply(chunk);
-      }
     }
   } catch (err) {
     log.error("Neuro photo error:", err);
@@ -746,40 +750,19 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     const augmentedText = await augmentForBot(fullCaption, historyForSearch, ctx, searchStrategy);
     const promptOpts = { persona, uncensored, webSearch: searchStrategy };
 
-    let result;
+    let messages: Array<{ role: string; content: MessageContent }>;
     let modelUsed: string;
 
-    if (isImage) {
-      const base64 = buffer.toString("base64");
-      const dataUrl = `data:${mimeType};base64,${base64}`;
+    // Gemini takes PDFs/Office files through the same image_url channel as photos.
+    if (isImage || isGeminiDoc) {
+      const dataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
 
       const userContent: ContentPart[] = [
         { type: "image_url", image_url: { url: dataUrl } },
         { type: "text", text: augmentedText },
       ];
 
-      const messages: Array<{ role: string; content: MessageContent }> = [
-        ...historyMessages,
-        { role: "user", content: userContent },
-      ];
-
-      result = await chatCompletion(messages, { model: NEURO_VISION_MODEL, ...promptOpts });
-      modelUsed = NEURO_VISION_MODEL;
-    } else if (isGeminiDoc) {
-      const base64 = buffer.toString("base64");
-      const dataUrl = `data:${mimeType};base64,${base64}`;
-
-      const userContent: ContentPart[] = [
-        { type: "image_url", image_url: { url: dataUrl } },
-        { type: "text", text: augmentedText },
-      ];
-
-      const messages: Array<{ role: string; content: MessageContent }> = [
-        ...historyMessages,
-        { role: "user", content: userContent },
-      ];
-
-      result = await chatCompletion(messages, { model: NEURO_VISION_MODEL, ...promptOpts });
+      messages = [...historyMessages, { role: "user", content: userContent }];
       modelUsed = NEURO_VISION_MODEL;
     } else if (isText) {
       const textContent = buffer.toString("utf-8");
@@ -789,12 +772,7 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
 
       const userMessage = `Файл: ${fileName}\n\n\`\`\`\n${truncated}\n\`\`\`\n\n${augmentedText}`;
 
-      const messages: Array<{ role: string; content: MessageContent }> = [
-        ...historyMessages,
-        { role: "user", content: userMessage },
-      ];
-
-      result = await chatCompletion(messages, { model: docTitleModel, ...promptOpts });
+      messages = [...historyMessages, { role: "user", content: userMessage }];
       modelUsed = docTitleModel;
     } else {
       await ctx.reply(
@@ -807,22 +785,33 @@ export async function handleNeuroDocument(ctx: Context): Promise<void> {
     const userEntry = prependText
       ? `${prependText}[Документ: ${fileName}] ${caption}`
       : `[Документ: ${fileName}] ${caption}`;
+
+    const reply = new StreamingReply({ telegram: ctx.telegram, chatId: ctx.chat!.id });
+
+    let result;
+    try {
+      result = await chatCompletionStream(messages, (delta) => reply.push(delta), {
+        model: modelUsed,
+        ...promptOpts,
+      });
+    } catch (err) {
+      const partial = reply.text;
+      if (!partial.trim()) throw err;
+      log.error("Neuro document stream interrupted, keeping the partial answer:", err);
+      await reply.finish(STREAM_INTERRUPTED_NOTE);
+      await saveMessage(dbUser.id, dialog.id, "user", userEntry);
+      await saveMessage(dbUser.id, dialog.id, "assistant", partial, modelUsed);
+      return;
+    }
+
+    await reply.finish(modelUsed === NEURO_VISION_MODEL ? visionModelNote(dialog.model) : "");
+
     await saveMessage(dbUser.id, dialog.id, "user", userEntry);
     await saveMessage(dbUser.id, dialog.id, "assistant", result.content, modelUsed, result.tokensUsed ?? undefined);
 
     // Auto-name uses the user's chat model, not the vision model.
     if (dialog.title === "Новый диалог") {
       autoNameDialog(dialog.id, `${fileName}: ${caption}`, docTitleModel);
-    }
-
-    const note = modelUsed === NEURO_VISION_MODEL ? visionModelNote(dialog.model) : "";
-    const chunks = splitMessage(result.content + note);
-    for (const chunk of chunks) {
-      try {
-        await ctx.replyWithMarkdown(chunk);
-      } catch {
-        await ctx.reply(chunk);
-      }
     }
   } catch (err) {
     log.error("Neuro document error:", err);

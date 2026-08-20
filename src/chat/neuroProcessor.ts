@@ -1,5 +1,5 @@
 import type { FlushedBatch } from "./messageBatcher.js";
-import { chatCompletion, generateDialogTitle } from "./client.js";
+import { chatCompletionStream, generateDialogTitle } from "./client.js";
 import {
   getOrCreateActiveDialog,
   getDialogById,
@@ -12,10 +12,14 @@ import {
 import { resolveDialogAiConfig, CHAT_LIMIT_REACHED_MSG } from "./config.js";
 import { augmentUserMessage, isWebSearchConfigured } from "./augment.js";
 import { resolveWebSearchStrategy } from "./webSearchStrategy.js";
-import { splitMessage } from "../utils/telegram.js";
+import { StreamingReply } from "./streamingReply.js";
+import type { StreamResult } from "../utils/openRouterClient.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("neuro-processor");
+
+/** Appended to a partially streamed answer whose stream died mid-flight. */
+export const STREAM_INTERRUPTED_NOTE = "\n\n⚠️ _Ответ оборван: соединение с моделью прервалось._";
 
 export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
   const { combinedText, ctx, dialogId, dbUserId } = batch;
@@ -66,12 +70,35 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
       { role: "user", content: augmented.augmentedText },
     ];
 
-    const result = await chatCompletion(messages, {
-      model,
-      persona,
-      uncensored,
-      webSearch: searchStrategy,
+    const reply = new StreamingReply({
+      telegram: ctx.telegram,
+      chatId,
+      messageId: statusMsgId,
     });
+
+    let result: StreamResult;
+    try {
+      result = await chatCompletionStream(messages, (delta) => reply.push(delta), {
+        model,
+        persona,
+        uncensored,
+        webSearch: searchStrategy,
+      });
+    } catch (err) {
+      // Part of the answer may already be on screen and cannot be recalled, so
+      // keep it — and persist it, or the history would disagree with the chat.
+      const partial = reply.text;
+      if (!partial.trim()) throw err;
+      log.error("Neuro stream interrupted, keeping the partial answer:", err);
+      // The note is for the reader only — saving it would feed it back to the
+      // model as part of its own previous turn.
+      await reply.finish(STREAM_INTERRUPTED_NOTE);
+      await saveMessage(dbUserId, dialog.id, "user", combinedText);
+      await saveMessage(dbUserId, dialog.id, "assistant", partial, model);
+      return;
+    }
+
+    await reply.finish();
 
     // Save original text without search/links context.
     await saveMessage(dbUserId, dialog.id, "user", combinedText);
@@ -87,37 +114,6 @@ export async function processNeuroRequest(batch: FlushedBatch): Promise<void> {
         .catch((err) => log.error("Failed to auto-name dialog:", err));
     }
 
-    const chunks = splitMessage(result.content);
-
-    try {
-      await ctx.telegram.editMessageText(
-        chatId, statusMsgId, undefined,
-        chunks[0],
-        { parse_mode: "Markdown" }
-      );
-    } catch {
-      try {
-        await ctx.telegram.editMessageText(
-          chatId, statusMsgId, undefined,
-          chunks[0]
-        );
-      } catch {
-        // If edit fails completely, send as new message
-        try {
-          await ctx.replyWithMarkdown(chunks[0]);
-        } catch {
-          await ctx.reply(chunks[0]);
-        }
-      }
-    }
-
-    for (let i = 1; i < chunks.length; i++) {
-      try {
-        await ctx.replyWithMarkdown(chunks[i]);
-      } catch {
-        await ctx.reply(chunks[i]);
-      }
-    }
   } catch (err) {
     log.error("Neuro processor error:", err);
     try {
