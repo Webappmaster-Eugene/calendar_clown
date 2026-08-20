@@ -110,8 +110,9 @@ export const NEURO_BATCH_MAX_WAIT_MS = 30_000;
 
 // Telegram has no append API: every streamed update rewrites the whole message,
 // and each rewrite is a rate-limited call plus a re-render on the user's screen.
-// 1.5s reads as live typing without spending the per-chat edit budget.
-export const NEURO_STREAM_EDIT_INTERVAL_MS = 1_500;
+// 3s makes the answer arrive in paragraph-sized steps rather than as live
+// typing — deliberately calm, so a growing answer shifts the chat less often.
+export const NEURO_STREAM_EDIT_INTERVAL_MS = 3_000;
 
 export const NEURO_STREAM_EDIT_MAX_INTERVAL_MS = 8_000;
 
