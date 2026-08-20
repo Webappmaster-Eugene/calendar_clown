@@ -100,6 +100,38 @@ describe("StreamingReply", () => {
     assert.equal(calls.at(-1)?.parseMode, "Markdown");
   });
 
+  it("never runs two edits at once while deltas keep arriving", async () => {
+    // Reproduces a live-API defect: a push landing mid-edit used to schedule a
+    // second edit immediately, racing the first on the same message.
+    const calls: Array<{ start: number; end: number }> = [];
+    const telegram = {
+      async editMessageText() {
+        const start = Date.now();
+        await sleep(120);
+        calls.push({ start, end: Date.now() });
+        return true;
+      },
+    } as unknown as Telegram;
+
+    const reply = new StreamingReply({ telegram, chatId: 1, messageId: 7 });
+    for (let i = 0; i < 120; i++) {
+      reply.push("слово ");
+      await sleep(10);
+    }
+    await reply.finish();
+
+    const ordered = [...calls].sort((a, b) => a.start - b.start);
+    for (let i = 1; i < ordered.length; i++) {
+      assert.ok(
+        ordered[i].start >= ordered[i - 1].end,
+        `edit ${i} started before edit ${i - 1} finished`
+      );
+    }
+    // ~1.2s of deltas: an immediate first edit plus roughly one per interval.
+    const expected = Math.ceil(1200 / NEURO_STREAM_EDIT_INTERVAL_MS) + 2;
+    assert.ok(calls.length <= expected, `expected at most ${expected} edits, got ${calls.length}`);
+  });
+
   it("edits the status message in place instead of sending a new one", async () => {
     const { telegram, calls } = fakeTelegram();
     const reply = new StreamingReply({ telegram, chatId: 1, messageId: 7 });

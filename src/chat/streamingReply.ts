@@ -100,7 +100,10 @@ export class StreamingReply {
   }
 
   private schedule(): void {
-    if (this.timer || this.closed) return;
+    // A push landing while an edit is in flight must not queue a second one:
+    // nextEditAt still holds the pre-edit value, so the timer would fire at
+    // once and two concurrent edits would race on the same message.
+    if (this.timer || this.inFlight || this.closed) return;
     const wait = Math.max(0, this.nextEditAt - Date.now());
     this.timer = setTimeout(() => {
       this.timer = null;
