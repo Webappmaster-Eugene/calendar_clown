@@ -105,3 +105,29 @@ describe("parseTinkoffPush — non-expenses are skipped", () => {
     assert.match(r.raw, /новый формат/);
   });
 });
+
+describe("parseTinkoffPush — merchant is cleaned of transfer boilerplate", () => {
+  // Prod samples: before the cleanup every SBP payment was stored as
+  // "<merchant> через СБП на счет RUB", which drowned the category matcher.
+  it("strips 'через СБП на счет RUB'", () => {
+    const r = parseTinkoffPush("Т-Банк", "Оплата 2 461 ₽ Timeweb через СБП на счет RUB");
+    assert.equal(r.kind, "expense");
+    assert.equal(r.amount, 2461);
+    assert.equal(r.merchant, "Timeweb");
+  });
+
+  it("strips 'на счет RUB' without СБП", () => {
+    const r = parseTinkoffPush("Т-Банк", "Оплата 416,78 ₽ iBank ZhKH на счет RUB");
+    assert.equal(r.merchant, "iBank ZhKH");
+  });
+
+  it("strips 'на накоп счет'", () => {
+    const r = parseTinkoffPush("Т-Банк", "Оплата 750 ₽ МТС на накоп счет");
+    assert.equal(r.merchant, "МТС");
+  });
+
+  it("leaves a plain merchant untouched", () => {
+    const r = parseTinkoffPush("Т-Банк", "Покупка 540 ₽, Пятёрочка. Баланс 12 000 ₽");
+    assert.equal(r.merchant, "Пятёрочка");
+  });
+});

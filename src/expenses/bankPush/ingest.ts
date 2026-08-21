@@ -7,14 +7,17 @@ import type { DbUser, Category } from "../types.js";
 import { getCategories } from "../repository.js";
 import { findCategory } from "../parser.js";
 import { categorizeExpenseText } from "../categorizeWithAI.js";
-import { parseTinkoffPush, type PushKind } from "./parseTinkoffPush.js";
+import { parseTinkoffPush, type ParsedPush, type PushKind } from "./parseTinkoffPush.js";
 import { insertBankPushExpense } from "./repository.js";
 import { sendBankPushConfirmation } from "./confirm.js";
 import { createLogger } from "../../utils/logger.js";
+import { logAction } from "../../logging/actionLogger.js";
 
 const log = createLogger("bank-push-ingest");
 
 const FALLBACK_CATEGORY_NAME = "Другое";
+/** Enough to read a whole T-Bank notification back; details are capped anyway. */
+const RAW_LOG_LIMIT = 500;
 /** Fuzzy-match confidence threshold, aligned with parseExpenseText. */
 const CONFIDENT_SCORE = 40;
 
@@ -72,19 +75,41 @@ async function resolveCategory(merchant: string | null, amount: number, categori
   return fallback;
 }
 
+/**
+ * Container logs are lost on every restart and nothing else recorded a delivery, so
+ * "the expense is missing" was previously indistinguishable from "the phone never
+ * forwarded it". Every delivery — including the ones deliberately dropped — leaves a
+ * row here with the raw notification, which is what makes the parser tunable against
+ * real device output. Truncated because action_logs.details is capped anyway.
+ */
+function logDelivery(
+  telegramId: number,
+  parsed: ParsedPush,
+  status: IngestStatus,
+  extra?: Record<string, unknown>,
+): void {
+  logAction(null, telegramId, "bank_push", {
+    status,
+    kind: parsed.kind,
+    amount: parsed.amount,
+    merchant: parsed.merchant,
+    raw: parsed.raw.slice(0, RAW_LOG_LIMIT),
+    ...extra,
+  });
+}
+
 export async function ingestBankPush(input: IngestInput): Promise<IngestResult> {
   const { user } = input;
   const parsed = parseTinkoffPush(input.title, input.text);
 
-  if (parsed.kind !== "expense") {
+  if (parsed.kind !== "expense" || parsed.amount == null) {
     log.info("Skipping non-expense push (%s) for user %d: %s", parsed.kind, user.telegramId, parsed.raw);
+    logDelivery(user.telegramId, parsed, "skipped");
     return { status: "skipped", kind: parsed.kind };
-  }
-  if (parsed.amount == null) {
-    return { status: "skipped", kind: "ignore" };
   }
   if (!user.tribeId) {
     log.warn("User %d has no tribe; cannot record bank-push expense", user.telegramId);
+    logDelivery(user.telegramId, parsed, "no_tribe");
     return { status: "no_tribe" };
   }
 
@@ -95,18 +120,30 @@ export async function ingestBankPush(input: IngestInput): Promise<IngestResult> 
   const minuteBucket = now.toISOString().slice(0, 16);
   const dedupHash = buildDedupHash(user.telegramId, parsed.amount, parsed.merchant ?? "", minuteBucket);
 
-  const inserted = await insertBankPushExpense({
-    userId: user.id,
-    tribeId: user.tribeId,
-    categoryId: category.id,
-    amount: parsed.amount,
-    subcategory: parsed.merchant,
-    dedupHash,
-    createdAt: now,
-  });
+  // The insert rejects out-of-range amounts; without this the failure would only
+  // ever surface as a generic 200 + container log, which is how such pushes went
+  // missing unnoticed.
+  let inserted;
+  try {
+    inserted = await insertBankPushExpense({
+      userId: user.id,
+      tribeId: user.tribeId,
+      categoryId: category.id,
+      amount: parsed.amount,
+      subcategory: parsed.merchant,
+      dedupHash,
+      createdAt: now,
+    });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    log.error("Failed to record bank push for user %d: %s", user.telegramId, reason);
+    logDelivery(user.telegramId, parsed, "error", { reason });
+    return { status: "error" };
+  }
 
   if (!inserted) {
     log.info("Duplicate bank push for user %d (%s %d)", user.telegramId, parsed.merchant, parsed.amount);
+    logDelivery(user.telegramId, parsed, "duplicate");
     return { status: "duplicate" };
   }
 
@@ -122,5 +159,6 @@ export async function ingestBankPush(input: IngestInput): Promise<IngestResult> 
 
   log.info("Recorded bank-push expense %d for user %d: %s %d → %s",
     inserted.id, user.telegramId, parsed.merchant, parsed.amount, category.name);
+  logDelivery(user.telegramId, parsed, "recorded", { expenseId: inserted.id, category: category.name });
   return { status: "recorded", expenseId: inserted.id };
 }

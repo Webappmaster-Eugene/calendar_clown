@@ -7,6 +7,7 @@ import {
   MIN_EXPENSE_AMOUNT,
   MAX_SUBCATEGORY_LENGTH,
 } from "../constants.js";
+import { recordAccessRequest, closeAccessRequest } from "../access/repository.js";
 import type {
   Category,
   Expense,
@@ -341,6 +342,16 @@ export async function listTribeUsers(tribeId: number): Promise<DbUser[]> {
   return rows.map(mapDbUser);
 }
 
+/** Everyone who may receive bot messages — pending/rejected applicants are excluded. */
+export async function listApprovedUsers(): Promise<DbUser[]> {
+  const rows = await db
+    .select()
+    .from(users)
+    .where(eq(users.status, "approved"))
+    .orderBy(users.id);
+  return rows.map(mapDbUser);
+}
+
 /** Returns null if the user already exists. */
 export async function addUserByTelegramId(
   telegramId: number,
@@ -379,24 +390,34 @@ export async function createPendingUser(
     .values({ telegramId: BigInt(telegramId), username, firstName, lastName, role: "user", status: "pending" })
     .returning({ id: users.id });
 
+  await recordAccessRequest({ telegramId, username, firstName, lastName });
+
   return { id: inserted.id, telegramId, username, firstName, lastName, role: "user", tribeId: null };
 }
 
-export async function approveUser(telegramId: number): Promise<boolean> {
+export async function approveUser(telegramId: number, decidedByTelegramId: number | null = null): Promise<boolean> {
   const rows = await db
     .update(users)
     .set({ status: "approved" })
     .where(and(eq(users.telegramId, BigInt(telegramId)), eq(users.status, "pending")))
     .returning({ id: users.id });
+
+  if (rows.length > 0) {
+    await closeAccessRequest(telegramId, "approved", decidedByTelegramId);
+  }
   return rows.length > 0;
 }
 
-/** Deletes the row so the user can re-apply. */
-export async function rejectUser(telegramId: number): Promise<boolean> {
+/** Deletes the row so the user can re-apply; the request history survives in `access_requests`. */
+export async function rejectUser(telegramId: number, decidedByTelegramId: number | null = null): Promise<boolean> {
   const rows = await db
     .delete(users)
     .where(and(eq(users.telegramId, BigInt(telegramId)), eq(users.status, "pending")))
     .returning({ id: users.id });
+
+  if (rows.length > 0) {
+    await closeAccessRequest(telegramId, "rejected", decidedByTelegramId);
+  }
   return rows.length > 0;
 }
 

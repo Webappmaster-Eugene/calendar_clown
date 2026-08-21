@@ -62,6 +62,27 @@ const IGNORE_KEYWORDS = [
 /** Words after which the number is a balance, not the transaction amount. */
 const BALANCE_MARKERS = /(баланс|доступно|остаток)/i;
 
+/**
+ * Routing boilerplate T-Bank appends to transfer/utility payments ("Timeweb через СБП
+ * на счет RUB"). It says how the money moved, not who got it, so it is cut from the
+ * merchant — otherwise every such expense is filed under a near-identical label and
+ * the category matcher has more noise than signal to work with.
+ */
+/** `\b` does not fire around Cyrillic in JS, so boundaries use letter/digit lookarounds. */
+function phrase(body: string): RegExp {
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "giu");
+}
+
+const TRANSFER_NOISE = [
+  // The notification title is often just the sending bank; it is never the payee.
+  phrase("т-?банк|тинькофф|tinkoff"),
+  phrase("через\\s+сбп"),
+  phrase("на\\s+нако[пв][а-яё]*\\s+сч[её]т"),
+  phrase("на\\s+сч[её]т(?:\\s+[a-zа-яё]{3})?"),
+  phrase("со\\s+сч[её]та"),
+  phrase("на\\s+карту"),
+];
+
 /** Their presence means we skip: the ledger assumes RUB. */
 const FOREIGN_CURRENCY = /(\$|€|£|usd|eur|gbp|доллар|евро)/i;
 
@@ -175,6 +196,10 @@ function extractMerchant(text: string, amountText: string): string | null {
 
   s = s.replace(/₽|руб\.?|р\./gi, " ");
   s = s.replace(/\b\d[\d\s .:,-]*\d\b/g, " ");
+
+  for (const noise of TRANSFER_NOISE) {
+    s = s.replace(noise, " ");
+  }
 
   s = s.replace(/[.,;:]+/g, " ").replace(/\s{2,}/g, " ").trim();
 
