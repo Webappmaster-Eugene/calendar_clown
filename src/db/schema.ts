@@ -1159,6 +1159,9 @@ export const ccTopics = pgTable(
     threadId: integer("thread_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+    // Archived rather than deleted: history survives and a new session reopens
+    // the topic on its own. NULL means open.
+    closedAt: timestamp("closed_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("idx_cc_topics_key").on(table.topicKey),

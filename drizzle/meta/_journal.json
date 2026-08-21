@@ -127,6 +127,13 @@
       "when": 1787328754015,
       "tag": "0017_backfill_access_requests_from_users",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787348163375,
+      "tag": "0018_cc_topics_closed_at",
+      "breakpoints": true
     }
   ]
 }

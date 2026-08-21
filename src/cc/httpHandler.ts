@@ -167,15 +167,16 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
   const cwd = String(body.cwd).slice(0, 512);
   const sessionName = String(body.session ?? "").trim().slice(0, 60);
 
-  let threadId: number;
+  let topic: Awaited<ReturnType<typeof ensureTopic>>;
   try {
-    threadId = await ensureTopic(machine, cwd, project, sessionName);
+    topic = await ensureTopic(machine, cwd, project, sessionName);
   } catch (err) {
     log.error("ensureTopic failed: %s", err instanceof Error ? err.message : String(err));
     sendJson(res, 503, { ok: false, error: "Could not open a Telegram topic" });
     return;
   }
 
+  const threadId = topic.threadId;
   const reconnect = countSessionsForThread(threadId) > 0;
   const { sessionId, sessionToken } = registerSession({
     machine,
@@ -190,7 +191,7 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
 
   const session = authorize(sessionId, sessionToken);
   if (session) {
-    await announceSession(session, reconnect).catch((err: unknown) => {
+    await announceSession(session, reconnect, topic.idleMs).catch((err: unknown) => {
       log.error("announce failed: %s", err instanceof Error ? err.message : String(err));
     });
   }

@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { db } from "../db/drizzle.js";
 import { ccTopics } from "../db/schema.js";
 
@@ -57,6 +57,7 @@ export async function touchTopic(threadId: number): Promise<void> {
 
 export interface CcTopicRow extends CcTopic {
   lastUsedAt: Date;
+  closedAt: Date | null;
 }
 
 export async function listTopics(): Promise<CcTopicRow[]> {
@@ -67,7 +68,44 @@ export async function listTopics(): Promise<CcTopicRow[]> {
     project: r.project,
     threadId: r.threadId,
     lastUsedAt: r.lastUsedAt,
+    closedAt: r.closedAt,
   }));
+}
+
+/** Open topics whose last session predates the cutoff — candidates for archiving. */
+export async function listStaleOpenTopics(cutoff: Date): Promise<CcTopicRow[]> {
+  const rows = await db
+    .select()
+    .from(ccTopics)
+    .where(and(isNull(ccTopics.closedAt), lt(ccTopics.lastUsedAt, cutoff)));
+  return rows.map((r) => ({
+    topicKey: r.topicKey,
+    machine: r.machine,
+    project: r.project,
+    threadId: r.threadId,
+    lastUsedAt: r.lastUsedAt,
+    closedAt: r.closedAt,
+  }));
+}
+
+export async function setTopicClosed(threadId: number, closed: boolean): Promise<void> {
+  await db
+    .update(ccTopics)
+    .set({ closedAt: closed ? sql`now()` : null })
+    .where(eq(ccTopics.threadId, threadId));
+}
+
+/** Whether the stored topic is archived, plus how long it sat idle before now. */
+export async function getTopicState(
+  threadId: number,
+): Promise<{ closed: boolean; idleMs: number } | null> {
+  const [row] = await db
+    .select({ closedAt: ccTopics.closedAt, lastUsedAt: ccTopics.lastUsedAt })
+    .from(ccTopics)
+    .where(eq(ccTopics.threadId, threadId))
+    .limit(1);
+  if (!row) return null;
+  return { closed: row.closedAt !== null, idleMs: Date.now() - row.lastUsedAt.getTime() };
 }
 
 export async function forgetTopicByThread(threadId: number): Promise<void> {

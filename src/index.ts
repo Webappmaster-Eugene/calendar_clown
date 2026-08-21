@@ -24,6 +24,8 @@ import { startDigestScheduler, stopDigestScheduler } from "./digest/scheduler.js
 import { setDigestBotRef } from "./commands/digestMode.js";
 import { setAuthBotRef, startWebTokenCleanup, stopWebTokenCleanup } from "./commands/digestAuth.js";
 import { stopCcKeepAlive } from "./cc/httpHandler.js";
+import { startCcScheduler, stopCcScheduler } from "./cc/scheduler.js";
+import { isCcConfigured } from "./services/ccBridgeService.js";
 import { setBankPushBotRef } from "./expenses/bankPush/confirm.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
@@ -201,6 +203,11 @@ async function main(): Promise<void> {
     log.info("Tasks scheduler enabled.");
 
     startOsintRetention();
+
+    // Only with a DB: the archive reads and writes cc_topics.
+    if (isCcConfigured()) {
+      startCcScheduler();
+    }
   } else if (process.env.DATABASE_URL) {
     log.warn("DATABASE_URL is set but DB is unavailable — schedulers not started.");
   }
@@ -283,6 +290,7 @@ async function main(): Promise<void> {
     stopStaleJobCleaner();
     stopWebTokenCleanup();
     stopCcKeepAlive();
+    stopCcScheduler();
     await closeTranscribeQueue();
     await closePool();
     await shutdownTelemetry();

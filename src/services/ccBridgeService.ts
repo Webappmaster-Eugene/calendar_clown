@@ -10,7 +10,10 @@ import {
   findTopicByThread,
   forgetTopic,
   forgetTopicByThread,
+  getTopicState,
+  listStaleOpenTopics,
   listTopics,
+  setTopicClosed,
   saveTopic,
   touchTopic,
 } from "../cc/repository.js";
@@ -64,18 +67,26 @@ function splitForTelegram(text: string): string[] {
 
 // Two sessions starting at once in the same directory would otherwise both miss
 // the lookup and each create a topic, orphaning one of them.
-const topicInFlight = new Map<string, Promise<number>>();
+const topicInFlight = new Map<string, Promise<EnsuredTopic>>();
+
+export interface EnsuredTopic {
+  threadId: number;
+  /** How long the topic sat unused before this session. Zero for a fresh one. */
+  idleMs: number;
+  reopened: boolean;
+}
 
 /**
  * Returns the forum topic for this machine+directory, creating it on first use.
- * A stored topic the user deleted manually is transparently recreated.
+ * A stored topic the user deleted manually is transparently recreated, and an
+ * archived one is reopened.
  */
 export async function ensureTopic(
   machine: string,
   cwd: string,
   project: string,
   session: string,
-): Promise<number> {
+): Promise<EnsuredTopic> {
   const topicKey = buildTopicKey(machine, cwd, session);
   const pending = topicInFlight.get(topicKey);
   if (pending) return pending;
@@ -87,12 +98,30 @@ export async function ensureTopic(
   return work;
 }
 
+/** An archived topic is reopened by use, so the archive never gets in the way. */
+async function reopenIfClosed(threadId: number): Promise<boolean> {
+  const chatId = ccGroupId();
+  const bot = getBotInstance();
+  if (chatId === null || !bot) return false;
+  try {
+    await bot.telegram.reopenForumTopic(chatId, threadId);
+  } catch (err) {
+    // Already open is the common case and not worth a log line.
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/not modified|TOPIC_NOT_MODIFIED/i.test(message)) {
+      log.warn("reopenForumTopic %d failed: %s", threadId, message);
+    }
+  }
+  await setTopicClosed(threadId, false).catch(() => {});
+  return true;
+}
+
 async function createOrFindTopic(
   topicKey: string,
   machine: string,
   project: string,
   session: string,
-): Promise<number> {
+): Promise<EnsuredTopic> {
   const chatId = ccGroupId();
   if (chatId === null) throw new Error("CC_GROUP_ID is not configured");
   const bot = getBotInstance();
@@ -100,15 +129,18 @@ async function createOrFindTopic(
 
   const existing = await findTopicByKey(topicKey);
   if (existing) {
+    // Read the state before touching it: afterwards the idle time is zero.
+    const state = await getTopicState(existing.threadId);
+    const reopened = state?.closed ? await reopenIfClosed(existing.threadId) : false;
     await touchTopic(existing.threadId);
-    return existing.threadId;
+    return { threadId: existing.threadId, idleMs: state?.idleMs ?? 0, reopened };
   }
 
   const name = `${machine} · ${project}${session ? ` · ${session}` : ""}`.slice(0, 128);
   const topic = await bot.telegram.createForumTopic(chatId, name);
   await saveTopic({ topicKey, machine, project, threadId: topic.message_thread_id });
   log.info("created forum topic %d for %s", topic.message_thread_id, topicKey);
-  return topic.message_thread_id;
+  return { threadId: topic.message_thread_id, idleMs: 0, reopened: false };
 }
 
 async function send(threadId: number, text: string, html = false): Promise<void> {
@@ -148,7 +180,14 @@ async function send(threadId: number, text: string, html = false): Promise<void>
 const ANNOUNCE_DEBOUNCE_MS = 10 * 60_000;
 const lastAnnouncedAt = new Map<number, number>();
 
-export async function announceSession(session: CcSession, reconnect: boolean): Promise<void> {
+// Below this the gap is unremarkable and saying it would be noise.
+const IDLE_WORTH_MENTIONING_MS = 3 * 86_400_000;
+
+export async function announceSession(
+  session: CcSession,
+  reconnect: boolean,
+  idleMs = 0,
+): Promise<void> {
   const now = Date.now();
   if (reconnect || now - (lastAnnouncedAt.get(session.threadId) ?? 0) < ANNOUNCE_DEBOUNCE_MS) {
     return;
@@ -156,10 +195,15 @@ export async function announceSession(session: CcSession, reconnect: boolean): P
   lastAnnouncedAt.set(session.threadId, now);
 
   const branch = session.branch ? ` · ${session.branch}` : "";
+  // Answers "is this topic still current?" without making the user go looking.
+  const idle =
+    idleMs >= IDLE_WORTH_MENTIONING_MS
+      ? `\nПредыдущая сессия здесь была ${Math.floor(idleMs / 86_400_000)} дн. назад.`
+      : "";
   await send(
     session.threadId,
     `▶︎ Сессия запущена — <code>${escapeHtml(session.hostname)}</code>${escapeHtml(branch)}\n` +
-      `<code>${escapeHtml(session.cwd)}</code>`,
+      `<code>${escapeHtml(session.cwd)}</code>${idle}`,
     true,
   );
 }
@@ -260,6 +304,7 @@ export async function closeTopic(threadId: number): Promise<string> {
   if (chatId === null || !bot) return "Мост не настроен";
   try {
     await bot.telegram.closeForumTopic(chatId, threadId);
+    await setTopicClosed(threadId, true).catch(() => {});
     return "Топик закрыт";
   } catch (err) {
     log.error("closeForumTopic failed: %s", err instanceof Error ? err.message : String(err));
@@ -313,6 +358,45 @@ export async function offerTopicCleanup(threadId: number): Promise<void> {
     .catch(() => {});
 }
 
+/**
+ * Closes topics idle longer than `days`, leaving a note about why and how to get
+ * them back. Topics with a live session are left alone regardless of age: the
+ * clock measures registrations, and a long-running session does not re-register.
+ */
+export async function archiveStaleTopics(days: number): Promise<number> {
+  const chatId = ccGroupId();
+  const bot = getBotInstance();
+  if (chatId === null || !bot) return 0;
+
+  const cutoff = new Date(Date.now() - days * 86_400_000);
+  const stale = await listStaleOpenTopics(cutoff);
+  let closed = 0;
+
+  for (const topic of stale) {
+    if (countSessionsForThread(topic.threadId) > 0) continue;
+    try {
+      await bot.telegram.sendMessage(
+        chatId,
+        `📁 Топик закрыт — ${days} дн. без сессий. Он откроется сам, когда здесь снова запустят сессию.`,
+        { message_thread_id: topic.threadId },
+      );
+      await bot.telegram.closeForumTopic(chatId, topic.threadId);
+      await setTopicClosed(topic.threadId, true);
+      closed++;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // The user deleted it by hand — drop the mapping instead of retrying daily.
+      if (/thread not found|TOPIC_DELETED|TOPIC_ID_INVALID|message thread not found/i.test(message)) {
+        await forgetTopicByThread(topic.threadId).catch(() => {});
+        log.info("topic %d is gone, mapping dropped during archive", topic.threadId);
+        continue;
+      }
+      log.warn("archiving topic %d failed: %s", topic.threadId, message);
+    }
+  }
+  return closed;
+}
+
 /** The bulk view: what has piled up, how stale it is, and a way to drop each one. */
 export async function postTopicsList(threadId: number): Promise<void> {
   const chatId = ccGroupId();
@@ -327,7 +411,7 @@ export async function postTopicsList(threadId: number): Promise<void> {
 
   const lines = topics.map((t) => {
     const live = countSessionsForThread(t.threadId);
-    const mark = live > 0 ? "🟢" : "⚪️";
+    const mark = live > 0 ? "🟢" : t.closedAt ? "📁" : "⚪️";
     return `${mark} <b>${escapeHtml(t.machine)} · ${escapeHtml(t.project)}</b> — ${ageRu(t.lastUsedAt)}`;
   });
 
