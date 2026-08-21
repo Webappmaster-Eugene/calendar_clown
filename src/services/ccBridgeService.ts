@@ -4,6 +4,8 @@ import { Markup } from "telegraf";
 import { getBotInstance } from "../botInstance.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
+import { isDatabaseAvailable } from "../db/connection.js";
+import { getAccessByUser } from "../cc/accessRepository.js";
 import {
   buildTopicKey,
   findTopicByKey,
@@ -35,15 +37,13 @@ const log = createLogger("cc-bridge");
 // add to every chunk so a long answer never fails to send.
 const CHUNK_LIMIT = 3800;
 
-export function ccGroupId(): number | null {
-  const raw = process.env.CC_GROUP_ID?.trim();
-  if (!raw) return null;
-  const id = Number(raw);
-  return Number.isFinite(id) ? id : null;
-}
-
+/**
+ * The bridge is per-user now: which group a message goes to comes from that
+ * user's cc_access row, never from a process-wide setting. All the feature needs
+ * globally is a database to read those rows from.
+ */
 export function isCcConfigured(): boolean {
-  return ccGroupId() !== null && Boolean(process.env.CC_MACHINE_TOKEN?.trim());
+  return isDatabaseAvailable();
 }
 
 function escapeHtml(text: string): string {
@@ -83,27 +83,30 @@ export interface EnsuredTopic {
  * archived one is reopened.
  */
 export async function ensureTopic(
+  userId: number,
+  chatId: number,
   machine: string,
   cwd: string,
   project: string,
   session: string,
 ): Promise<EnsuredTopic> {
   const topicKey = buildTopicKey(machine, cwd, session);
-  const pending = topicInFlight.get(topicKey);
+  // Keyed per owner too: two users may legitimately have the same machine+path.
+  const inFlightKey = `${userId}:${topicKey}`;
+  const pending = topicInFlight.get(inFlightKey);
   if (pending) return pending;
 
-  const work = createOrFindTopic(topicKey, machine, project, session).finally(() => {
-    topicInFlight.delete(topicKey);
+  const work = createOrFindTopic(userId, chatId, topicKey, machine, project, session).finally(() => {
+    topicInFlight.delete(inFlightKey);
   });
-  topicInFlight.set(topicKey, work);
+  topicInFlight.set(inFlightKey, work);
   return work;
 }
 
 /** An archived topic is reopened by use, so the archive never gets in the way. */
-async function reopenIfClosed(threadId: number): Promise<boolean> {
-  const chatId = ccGroupId();
+async function reopenIfClosed(chatId: number, threadId: number): Promise<boolean> {
   const bot = getBotInstance();
-  if (chatId === null || !bot) return false;
+  if (!bot) return false;
   try {
     await bot.telegram.reopenForumTopic(chatId, threadId);
   } catch (err) {
@@ -118,35 +121,33 @@ async function reopenIfClosed(threadId: number): Promise<boolean> {
 }
 
 async function createOrFindTopic(
+  userId: number,
+  chatId: number,
   topicKey: string,
   machine: string,
   project: string,
   session: string,
 ): Promise<EnsuredTopic> {
-  const chatId = ccGroupId();
-  if (chatId === null) throw new Error("CC_GROUP_ID is not configured");
   const bot = getBotInstance();
   if (!bot) throw new Error("Bot instance is not ready");
 
-  const existing = await findTopicByKey(topicKey);
+  const existing = await findTopicByKey(userId, topicKey);
   if (existing) {
     // Read the state before touching it: afterwards the idle time is zero.
     const state = await getTopicState(existing.threadId);
-    const reopened = state?.closed ? await reopenIfClosed(existing.threadId) : false;
+    const reopened = state?.closed ? await reopenIfClosed(chatId, existing.threadId) : false;
     await touchTopic(existing.threadId);
     return { threadId: existing.threadId, idleMs: state?.idleMs ?? 0, reopened };
   }
 
   const name = `${machine} · ${project}${session ? ` · ${session}` : ""}`.slice(0, 128);
   const topic = await bot.telegram.createForumTopic(chatId, name);
-  await saveTopic({ topicKey, machine, project, threadId: topic.message_thread_id });
+  await saveTopic({ userId, topicKey, machine, project, threadId: topic.message_thread_id });
   log.info("created forum topic %d for %s", topic.message_thread_id, topicKey);
   return { threadId: topic.message_thread_id, idleMs: 0, reopened: false };
 }
 
-async function send(threadId: number, text: string, html = false): Promise<void> {
-  const chatId = ccGroupId();
-  if (chatId === null) return;
+async function send(chatId: number, threadId: number, text: string, html = false): Promise<void> {
   const bot = getBotInstance();
   if (!bot) return;
 
@@ -202,6 +203,7 @@ export async function announceSession(
       ? `\nПредыдущая сессия здесь была ${Math.floor(idleMs / 86_400_000)} дн. назад.`
       : "";
   await send(
+    session.groupId,
     session.threadId,
     `▶︎ Сессия запущена — <code>${escapeHtml(session.hostname)}</code>${escapeHtml(branch)}\n` +
       `<code>${escapeHtml(session.cwd)}</code>${idle}`,
@@ -217,6 +219,7 @@ export async function announceSession(
 export async function announceSecondSession(session: CcSession): Promise<void> {
   const total = countSessionsForThread(session.threadId);
   await send(
+    session.groupId,
     session.threadId,
     `⚠️ В этом топике теперь сессий: ${total}. Сообщения идут в <b>#${session.ordinal}</b> — самую свежую.\n` +
       "Чтобы развести их по разным топикам, запускай с именами: <code>ccx имя</code>",
@@ -229,7 +232,7 @@ export async function announceAddressingChange(threadId: number): Promise<void> 
   const remaining = sessionsForThread(threadId);
   if (remaining.length === 0) return;
   const now = remaining[remaining.length - 1];
-  await send(threadId, `Сообщения снова идут в #${now.ordinal}.`);
+  await send(now.groupId, threadId, `Сообщения снова идут в #${now.ordinal}.`);
 }
 
 export async function announceSessionEnd(session: CcSession): Promise<void> {
@@ -237,20 +240,20 @@ export async function announceSessionEnd(session: CcSession): Promise<void> {
   // genuinely new session and should announce immediately.
   const announced = lastAnnouncedAt.delete(session.threadId);
   if (!announced) return;
-  await send(session.threadId, "⏹ Сессия завершена.");
+  await send(session.groupId, session.threadId, "⏹ Сессия завершена.");
 }
 
 export async function postReply(session: CcSession, text: string, tagged: boolean): Promise<void> {
   // Only tag when the topic holds more than one live session — otherwise the
   // prefix is noise on every single message.
   const prefix = tagged ? `[#${session.ordinal}] ` : "";
-  await send(session.threadId, prefix + text);
+  await send(session.groupId, session.threadId, prefix + text);
 }
 
 export async function postPermission(session: CcSession, req: CcPermissionRequest): Promise<void> {
-  const chatId = ccGroupId();
+  const chatId = session.groupId;
   const bot = getBotInstance();
-  if (chatId === null || !bot) return;
+  if (!bot) return;
 
   rememberPermission(req.requestId, session.id);
 
@@ -288,10 +291,9 @@ function ageRu(from: Date): string {
 }
 
 /** The menu behind /end: what can be ended, and what can be tidied away. */
-export async function postEndMenu(threadId: number): Promise<void> {
-  const chatId = ccGroupId();
+export async function postEndMenu(chatId: number, threadId: number): Promise<void> {
   const bot = getBotInstance();
-  if (chatId === null || !bot) return;
+  if (!bot) return;
 
   const live = sessionsForThread(threadId);
   const rows = live.slice(0, 3).map((s) => [
@@ -322,10 +324,9 @@ export function controlSession(sessionId: string, action: "detach" | "shutdown")
   return pushEvent(sessionId, { type: "control", action });
 }
 
-export async function closeTopic(threadId: number): Promise<string> {
-  const chatId = ccGroupId();
+export async function closeTopic(chatId: number, threadId: number): Promise<string> {
   const bot = getBotInstance();
-  if (chatId === null || !bot) return "Мост не настроен";
+  if (!bot) return "Мост не настроен";
   try {
     await bot.telegram.closeForumTopic(chatId, threadId);
     await setTopicClosed(threadId, true).catch(() => {});
@@ -341,10 +342,9 @@ export async function closeTopic(threadId: number): Promise<string> {
  * left bridged they would recreate the topic on their next reconnect, and the
  * user would watch the thing they just deleted come back.
  */
-export async function deleteTopic(threadId: number): Promise<string> {
-  const chatId = ccGroupId();
+export async function deleteTopic(chatId: number, threadId: number): Promise<string> {
   const bot = getBotInstance();
-  if (chatId === null || !bot) return "Мост не настроен";
+  if (!bot) return "Мост не настроен";
 
   for (const s of sessionsForThread(threadId)) {
     controlSession(s.id, "detach");
@@ -362,10 +362,9 @@ export async function deleteTopic(threadId: number): Promise<string> {
 }
 
 /** Offered right after a session ends, when the user still knows if they need the topic. */
-export async function offerTopicCleanup(threadId: number): Promise<void> {
-  const chatId = ccGroupId();
+export async function offerTopicCleanup(chatId: number, threadId: number): Promise<void> {
   const bot = getBotInstance();
-  if (chatId === null || !bot) return;
+  if (!bot) return;
   if (sessionsForThread(threadId).length > 0) return; // ещё есть живые — рано убирать
 
   await bot.telegram
@@ -388,16 +387,24 @@ export async function offerTopicCleanup(threadId: number): Promise<void> {
  * clock measures registrations, and a long-running session does not re-register.
  */
 export async function archiveStaleTopics(days: number): Promise<number> {
-  const chatId = ccGroupId();
   const bot = getBotInstance();
-  if (chatId === null || !bot) return 0;
+  if (!bot) return 0;
 
   const cutoff = new Date(Date.now() - days * 86_400_000);
   const stale = await listStaleOpenTopics(cutoff);
   let closed = 0;
+  // Each topic belongs to its owner's group; resolve once per user per run.
+  const groups = new Map<number, number | null>();
 
   for (const topic of stale) {
     if (countSessionsForThread(topic.threadId) > 0) continue;
+
+    if (!groups.has(topic.userId)) {
+      const access = await getAccessByUser(topic.userId).catch(() => null);
+      groups.set(topic.userId, access?.groupId ?? null);
+    }
+    const chatId = groups.get(topic.userId);
+    if (chatId === null || chatId === undefined) continue;
     try {
       await bot.telegram.sendMessage(
         chatId,
@@ -422,12 +429,11 @@ export async function archiveStaleTopics(days: number): Promise<number> {
 }
 
 /** The bulk view: what has piled up, how stale it is, and a way to drop each one. */
-export async function postTopicsList(threadId: number): Promise<void> {
-  const chatId = ccGroupId();
+export async function postTopicsList(chatId: number, threadId: number, userId: number): Promise<void> {
   const bot = getBotInstance();
-  if (chatId === null || !bot) return;
+  if (!bot) return;
 
-  const topics = await listTopics();
+  const topics = await listTopics(userId);
   if (topics.length === 0) {
     await bot.telegram.sendMessage(chatId, "Топиков пока нет.", { message_thread_id: threadId });
     return;

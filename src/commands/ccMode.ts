@@ -8,11 +8,24 @@ import { mkdir, unlink, writeFile } from "fs/promises";
 import { join } from "path";
 import { transcribeVoice } from "../voice/transcribe.js";
 import { telegramFetch } from "../utils/proxyAgent.js";
-import { isBootstrapAdmin } from "../middleware/auth.js";
+import { isDatabaseAvailable } from "../db/connection.js";
+import {
+  addCollaborator,
+  bindGroup,
+  findUserIdByTelegramId,
+  getAccessByGroup,
+  getAccessByUser,
+  isCollaborator,
+  issueMachineToken,
+  listCollaborators,
+  listMachineTokens,
+  removeCollaborator,
+  revokeMachineToken,
+  type CcAccessRow,
+} from "../cc/accessRepository.js";
 import { createLogger } from "../utils/logger.js";
 import {
   announceAddressingChange,
-  ccGroupId,
   closeTopic,
   controlSession,
   deleteTopic,
@@ -34,14 +47,33 @@ const log = createLogger("cc-mode");
 
 const VOICE_DIR = join("data", "voice");
 
+// A supergroup sees traffic on every message; resolving its owner from the
+// database each time would be a query per update.
+const ACCESS_TTL_MS = 60_000;
+const accessCache = new Map<number, { access: CcAccessRow | null; at: number }>();
+
+async function resolveGroupOwner(chatId: number): Promise<CcAccessRow | null> {
+  const cached = accessCache.get(chatId);
+  if (cached && Date.now() - cached.at < ACCESS_TTL_MS) return cached.access;
+  const access = await getAccessByGroup(chatId).catch(() => null);
+  accessCache.set(chatId, { access, at: Date.now() });
+  return access;
+}
+
+/** Drops the cached row so a fresh binding or revocation takes effect at once. */
+export function forgetGroupAccess(chatId: number): void {
+  accessCache.delete(chatId);
+}
+
 /**
- * Only the bootstrap admin may drive sessions. Anyone who can post here can make
- * Claude run tools on three machines, so this gate is by sender identity — never
- * by chat membership, which the supergroup alone would imply.
+ * Being in the group means seeing the conversation. Driving a session — and
+ * approving a Bash call — takes ownership or an explicit collaborator entry, so
+ * the gate is by sender identity, never by chat membership.
  */
-function isTrustedSender(ctx: Context): boolean {
-  const from = ctx.from?.id;
-  return from !== undefined && isBootstrapAdmin(from);
+async function mayDrive(access: CcAccessRow, telegramId: number): Promise<boolean> {
+  const senderUserId = await findUserIdByTelegramId(telegramId).catch(() => null);
+  if (senderUserId !== null && senderUserId === access.userId) return true;
+  return isCollaborator(access.userId, telegramId).catch(() => false);
 }
 
 async function forwardToSession(ctx: Context, threadId: number, text: string): Promise<void> {
@@ -226,7 +258,13 @@ async function askConfirm(ctx: Context, question: string, yesData: string): Prom
     .catch(() => {});
 }
 
-async function handleCallback(ctx: Context, data: string, threadId: number | undefined): Promise<void> {
+async function handleCallback(
+  ctx: Context,
+  data: string,
+  chatId: number,
+  threadId: number | undefined,
+  userId: number,
+): Promise<void> {
   const answer = (text?: string): Promise<unknown> => ctx.answerCbQuery(text).catch(() => {});
   const clearButtons = (): Promise<unknown> => ctx.editMessageReplyMarkup(undefined).catch(() => {});
 
@@ -281,7 +319,7 @@ async function handleCallback(ctx: Context, data: string, threadId: number | und
 
     if (reached && mode === "shutdown" && threadId !== undefined) {
       await announceAddressingChange(threadId).catch(() => {});
-      await offerTopicCleanup(threadId);
+      await offerTopicCleanup(chatId, threadId);
     }
     return;
   }
@@ -294,7 +332,7 @@ async function handleCallback(ctx: Context, data: string, threadId: number | und
       await askConfirm(ctx, "Удалить этот топик вместе со всей перепиской? Это необратимо.", `cc:tky:${target}`);
       return;
     }
-    const result = await deleteTopic(target);
+    const result = await deleteTopic(chatId, target);
     await answer(result);
     // The list lives in another topic, so it survives; just retire its buttons.
     await clearButtons();
@@ -305,7 +343,7 @@ async function handleCallback(ctx: Context, data: string, threadId: number | und
     case "cc:tc": {
       if (threadId === undefined) return void (await answer());
       await clearButtons();
-      await answer(await closeTopic(threadId));
+      await answer(await closeTopic(chatId, threadId));
       return;
     }
     case "cc:td": {
@@ -316,7 +354,7 @@ async function handleCallback(ctx: Context, data: string, threadId: number | und
     case "cc:tdy": {
       if (threadId === undefined) return void (await answer());
       await answer("Удаляю…");
-      await deleteTopic(threadId);
+      await deleteTopic(chatId, threadId);
       return;
     }
     case "cc:x":
@@ -326,6 +364,167 @@ async function handleCallback(ctx: Context, data: string, threadId: number | und
     default:
       await answer();
   }
+}
+
+/**
+ * Binds an unbound supergroup to whoever runs it. This is the one command that
+ * must work before the group is known, so it is handled ahead of the owner
+ * lookup — everything else in an unbound group is none of the bridge's business.
+ */
+async function handleBind(ctx: Context, chatId: number): Promise<void> {
+  const sender = ctx.from?.id;
+  if (sender === undefined) return;
+
+  const userId = await findUserIdByTelegramId(sender).catch(() => null);
+  const access = userId === null ? null : await getAccessByUser(userId).catch(() => null);
+  if (!userId || !access || access.status !== "active") {
+    await ctx.reply("У вас нет доступа к мосту. Попросите администратора выдать его.");
+    return;
+  }
+  if (access.groupId !== null && access.groupId !== chatId) {
+    await ctx.reply("У вас уже привязана другая группа. Отвяжите её там командой /code unbind.");
+    return;
+  }
+  if (!("is_forum" in ctx.chat! && ctx.chat.is_forum)) {
+    await ctx.reply("В группе не включены темы. Настройки → Темы, затем повторите /code bind.");
+    return;
+  }
+
+  const me = await ctx.telegram.getChatMember(chatId, ctx.botInfo.id).catch(() => null);
+  const canManage =
+    me?.status === "administrator" && "can_manage_topics" in me && me.can_manage_topics === true;
+  if (!canManage) {
+    await ctx.reply(
+      "Бот должен быть администратором с правом «Управление темами». Выдайте право и повторите /code bind.",
+    );
+    return;
+  }
+
+  await bindGroup(userId, chatId);
+  forgetGroupAccess(chatId);
+  await ctx.reply(
+    "Группа привязана. Теперь получите токен машины: <code>/code token имя-машины</code> — " +
+      "он придёт в личку.\n\n" +
+      "⚠️ Кто угодно, кого вы добавите сюда и впустите через <code>/code allow</code>, " +
+      "сможет запускать команды на ваших машинах и одобрять <code>Bash</code>. " +
+      "Само по себе присутствие в группе такого права не даёт.",
+    { parse_mode: "HTML" },
+  );
+}
+
+/** `/code …` — machines, tokens and collaborators. Secrets go to DM, never here. */
+async function handleCode(
+  ctx: Context,
+  chatId: number,
+  threadId: number,
+  access: CcAccessRow,
+  args: string[],
+): Promise<void> {
+  const reply = (text: string): Promise<unknown> =>
+    ctx.reply(text, { message_thread_id: threadId, parse_mode: "HTML" });
+  const [sub, ...rest] = args;
+
+  switch (sub) {
+    case "token": {
+      const label = rest.join(" ").trim() || "machine";
+      const machines = await listMachineTokens(access.userId);
+      if (machines.length >= access.maxMachines) {
+        await reply(`Лимит машин исчерпан (${access.maxMachines}). Отзовите ненужную: /code machines`);
+        return;
+      }
+      const token = await issueMachineToken(access.userId, label);
+      const sender = ctx.from?.id;
+      try {
+        // Never into the group: a token is the ability to run commands on the
+        // machine, and a group chat is the wrong place to keep one.
+        await ctx.telegram.sendMessage(
+          sender!,
+          `Токен для машины «${label}» — показывается один раз:\n\n<code>${token}</code>\n\n` +
+            "Он равносилен SSH-ключу: даёт возможность выполнять команды на этой машине. " +
+            "Установка:\n<code>CC_HUB_URL=… CC_MACHINE_TOKEN=… CC_MACHINE=" +
+            `${label} ./install.sh</code>`,
+          { parse_mode: "HTML" },
+        );
+        await reply("Токен отправлен вам в личку.");
+      } catch {
+        await reply("Не удалось написать вам в личку — откройте диалог с ботом и повторите.");
+      }
+      return;
+    }
+    case "machines": {
+      const machines = await listMachineTokens(access.userId);
+      if (machines.length === 0) {
+        await reply("Машин пока нет. Выдать токен: <code>/code token имя</code>");
+        return;
+      }
+      const lines = machines.map(
+        (m) =>
+          `#${m.id} <b>${m.label}</b> — ${m.lastUsedAt ? `была ${ageRuShort(m.lastUsedAt)}` : "ещё не подключалась"}`,
+      );
+      await reply(`${lines.join("\n")}\n\nОтозвать: <code>/code revoke НОМЕР</code>`);
+      return;
+    }
+    case "revoke": {
+      const id = Number(rest[0]);
+      if (!Number.isFinite(id)) {
+        await reply("Укажите номер машины: <code>/code revoke 3</code>");
+        return;
+      }
+      const done = await revokeMachineToken(access.userId, id);
+      await reply(done ? `Машина #${id} отозвана.` : `Машина #${id} не найдена.`);
+      return;
+    }
+    case "allow": {
+      const id = Number(rest[0]);
+      if (!Number.isFinite(id)) {
+        await reply("Укажите Telegram ID: <code>/code allow 123456789</code>");
+        return;
+      }
+      await addCollaborator(access.userId, id);
+      await reply(
+        `Пользователь <code>${id}</code> допущен.\n\n⚠️ Он теперь может вести ваши сессии и ` +
+          "одобрять запуск команд на ваших машинах — это не «доступ на посмотреть».",
+      );
+      return;
+    }
+    case "deny": {
+      const id = Number(rest[0]);
+      if (!Number.isFinite(id)) {
+        await reply("Укажите Telegram ID: <code>/code deny 123456789</code>");
+        return;
+      }
+      const done = await removeCollaborator(access.userId, id);
+      await reply(done ? `Пользователь <code>${id}</code> больше не допущен.` : "Такого в списке нет.");
+      return;
+    }
+    case "who": {
+      const ids = await listCollaborators(access.userId);
+      await reply(
+        ids.length === 0
+          ? "Соавторов нет — сессии ведёте только вы."
+          : `Соавторы: ${ids.map((i) => `<code>${i}</code>`).join(", ")}`,
+      );
+      return;
+    }
+    case "bind":
+      await reply("Эта группа уже привязана к вам.");
+      return;
+    default:
+      await reply(
+        [
+          "<code>/code token имя</code> — токен новой машины (придёт в личку)",
+          "<code>/code machines</code> — список машин, <code>/code revoke N</code> — отозвать",
+          "<code>/code allow ID</code> / <code>deny ID</code> / <code>who</code> — соавторы",
+        ].join("\n"),
+      );
+  }
+}
+
+function ageRuShort(from: Date): string {
+  const days = Math.floor((Date.now() - from.getTime()) / 86_400_000);
+  if (days >= 1) return `${days} дн. назад`;
+  const hours = Math.floor((Date.now() - from.getTime()) / 3_600_000);
+  return hours >= 1 ? `${hours} ч. назад` : "только что";
 }
 
 const HELP = [
@@ -341,15 +540,25 @@ const HELP = [
 ].join("\n");
 
 /** Returns true when the text was a bridge command and has been handled. */
-async function handleCommand(ctx: Context, threadId: number, text: string): Promise<boolean> {
+async function handleCommand(
+  ctx: Context,
+  chatId: number,
+  threadId: number,
+  text: string,
+  access: CcAccessRow,
+): Promise<boolean> {
   // In groups Telegram appends the bot username: /end@sovetnik_bot
-  const command = text.trim().split(/\s+/)[0].replace(/@\S+$/, "").toLowerCase();
+  const parts = text.trim().split(/\s+/);
+  const command = parts[0].replace(/@\S+$/, "").toLowerCase();
   switch (command) {
+    case "/code":
+      await handleCode(ctx, chatId, threadId, access, parts.slice(1));
+      return true;
     case "/end":
-      await postEndMenu(threadId);
+      await postEndMenu(chatId, threadId);
       return true;
     case "/topics":
-      await postTopicsList(threadId);
+      await postTopicsList(chatId, threadId, access.userId);
       return true;
     case "/help":
       await ctx.reply(HELP, { message_thread_id: threadId, parse_mode: "HTML" });
@@ -361,15 +570,30 @@ async function handleCommand(ctx: Context, threadId: number, text: string): Prom
 
 export function ccBridgeMiddleware(): MiddlewareFn<Context> {
   return async (ctx, next) => {
-    const groupId = ccGroupId();
-    if (groupId === null || ctx.chat?.id !== groupId) return next();
+    // Private chats are the bot's normal home; only supergroups can be bridges,
+    // so nothing else pays for the lookup.
+    if (ctx.chat?.type !== "supergroup" || !isDatabaseAvailable()) return next();
+
+    const chatId = ctx.chat.id;
+    const access = await resolveGroupOwner(chatId);
+    if (!access) {
+      // The only command that can be meaningful before the group has an owner.
+      const text = ctx.message && "text" in ctx.message ? ctx.message.text : "";
+      if (/^\/code(@\S+)?\s+bind\b/i.test(text.trim())) {
+        await handleBind(ctx, chatId);
+        return;
+      }
+      return next(); // не мостовая группа — обычная логика бота
+    }
+    if (access.status !== "active") return;
 
     // The bot's own service messages ("topic created") come back as updates.
     // Dropping them silently keeps the warning below meaning what it says.
     if (ctx.from?.id === ctx.botInfo?.id) return;
 
-    if (!isTrustedSender(ctx)) {
-      log.warn("dropped update from untrusted sender %s in bridge group", ctx.from?.id ?? "?");
+    const sender = ctx.from?.id;
+    if (sender === undefined || !(await mayDrive(access, sender))) {
+      log.warn("dropped update from %s in bridge group %d", sender ?? "?", chatId);
       return;
     }
 
@@ -381,7 +605,7 @@ export function ccBridgeMiddleware(): MiddlewareFn<Context> {
         from && "message_thread_id" in from && typeof from.message_thread_id === "number"
           ? from.message_thread_id
           : undefined;
-      await handleCallback(ctx, callbackData, inThread);
+      await handleCallback(ctx, callbackData, chatId, inThread, access.userId);
       return;
     }
 
@@ -400,7 +624,7 @@ export function ccBridgeMiddleware(): MiddlewareFn<Context> {
     if ("text" in message && message.text) {
       const text = message.text.trim();
       if (!text) return;
-      if (await handleCommand(ctx, threadId, text)) return;
+      if (await handleCommand(ctx, chatId, threadId, text, access)) return;
       await forwardToSession(ctx, threadId, text);
       return;
     }

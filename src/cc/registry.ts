@@ -19,6 +19,10 @@ const PERMISSION_TTL_MS = 30 * 60_000;
 interface Session {
   id: string;
   sessionToken: string;
+  /** Owner. Every later call re-checks against this rather than trusting the id. */
+  userId: number;
+  /** The owner's supergroup, resolved once at registration. */
+  groupId: number;
   machine: string;
   hostname: string;
   cwd: string;
@@ -42,6 +46,8 @@ function newId(bytes: number): string {
 }
 
 export function registerSession(input: {
+  userId: number;
+  groupId: number;
   machine: string;
   hostname: string;
   cwd: string;
@@ -191,6 +197,12 @@ export function newestSessionForThread(threadId: number): Session | null {
 /** A session with no attached stream is registered but unreachable right now. */
 export function isSessionOnline(sessionId: string): boolean {
   return sessions.get(sessionId)?.res != null;
+}
+
+export function countSessionsForUser(userId: number): number {
+  let n = 0;
+  for (const s of sessions.values()) if (s.userId === userId) n++;
+  return n;
 }
 
 export function countSessionsForThread(threadId: number): number {

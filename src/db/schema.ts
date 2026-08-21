@@ -1145,6 +1145,64 @@ export const tribeMonthlyLimits = pgTable(
 
 // ─── Claude Code bridge ──────────────────────────────────────────────────────
 
+// Access to the bridge is granted separately from access to the bot: reading
+// your own expenses and running commands on someone's laptop are not the same
+// permission.
+export const ccAccess = pgTable(
+  "cc_access",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    // The user's own supergroup. Isolation is Telegram's: you cannot see a group
+    // you are not in, which is stronger than any check written here.
+    groupId: bigint("group_id", { mode: "number" }),
+    status: varchar("status", { length: 20 }).notNull().default("active"),
+    maxMachines: smallint("max_machines").notNull().default(5),
+    maxSessions: smallint("max_sessions").notNull().default(10),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("idx_cc_access_user").on(table.userId),
+    uniqueIndex("idx_cc_access_group").on(table.groupId),
+    check("cc_access_status_check", sql`${table.status} IN ('active', 'suspended')`),
+  ],
+);
+
+// One token per machine, and only its hash is stored: a leaked bridge token is
+// the ability to run commands on that machine, so the database must not be able
+// to hand one out.
+export const ccMachineTokens = pgTable(
+  "cc_machine_tokens",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    label: varchar("label", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("idx_cc_machine_tokens_hash").on(table.tokenHash),
+    index("idx_cc_machine_tokens_user").on(table.userId),
+  ],
+);
+
+// Being in the owner's group means seeing the conversation. Driving a session —
+// and approving a Bash call — takes an explicit entry here.
+export const ccCollaborators = pgTable(
+  "cc_collaborators",
+  {
+    id: serial("id").primaryKey(),
+    ownerUserId: integer("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    telegramId: bigint("telegram_id", { mode: "number" }).notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_cc_collaborators_unique").on(table.ownerUserId, table.telegramId)],
+);
+
 // One forum topic per (machine, project) rather than per session: sessions are
 // short-lived, and creating a topic for each one floods the supergroup with
 // service messages and loses history. The row survives restarts so the same
@@ -1162,9 +1220,12 @@ export const ccTopics = pgTable(
     // Archived rather than deleted: history survives and a new session reopens
     // the topic on its own. NULL means open.
     closedAt: timestamp("closed_at", { withTimezone: true }),
+    // Backfilled to the bootstrap admin before this became NOT NULL.
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   },
   (table) => [
-    uniqueIndex("idx_cc_topics_key").on(table.topicKey),
+    // Scoped per owner: two people may each have a "mbp:/Users/.../project".
+    uniqueIndex("idx_cc_topics_key").on(table.userId, table.topicKey),
     uniqueIndex("idx_cc_topics_thread").on(table.threadId),
   ],
 );

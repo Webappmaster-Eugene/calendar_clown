@@ -23,6 +23,8 @@ function fakeStream(): http.ServerResponse {
 
 function register(threadId: number) {
   return registerSession({
+    userId: 1,
+    groupId: -100123,
     machine: "mbp",
     hostname: "host",
     cwd: "/tmp/project",

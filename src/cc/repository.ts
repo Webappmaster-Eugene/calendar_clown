@@ -3,6 +3,7 @@ import { db } from "../db/drizzle.js";
 import { ccTopics } from "../db/schema.js";
 
 export interface CcTopic {
+  userId: number;
   topicKey: string;
   machine: string;
   project: string;
@@ -18,35 +19,42 @@ export function buildTopicKey(machine: string, cwd: string, session: string): st
   return (session ? `${base}#${session}` : base).slice(0, 255);
 }
 
-export async function findTopicByKey(topicKey: string): Promise<CcTopic | null> {
+export async function findTopicByKey(userId: number, topicKey: string): Promise<CcTopic | null> {
   const [row] = await db
     .select()
     .from(ccTopics)
-    .where(eq(ccTopics.topicKey, topicKey))
+    .where(and(eq(ccTopics.userId, userId), eq(ccTopics.topicKey, topicKey)))
     .limit(1);
-  return row ? { topicKey: row.topicKey, machine: row.machine, project: row.project, threadId: row.threadId } : null;
+  return row ? toTopic(row) : null;
+}
+
+function toTopic(row: typeof ccTopics.$inferSelect): CcTopic {
+  return {
+    userId: row.userId,
+    topicKey: row.topicKey,
+    machine: row.machine,
+    project: row.project,
+    threadId: row.threadId,
+  };
 }
 
 export async function findTopicByThread(threadId: number): Promise<CcTopic | null> {
-  const [row] = await db
-    .select()
-    .from(ccTopics)
-    .where(eq(ccTopics.threadId, threadId))
-    .limit(1);
-  return row ? { topicKey: row.topicKey, machine: row.machine, project: row.project, threadId: row.threadId } : null;
+  const [row] = await db.select().from(ccTopics).where(eq(ccTopics.threadId, threadId)).limit(1);
+  return row ? toTopic(row) : null;
 }
 
 export async function saveTopic(topic: CcTopic): Promise<void> {
   await db
     .insert(ccTopics)
     .values({
+      userId: topic.userId,
       topicKey: topic.topicKey,
       machine: topic.machine,
       project: topic.project,
       threadId: topic.threadId,
     })
     .onConflictDoUpdate({
-      target: ccTopics.topicKey,
+      target: [ccTopics.userId, ccTopics.topicKey],
       set: { threadId: topic.threadId, project: topic.project, lastUsedAt: sql`now()` },
     });
 }
@@ -60,16 +68,14 @@ export interface CcTopicRow extends CcTopic {
   closedAt: Date | null;
 }
 
-export async function listTopics(): Promise<CcTopicRow[]> {
-  const rows = await db.select().from(ccTopics).orderBy(desc(ccTopics.lastUsedAt));
-  return rows.map((r) => ({
-    topicKey: r.topicKey,
-    machine: r.machine,
-    project: r.project,
-    threadId: r.threadId,
-    lastUsedAt: r.lastUsedAt,
-    closedAt: r.closedAt,
-  }));
+/** Scoped to the owner: nobody lists someone else's topics. */
+export async function listTopics(userId: number): Promise<CcTopicRow[]> {
+  const rows = await db
+    .select()
+    .from(ccTopics)
+    .where(eq(ccTopics.userId, userId))
+    .orderBy(desc(ccTopics.lastUsedAt));
+  return rows.map((r) => ({ ...toTopic(r), lastUsedAt: r.lastUsedAt, closedAt: r.closedAt }));
 }
 
 /** Open topics whose last session predates the cutoff — candidates for archiving. */
@@ -78,14 +84,7 @@ export async function listStaleOpenTopics(cutoff: Date): Promise<CcTopicRow[]> {
     .select()
     .from(ccTopics)
     .where(and(isNull(ccTopics.closedAt), lt(ccTopics.lastUsedAt, cutoff)));
-  return rows.map((r) => ({
-    topicKey: r.topicKey,
-    machine: r.machine,
-    project: r.project,
-    threadId: r.threadId,
-    lastUsedAt: r.lastUsedAt,
-    closedAt: r.closedAt,
-  }));
+  return rows.map((r) => ({ ...toTopic(r), lastUsedAt: r.lastUsedAt, closedAt: r.closedAt }));
 }
 
 export async function setTopicClosed(threadId: number, closed: boolean): Promise<void> {

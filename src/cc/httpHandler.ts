@@ -4,13 +4,13 @@
 // Telegram InitData, which a headless machine cannot produce, and the SSE stream
 // wants the raw ServerResponse rather than a buffered Request/Response bridge.
 import type http from "http";
-import { timingSafeEqual } from "crypto";
 import { createLogger } from "../utils/logger.js";
 import {
   attachStream,
   authorize,
   countOnlineSessionsForThread,
   countSessionsForThread,
+  countSessionsForUser,
   detachStream,
   getFile,
   keepAlive,
@@ -29,6 +29,7 @@ import {
   postPermission,
   postReply,
 } from "../services/ccBridgeService.js";
+import { resolveMachineToken } from "./accessRepository.js";
 import type { CcPermissionRequest, CcRegisterRequest, CcReplyRequest } from "./types.js";
 
 const log = createLogger("cc-http");
@@ -88,16 +89,6 @@ function bearer(req: http.IncomingMessage): string | null {
   return match ? match[1].trim() : null;
 }
 
-/** The machine token is a long-lived shared secret, so compare it in constant time. */
-function machineTokenValid(presented: string | null): boolean {
-  const expected = process.env.CC_MACHINE_TOKEN?.trim();
-  if (!expected || !presented) return false;
-  const a = Buffer.from(expected);
-  const b = Buffer.from(presented);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
 function registerRateLimited(key: string): boolean {
   const now = Date.now();
   for (const [k, hits] of registerHits) {
@@ -139,7 +130,11 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
     sendJson(res, 429, { ok: false, error: "Too many requests" });
     return;
   }
-  if (!machineTokenValid(bearer(req))) {
+  const presented = bearer(req);
+  const machine = presented ? await resolveMachineToken(presented) : null;
+  if (!machine) {
+    // Unknown digest, revoked token and suspended access answer alike: a probe
+    // should not learn which of the three it hit.
     sendJson(res, 401, { ok: false, error: "Bad machine token" });
     return;
   }
@@ -161,8 +156,8 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
   // "unknown" was the client's old fallback for a name it could not slugify.
   // Two machines answering to it would share every topic, so refuse it here too
   // rather than trusting the client to have been fixed.
-  const machine = String(body.machine).trim().slice(0, 64);
-  if (!machine || machine === "unknown") {
+  const machineName = String(body.machine).trim().slice(0, 64);
+  if (!machineName || machineName === "unknown") {
     sendJson(res, 400, { ok: false, error: "machine must be a distinct non-empty name" });
     return;
   }
@@ -170,9 +165,23 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
   const cwd = String(body.cwd).slice(0, 512);
   const sessionName = String(body.session ?? "").trim().slice(0, 60);
 
+  const groupId = machine.access.groupId;
+  if (groupId === null) {
+    sendJson(res, 409, {
+      ok: false,
+      error: "No Telegram group is bound to this account yet — run /code bind in your group",
+    });
+    return;
+  }
+
+  if (countSessionsForUser(machine.userId) >= machine.access.maxSessions) {
+    sendJson(res, 429, { ok: false, error: "Too many live sessions for this account" });
+    return;
+  }
+
   let topic: Awaited<ReturnType<typeof ensureTopic>>;
   try {
-    topic = await ensureTopic(machine, cwd, project, sessionName);
+    topic = await ensureTopic(machine.userId, groupId, machineName, cwd, project, sessionName);
   } catch (err) {
     log.error("ensureTopic failed: %s", err instanceof Error ? err.message : String(err));
     sendJson(res, 503, { ok: false, error: "Could not open a Telegram topic" });
@@ -184,7 +193,9 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
   // Only a session that can actually talk counts as a rival for the topic.
   const rivals = countOnlineSessionsForThread(threadId);
   const { sessionId, sessionToken } = registerSession({
-    machine,
+    userId: machine.userId,
+    groupId,
+    machine: machineName,
     hostname: String(body.hostname).slice(0, 128),
     cwd,
     project,

@@ -1,0 +1,1 @@
+ALTER TABLE "cc_topics" ALTER COLUMN "user_id" SET NOT NULL;

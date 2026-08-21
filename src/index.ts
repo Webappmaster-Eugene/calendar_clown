@@ -26,6 +26,7 @@ import { setAuthBotRef, startWebTokenCleanup, stopWebTokenCleanup } from "./comm
 import { stopCcKeepAlive } from "./cc/httpHandler.js";
 import { startCcScheduler, stopCcScheduler } from "./cc/scheduler.js";
 import { isCcConfigured } from "./services/ccBridgeService.js";
+import { bootstrapOwnerAccess } from "./cc/accessRepository.js";
 import { setBankPushBotRef } from "./expenses/bankPush/confirm.js";
 import { startNotableDatesScheduler, stopNotableDatesScheduler } from "./notable-dates/scheduler.js";
 import { startGoalsScheduler, stopGoalsScheduler } from "./goals/scheduler.js";
@@ -206,6 +207,11 @@ async function main(): Promise<void> {
 
     // Only with a DB: the archive reads and writes cc_topics.
     if (isCcConfigured()) {
+      // Moves the single-tenant env setup onto the per-user tables so the owner
+      // uses exactly the same path as everyone else.
+      await bootstrapOwnerAccess().catch((err: unknown) => {
+        log.error("bridge bootstrap failed: %s", err instanceof Error ? err.message : String(err));
+      });
       startCcScheduler();
     }
   } else if (process.env.DATABASE_URL) {
