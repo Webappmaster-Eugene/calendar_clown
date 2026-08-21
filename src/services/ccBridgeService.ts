@@ -120,18 +120,35 @@ async function send(threadId: number, text: string, html = false): Promise<void>
   }
 }
 
+// A machine re-registers whenever the hub forgets it — a restart, a dropped
+// stream, a network blip — and every machine does it at once after a hub
+// restart. Announcing each time turns the topic into a wall of identical
+// "session started" lines that carry no new information, so collapse a burst
+// into the first one.
+const ANNOUNCE_DEBOUNCE_MS = 10 * 60_000;
+const lastAnnouncedAt = new Map<number, number>();
+
 export async function announceSession(session: CcSession, reconnect: boolean): Promise<void> {
+  const now = Date.now();
+  if (reconnect || now - (lastAnnouncedAt.get(session.threadId) ?? 0) < ANNOUNCE_DEBOUNCE_MS) {
+    return;
+  }
+  lastAnnouncedAt.set(session.threadId, now);
+
   const branch = session.branch ? ` · ${session.branch}` : "";
-  const verb = reconnect ? "переподключилась" : "запущена";
   await send(
     session.threadId,
-    `▶︎ Сессия ${verb} — <code>${escapeHtml(session.hostname)}</code>${escapeHtml(branch)}\n` +
+    `▶︎ Сессия запущена — <code>${escapeHtml(session.hostname)}</code>${escapeHtml(branch)}\n` +
       `<code>${escapeHtml(session.cwd)}</code>`,
     true,
   );
 }
 
 export async function announceSessionEnd(session: CcSession): Promise<void> {
+  // Clearing the mark keeps "ended" and "started" paired: the next start is a
+  // genuinely new session and should announce immediately.
+  const announced = lastAnnouncedAt.delete(session.threadId);
+  if (!announced) return;
   await send(session.threadId, "⏹ Сессия завершена.");
 }
 
