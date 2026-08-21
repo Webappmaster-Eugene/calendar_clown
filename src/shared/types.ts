@@ -829,13 +829,96 @@ export interface CreateBloggerPostRequest {
 
 // ─── Broadcast ────────────────────────────────────────────────
 
+/** "tribe" — the sender's own tribe (any member); "all" — every approved user (admin only). */
+export type BroadcastScope = "tribe" | "all";
+
 export interface SendBroadcastRequest {
   text: string;
+  scope?: BroadcastScope;
 }
 
 export interface BroadcastResultDto {
   sent: number;
   failed: number;
+  /** Recipients resolved for the scope (sender excluded). */
+  total: number;
+  scope: BroadcastScope;
+}
+
+// ─── Admin: access requests ──────────────────────────────────
+
+export type AccessRequestStatus = "pending" | "approved" | "rejected";
+
+export interface AccessRequestDto {
+  id: number;
+  telegramId: number;
+  username: string | null;
+  firstName: string;
+  lastName: string | null;
+  status: AccessRequestStatus;
+  /** Telegram id of the admin who decided; null for pending or backfilled rows. */
+  decidedBy: number | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+// ─── Admin: system info ──────────────────────────────────────
+
+export interface AdminSystemInfoDto {
+  build: {
+    commitHash: string;
+    buildDate: string;
+    commitDate: string;
+    env: string;
+  };
+  runtime: {
+    nodeVersion: string;
+    platform: string;
+    arch: string;
+    pid: number;
+    uptime: string;
+    uptimeSeconds: number;
+    startedAt: string;
+    serverTime: string;
+    timezone: string;
+    hostname: string;
+  };
+  memory: {
+    rssMb: number;
+    heapUsedMb: number;
+    heapTotalMb: number;
+    externalMb: number;
+    systemTotalMb: number;
+    systemFreeMb: number;
+  };
+  cpu: {
+    cores: number;
+    model: string;
+    loadAvg: number[];
+    /** Average CPU share of this process since start, in percent of one core-equivalent. */
+    averagePercent: number;
+  };
+  services: {
+    database: { up: boolean; latencyMs: number | null; error: string | null };
+    polling: {
+      healthy: boolean;
+      lastActivityAt: string | null;
+      lastOkAt: string | null;
+      consecutiveFailures: number;
+      maxFailures: number;
+      lastError: string | null;
+    };
+    /** null when Redis/BullMQ is not configured. */
+    transcribeQueue: {
+      workerRunning: boolean;
+      waiting: number;
+      active: number;
+      delayed: number;
+      failed: number;
+    } | null;
+  };
+  /** Which optional integrations have their env configured. */
+  integrations: Record<string, boolean>;
 }
 
 // ─── Admin ────────────────────────────────────────────────────

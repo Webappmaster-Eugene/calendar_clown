@@ -69,6 +69,9 @@ export const INDIVIDUAL_MODES = [
 /** Modes requiring tribe membership */
 export const TRIBE_MODES = [
   "expenses", "digest", "notable_dates", "wishlist", "osint", "tasks", "summarizer", "blogger",
+  // Any tribe member may write to their own tribe; the "all users" scope inside the
+  // mode is what stays admin-only (enforced server-side in broadcastService).
+  "broadcast",
 ] as const;
 
 /** Tasks */
@@ -85,4 +88,4 @@ export const NUTRITION_PRODUCT_NAME_MAX_LENGTH = 200;
 export const NUTRITION_PRODUCT_DESCRIPTION_MAX_LENGTH = 1000;
 
 /** Admin-only modes */
-export const ADMIN_MODES = ["broadcast", "admin"] as const;
+export const ADMIN_MODES = ["admin"] as const;

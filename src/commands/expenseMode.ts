@@ -305,9 +305,13 @@ function getModeInlineKeyboard(isAdmin: boolean, context?: UserMenuContext | nul
       Markup.button.callback("✅ Задачи", "mode:tasks"),
     ]);
   }
-  if (isAdmin) {
+  if (canAccessMode("broadcast", ctx)) {
     rows.push([
       Markup.button.callback("📢 Рассылка", "mode:broadcast"),
+    ]);
+  }
+  if (isAdmin) {
+    rows.push([
       Markup.button.callback("⚙️ Админка", "mode:admin"),
     ]);
   }

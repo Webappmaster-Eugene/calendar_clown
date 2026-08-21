@@ -38,7 +38,11 @@ import { handleAdminDataCallback, handleAdminDataTextInput } from "./commands/ad
 import { handleBulkCallback } from "./utils/bulkSelect.js";
 import { handleDigestCommand, handleRubricsButton, handleDigestNowButton, handleCreateRubricButton, handleDigestText, handleFolderImportButton, handleDigestFolderCallback, handleDigestFolderToCallback, handleRubricViewCallback, handleRubricToggleCallback, handleRubricDeleteCallback, handleRubricDeleteConfirmCallback, handleRubricChannelsCallback, handleChannelRemoveCallback, handleChannelAddCallback, handleRubricListCallback, handleRubricEditCallback, handleRubricEditNameCallback, handleRubricEditDescCallback, handleRubricEditEmojiCallback, handleRubricFolderImportCallback, handleRubricFolderImportToCallback } from "./commands/digestMode.js";
 import { handleMtprotoAuthButton, handleDigestAuthText } from "./commands/digestAuth.js";
-import { handleBroadcastCommand, handleBroadcastText } from "./commands/broadcastMode.js";
+import {
+  handleBroadcastCommand,
+  handleBroadcastText,
+  handleBroadcastScopeToggle,
+} from "./commands/broadcastMode.js";
 import {
   handleNotableDatesCommand,
   handleUpcomingDatesButton,
@@ -297,6 +301,7 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
   bot.action("catwiz:cancel", handleCategoriesWizardCancel);
   bot.action("catwiz:save", handleCategoriesWizardSave);
   bot.action("bhregen", handleBankHookRegenerate);
+  bot.action(/^bcscope:(tribe|all)$/, handleBroadcastScopeToggle);
   bot.action(/^bpcat:/, handleBankPushCategoryMenu);
   bot.action(/^bpset:/, handleBankPushSetCategory);
   bot.action(/^bpcancel:/, handleBankPushCancel);
@@ -492,6 +497,14 @@ export function createBot(token: string, telegramAgent?: http.Agent): Telegraf {
     await handleDigestCommand(ctx);
   });
   bot.action("mode:broadcast", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (tid) {
+      const mc = await getUserMenuContext(tid);
+      if (mc && !canAccessMode("broadcast", mc)) {
+        await ctx.answerCbQuery("Требуется трайб");
+        return;
+      }
+    }
     await handleBroadcastCommand(ctx);
   });
   bot.action("mode:admin", async (ctx) => {

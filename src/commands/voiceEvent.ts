@@ -25,7 +25,9 @@ import { telegramFetch } from "../utils/proxyAgent.js";
 import { handleVoiceInTranscribeMode } from "./voiceTranscribe.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
-import { broadcastToTribe, formatBroadcastResult } from "../broadcast/service.js";
+import { formatBroadcastResult } from "../broadcast/service.js";
+import { sendBroadcast } from "../services/broadcastService.js";
+import { getBroadcastScope } from "./broadcastMode.js";
 import { handleGandalfVoice } from "./gandalfMode.js";
 import { handleOsintVoice } from "./osintMode.js";
 import { handleNeuroVoice } from "./chatMode.js";
@@ -290,7 +292,7 @@ async function handleVoiceInBroadcastMode(
   };
 
   try {
-    const result = await broadcastToTribe(sendMessage, telegramId, transcript);
+    const result = await sendBroadcast(sendMessage, telegramId, transcript, getBroadcastScope(telegramId));
     const safeTranscript = escapeMarkdown(transcript);
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
