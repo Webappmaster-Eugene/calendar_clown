@@ -163,6 +163,10 @@ const HubEventSchema = z.discriminatedUnion("type", [
     behavior: z.union([z.literal("allow"), z.literal("deny")]),
   }),
   z.object({
+    type: z.literal("control"),
+    action: z.union([z.literal("detach"), z.literal("shutdown")]),
+  }),
+  z.object({
     type: z.literal("file"),
     key: z.string(),
     name: z.string(),
@@ -217,6 +221,32 @@ async function dispatch(raw: string): Promise<void> {
       params: { content: event.data.content, meta: event.data.meta ?? {} },
     });
     return;
+  }
+
+  if (event.data.type === "control") {
+    if (event.data.action === "detach") {
+      log("detach requested from Telegram — bridge off, Claude Code keeps running");
+      closing = true;
+      await post("/cc/bye", {});
+      sessionId = null;
+      sessionToken = null;
+      return;
+    }
+
+    log("shutdown requested from Telegram");
+    closing = true;
+    await post("/cc/bye", {});
+    // Claude Code is this process's parent (verified: the MCP server is spawned
+    // directly by it), so SIGTERM ends the session the way Ctrl+C would.
+    // Guard against pid 1: a reparented process must not signal init.
+    if (process.ppid > 1) {
+      try {
+        process.kill(process.ppid, "SIGTERM");
+      } catch (err) {
+        log(`could not signal Claude Code: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    process.exit(0);
   }
 
   if (event.data.type === "file") {

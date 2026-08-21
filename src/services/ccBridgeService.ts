@@ -9,10 +9,19 @@ import {
   findTopicByKey,
   findTopicByThread,
   forgetTopic,
+  forgetTopicByThread,
+  listTopics,
   saveTopic,
   touchTopic,
 } from "../cc/repository.js";
-import { pushEvent, rememberPermission, takePermissionOwner } from "../cc/registry.js";
+import {
+  countSessionsForThread,
+  pushEvent,
+  rememberPermission,
+  sessionsForThread,
+  takePermissionOwner,
+  unregisterSession,
+} from "../cc/registry.js";
 import type { CcSession } from "../cc/registry.js";
 import type { CcPermissionRequest } from "../cc/types.js";
 
@@ -166,7 +175,7 @@ export async function announceSessionEnd(session: CcSession): Promise<void> {
 export async function postReply(session: CcSession, text: string, tagged: boolean): Promise<void> {
   // Only tag when the topic holds more than one live session — otherwise the
   // prefix is noise on every single message.
-  const prefix = tagged ? `[${session.id.slice(0, 4)}] ` : "";
+  const prefix = tagged ? `[#${session.ordinal}] ` : "";
   await send(session.threadId, prefix + text);
 }
 
@@ -198,6 +207,146 @@ export async function postPermission(session: CcSession, req: CcPermissionReques
   } catch (err) {
     log.error("permission prompt failed: %s", err instanceof Error ? err.message : String(err));
   }
+}
+
+// ─── Ending sessions and tidying topics ──────────────────────────────────────
+
+function ageRu(from: Date): string {
+  const days = Math.floor((Date.now() - from.getTime()) / 86_400_000);
+  if (days >= 1) return `${days} дн. назад`;
+  const hours = Math.floor((Date.now() - from.getTime()) / 3_600_000);
+  if (hours >= 1) return `${hours} ч. назад`;
+  return "только что";
+}
+
+/** The menu behind /end: what can be ended, and what can be tidied away. */
+export async function postEndMenu(threadId: number): Promise<void> {
+  const chatId = ccGroupId();
+  const bot = getBotInstance();
+  if (chatId === null || !bot) return;
+
+  const live = sessionsForThread(threadId);
+  const rows = live.slice(0, 3).map((s) => [
+    Markup.button.callback(`⏹ Завершить #${s.ordinal}`, `cc:sd:${s.id}`),
+    Markup.button.callback(`🔌 Отключить #${s.ordinal}`, `cc:dt:${s.id}`),
+  ]);
+  rows.push([
+    Markup.button.callback("📁 Закрыть топик", "cc:tc"),
+    Markup.button.callback("🗑 Удалить топик", "cc:td"),
+  ]);
+
+  const header = live.length
+    ? `Живых сессий здесь: ${live.length}.\n` +
+      "<b>Завершить</b> — закроет Claude Code на машине, как Ctrl+C. " +
+      "<b>Отключить</b> — только отцепит мост, сессия останется работать в терминале."
+    : "Живых сессий здесь нет.";
+
+  await bot.telegram.sendMessage(chatId, header, {
+    message_thread_id: threadId,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+    ...Markup.inlineKeyboard(rows),
+  });
+}
+
+/** Sends a control event and reports whether the session was still reachable. */
+export function controlSession(sessionId: string, action: "detach" | "shutdown"): boolean {
+  return pushEvent(sessionId, { type: "control", action });
+}
+
+export async function closeTopic(threadId: number): Promise<string> {
+  const chatId = ccGroupId();
+  const bot = getBotInstance();
+  if (chatId === null || !bot) return "Мост не настроен";
+  try {
+    await bot.telegram.closeForumTopic(chatId, threadId);
+    return "Топик закрыт";
+  } catch (err) {
+    log.error("closeForumTopic failed: %s", err instanceof Error ? err.message : String(err));
+    return "Не удалось закрыть топик";
+  }
+}
+
+/**
+ * Deletes the topic and forgets the mapping. Live sessions are detached first:
+ * left bridged they would recreate the topic on their next reconnect, and the
+ * user would watch the thing they just deleted come back.
+ */
+export async function deleteTopic(threadId: number): Promise<string> {
+  const chatId = ccGroupId();
+  const bot = getBotInstance();
+  if (chatId === null || !bot) return "Мост не настроен";
+
+  for (const s of sessionsForThread(threadId)) {
+    controlSession(s.id, "detach");
+    unregisterSession(s.id);
+  }
+  await forgetTopicByThread(threadId).catch(() => {});
+
+  try {
+    await bot.telegram.deleteForumTopic(chatId, threadId);
+    return "Топик удалён";
+  } catch (err) {
+    log.error("deleteForumTopic failed: %s", err instanceof Error ? err.message : String(err));
+    return "Не удалось удалить топик";
+  }
+}
+
+/** Offered right after a session ends, when the user still knows if they need the topic. */
+export async function offerTopicCleanup(threadId: number): Promise<void> {
+  const chatId = ccGroupId();
+  const bot = getBotInstance();
+  if (chatId === null || !bot) return;
+  if (sessionsForThread(threadId).length > 0) return; // ещё есть живые — рано убирать
+
+  await bot.telegram
+    .sendMessage(chatId, "Убрать топик?", {
+      message_thread_id: threadId,
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback("📁 Закрыть", "cc:tc"),
+          Markup.button.callback("🗑 Удалить", "cc:td"),
+          Markup.button.callback("Оставить", "cc:x"),
+        ],
+      ]),
+    })
+    .catch(() => {});
+}
+
+/** The bulk view: what has piled up, how stale it is, and a way to drop each one. */
+export async function postTopicsList(threadId: number): Promise<void> {
+  const chatId = ccGroupId();
+  const bot = getBotInstance();
+  if (chatId === null || !bot) return;
+
+  const topics = await listTopics();
+  if (topics.length === 0) {
+    await bot.telegram.sendMessage(chatId, "Топиков пока нет.", { message_thread_id: threadId });
+    return;
+  }
+
+  const lines = topics.map((t) => {
+    const live = countSessionsForThread(t.threadId);
+    const mark = live > 0 ? "🟢" : "⚪️";
+    return `${mark} <b>${escapeHtml(t.machine)} · ${escapeHtml(t.project)}</b> — ${ageRu(t.lastUsedAt)}`;
+  });
+
+  // One button per topic, two per row: enough to act on without leaving the list.
+  const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+  for (let i = 0; i < topics.length; i += 2) {
+    rows.push(
+      topics.slice(i, i + 2).map((t) =>
+        Markup.button.callback(`🗑 ${t.machine} · ${t.project}`.slice(0, 40), `cc:tk:${t.threadId}`),
+      ),
+    );
+  }
+
+  await bot.telegram.sendMessage(chatId, lines.join("\n"), {
+    message_thread_id: threadId,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+    ...Markup.inlineKeyboard(rows),
+  });
 }
 
 /**

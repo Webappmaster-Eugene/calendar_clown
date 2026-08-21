@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/drizzle.js";
 import { ccTopics } from "../db/schema.js";
 
@@ -53,6 +53,25 @@ export async function saveTopic(topic: CcTopic): Promise<void> {
 
 export async function touchTopic(threadId: number): Promise<void> {
   await db.update(ccTopics).set({ lastUsedAt: sql`now()` }).where(eq(ccTopics.threadId, threadId));
+}
+
+export interface CcTopicRow extends CcTopic {
+  lastUsedAt: Date;
+}
+
+export async function listTopics(): Promise<CcTopicRow[]> {
+  const rows = await db.select().from(ccTopics).orderBy(desc(ccTopics.lastUsedAt));
+  return rows.map((r) => ({
+    topicKey: r.topicKey,
+    machine: r.machine,
+    project: r.project,
+    threadId: r.threadId,
+    lastUsedAt: r.lastUsedAt,
+  }));
+}
+
+export async function forgetTopicByThread(threadId: number): Promise<void> {
+  await db.delete(ccTopics).where(eq(ccTopics.threadId, threadId));
 }
 
 /** Called when Telegram reports the stored topic no longer exists. */

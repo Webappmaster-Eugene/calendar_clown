@@ -25,6 +25,8 @@ interface Session {
   project: string;
   branch: string | null;
   threadId: number;
+  /** Position within the topic, so buttons and tags can say "#2" instead of a hash. */
+  ordinal: number;
   res: http.ServerResponse | null;
   /** Events produced between register and the stream attaching. */
   queue: CcEvent[];
@@ -50,10 +52,17 @@ export function registerSession(input: {
   const id = newId(8);
   const sessionToken = newId(24);
   const now = Date.now();
+  // Numbering restarts once a topic empties: "#1" should mean the only session
+  // there, not the seventh one this month.
+  let ordinal = 1;
+  for (const s of sessions.values()) {
+    if (s.threadId === input.threadId && s.ordinal >= ordinal) ordinal = s.ordinal + 1;
+  }
   sessions.set(id, {
     id,
     sessionToken,
     ...input,
+    ordinal,
     res: null,
     queue: [],
     startedAt: now,
@@ -181,9 +190,18 @@ export function isSessionOnline(sessionId: string): boolean {
 }
 
 export function countSessionsForThread(threadId: number): number {
-  let n = 0;
-  for (const s of sessions.values()) if (s.threadId === threadId) n++;
-  return n;
+  return sessionsForThread(threadId).length;
+}
+
+/** Oldest first, so the list reads in the order the sessions appeared. */
+export function sessionsForThread(threadId: number): Session[] {
+  return Array.from(sessions.values())
+    .filter((s) => s.threadId === threadId)
+    .sort((a, b) => a.startedAt - b.startedAt);
+}
+
+export function getSession(sessionId: string): Session | null {
+  return sessions.get(sessionId) ?? null;
 }
 
 export function rememberPermission(requestId: string, sessionId: string): void {

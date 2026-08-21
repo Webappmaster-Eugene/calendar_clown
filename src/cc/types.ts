@@ -41,7 +41,10 @@ export type CcEvent =
   | { type: "verdict"; requestId: string; behavior: "allow" | "deny" }
   // The hub never hands out a Telegram file URL: it carries the bot token. The
   // machine fetches `key` back through the hub, which proxies the download.
-  | { type: "file"; key: string; name: string; mime: string; size: number; caption: string };
+  | { type: "file"; key: string; name: string; mime: string; size: number; caption: string }
+  // detach: stop bridging, leave Claude Code running locally.
+  // shutdown: end the Claude Code session itself.
+  | { type: "control"; action: "detach" | "shutdown" };
 
 export interface CcSessionInfo {
   id: string;
