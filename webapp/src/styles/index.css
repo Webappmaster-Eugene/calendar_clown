@@ -1229,12 +1229,15 @@ select.input {
   line-height: 1;
 }
 
+/* 9px, not 10: at five tabs each label gets ~72px, and "Транскрибация" clipped to
+   an ellipsis at 10px. Shrinking the type keeps the mode's real name readable. */
 .bottom-tab-label {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: 9px;
+  letter-spacing: -0.01em;
 }
 
 /* ─── Page enter animation ───────────────────────────────── */
