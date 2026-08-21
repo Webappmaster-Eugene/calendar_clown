@@ -106,6 +106,10 @@ export function ccBridgeMiddleware(): MiddlewareFn<Context> {
     const groupId = ccGroupId();
     if (groupId === null || ctx.chat?.id !== groupId) return next();
 
+    // The bot's own service messages ("topic created") come back as updates.
+    // Dropping them silently keeps the warning below meaning what it says.
+    if (ctx.from?.id === ctx.botInfo?.id) return;
+
     if (!isTrustedSender(ctx)) {
       log.warn("dropped update from untrusted sender %s in bridge group", ctx.from?.id ?? "?");
       return;
