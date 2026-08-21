@@ -171,22 +171,27 @@ export async function getTribes(telegramId: number): Promise<TribeDto[]> {
   requireDb();
   requireAdmin(telegramId);
 
+  // Считаем участников через join+group by, а не коррелированным подзапросом:
+  // в select-поле Drizzle рендерит колонки без префикса таблицы, поэтому внутри
+  // подзапроса `${tribes.id}` схлопывался в "id" и разрешался в users.id.
   const rows = await db
     .select({
       id: tribes.id,
       name: tribes.name,
       monthlyLimit: tribes.monthlyLimit,
       createdAt: tribes.createdAt,
-      memberCount: sql<string>`(SELECT COUNT(*) FROM ${users} WHERE ${users.tribeId} = ${tribes.id})::text`,
+      memberCount: count(users.id),
     })
     .from(tribes)
+    .leftJoin(users, eq(users.tribeId, tribes.id))
+    .groupBy(tribes.id)
     .orderBy(tribes.name);
 
   return rows.map((t) => ({
     id: t.id,
     name: t.name,
     monthlyLimit: t.monthlyLimit != null ? parseFloat(t.monthlyLimit) : 0,
-    memberCount: parseInt(t.memberCount, 10),
+    memberCount: t.memberCount,
     createdAt: t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
   }));
 }
