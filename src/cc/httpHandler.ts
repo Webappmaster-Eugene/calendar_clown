@@ -9,6 +9,7 @@ import { createLogger } from "../utils/logger.js";
 import {
   attachStream,
   authorize,
+  countOnlineSessionsForThread,
   countSessionsForThread,
   detachStream,
   getFile,
@@ -18,6 +19,8 @@ import {
   type CcSession,
 } from "./registry.js";
 import {
+  announceAddressingChange,
+  announceSecondSession,
   announceSession,
   announceSessionEnd,
   ensureTopic,
@@ -178,6 +181,8 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
 
   const threadId = topic.threadId;
   const reconnect = countSessionsForThread(threadId) > 0;
+  // Only a session that can actually talk counts as a rival for the topic.
+  const rivals = countOnlineSessionsForThread(threadId);
   const { sessionId, sessionToken } = registerSession({
     machine,
     hostname: String(body.hostname).slice(0, 128),
@@ -191,7 +196,9 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
 
   const session = authorize(sessionId, sessionToken);
   if (session) {
-    await announceSession(session, reconnect, topic.idleMs).catch((err: unknown) => {
+    const announce =
+      rivals > 0 ? announceSecondSession(session) : announceSession(session, reconnect, topic.idleMs);
+    await announce.catch((err: unknown) => {
       log.error("announce failed: %s", err instanceof Error ? err.message : String(err));
     });
   }
@@ -251,7 +258,7 @@ async function handleReply(
     return;
   }
 
-  await postReply(session, text, countSessionsForThread(session.threadId) > 1);
+  await postReply(session, text, countOnlineSessionsForThread(session.threadId) > 1);
   sendJson(res, 200, { ok: true });
 }
 
@@ -344,6 +351,10 @@ async function handleBye(
   unregisterSession(session.id);
   if (last) {
     await announceSessionEnd(session).catch(() => {});
+  } else {
+    // Someone else inherits the topic — say who, or the next message goes to a
+    // session the user was not thinking about.
+    await announceAddressingChange(session.threadId).catch(() => {});
   }
 }
 

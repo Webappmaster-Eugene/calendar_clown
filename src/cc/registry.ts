@@ -176,10 +176,14 @@ export function unregisterSession(sessionId: string): void {
  * that is the terminal the user just opened and is thinking about.
  */
 export function newestSessionForThread(threadId: number): Session | null {
+  // By ordinal, not by timestamp: two terminals opened in the same millisecond
+  // share a startedAt, and a strict > comparison then leaves the *older* one
+  // holding the topic — the exact opposite of the intent. Ordinals are unique
+  // among the live sessions of a topic, so the highest is always the newest.
   let best: Session | null = null;
   for (const s of sessions.values()) {
     if (s.threadId !== threadId) continue;
-    if (!best || s.startedAt > best.startedAt) best = s;
+    if (!best || s.ordinal > best.ordinal) best = s;
   }
   return best;
 }
@@ -197,7 +201,16 @@ export function countSessionsForThread(threadId: number): number {
 export function sessionsForThread(threadId: number): Session[] {
   return Array.from(sessions.values())
     .filter((s) => s.threadId === threadId)
-    .sort((a, b) => a.startedAt - b.startedAt);
+    .sort((a, b) => a.ordinal - b.ordinal);
+}
+
+/**
+ * Sessions in the topic with a stream actually attached. Distinguishes a genuine
+ * second terminal from a client that lost its stream and re-registered: the
+ * stale session lingers in the map until the sweeper, but it cannot talk.
+ */
+export function countOnlineSessionsForThread(threadId: number): number {
+  return sessionsForThread(threadId).filter((s) => s.res !== null).length;
 }
 
 export function getSession(sessionId: string): Session | null {

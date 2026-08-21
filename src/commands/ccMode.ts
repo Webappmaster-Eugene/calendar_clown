@@ -11,6 +11,7 @@ import { telegramFetch } from "../utils/proxyAgent.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { createLogger } from "../utils/logger.js";
 import {
+  announceAddressingChange,
   ccGroupId,
   closeTopic,
   controlSession,
@@ -279,6 +280,7 @@ async function handleCallback(ctx: Context, data: string, threadId: number | und
       .catch(() => {});
 
     if (reached && mode === "shutdown" && threadId !== undefined) {
+      await announceAddressingChange(threadId).catch(() => {});
       await offerTopicCleanup(threadId);
     }
     return;

@@ -18,6 +18,7 @@ import {
   touchTopic,
 } from "../cc/repository.js";
 import {
+  countOnlineSessionsForThread,
   countSessionsForThread,
   pushEvent,
   rememberPermission,
@@ -206,6 +207,29 @@ export async function announceSession(
       `<code>${escapeHtml(session.cwd)}</code>${idle}`,
     true,
   );
+}
+
+/**
+ * Two terminals in one directory share a topic, and only the newest one receives.
+ * Silence would leave the older one apparently alive but unaddressable, so say
+ * which session is listening and how to separate them.
+ */
+export async function announceSecondSession(session: CcSession): Promise<void> {
+  const total = countSessionsForThread(session.threadId);
+  await send(
+    session.threadId,
+    `⚠️ В этом топике теперь сессий: ${total}. Сообщения идут в <b>#${session.ordinal}</b> — самую свежую.\n` +
+      "Чтобы развести их по разным топикам, запускай с именами: <code>ccx имя</code>",
+    true,
+  );
+}
+
+/** After one session leaves, whoever inherits the topic should be named out loud. */
+export async function announceAddressingChange(threadId: number): Promise<void> {
+  const remaining = sessionsForThread(threadId);
+  if (remaining.length === 0) return;
+  const now = remaining[remaining.length - 1];
+  await send(threadId, `Сообщения снова идут в #${now.ordinal}.`);
 }
 
 export async function announceSessionEnd(session: CcSession): Promise<void> {
