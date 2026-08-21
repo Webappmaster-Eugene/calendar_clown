@@ -7,7 +7,14 @@ import { ListSkeleton } from "../components/ui/ListSkeleton";
 import { VoiceButton } from "../components/VoiceButton";
 import type { CalendarEventDto, VoiceExtractIntentResponse } from "@shared/types";
 
-type Tab = "today" | "week";
+const TABS = [
+  { key: "yesterday", label: "Вчера", empty: "На вчера событий нет" },
+  { key: "today", label: "Сегодня", empty: "На сегодня событий нет" },
+  { key: "tomorrow", label: "Завтра", empty: "На завтра событий нет" },
+  { key: "week", label: "Неделя", empty: "На неделю событий нет" },
+] as const;
+
+type Tab = (typeof TABS)[number]["key"];
 
 interface EditForm {
   title: string;
@@ -125,18 +132,15 @@ export function CalendarPage() {
       <h1 className="page-title">Календарь</h1>
 
       <div className="tabs">
-        <button
-          className={`tab ${!inVoice && tab === "today" ? "active" : ""}`}
-          onClick={() => { exitVoice(); setTab("today"); }}
-        >
-          Сегодня
-        </button>
-        <button
-          className={`tab ${!inVoice && tab === "week" ? "active" : ""}`}
-          onClick={() => { exitVoice(); setTab("week"); }}
-        >
-          Неделя
-        </button>
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            className={`tab ${!inVoice && tab === t.key ? "active" : ""}`}
+            onClick={() => { exitVoice(); setTab(t.key); }}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <VoiceButton
@@ -168,7 +172,9 @@ export function CalendarPage() {
         <div className="empty-state">
           <div className="empty-state-emoji">📭</div>
           <div className="empty-state-text">
-            {inVoice ? `На «${voiceRange!.label}» событий нет` : tab === "today" ? "На сегодня событий нет" : "На неделю событий нет"}
+            {inVoice
+              ? `На «${voiceRange!.label}» событий нет`
+              : TABS.find((t) => t.key === tab)!.empty}
           </div>
         </div>
       )}

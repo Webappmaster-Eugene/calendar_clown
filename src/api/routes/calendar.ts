@@ -5,7 +5,9 @@ import {
   createEventFromText,
   createEventFromIntent,
   updateEventById,
+  getEventsYesterday,
   getEventsToday,
+  getEventsTomorrow,
   getEventsWeek,
   getEventsInRange,
   cancelEventById,
@@ -14,7 +16,7 @@ import {
   NoCalendarLinkedError,
   PastDateError,
 } from "../../services/calendarService.js";
-import type { CreateEventRequest } from "../../shared/types.js";
+import type { CalendarEventDto, CreateEventRequest } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
 import { logApiAction } from "../../logging/actionLogger.js";
 
@@ -45,35 +47,30 @@ const searchAndCancelBody = z.object({
   query: z.string(),
 });
 
-app.get("/today", async (c) => {
-  const initData = c.get("initData");
-  const userId = String(initData.user.id);
-  try {
-    const events = await getEventsToday(userId);
-    return c.json({ ok: true, data: events });
-  } catch (err) {
-    if (err instanceof NoCalendarLinkedError) {
-      return c.json({ ok: false, error: err.message, code: "NO_CALENDAR" }, 400);
-    }
-    const msg = err instanceof Error ? err.message : "Calendar error";
-    return c.json({ ok: false, error: msg }, 500);
-  }
-});
+// The four fixed windows the Mini App tabs map onto.
+const EVENT_WINDOWS: Record<string, (userId: string) => Promise<CalendarEventDto[]>> = {
+  yesterday: getEventsYesterday,
+  today: getEventsToday,
+  tomorrow: getEventsTomorrow,
+  week: getEventsWeek,
+};
 
-app.get("/week", async (c) => {
-  const initData = c.get("initData");
-  const userId = String(initData.user.id);
-  try {
-    const events = await getEventsWeek(userId);
-    return c.json({ ok: true, data: events });
-  } catch (err) {
-    if (err instanceof NoCalendarLinkedError) {
-      return c.json({ ok: false, error: err.message, code: "NO_CALENDAR" }, 400);
+for (const [window, load] of Object.entries(EVENT_WINDOWS)) {
+  app.get(`/${window}`, async (c) => {
+    const initData = c.get("initData");
+    const userId = String(initData.user.id);
+    try {
+      const events = await load(userId);
+      return c.json({ ok: true, data: events });
+    } catch (err) {
+      if (err instanceof NoCalendarLinkedError) {
+        return c.json({ ok: false, error: err.message, code: "NO_CALENDAR" }, 400);
+      }
+      const msg = err instanceof Error ? err.message : "Calendar error";
+      return c.json({ ok: false, error: msg }, 500);
     }
-    const msg = err instanceof Error ? err.message : "Calendar error";
-    return c.json({ ok: false, error: msg }, 500);
-  }
-});
+  });
+}
 
 app.get("/range", async (c) => {
   const initData = c.get("initData");

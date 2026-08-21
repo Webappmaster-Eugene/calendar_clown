@@ -194,15 +194,28 @@ export async function updateEventById(
   return { event: toDto(event), savedToDb };
 }
 
-export async function getEventsToday(userId: string): Promise<CalendarEventDto[]> {
-  const now = new Date();
-  const start = new Date(now);
+/** One calendar day starting `dayOffset` days from today (0 = today, -1 = yesterday). */
+async function getEventsForDayOffset(userId: string, dayOffset: number): Promise<CalendarEventDto[]> {
+  const start = new Date();
   start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() + dayOffset);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
 
   const events = await listEvents(start, end, userId);
   return events.map(toDto);
+}
+
+export function getEventsYesterday(userId: string): Promise<CalendarEventDto[]> {
+  return getEventsForDayOffset(userId, -1);
+}
+
+export function getEventsToday(userId: string): Promise<CalendarEventDto[]> {
+  return getEventsForDayOffset(userId, 0);
+}
+
+export function getEventsTomorrow(userId: string): Promise<CalendarEventDto[]> {
+  return getEventsForDayOffset(userId, 1);
 }
 
 export async function getEventsWeek(userId: string): Promise<CalendarEventDto[]> {
