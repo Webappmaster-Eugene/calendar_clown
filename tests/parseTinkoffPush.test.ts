@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseTinkoffPush } from "../src/expenses/bankPush/parseTinkoffPush.js";
+import { parseTinkoffPush, stripTransferNoise } from "../src/expenses/bankPush/parseTinkoffPush.js";
 
 /**
  * Unit tests for the T-Bank push parser.
@@ -129,5 +129,44 @@ describe("parseTinkoffPush — merchant is cleaned of transfer boilerplate", () 
   it("leaves a plain merchant untouched", () => {
     const r = parseTinkoffPush("Т-Банк", "Покупка 540 ₽, Пятёрочка. Баланс 12 000 ₽");
     assert.equal(r.merchant, "Пятёрочка");
+  });
+});
+
+describe("stripTransferNoise — pinned against real stored merchants", () => {
+  // These are the exact values drizzle/0019 rewrites in production. The SQL there
+  // reimplements the same rules, so this table is the contract both sides must meet;
+  // change it only together with the migration.
+  const CASES: Array<[string, string]> = [
+    ["Yota на счет RUB", "Yota"],
+    ["ypdomylandsbp через СБП на счет RUB", "ypdomylandsbp"],
+    ["LKK Orlovskiy energosb через СБП на счет RUB", "LKK Orlovskiy energosb"],
+    ["iBank ZhKH на счет RUB", "iBank ZhKH"],
+    ["Федеральная Налоговая Служба на счет RUB", "Федеральная Налоговая Служба"],
+    ["МТС на накоп счет", "МТС"],
+    ["32links ru через СБП на счет RUB", "32links ru"],
+    ["https beta proxy promo через СБП на счет RUB", "https beta proxy promo"],
+    ["РЖД через СБП на счет RUB", "РЖД"],
+  ];
+
+  for (const [input, expected] of CASES) {
+    it(`cleans "${input}"`, () => {
+      assert.equal(stripTransferNoise(input), expected);
+    });
+  }
+
+  it("leaves a merchant without boilerplate alone", () => {
+    assert.equal(stripTransferNoise("Пятёрочка"), "Пятёрочка");
+  });
+
+  it("is idempotent — re-running changes nothing", () => {
+    for (const [input] of CASES) {
+      const once = stripTransferNoise(input);
+      assert.equal(stripTransferNoise(once), once);
+    }
+  });
+
+  it("collapses to an empty string when the value is only boilerplate", () => {
+    // The migration's NULLIF guard relies on this: such a row keeps its original text.
+    assert.equal(stripTransferNoise("через СБП на счет RUB"), "");
   });
 });

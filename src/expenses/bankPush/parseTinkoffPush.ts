@@ -83,6 +83,20 @@ const TRANSFER_NOISE = [
   phrase("на\\s+карту"),
 ];
 
+/**
+ * Exported because `drizzle/0019_strip_transfer_noise_from_bank_push_subcategories`
+ * repairs merchants stored before this cleanup existed, and its SQL has to reproduce
+ * these rules exactly — the unit test pins the outputs so the two cannot drift apart
+ * unnoticed.
+ */
+export function stripTransferNoise(text: string): string {
+  let s = text;
+  for (const noise of TRANSFER_NOISE) {
+    s = s.replace(noise, " ");
+  }
+  return s.replace(/\s{2,}/g, " ").trim();
+}
+
 /** Their presence means we skip: the ledger assumes RUB. */
 const FOREIGN_CURRENCY = /(\$|€|£|usd|eur|gbp|доллар|евро)/i;
 
@@ -197,9 +211,7 @@ function extractMerchant(text: string, amountText: string): string | null {
   s = s.replace(/₽|руб\.?|р\./gi, " ");
   s = s.replace(/\b\d[\d\s .:,-]*\d\b/g, " ");
 
-  for (const noise of TRANSFER_NOISE) {
-    s = s.replace(noise, " ");
-  }
+  s = stripTransferNoise(s);
 
   s = s.replace(/[.,;:]+/g, " ").replace(/\s{2,}/g, " ").trim();
 

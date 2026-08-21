@@ -134,6 +134,13 @@
       "when": 1787348163375,
       "tag": "0018_cc_topics_closed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787351653419,
+      "tag": "0019_strip_transfer_noise_from_bank_push_subcategories",
+      "breakpoints": true
     }
   ]
 }
