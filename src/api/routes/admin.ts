@@ -15,6 +15,7 @@ import {
   editTribe,
   removeTribe,
   getGlobalStats,
+  getAccessRequests,
 } from "../../services/adminService.js";
 import {
   getPeriodRange,
@@ -24,11 +25,12 @@ import {
 } from "../../services/adminSummaryService.js";
 import { isBootstrapAdmin } from "../../middleware/auth.js";
 import { getActionLogs, getDistinctActions, logApiAction } from "../../logging/actionLogger.js";
-import type { SummaryPeriod } from "../../shared/types.js";
+import type { AccessRequestStatus, SummaryPeriod } from "../../shared/types.js";
 import type { ApiEnv } from "../authMiddleware.js";
-import { BUILD_COMMIT, BUILD_DATE, COMMIT_DATE } from "../../buildInfo.js";
+import { collectSystemInfo } from "../../services/systemInfoService.js";
 
 const VALID_SUMMARY_PERIODS = new Set<string>(["today", "yesterday", "week", "month", "year"]);
+const VALID_ACCESS_REQUEST_FILTERS = new Set<string>(["pending", "approved", "rejected", "all"]);
 
 const app = new Hono<ApiEnv>();
 
@@ -66,6 +68,25 @@ app.get("/users/pending", async (c) => {
     return c.json({ ok: true, data: users });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to get pending users";
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+/** Full application history (not just the still-open ones) — see access_requests. */
+app.get("/access-requests", async (c) => {
+  const initData = c.get("initData");
+  const telegramId = initData.user.id;
+  const statusRaw = c.req.query("status") ?? "all";
+
+  if (!VALID_ACCESS_REQUEST_FILTERS.has(statusRaw)) {
+    return c.json({ ok: false, error: "Invalid status. Use: pending, approved, rejected, all" }, 400);
+  }
+
+  try {
+    const requests = await getAccessRequests(telegramId, statusRaw as AccessRequestStatus | "all");
+    return c.json({ ok: true, data: requests });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to get access requests";
     return c.json({ ok: false, error: msg }, 500);
   }
 });
@@ -496,33 +517,23 @@ app.get("/logs/actions", async (c) => {
   }
 });
 
-app.get("/build-info", async (c) => {
-  const uptimeSeconds = Math.floor(process.uptime());
-  const hours = Math.floor(uptimeSeconds / 3600);
-  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+/**
+ * Server internals (versions, memory, service health, which integrations are wired
+ * up) — admin-only: it is a map of the deployment, not user-facing data.
+ */
+app.get("/system", async (c) => {
+  const initData = c.get("initData");
+  if (!isBootstrapAdmin(initData.user.id)) {
+    return c.json({ ok: false, error: "Admin access required" }, 403);
+  }
 
-  const memUsage = process.memoryUsage();
-
-  return c.json({
-    ok: true,
-    data: {
-      commitHash: BUILD_COMMIT,
-      buildDate: BUILD_DATE,
-      commitDate: COMMIT_DATE,
-      nodeVersion: process.version,
-      uptime: `${hours}ч ${minutes}м`,
-      uptimeSeconds,
-      memoryMb: {
-        rss: Math.round(memUsage.rss / 1024 / 1024),
-        heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
-        heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
-      },
-      platform: process.platform,
-      arch: process.arch,
-      pid: process.pid,
-      env: process.env.NODE_ENV ?? "production",
-    },
-  });
+  try {
+    const info = await collectSystemInfo();
+    return c.json({ ok: true, data: info });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to collect system info";
+    return c.json({ ok: false, error: msg }, 500);
+  }
 });
 
 export default app;

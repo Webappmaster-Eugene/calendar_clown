@@ -12,6 +12,10 @@ import type {
   EntityMetaDto,
   ActionLogsResponseDto,
   SupportReportDto,
+  AdminSystemInfoDto,
+  AccessRequestDto,
+  AccessRequestStatus,
+  UserProfile,
 } from "@shared/types";
 
 type AdminTab = "stats" | "summary" | "users" | "pending" | "tribes" | "data" | "logs" | "reports";
@@ -61,28 +65,24 @@ export function AdminPage() {
 }
 
 function StatsTab() {
+  const { user } = useTelegram();
   const { data: stats, isLoading, error } = useQuery({
     queryKey: ["admin", "stats"],
     queryFn: () => api.get<AdminStatsDto>("/api/admin/stats"),
   });
 
-  interface BuildInfo {
-    commitHash: string;
-    buildDate: string;
-    commitDate: string;
-    nodeVersion: string;
-    uptime: string;
-    uptimeSeconds: number;
-    memoryMb: { rss: number; heapUsed: number; heapTotal: number };
-    platform: string;
-    arch: string;
-    pid: number;
-    env: string;
-  }
+  const { data: profile } = useQuery({
+    queryKey: ["user", "me"],
+    queryFn: () => api.get<UserProfile>("/api/user/me"),
+  });
+  const isAdmin = profile?.isAdmin === true;
 
-  const { data: buildInfo } = useQuery({
-    queryKey: ["admin", "build-info"],
-    queryFn: () => api.get<BuildInfo>("/api/admin/build-info"),
+  // Server internals are admin-only, so the query is not even issued otherwise —
+  // a non-admin would just collect a 403.
+  const { data: system, error: systemError } = useQuery({
+    queryKey: ["admin", "system"],
+    queryFn: () => api.get<AdminSystemInfoDto>("/api/admin/system"),
+    enabled: isAdmin,
     refetchInterval: 30_000,
   });
 
@@ -126,44 +126,195 @@ function StatsTab() {
           <div className="stat-label">Транскрипции</div>
         </div>
       </div>
-      {buildInfo && (
-        <div className="card" style={{ marginTop: 16, fontSize: 13 }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>Система</div>
-          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px" }}>
-            <span className="card-hint">Коммит</span>
-            <span style={{ fontFamily: "monospace" }}>{buildInfo.commitHash}</span>
-            <span className="card-hint">Собрано</span>
-            <span>{buildInfo.buildDate}</span>
-            <span className="card-hint">Аптайм</span>
-            <span>{buildInfo.uptime}</span>
-            <span className="card-hint">Node</span>
-            <span>{buildInfo.nodeVersion}</span>
-            <span className="card-hint">Память</span>
-            <span>{buildInfo.memoryMb.heapUsed}/{buildInfo.memoryMb.heapTotal} MB (RSS {buildInfo.memoryMb.rss} MB)</span>
-            <span className="card-hint">Платформа</span>
-            <span>{buildInfo.platform}/{buildInfo.arch} · PID {buildInfo.pid}</span>
-            <span className="card-hint">Режим</span>
-            <span>{buildInfo.env}</span>
-          </div>
+      {isAdmin && systemError && (
+        <div className="error-msg" style={{ marginTop: 16 }}>
+          Системные данные недоступны: {(systemError as Error).message}
         </div>
       )}
+      {isAdmin && system && <SystemCards system={system} />}
+
+      <ClientCard telegramUserId={user?.id} />
+    </>
+  );
+}
+
+// ─── Stats: system & client diagnostics ──────────────────────
+
+function InfoGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px" }}>
+      {children}
+    </div>
+  );
+}
+
+function InfoCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="card" style={{ marginTop: 12, fontSize: 13 }}>
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>{title}</div>
+      <InfoGrid>{children}</InfoGrid>
+    </div>
+  );
+}
+
+function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <>
+      <span className="card-hint">{label}</span>
+      <span style={mono ? { fontFamily: "monospace", wordBreak: "break-all" } : { wordBreak: "break-word" }}>
+        {value}
+      </span>
+    </>
+  );
+}
+
+function StatusDot({ ok, label }: { ok: boolean; label: string }) {
+  return <span>{ok ? "🟢" : "🔴"} {label}</span>;
+}
+
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("ru-RU");
+}
+
+function SystemCards({ system }: { system: AdminSystemInfoDto }) {
+  const { build, runtime, memory, cpu, services, integrations } = system;
+  const memPct = memory.systemTotalMb > 0
+    ? Math.round(((memory.systemTotalMb - memory.systemFreeMb) / memory.systemTotalMb) * 100)
+    : 0;
+
+  return (
+    <>
+      <InfoCard title="Сборка">
+        <Row label="Коммит" value={build.commitHash} mono />
+        <Row label="Собрано" value={build.buildDate} />
+        <Row label="Дата коммита" value={build.commitDate} />
+        <Row label="Режим" value={build.env} />
+      </InfoCard>
+
+      <InfoCard title="Процесс">
+        <Row label="Аптайм" value={`${runtime.uptime} (с ${fmtDateTime(runtime.startedAt)})`} />
+        <Row label="Node" value={runtime.nodeVersion} />
+        <Row label="Платформа" value={`${runtime.platform}/${runtime.arch} · PID ${runtime.pid}`} />
+        <Row label="Хост" value={runtime.hostname} mono />
+        <Row label="Время сервера" value={`${fmtDateTime(runtime.serverTime)} (${runtime.timezone})`} />
+      </InfoCard>
+
+      <InfoCard title="Ресурсы">
+        <Row label="Heap" value={`${memory.heapUsedMb} / ${memory.heapTotalMb} MB`} />
+        <Row label="RSS" value={`${memory.rssMb} MB (external ${memory.externalMb} MB)`} />
+        <Row
+          label="Память хоста"
+          value={`${memory.systemTotalMb - memory.systemFreeMb} / ${memory.systemTotalMb} MB (${memPct}%)`}
+        />
+        <Row label="CPU" value={`${cpu.cores} ядер · ${cpu.model}`} />
+        <Row label="Load avg" value={cpu.loadAvg.join(" / ")} />
+        <Row label="CPU процесса" value={`${cpu.averagePercent}% (в среднем за аптайм)`} />
+      </InfoCard>
+
+      <InfoCard title="Сервисы">
+        <Row
+          label="PostgreSQL"
+          value={
+            <StatusDot
+              ok={services.database.up}
+              label={
+                services.database.up
+                  ? `${services.database.latencyMs} мс`
+                  : services.database.error ?? "недоступна"
+              }
+            />
+          }
+        />
+        <Row
+          label="Long polling"
+          value={<StatusDot ok={services.polling.healthy} label={services.polling.healthy ? "живой" : "завис"} />}
+        />
+        <Row label="Последний апдейт" value={fmtDateTime(services.polling.lastActivityAt)} />
+        <Row label="Последний успех" value={fmtDateTime(services.polling.lastOkAt)} />
+        {services.polling.consecutiveFailures > 0 && (
+          <Row
+            label="Ошибки подряд"
+            value={`${services.polling.consecutiveFailures} / ${services.polling.maxFailures}${services.polling.lastError ? ` — ${services.polling.lastError}` : ""}`}
+          />
+        )}
+        <Row
+          label="Очередь STT"
+          value={
+            services.transcribeQueue ? (
+              <StatusDot
+                ok={services.transcribeQueue.workerRunning}
+                label={`ожидают ${services.transcribeQueue.waiting} · в работе ${services.transcribeQueue.active} · отложены ${services.transcribeQueue.delayed} · упали ${services.transcribeQueue.failed}`}
+              />
+            ) : (
+              "не подключена (Redis отключён)"
+            )
+          }
+        />
+      </InfoCard>
 
       <div className="card" style={{ marginTop: 12, fontSize: 13 }}>
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>Клиент</div>
-        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px" }}>
-          <span className="card-hint">Платформа</span>
-          <span>{navigator.platform}</span>
-          <span className="card-hint">Экран</span>
-          <span>{window.screen.width}×{window.screen.height} · {window.devicePixelRatio}x</span>
-          <span className="card-hint">Viewport</span>
-          <span>{window.innerWidth}×{window.innerHeight}</span>
-          <span className="card-hint">Язык</span>
-          <span>{navigator.language}</span>
-          <span className="card-hint">UserAgent</span>
-          <span style={{ wordBreak: "break-all", fontSize: 11, opacity: 0.7 }}>{navigator.userAgent}</span>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>Интеграции</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}>
+          {Object.entries(integrations).map(([key, ok]) => (
+            <StatusDot key={key} ok={ok} label={INTEGRATION_LABELS[key] ?? key} />
+          ))}
         </div>
       </div>
     </>
+  );
+}
+
+const INTEGRATION_LABELS: Record<string, string> = {
+  googleCalendar: "Google Calendar",
+  openRouter: "OpenRouter",
+  openRouterProxy: "OpenRouter proxy",
+  telegramProxy: "Telegram proxy",
+  tavily: "Tavily (OSINT)",
+  mtproto: "MTProto (дайджест)",
+  redis: "Redis",
+  bankWebhook: "Банк-вебхук",
+  telemetry: "OpenTelemetry",
+};
+
+function ClientCard({ telegramUserId }: { telegramUserId?: number }) {
+  const tg = typeof window !== "undefined"
+    ? (window as { Telegram?: { WebApp?: Record<string, unknown> } }).Telegram?.WebApp
+    : undefined;
+  const nav = navigator as Navigator & {
+    deviceMemory?: number;
+    connection?: { effectiveType?: string; downlink?: number; rtt?: number };
+  };
+  const conn = nav.connection;
+
+  return (
+    <InfoCard title="Клиент">
+      <Row label="Telegram ID" value={telegramUserId ?? "—"} mono />
+      <Row
+        label="Telegram"
+        value={`${String(tg?.platform ?? "—")} · v${String(tg?.version ?? "—")} · ${String(tg?.colorScheme ?? "—")}`}
+      />
+      <Row label="Платформа" value={navigator.platform} />
+      <Row label="Экран" value={`${window.screen.width}×${window.screen.height} · ${window.devicePixelRatio}x`} />
+      <Row label="Viewport" value={`${window.innerWidth}×${window.innerHeight}`} />
+      <Row label="Язык" value={navigator.language} />
+      <Row label="Часовой пояс" value={Intl.DateTimeFormat().resolvedOptions().timeZone} />
+      <Row label="Локальное время" value={new Date().toLocaleString("ru-RU")} />
+      <Row
+        label="Сеть"
+        value={
+          navigator.onLine
+            ? conn
+              ? `онлайн · ${conn.effectiveType ?? "?"} · ${conn.downlink ?? "?"} Мбит/с · RTT ${conn.rtt ?? "?"} мс`
+              : "онлайн"
+            : "офлайн"
+        }
+      />
+      <Row label="Память устройства" value={nav.deviceMemory ? `${nav.deviceMemory} GB` : "неизвестно"} />
+      <Row label="Ядра CPU" value={navigator.hardwareConcurrency || "неизвестно"} />
+      <Row label="UserAgent" value={<span style={{ fontSize: 11, opacity: 0.7 }}>{navigator.userAgent}</span>} />
+    </InfoCard>
   );
 }
 
@@ -596,12 +747,26 @@ function UsersTab() {
   );
 }
 
+const REQUEST_FILTERS: { key: AccessRequestStatus | "all"; label: string }[] = [
+  { key: "pending", label: "Ожидают" },
+  { key: "approved", label: "Одобрены" },
+  { key: "rejected", label: "Отклонены" },
+  { key: "all", label: "Все" },
+];
+
+const REQUEST_STATUS_LABEL: Record<AccessRequestStatus, string> = {
+  pending: "🟡 Ожидает",
+  approved: "🟢 Одобрена",
+  rejected: "🔴 Отклонена",
+};
+
 function PendingTab() {
   const queryClient = useQueryClient();
+  const [filter, setFilter] = useState<AccessRequestStatus | "all">("pending");
 
-  const { data: users, isLoading, error } = useQuery({
-    queryKey: ["admin", "pending"],
-    queryFn: () => api.get<AdminUserDto[]>("/api/admin/users/pending"),
+  const { data: requests, isLoading, error } = useQuery({
+    queryKey: ["admin", "access-requests", filter],
+    queryFn: () => api.get<AccessRequestDto[]>(`/api/admin/access-requests?status=${filter}`),
   });
 
   const approveMutation = useMutation({
@@ -620,47 +785,70 @@ function PendingTab() {
     },
   });
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
-  if (error) return <div className="error-msg">{(error as Error).message}</div>;
-
-  if (!users || users.length === 0) {
-    return (
-      <div className="empty-state">
-        <div className="empty-state-text">Нет заявок на подтверждение</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="list">
-      {users.map((u) => (
-        <div key={u.id} className="list-item">
-          <div className="list-item-content">
-            <div className="list-item-title">
-              {u.firstName} {u.lastName ?? ""}
-              {u.username ? ` (@${u.username})` : ""}
-            </div>
-            <div className="list-item-hint">ID: {u.telegramId}</div>
-          </div>
-          <div className="list-item-actions">
-            <button
-              className="btn btn-primary btn-small"
-              onClick={() => approveMutation.mutate(u.telegramId)}
-              disabled={approveMutation.isPending}
-            >
-              Одобрить
-            </button>
-            <button
-              className="btn btn-danger btn-small"
-              onClick={() => rejectMutation.mutate(u.telegramId)}
-              disabled={rejectMutation.isPending}
-            >
-              Отклонить
-            </button>
+    <>
+      <div className="tabs" style={{ marginBottom: 12 }}>
+        {REQUEST_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            className={`tab ${filter === f.key ? "active" : ""}`}
+            onClick={() => setFilter(f.key)}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {isLoading && <div className="loading">Загрузка...</div>}
+      {error && <div className="error-msg">{(error as Error).message}</div>}
+
+      {requests && requests.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-state-text">
+            {filter === "pending" ? "Нет заявок на подтверждение" : "Заявок не найдено"}
           </div>
         </div>
-      ))}
-    </div>
+      )}
+
+      <div className="list">
+        {requests?.map((r) => (
+          <div key={r.id} className="list-item" style={{ flexWrap: "wrap" }}>
+            <div className="list-item-content">
+              <div className="list-item-title">
+                {r.firstName} {r.lastName ?? ""}
+                {r.username ? ` (@${r.username})` : ""}
+              </div>
+              <div className="list-item-hint">
+                ID: {r.telegramId} · подана {new Date(r.createdAt).toLocaleString("ru-RU")}
+              </div>
+              <div className="list-item-hint">
+                {REQUEST_STATUS_LABEL[r.status]}
+                {r.decidedAt && ` · ${new Date(r.decidedAt).toLocaleString("ru-RU")}`}
+                {r.decidedBy != null && ` · админ ${r.decidedBy}`}
+              </div>
+            </div>
+            {r.status === "pending" && (
+              <div className="list-item-actions">
+                <button
+                  className="btn btn-primary btn-small"
+                  onClick={() => approveMutation.mutate(r.telegramId)}
+                  disabled={approveMutation.isPending}
+                >
+                  Одобрить
+                </button>
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={() => rejectMutation.mutate(r.telegramId)}
+                  disabled={rejectMutation.isPending}
+                >
+                  Отклонить
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

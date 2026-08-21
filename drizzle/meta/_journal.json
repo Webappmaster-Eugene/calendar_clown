@@ -113,6 +113,20 @@
       "when": 1787257367398,
       "tag": "0015_cc_bridge_topics",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1787328733799,
+      "tag": "0016_access_requests_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787328754015,
+      "tag": "0017_backfill_access_requests_from_users",
+      "breakpoints": true
     }
   ]
 }

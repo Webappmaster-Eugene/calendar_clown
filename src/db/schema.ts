@@ -1165,3 +1165,29 @@ export const ccTopics = pgTable(
     uniqueIndex("idx_cc_topics_thread").on(table.threadId),
   ],
 );
+
+// ─── Access Requests ─────────────────────────────────────────────────────────
+
+// Independent of `users`: a rejected applicant's user row is deleted so they can
+// re-apply, which used to erase the fact that they ever asked. This table is the
+// durable audit trail, so it stores its own copy of the applicant's identity and
+// keeps one row per attempt (a re-application is a new row).
+export const accessRequests = pgTable(
+  "access_requests",
+  {
+    id: serial("id").primaryKey(),
+    telegramId: bigint("telegram_id", { mode: "bigint" }).notNull(),
+    username: varchar("username", { length: 255 }),
+    firstName: varchar("first_name", { length: 255 }).notNull().default(""),
+    lastName: varchar("last_name", { length: 255 }),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    decidedBy: bigint("decided_by", { mode: "bigint" }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_access_requests_status").on(table.status),
+    index("idx_access_requests_telegram_id").on(table.telegramId),
+    check("access_requests_status_check", sql`${table.status} IN ('pending', 'approved', 'rejected')`),
+  ],
+);

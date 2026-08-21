@@ -19,10 +19,13 @@ import {
 } from "../db/schema.js";
 import { isDatabaseAvailable } from "../db/connection.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
+import { listAccessRequests } from "../access/repository.js";
 import type {
   AdminUserDto,
   TribeDto,
   AdminStatsDto,
+  AccessRequestDto,
+  AccessRequestStatus,
 } from "../shared/types.js";
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -118,13 +121,22 @@ export async function getPendingUsers(telegramId: number): Promise<AdminUserDto[
 export async function approveUserById(telegramId: number, targetTelegramId: number): Promise<boolean> {
   requireDb();
   requireAdmin(telegramId);
-  return approveUser(targetTelegramId);
+  return approveUser(targetTelegramId, telegramId);
 }
 
 export async function rejectUserById(telegramId: number, targetTelegramId: number): Promise<boolean> {
   requireDb();
   requireAdmin(telegramId);
-  return rejectUser(targetTelegramId);
+  return rejectUser(targetTelegramId, telegramId);
+}
+
+export async function getAccessRequests(
+  telegramId: number,
+  status: AccessRequestStatus | "all",
+): Promise<AccessRequestDto[]> {
+  requireDb();
+  requireAdmin(telegramId);
+  return listAccessRequests(status);
 }
 
 export async function addUser(telegramId: number, targetTelegramId: number): Promise<boolean> {
