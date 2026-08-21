@@ -14,8 +14,9 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { execFileSync } from "node:child_process";
-import { hostname } from "node:os";
-import { basename, relative } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir, hostname } from "node:os";
+import { basename, join, relative } from "node:path";
 import { z } from "zod";
 
 const HUB_URL = (process.env.CC_HUB_URL ?? "").replace(/\/+$/, "");
@@ -56,6 +57,11 @@ const project = !repoRoot
   : cwd === repoRoot
     ? basename(repoRoot)
     : `${basename(repoRoot)}/${relative(repoRoot, cwd)}`;
+
+// Names let several sessions share a project and still get their own topic.
+// Trimmed to something a topic title can hold; empty means the project's
+// default topic, which keeps pre-existing topics addressed the same way.
+const session = (process.env.CC_SESSION ?? "").trim().slice(0, 60);
 
 // ─── MCP server ──────────────────────────────────────────────────────────────
 
@@ -98,6 +104,7 @@ async function register(): Promise<boolean> {
         hostname: hostname(),
         cwd,
         project,
+        session,
         branch,
         ccVersion: process.env.CLAUDE_CODE_VERSION ?? null,
       }),
@@ -113,7 +120,7 @@ async function register(): Promise<boolean> {
     }
     sessionId = body.sessionId;
     sessionToken = body.sessionToken;
-    log(`registered as ${machine} · ${project}${branch ? ` · ${branch}` : ""}`);
+    log(`registered as ${machine} · ${project}${session ? ` · ${session}` : ""}${branch ? ` (${branch})` : ""}`);
     return true;
   } catch (err) {
     log(`register error: ${err instanceof Error ? err.message : String(err)}`);
@@ -144,7 +151,44 @@ const HubEventSchema = z.discriminatedUnion("type", [
     requestId: z.string(),
     behavior: z.union([z.literal("allow"), z.literal("deny")]),
   }),
+  z.object({
+    type: z.literal("file"),
+    key: z.string(),
+    name: z.string(),
+    mime: z.string(),
+    size: z.number(),
+    caption: z.string(),
+  }),
 ]);
+
+const INBOX = join(homedir(), ".sovetnik-channel", "inbox");
+
+/** Telegram file names are attacker-adjacent input; keep them to a bare basename. */
+function safeName(name: string): string {
+  const bare = basename(name).replace(/[^\p{L}\p{N}._-]+/gu, "_").slice(0, 120);
+  return bare && bare !== "." && bare !== ".." ? bare : "attachment";
+}
+
+/** Pulls the bytes back through the hub and drops them where Claude can read them. */
+async function downloadAttachment(key: string, name: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${hubUrl("/cc/file")}&key=${encodeURIComponent(key)}`, {
+      headers: { Authorization: `Bearer ${sessionToken ?? ""}` },
+    });
+    if (!res.ok) {
+      log(`attachment download failed: HTTP ${res.status}`);
+      return null;
+    }
+    mkdirSync(INBOX, { recursive: true });
+    // Prefixed with the key so two files with the same name never collide.
+    const path = join(INBOX, `${key.slice(0, 8)}_${safeName(name)}`);
+    writeFileSync(path, Buffer.from(await res.arrayBuffer()));
+    return path;
+  } catch (err) {
+    log(`attachment error: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
 
 async function dispatch(raw: string): Promise<void> {
   let parsed: unknown;
@@ -160,6 +204,21 @@ async function dispatch(raw: string): Promise<void> {
     await mcp.notification({
       method: "notifications/claude/channel",
       params: { content: event.data.content, meta: event.data.meta ?? {} },
+    });
+    return;
+  }
+
+  if (event.data.type === "file") {
+    const { key, name, mime, size, caption } = event.data;
+    const path = await downloadAttachment(key, name);
+    const content = path
+      ? `Пользователь прислал файл: ${path} (${mime}, ${Math.round(size / 1024)} КБ). ` +
+        `Прочитай его, если это нужно для ответа.` +
+        (caption ? `\n\nПодпись: ${caption}` : "")
+      : `Пользователь прислал файл "${name}", но скачать его не удалось.`;
+    await mcp.notification({
+      method: "notifications/claude/channel",
+      params: { content, meta: path ? { file_path: path, file_name: name } : {} },
     });
     return;
   }

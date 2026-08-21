@@ -9,6 +9,8 @@ export interface CcRegisterRequest {
   cwd: string;
   /** Basename of cwd, or the git repo name when there is one. */
   project: string;
+  /** Optional label so several sessions in one project get their own topic. */
+  session?: string | null;
   branch?: string | null;
   ccVersion?: string | null;
 }
@@ -36,7 +38,10 @@ export interface CcPermissionRequest {
 /** Hub → machine, over SSE. */
 export type CcEvent =
   | { type: "message"; content: string; meta: Record<string, string> }
-  | { type: "verdict"; requestId: string; behavior: "allow" | "deny" };
+  | { type: "verdict"; requestId: string; behavior: "allow" | "deny" }
+  // The hub never hands out a Telegram file URL: it carries the bot token. The
+  // machine fetches `key` back through the hub, which proxies the download.
+  | { type: "file"; key: string; name: string; mime: string; size: number; caption: string };
 
 export interface CcSessionInfo {
   id: string;

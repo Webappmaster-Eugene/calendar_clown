@@ -11,7 +11,7 @@ import { telegramFetch } from "../utils/proxyAgent.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { createLogger } from "../utils/logger.js";
 import { ccGroupId, resolvePermission } from "../services/ccBridgeService.js";
-import { newestSessionForThread, pushEvent } from "../cc/registry.js";
+import { newestSessionForThread, pushEvent, rememberFile } from "../cc/registry.js";
 
 const log = createLogger("cc-mode");
 
@@ -86,6 +86,100 @@ async function handleVoice(ctx: Context, threadId: number, fileId: string, durat
   }
 }
 
+// Telegram's own ceiling for getFile; a larger file cannot be downloaded by a
+// bot at all, so reject it here instead of failing later in the hub.
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+interface Attachment {
+  fileId: string;
+  name: string;
+  mime: string;
+  size: number;
+}
+
+function captionOf(message: object): string {
+  return "caption" in message && typeof message.caption === "string" ? message.caption.trim() : "";
+}
+
+function extractAttachment(message: object): Attachment | null {
+  if ("photo" in message && Array.isArray(message.photo) && message.photo.length > 0) {
+    // Telegram lists sizes ascending; the last one is the original.
+    const best = message.photo[message.photo.length - 1] as {
+      file_id: string;
+      file_unique_id: string;
+      file_size?: number;
+    };
+    return {
+      fileId: best.file_id,
+      name: `photo_${best.file_unique_id}.jpg`,
+      mime: "image/jpeg",
+      size: best.file_size ?? 0,
+    };
+  }
+
+  for (const kind of ["document", "video", "audio", "video_note"] as const) {
+    if (!(kind in message)) continue;
+    const file = (message as Record<string, unknown>)[kind] as
+      | { file_id: string; file_unique_id: string; file_name?: string; mime_type?: string; file_size?: number }
+      | undefined;
+    if (!file?.file_id) continue;
+    return {
+      fileId: file.file_id,
+      name: file.file_name ?? `${kind}_${file.file_unique_id}`,
+      mime: file.mime_type ?? "application/octet-stream",
+      size: file.file_size ?? 0,
+    };
+  }
+
+  return null;
+}
+
+async function forwardAttachment(
+  ctx: Context,
+  threadId: number,
+  attachment: Attachment,
+  caption: string,
+): Promise<void> {
+  if (attachment.size > MAX_ATTACHMENT_BYTES) {
+    await ctx.reply("Файл больше 20 МБ — Telegram не отдаёт такие ботам.", {
+      message_thread_id: threadId,
+    });
+    return;
+  }
+
+  const session = newestSessionForThread(threadId);
+  if (!session) {
+    await ctx.reply("Нет живой сессии в этом топике. Запусти ccx на машине.", {
+      message_thread_id: threadId,
+    });
+    return;
+  }
+
+  const key = rememberFile({
+    sessionId: session.id,
+    fileId: attachment.fileId,
+    name: attachment.name,
+    mime: attachment.mime,
+    size: attachment.size,
+  });
+
+  const delivered = pushEvent(session.id, {
+    type: "file",
+    key,
+    name: attachment.name,
+    mime: attachment.mime,
+    size: attachment.size,
+    caption,
+  });
+
+  if (!delivered) {
+    await ctx.reply("Сессия отвалилась, файл не доставлен.", { message_thread_id: threadId });
+    return;
+  }
+
+  await ctx.react?.("👌").catch(() => {});
+}
+
 async function handleCallback(ctx: Context, data: string): Promise<void> {
   const match = data.match(/^cc:(a|d):(.+)$/);
   if (!match) {
@@ -141,8 +235,16 @@ export function ccBridgeMiddleware(): MiddlewareFn<Context> {
       return;
     }
 
-    // Photos, documents and the rest are out of scope for the narrow bridge:
-    // say so rather than silently swallowing them.
-    await ctx.reply("Мост принимает только текст и голосовые.", { message_thread_id: threadId });
+    const attachment = extractAttachment(message);
+    if (attachment) {
+      await forwardAttachment(ctx, threadId, attachment, captionOf(message));
+      return;
+    }
+
+    // Stickers, polls, locations and the rest have no useful mapping into a
+    // coding session: say so rather than silently swallowing them.
+    await ctx.reply("Мост принимает текст, голосовые, фото и файлы.", {
+      message_thread_id: threadId,
+    });
   };
 }

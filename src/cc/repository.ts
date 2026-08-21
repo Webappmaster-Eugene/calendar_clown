@@ -9,10 +9,13 @@ export interface CcTopic {
   threadId: number;
 }
 
-export function buildTopicKey(machine: string, cwd: string): string {
+export function buildTopicKey(machine: string, cwd: string, session: string): string {
   // cwd rather than the project basename: two checkouts of the same repo on one
   // machine are different working contexts and deserve separate topics.
-  return `${machine}:${cwd}`.slice(0, 255);
+  // A named session gets its own topic on top of that; the unnamed form keeps
+  // the original key so topics created before naming existed stay addressable.
+  const base = `${machine}:${cwd}`;
+  return (session ? `${base}#${session}` : base).slice(0, 255);
 }
 
 export async function findTopicByKey(topicKey: string): Promise<CcTopic | null> {

@@ -2,6 +2,7 @@
 // plain messages as the conversation, inline buttons as the permission prompt.
 import { Markup } from "telegraf";
 import { getBotInstance } from "../botInstance.js";
+import { telegramFetch } from "../utils/proxyAgent.js";
 import { createLogger } from "../utils/logger.js";
 import {
   buildTopicKey,
@@ -60,19 +61,29 @@ const topicInFlight = new Map<string, Promise<number>>();
  * Returns the forum topic for this machine+directory, creating it on first use.
  * A stored topic the user deleted manually is transparently recreated.
  */
-export async function ensureTopic(machine: string, cwd: string, project: string): Promise<number> {
-  const topicKey = buildTopicKey(machine, cwd);
+export async function ensureTopic(
+  machine: string,
+  cwd: string,
+  project: string,
+  session: string,
+): Promise<number> {
+  const topicKey = buildTopicKey(machine, cwd, session);
   const pending = topicInFlight.get(topicKey);
   if (pending) return pending;
 
-  const work = createOrFindTopic(topicKey, machine, project).finally(() => {
+  const work = createOrFindTopic(topicKey, machine, project, session).finally(() => {
     topicInFlight.delete(topicKey);
   });
   topicInFlight.set(topicKey, work);
   return work;
 }
 
-async function createOrFindTopic(topicKey: string, machine: string, project: string): Promise<number> {
+async function createOrFindTopic(
+  topicKey: string,
+  machine: string,
+  project: string,
+  session: string,
+): Promise<number> {
   const chatId = ccGroupId();
   if (chatId === null) throw new Error("CC_GROUP_ID is not configured");
   const bot = getBotInstance();
@@ -84,7 +95,7 @@ async function createOrFindTopic(topicKey: string, machine: string, project: str
     return existing.threadId;
   }
 
-  const name = `${machine} · ${project}`.slice(0, 128);
+  const name = `${machine} · ${project}${session ? ` · ${session}` : ""}`.slice(0, 128);
   const topic = await bot.telegram.createForumTopic(chatId, name);
   await saveTopic({ topicKey, machine, project, threadId: topic.message_thread_id });
   log.info("created forum topic %d for %s", topic.message_thread_id, topicKey);
@@ -187,6 +198,20 @@ export async function postPermission(session: CcSession, req: CcPermissionReques
   } catch (err) {
     log.error("permission prompt failed: %s", err instanceof Error ? err.message : String(err));
   }
+}
+
+/**
+ * Resolves a Telegram file_id to a live download and returns the upstream body.
+ * Resolution happens here, at redeem time, because the link Telegram hands back
+ * embeds the bot token and expires about an hour after it is issued.
+ */
+export async function openTelegramFile(fileId: string): Promise<Buffer> {
+  const bot = getBotInstance();
+  if (!bot) throw new Error("Bot instance is not ready");
+  const link = await bot.telegram.getFileLink(fileId);
+  const upstream = await telegramFetch(link.toString());
+  if (!upstream.ok) throw new Error(`Telegram download failed: HTTP ${upstream.status}`);
+  return Buffer.from(await upstream.arrayBuffer());
 }
 
 /**

@@ -196,6 +196,45 @@ function sweepPermissions(): void {
   }
 }
 
+// ─── Pending attachments ─────────────────────────────────────────────────────
+//
+// Only the Telegram file_id is held, never a resolved URL: those embed the bot
+// token, and the download link expires anyway. The machine redeems the key
+// through the hub, which resolves and proxies the bytes at that moment.
+
+const FILE_TTL_MS = 60 * 60_000;
+
+interface PendingFile {
+  sessionId: string;
+  fileId: string;
+  name: string;
+  mime: string;
+  size: number;
+  at: number;
+}
+
+const pendingFiles = new Map<string, PendingFile>();
+
+export function rememberFile(input: Omit<PendingFile, "at">): string {
+  const cutoff = Date.now() - FILE_TTL_MS;
+  for (const [k, f] of pendingFiles) if (f.at < cutoff) pendingFiles.delete(k);
+
+  const key = newId(12);
+  pendingFiles.set(key, { ...input, at: Date.now() });
+  return key;
+}
+
+/** Kept rather than consumed: a retried download after a dropped connection must work. */
+export function getFile(key: string, sessionId: string): PendingFile | null {
+  const f = pendingFiles.get(key);
+  if (!f || f.sessionId !== sessionId) return null;
+  if (Date.now() - f.at > FILE_TTL_MS) {
+    pendingFiles.delete(key);
+    return null;
+  }
+  return f;
+}
+
 export function listSessions(): CcSessionInfo[] {
   return Array.from(sessions.values())
     .sort((a, b) => a.machine.localeCompare(b.machine) || a.project.localeCompare(b.project))

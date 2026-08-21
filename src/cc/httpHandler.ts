@@ -11,6 +11,7 @@ import {
   authorize,
   countSessionsForThread,
   detachStream,
+  getFile,
   keepAlive,
   registerSession,
   unregisterSession,
@@ -21,6 +22,7 @@ import {
   announceSessionEnd,
   ensureTopic,
   isCcConfigured,
+  openTelegramFile,
   postPermission,
   postReply,
 } from "../services/ccBridgeService.js";
@@ -156,10 +158,11 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
   const machine = String(body.machine).slice(0, 64);
   const project = String(body.project).slice(0, 128);
   const cwd = String(body.cwd).slice(0, 512);
+  const sessionName = String(body.session ?? "").trim().slice(0, 60);
 
   let threadId: number;
   try {
-    threadId = await ensureTopic(machine, cwd, project);
+    threadId = await ensureTopic(machine, cwd, project, sessionName);
   } catch (err) {
     log.error("ensureTopic failed: %s", err instanceof Error ? err.message : String(err));
     sendJson(res, 503, { ok: false, error: "Could not open a Telegram topic" });
@@ -278,6 +281,46 @@ async function handlePermission(
   sendJson(res, 200, { ok: true });
 }
 
+/**
+ * Redeems an attachment key for the bytes. The hub proxies rather than
+ * redirecting so the Telegram URL — which carries the bot token — never reaches
+ * the machine.
+ */
+async function handleFile(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  searchParams: URLSearchParams,
+): Promise<void> {
+  const session = sessionFrom(req, searchParams);
+  if (!session) {
+    sendJson(res, 401, { ok: false, error: "Unknown session" });
+    return;
+  }
+
+  const key = searchParams.get("key") ?? "";
+  const file = getFile(key, session.id);
+  if (!file) {
+    sendJson(res, 404, { ok: false, error: "Unknown or expired attachment" });
+    return;
+  }
+
+  let bytes: Buffer;
+  try {
+    bytes = await openTelegramFile(file.fileId);
+  } catch (err) {
+    log.error("file fetch failed: %s", err instanceof Error ? err.message : String(err));
+    sendJson(res, 502, { ok: false, error: "Could not fetch the file from Telegram" });
+    return;
+  }
+
+  res.writeHead(200, {
+    "Content-Type": file.mime || "application/octet-stream",
+    "Content-Length": String(bytes.length),
+    "Cache-Control": "no-store",
+  });
+  res.end(bytes);
+}
+
 async function handleBye(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -319,6 +362,8 @@ export async function handleCcRequest(
       await handleReply(req, res, searchParams);
     } else if (req.method === "POST" && pathname === "/cc/permission") {
       await handlePermission(req, res, searchParams);
+    } else if (req.method === "GET" && pathname === "/cc/file") {
+      await handleFile(req, res, searchParams);
     } else if (req.method === "POST" && pathname === "/cc/bye") {
       await handleBye(req, res, searchParams);
     } else {
