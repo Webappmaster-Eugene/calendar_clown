@@ -15,7 +15,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { execFileSync } from "node:child_process";
 import { hostname } from "node:os";
-import { basename } from "node:path";
+import { basename, relative } from "node:path";
 import { z } from "zod";
 
 const HUB_URL = (process.env.CC_HUB_URL ?? "").replace(/\/+$/, "");
@@ -47,8 +47,15 @@ function slug(value: string): string {
 const cwd = process.cwd();
 const repoRoot = git(["rev-parse", "--show-toplevel"]);
 const machine = slug(process.env.CC_MACHINE ?? hostname().split(".")[0] ?? "unknown") || "unknown";
-const project = basename(repoRoot ?? cwd);
 const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
+
+// The hub keys topics by cwd, so a subdirectory of a repo gets its own topic.
+// Naming it after the repo alone would produce two topics with identical names.
+const project = !repoRoot
+  ? basename(cwd)
+  : cwd === repoRoot
+    ? basename(repoRoot)
+    : `${basename(repoRoot)}/${relative(repoRoot, cwd)}`;
 
 // ─── MCP server ──────────────────────────────────────────────────────────────
 
