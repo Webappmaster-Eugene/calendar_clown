@@ -11,7 +11,7 @@ import { telegramFetch } from "../utils/proxyAgent.js";
 import { isBootstrapAdmin } from "../middleware/auth.js";
 import { createLogger } from "../utils/logger.js";
 import { ccGroupId, resolvePermission } from "../services/ccBridgeService.js";
-import { newestSessionForThread, pushEvent, rememberFile } from "../cc/registry.js";
+import { isSessionOnline, newestSessionForThread, pushEvent, rememberFile } from "../cc/registry.js";
 
 const log = createLogger("cc-mode");
 
@@ -51,10 +51,27 @@ async function forwardToSession(ctx: Context, threadId: number, text: string): P
     return;
   }
 
-  // A tick beats silence: an event lands in the session's queue and may wait
-  // there until Claude finishes what it is doing, which looks like nothing
-  // happened.
-  await ctx.react?.("👌").catch(() => {});
+  await acknowledge(ctx, threadId, session.id, "Сообщение");
+}
+
+/**
+ * A queued event is not a delivered one. When the machine has no stream attached
+ * — asleep, terminal closed, network gone — the tick would be a lie, so say what
+ * actually happened instead.
+ */
+async function acknowledge(ctx: Context, threadId: number, sessionId: string, what: string): Promise<void> {
+  if (isSessionOnline(sessionId)) {
+    // A tick beats silence: an event lands in the session's queue and may wait
+    // there until Claude finishes what it is doing, which looks like nothing
+    // happened.
+    await ctx.react?.("👌").catch(() => {});
+    return;
+  }
+  await ctx.reply(
+    `Машина сейчас офлайн — спит или сессия закрыта. ${what} доставлю, когда она вернётся; ` +
+      "если не вернётся за 10 минут, пропадёт. Запусти ccx заново.",
+    { message_thread_id: threadId },
+  );
 }
 
 async function handleVoice(ctx: Context, threadId: number, fileId: string, duration: number): Promise<void> {
@@ -177,7 +194,7 @@ async function forwardAttachment(
     return;
   }
 
-  await ctx.react?.("👌").catch(() => {});
+  await acknowledge(ctx, threadId, session.id, "Файл");
 }
 
 async function handleCallback(ctx: Context, data: string): Promise<void> {

@@ -357,10 +357,24 @@ async function shutdown(): Promise<void> {
   process.exit(0);
 }
 
-process.on("SIGINT", () => void shutdown());
-process.on("SIGTERM", () => void shutdown());
+// SIGHUP matters as much as the other two: closing a terminal window sends it,
+// and without a handler the process dies silently, leaving the hub to believe
+// the session is alive until the orphan sweeper notices ten minutes later.
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(signal, () => void shutdown());
+}
 // Claude Code closes stdin when it tears the subprocess down.
 process.stdin.on("close", () => void shutdown());
 
 await mcp.connect(new StdioServerTransport());
-void streamForever();
+
+// Claude Code starts every configured MCP server in every session, whether or
+// not the channel was enabled for it. Registering unconditionally created a
+// Telegram topic for each project the user merely opened, and those sessions
+// could never receive anything: without --channels the notifications are
+// dropped. Only the ccx wrapper sets this, so plain `claude` stays inert.
+if (process.env.CC_ENABLE === "1") {
+  void streamForever();
+} else {
+  log("CC_ENABLE is not set — staying idle (start via ccx to bridge this session)");
+}

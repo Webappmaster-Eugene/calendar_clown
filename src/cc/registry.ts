@@ -170,6 +170,11 @@ export function newestSessionForThread(threadId: number): Session | null {
   return best;
 }
 
+/** A session with no attached stream is registered but unreachable right now. */
+export function isSessionOnline(sessionId: string): boolean {
+  return sessions.get(sessionId)?.res != null;
+}
+
 export function countSessionsForThread(threadId: number): number {
   let n = 0;
   for (const s of sessions.values()) if (s.threadId === threadId) n++;

@@ -43,7 +43,15 @@ cat <<'EOF'
 
 Осталось добавить алиас в ~/.zshrc:
 
-  alias ccx='claude --dangerously-load-development-channels server:sovetnik'
+  ccx() {
+    local name=""
+    case "${1:-}" in -*|"") ;; *) name="$1"; shift ;; esac
+    CC_ENABLE=1 CC_SESSION="$name" claude --dangerously-load-development-channels server:sovetnik "$@"
+  }
+
+Первый аргумент — имя сессии: `ccx рефакторинг` создаст отдельный топик.
+CC_ENABLE обязателен: без него канал не регистрируется, поэтому обычный
+`claude` не плодит топики в группе.
 
 Флаг обязателен: кастомные каналы вне allowlist Anthropic на время
 research preview. При первом запуске Claude Code спросит подтверждение.
