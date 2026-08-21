@@ -323,8 +323,8 @@ function WorkplaceDetail({ workplaceId, onBack }: { workplaceId: number; onBack:
       >
         <div className="form-group">
           <label className="form-label">Добавить достижение</label>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Что вы сделали?" rows={3} style={{ flex: 1 }} />
+          <div className="input-row">
+            <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Что вы сделали?" rows={3} />
             <VoiceButton
               mode="summarizer"
               onResult={(transcript) => setText((prev) => prev ? `${prev} ${transcript}` : transcript)}

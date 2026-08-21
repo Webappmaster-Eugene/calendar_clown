@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from "react-router";
 import { backButton, hapticFeedback } from "@telegram-apps/sdk-react";
 import { MODE_LABELS } from "@shared/constants";
 import { ROUTE_TO_MODE as BASE_ROUTE_TO_MODE } from "../../lib/modes";
-import { useRecentModes } from "../../hooks/useRecentModes";
 import { BottomTabBar } from "./BottomTabBar";
 
 interface AppShellProps {
@@ -24,18 +23,12 @@ const TOP_LEVEL_ROUTES = new Set(
 export function AppShell({ children }: AppShellProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { recent, record } = useRecentModes();
 
   const isRoot = location.pathname === "/";
   const modeKey = ROUTE_TO_MODE[location.pathname];
   const modeMeta = modeKey ? MODE_LABELS[modeKey] : null;
-  // The chat composer owns the bottom edge (fixed input row) — the quick-switch
-  // bar would cover it, so it's suppressed on that immersive route.
-  const showTabBar = !isRoot && modeKey !== "neuro";
-
-  useEffect(() => {
-    if (modeKey) record(modeKey);
-  }, [modeKey, record]);
+  // Everywhere except the mode grid itself, which already *is* the full list.
+  const showTabBar = !isRoot;
 
   const handleBack = useCallback(() => {
     hapticFeedback.impactOccurred.ifAvailable("light");
@@ -50,6 +43,18 @@ export function AppShell({ children }: AppShellProps) {
     hapticFeedback.impactOccurred.ifAvailable("light");
     navigate("/");
   }, [navigate]);
+
+  // Published on :root so layers mounted outside the shell (toasts) can also keep
+  // clear of the bar — see --tabbar-height / --bottom-safe in index.css.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (showTabBar) {
+      root.setAttribute("data-tabbar", "1");
+    } else {
+      root.removeAttribute("data-tabbar");
+    }
+    return () => root.removeAttribute("data-tabbar");
+  }, [showTabBar]);
 
   useEffect(() => {
     if (!backButton.show.isAvailable()) return;
@@ -75,7 +80,7 @@ export function AppShell({ children }: AppShellProps) {
         </button>
       )}
       {children}
-      {showTabBar && <BottomTabBar recent={recent} currentMode={modeKey} />}
+      {showTabBar && <BottomTabBar currentMode={modeKey} />}
     </div>
   );
 }

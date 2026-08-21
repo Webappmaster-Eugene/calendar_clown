@@ -511,6 +511,8 @@ select.input {
 
 /* ─── Loading ─────────────────────────────────────────────── */
 
+/* Section-level wait only. A page's first load uses <ListSkeleton /> instead, so the
+   two states are not mixed arbitrarily between modes. */
 .loading {
   display: flex;
   align-items: center;
@@ -548,18 +550,33 @@ select.input {
 .form-row {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .form-row > * {
   flex: 1;
 }
 
+/* Text field + mic (+ optional submit) on one line. Replaces the ad-hoc inline
+   `display:flex; gap:8` wrappers so every mode's input row looks the same. */
+.input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.input-row > .input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
 /* ─── FAB ─────────────────────────────────────────────────── */
 
 .fab {
   position: fixed;
-  /* Lifted clear of the fixed bottom quick-switch bar (~46px tall). */
-  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+  /* Lifted clear of the fixed bottom quick-switch bar. */
+  bottom: calc(var(--bottom-safe) + 16px);
   right: 20px;
   width: 56px;
   height: 56px;
@@ -614,12 +631,12 @@ select.input {
 
 .chat-input-row {
   position: fixed;
-  bottom: 0;
+  bottom: var(--tabbar-height);
   left: 0;
   right: 0;
   display: flex;
   gap: 8px;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 16px;
   background: var(--tg-theme-bg-color, #fff);
   border-top: 1px solid var(--tg-theme-secondary-bg-color, #e0e0e0);
 }
@@ -632,7 +649,8 @@ select.input {
    never follows a streaming answer on its own, so this is the way back down. */
 .chat-scroll-down {
   position: fixed;
-  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  /* Clears the composer (~64px) which itself sits on top of the quick-switch bar. */
+  bottom: calc(var(--tabbar-height) + 72px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
@@ -750,6 +768,8 @@ select.input {
 
 /* ─── Voice recording ────────────────────────────────────── */
 
+/* `flex: 0 0 44px` (not just flex-shrink) because parents like `.form-row` set
+   `flex: 1` on every child, which stretched the mic into an oval. */
 .voice-btn {
   width: 44px;
   height: 44px;
@@ -759,7 +779,7 @@ select.input {
   align-items: center;
   justify-content: center;
   padding: 0;
-  flex-shrink: 0;
+  flex: 0 0 44px;
 }
 
 .voice-btn.processing {
@@ -774,6 +794,7 @@ select.input {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .voice-dot {
@@ -847,7 +868,10 @@ select.input {
   white-space: normal;
 }
 
+/* Takes a full row of its own when the mic sits inside a flex input row, so the
+   message never squeezes the field next to it. */
 .voice-error {
+  flex: 1 0 100%;
   margin-top: 6px;
   font-size: 0.8rem;
   color: var(--tg-theme-destructive-text-color, #e53935);
@@ -870,7 +894,7 @@ select.input {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  flex: 0 0 44px;
   border: none;
   padding: 0;
   cursor: pointer;
@@ -1129,6 +1153,23 @@ select.input {
 
 /* ─── App Shell ──────────────────────────────────────────── */
 
+/* Single source of truth for everything that has to sit above the quick-switch bar
+   (page padding, chat composer, FAB, toasts) — keep offsets derived, not retyped.
+   It lives on :root, not on .app-shell, because the toast layer is mounted as a
+   sibling of the shell and would otherwise never see the value. AppShell toggles
+   the attribute. The value includes the safe-area inset because the bar is pinned
+   to the viewport edge, so anything stacked on top of it must clear the inset too. */
+:root {
+  --tabbar-height: 0px;
+  /* Bottom keep-out zone: the bar when it is up, the home indicator otherwise. */
+  --bottom-safe: env(safe-area-inset-bottom, 0px);
+}
+
+:root[data-tabbar="1"] {
+  --tabbar-height: calc(54px + env(safe-area-inset-bottom, 0px));
+  --bottom-safe: var(--tabbar-height);
+}
+
 .app-shell {
   min-height: 100vh;
   min-height: 100dvh;
@@ -1139,7 +1180,7 @@ select.input {
 
 /* Leave room for the fixed quick-switch bar so it never covers page content. */
 .app-shell.has-tabbar {
-  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--tabbar-height) + 8px);
 }
 
 /* ─── Bottom quick-switch bar ─────────────────────────────── */
@@ -1152,6 +1193,9 @@ select.input {
   z-index: 50;
   display: flex;
   gap: 2px;
+  /* Fixed height so --tabbar-height (used by every element stacked above) is exact. */
+  height: calc(54px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
   background: var(--tg-theme-secondary-bg-color, #f0f0f0);
   border-top: 1px solid var(--tg-theme-section-separator-color, rgba(0, 0, 0, 0.08));
@@ -1173,6 +1217,11 @@ select.input {
 
 .bottom-tab:active {
   opacity: 0.6;
+}
+
+.bottom-tab.active {
+  color: var(--tg-theme-button-color, #2481cc);
+  font-weight: 600;
 }
 
 .bottom-tab-emoji {
@@ -1251,7 +1300,7 @@ select.input {
 /* ─── Toast notifications (ToastProvider) ─── */
 .toast-container {
   position: fixed;
-  bottom: calc(env(safe-area-inset-bottom, 0) + 16px);
+  bottom: calc(var(--bottom-safe) + 16px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;

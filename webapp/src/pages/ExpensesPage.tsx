@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import { VoiceButton } from "../components/VoiceButton";
 import { useDragScroll } from "../hooks/useDragScroll";
 import type {
@@ -188,7 +189,7 @@ export function ExpensesPage() {
     );
   }
 
-  if (reportLoading && tab !== "year" && tab !== "recent") return <div className="loading">Загрузка...</div>;
+  if (reportLoading && tab !== "year" && tab !== "recent") return <div className="page"><ListSkeleton /></div>;
   if (reportError) return <div className="page"><div className="error-msg">{(reportError as Error).message}</div></div>;
 
   const total = report?.total ?? 0;
@@ -205,13 +206,12 @@ export function ExpensesPage() {
         </Link>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+      <div className="input-row" style={{ marginBottom: 12 }}>
         <input
           className="input"
           value={voiceText}
           onChange={(e) => setVoiceText(e.target.value)}
           placeholder="кофе 300 или скажите голосом"
-          style={{ flex: 1 }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && voiceText.trim()) {
               addTextMutation.mutate(voiceText.trim());

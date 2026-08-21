@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import type {
   NutritionistHistoryResponse,
   NutritionAnalysisDto,
@@ -119,7 +120,7 @@ function AnalyzeSection({ onGoToCatalog }: { onGoToCatalog: () => void }) {
     e.target.value = "";
   }
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
 
   const productsTotal = catalogCount?.total ?? 0;
 

@@ -78,14 +78,13 @@ export function CreateEventPage() {
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label className="form-label">Опишите событие</label>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <div className="input-row">
             <textarea
               className="input"
               value={text}
               onChange={(e) => handleTextChange(e.target.value)}
               placeholder="Встреча с командой завтра в 15:00"
               rows={3}
-              style={{ flex: 1 }}
             />
             <VoiceButton
               mode="calendar"

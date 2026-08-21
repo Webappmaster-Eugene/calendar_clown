@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ListSkeleton } from "../components/ui/ListSkeleton";
 import { VoiceButton } from "../components/VoiceButton";
 import type { SimplifierHistoryResponse, SimplificationDto } from "@shared/types";
 import { useClosingConfirmation } from "../hooks/useClosingConfirmation";
 import { MessageBubble } from "../components/ui/MessageBubble";
+import { CopyButton } from "../components/ui/CopyButton";
+import { ShareButton } from "../components/ui/ShareButton";
 
 const PAGE_SIZE = 10;
 
@@ -68,7 +71,7 @@ export function SimplifierPage() {
 
   const canSimplify = buffer.length > 0 || text.trim().length > 0;
 
-  if (isLoading) return <div className="loading">Загрузка...</div>;
+  if (isLoading) return <div className="page"><ListSkeleton /></div>;
   if (error) return <div className="page"><div className="error-msg">{(error as Error).message}</div></div>;
 
   return (
@@ -78,21 +81,12 @@ export function SimplifierPage() {
       {/* Text input */}
       <div className="card" style={{ marginBottom: 16 }}>
         <textarea
+          className="input"
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Вставьте текст для упрощения..."
           rows={5}
-          style={{
-            width: "100%",
-            padding: "8px 12px",
-            borderRadius: 8,
-            border: "1px solid var(--tg-theme-hint-color, #ccc)",
-            background: "var(--tg-theme-bg-color, #fff)",
-            color: "var(--tg-theme-text-color, #000)",
-            fontSize: 14,
-            resize: "vertical",
-            boxSizing: "border-box",
-          }}
+          style={{ fontSize: 14, lineHeight: 1.5, resize: "vertical" }}
         />
 
         {/* Buffer indicator */}
@@ -118,10 +112,9 @@ export function SimplifierPage() {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <div className="form-row" style={{ marginTop: 8 }}>
           <button
             className="btn"
-            style={{ flex: 1 }}
             onClick={handleAddToBuffer}
             disabled={!text.trim()}
           >
@@ -129,7 +122,6 @@ export function SimplifierPage() {
           </button>
           <button
             className="btn btn-primary"
-            style={{ flex: 1 }}
             onClick={handleSimplify}
             disabled={!canSimplify || simplifyMutation.isPending}
           >
@@ -167,11 +159,12 @@ export function SimplifierPage() {
             markdown={false}
             content={lastResult.simplifiedText}
             actions={["copy", "share"]}
+            style={{ maxWidth: "100%" }}
           />
           {lastResult.originalText && (
             <details style={{ marginTop: 8 }}>
               <summary className="card-hint" style={{ cursor: "pointer" }}>
-                Показать оригинал
+                Оригинал
               </summary>
               <div style={{ fontSize: 13, lineHeight: 1.4, whiteSpace: "pre-wrap", marginTop: 6, opacity: 0.7 }}>
                 {lastResult.originalText}
@@ -193,23 +186,16 @@ export function SimplifierPage() {
         <div className="list">
           {simplifications.map((s) => (
             <div key={s.id} className="card">
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <span className="card-hint">
                   {s.inputMethod === "voice" ? "🎙" : s.inputMethod === "mixed" ? "🎙📝" : "📝"}{" "}
                   {s.status === "completed" ? "Готово" : s.status === "failed" ? "Ошибка" : "Обработка..."}
                 </span>
-                <span className="card-hint">
-                  {new Date(s.createdAt).toLocaleString("ru-RU")}
-                </span>
               </div>
               {s.simplifiedText ? (
-                <MessageBubble
-                  role="assistant"
-                  markdown={false}
-                  content={s.simplifiedText}
-                  actions={["copy", "share"]}
-                  style={{ maxWidth: "100%" }}
-                />
+                <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", userSelect: "text", WebkitUserSelect: "text" }}>
+                  {s.simplifiedText}
+                </div>
               ) : s.status === "failed" ? (
                 <div className="error-msg">{s.errorMessage ?? "Ошибка"}</div>
               ) : null}
@@ -223,15 +209,22 @@ export function SimplifierPage() {
                   </div>
                 </details>
               )}
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-                <button
-                  className="btn btn-icon btn-danger"
-                  onClick={() => deleteMutation.mutate(s.id)}
-                  disabled={deleteMutation.isPending}
-                  title="Удалить"
-                >
-                  🗑️
-                </button>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 6 }}>
+                <span className="card-hint">
+                  {new Date(s.createdAt).toLocaleString("ru-RU")}
+                </span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {s.simplifiedText && <CopyButton text={s.simplifiedText} size="sm" />}
+                  {s.simplifiedText && <ShareButton text={s.simplifiedText} size="sm" />}
+                  <button
+                    className="btn btn-icon btn-danger"
+                    onClick={() => deleteMutation.mutate(s.id)}
+                    disabled={deleteMutation.isPending}
+                    title="Удалить"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             </div>
           ))}

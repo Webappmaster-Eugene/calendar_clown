@@ -413,7 +413,7 @@ function GoalsList({ goalSetId, onBack }: { goalSetId: number; onBack: () => voi
         style={{ marginTop: 16 }}
         onSubmit={(e) => { e.preventDefault(); if (text.trim()) addMutation.mutate({ goalSetId, text: text.trim() }); }}
       >
-        <div className="form-row">
+        <div className="input-row">
           <input
             className="input"
             value={text}

@@ -74,13 +74,12 @@ export function OsintPage() {
         style={{ marginBottom: 16 }}
       >
         <div className="form-group">
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="input-row">
             <input
               className="input"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Поисковый запрос (человек, компания...)"
-              style={{ flex: 1 }}
             />
             <VoiceButton
               mode="osint"

@@ -1,18 +1,32 @@
 import { useNavigate } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import { MODE_LABELS } from "@shared/constants";
-import { MODE_ROUTES } from "../../lib/modes";
+import type { UserProfile } from "@shared/types";
+import { api } from "../../api/client";
+import { MODE_ROUTES, TAB_BAR_MODES } from "../../lib/modes";
 import { useHaptic } from "../../hooks/useHaptic";
 
 interface BottomTabBarProps {
-  recent: string[];
   currentMode?: string;
 }
 
-export function BottomTabBar({ recent, currentMode }: BottomTabBarProps) {
+interface UserProfileWithModes extends UserProfile {
+  availableModes: string[];
+}
+
+export function BottomTabBar({ currentMode }: BottomTabBarProps) {
   const navigate = useNavigate();
   const { impact } = useHaptic();
 
-  const items = recent.filter((m) => m !== currentMode && MODE_ROUTES[m]).slice(0, 4);
+  // Shares the cache with every page that reads the profile, so this costs no
+  // extra request. Until it resolves, all tabs show — the set only ever shrinks,
+  // which is less jarring than tabs appearing after the fact.
+  const { data: profile } = useQuery({
+    queryKey: ["user", "me"],
+    queryFn: () => api.get<UserProfileWithModes>("/api/user/me"),
+    staleTime: 5 * 60_000,
+  });
+  const allowed = profile?.availableModes;
 
   const go = (route: string) => {
     impact("light");
@@ -25,16 +39,17 @@ export function BottomTabBar({ recent, currentMode }: BottomTabBarProps) {
         <span className="bottom-tab-emoji">⚏</span>
         <span className="bottom-tab-label">Режимы</span>
       </button>
-      {items.map((mode) => {
+      {TAB_BAR_MODES.filter((m) => !allowed || allowed.includes(m)).map((mode) => {
         const meta = MODE_LABELS[mode];
         if (!meta) return null;
         return (
           <button
             key={mode}
-            className="bottom-tab"
+            className={`bottom-tab${mode === currentMode ? " active" : ""}`}
             type="button"
             onClick={() => go(MODE_ROUTES[mode])}
             title={meta.label}
+            aria-current={mode === currentMode ? "page" : undefined}
           >
             <span className="bottom-tab-emoji">{meta.emoji}</span>
             <span className="bottom-tab-label">{meta.label}</span>

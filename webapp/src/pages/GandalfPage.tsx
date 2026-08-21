@@ -534,13 +534,12 @@ function GandalfEntries({
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label">Название</label>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="input-row">
                 <input
                   className="input"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Название записи"
-                  style={{ flex: 1 }}
                 />
                 <VoiceButton
                   mode="gandalf"
