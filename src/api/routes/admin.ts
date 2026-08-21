@@ -78,6 +78,12 @@ app.get("/access-requests", async (c) => {
   const telegramId = initData.user.id;
   const statusRaw = c.req.query("status") ?? "all";
 
+  // Explicit guard so a non-admin gets 403, not the 500 the service's thrown
+  // Error would collapse into — same shape as /summary and /logs below.
+  if (!isBootstrapAdmin(telegramId)) {
+    return c.json({ ok: false, error: "Admin access required" }, 403);
+  }
+
   if (!VALID_ACCESS_REQUEST_FILTERS.has(statusRaw)) {
     return c.json({ ok: false, error: "Invalid status. Use: pending, approved, rejected, all" }, 400);
   }

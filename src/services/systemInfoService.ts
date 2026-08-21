@@ -103,13 +103,16 @@ export async function collectSystemInfo(): Promise<AdminSystemInfoDto> {
       },
       transcribeQueue: isTranscribeAvailable() ? queue : null,
     },
+    // Names must mirror what the runtime actually reads, or the lamp lies: the
+    // OpenRouter proxy falls back to TELEGRAM_PROXY (utils/proxyAgent.ts) and the
+    // MTProto client reads TELEGRAM_PARSER_* (digest/telegramClient.ts).
     integrations: {
       googleCalendar: isConfigured("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "OAUTH_REDIRECT_URI"),
       openRouter: isConfigured("OPENROUTER_API_KEY"),
-      openRouterProxy: isConfigured("OPENROUTER_PROXY"),
+      openRouterProxy: isConfigured("OPENROUTER_PROXY") || isConfigured("TELEGRAM_PROXY"),
       telegramProxy: isConfigured("TELEGRAM_PROXY"),
       tavily: isConfigured("TAVILY_API_KEY"),
-      mtproto: isConfigured("TELEGRAM_API_ID", "TELEGRAM_API_HASH"),
+      mtproto: isConfigured("TELEGRAM_PARSER_API_ID", "TELEGRAM_PARSER_API_HASH"),
       redis: isConfigured("REDIS_URL"),
       bankWebhook: isConfigured("OAUTH_REDIRECT_URI"),
       telemetry: isConfigured("OTEL_EXPORTER_OTLP_ENDPOINT"),
