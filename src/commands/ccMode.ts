@@ -69,7 +69,7 @@ async function acknowledge(ctx: Context, threadId: number, sessionId: string, wh
   }
   await ctx.reply(
     `Машина сейчас офлайн — спит или сессия закрыта. ${what} доставлю, когда она вернётся; ` +
-      "если не вернётся за 10 минут, пропадёт. Запусти ccx заново.",
+      "если не вернётся за полчаса, пропадёт. Тогда запусти сессию заново.",
     { message_thread_id: threadId },
   );
 }

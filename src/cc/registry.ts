@@ -115,7 +115,12 @@ export function pushEvent(sessionId: string, event: CcEvent): boolean {
 // A machine that registers and then dies without ever attaching its stream (or
 // after losing it for good) leaves an entry nothing will ever remove: the SSE
 // close handler never fires because there is no stream. Sweep those.
-const ORPHAN_TTL_MS = 10 * 60_000;
+//
+// Half an hour rather than a few minutes because the common cause is a sleeping
+// laptop: a lunch break should reconnect to the same session with its queued
+// messages intact. Long enough to be useful, short enough that an overnight
+// sleep reports "no live session" instead of pretending a corpse will answer.
+const ORPHAN_TTL_MS = 30 * 60_000;
 
 export function keepAlive(): void {
   const cutoff = Date.now() - ORPHAN_TTL_MS;
