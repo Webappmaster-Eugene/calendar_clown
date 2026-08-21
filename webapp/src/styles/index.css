@@ -1201,8 +1201,11 @@ select.input {
   border-top: 1px solid var(--tg-theme-section-separator-color, rgba(0, 0, 0, 0.08));
 }
 
+/* `flex: 1 1 auto`, not `flex: 1`: equal-width columns starved the longest label
+   ("Транскрибация") into an ellipsis even though the row had ~100px to spare.
+   Sizing from content and sharing the slack out keeps every name whole. */
 .bottom-tab {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1229,15 +1232,14 @@ select.input {
   line-height: 1;
 }
 
-/* 9px, not 10: at five tabs each label gets ~72px, and "Транскрибация" clipped to
-   an ellipsis at 10px. Shrinking the type keeps the mode's real name readable. */
+/* Ellipsis stays as a last resort for a narrow device; .bottom-tab's flex sizing
+   is what normally keeps labels whole. */
 .bottom-tab-label {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 9px;
-  letter-spacing: -0.01em;
+  font-size: 10px;
 }
 
 /* ─── Page enter animation ───────────────────────────────── */

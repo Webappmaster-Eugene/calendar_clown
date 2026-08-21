@@ -28,15 +28,29 @@ export interface RecordAccessRequestInput {
   lastName: string | null;
 }
 
-/** Opens a new pending request. One row per attempt — see the schema comment. */
+/**
+ * Opens a new pending request. One row per attempt — see the schema comment.
+ * Best-effort like closeAccessRequest: the applicant's `users` row is already
+ * written by the time this runs, and a throw here would surface as "ошибка,
+ * попробуйте позже" while the row exists — the retry would then hit "вы уже
+ * зарегистрированы" and the admin would never be notified.
+ */
 export async function recordAccessRequest(input: RecordAccessRequestInput): Promise<void> {
-  await db.insert(accessRequests).values({
-    telegramId: BigInt(input.telegramId),
-    username: input.username,
-    firstName: input.firstName,
-    lastName: input.lastName,
-    status: "pending",
-  });
+  try {
+    await db.insert(accessRequests).values({
+      telegramId: BigInt(input.telegramId),
+      username: input.username,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      status: "pending",
+    });
+  } catch (err) {
+    log.error(
+      "Failed to record access request for %d: %s",
+      input.telegramId,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /**
