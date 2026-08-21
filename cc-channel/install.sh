@@ -13,10 +13,13 @@ ok()  { printf '\033[32m✓\033[0m %s\n' "$*"; }
 
 HUB="${CC_HUB_URL:-}"
 TOKEN="${CC_MACHINE_TOKEN:-}"
-MACHINE="${CC_MACHINE:-$(hostname -s 2>/dev/null || hostname)}"
+MACHINE="${CC_MACHINE:-}"
 
 [ -n "$HUB" ]   || die "CC_HUB_URL не задан (например https://oauth.podbor-minuta.ru)"
 [ -n "$TOKEN" ] || die "CC_MACHINE_TOKEN не задан — должен совпадать с переменной на сервере бота"
+# hostname как имя по умолчанию — плохая идея: у двух маков он часто одинаковый,
+# и тогда обе машины садятся в один топик, а сообщения уходят не туда.
+[ -n "$MACHINE" ] || die "CC_MACHINE не задан — выбери короткое имя, уникальное среди твоих машин (mbp, studio, pc)"
 command -v node >/dev/null || die "node не найден"
 command -v claude >/dev/null || die "claude не найден в PATH"
 

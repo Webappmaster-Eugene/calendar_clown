@@ -155,7 +155,14 @@ async function handleRegister(req: http.IncomingMessage, res: http.ServerRespons
     return;
   }
 
-  const machine = String(body.machine).slice(0, 64);
+  // "unknown" was the client's old fallback for a name it could not slugify.
+  // Two machines answering to it would share every topic, so refuse it here too
+  // rather than trusting the client to have been fixed.
+  const machine = String(body.machine).trim().slice(0, 64);
+  if (!machine || machine === "unknown") {
+    sendJson(res, 400, { ok: false, error: "machine must be a distinct non-empty name" });
+    return;
+  }
   const project = String(body.project).slice(0, 128);
   const cwd = String(body.cwd).slice(0, 512);
   const sessionName = String(body.session ?? "").trim().slice(0, 60);

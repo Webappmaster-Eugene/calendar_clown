@@ -41,13 +41,24 @@ function git(args: string[]): string | null {
   }
 }
 
+/**
+ * Keeps Unicode letters: stripping to a-z0-9 turned every Cyrillic machine name
+ * into the same empty string, and two machines sharing a name share a topic —
+ * messages then go to whichever registered last, silently.
+ */
 function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
 }
 
 const cwd = process.cwd();
 const repoRoot = git(["rev-parse", "--show-toplevel"]);
-const machine = slug(process.env.CC_MACHINE ?? hostname().split(".")[0] ?? "unknown") || "unknown";
+// No "unknown" fallback: a shared default name is exactly the collision this
+// guards against, and it would be discovered only by messages going astray.
+const machine = slug(process.env.CC_MACHINE ?? hostname().split(".")[0] ?? "");
+if (!machine) {
+  log("CC_MACHINE is empty or has no letters or digits — set it to a distinct name per machine");
+  process.exit(1);
+}
 const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
 
 // The hub keys topics by cwd, so a subdirectory of a repo gets its own topic.
